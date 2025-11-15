@@ -1,0 +1,92 @@
+name: nivio
+description: "Netflix-style streaming app"
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+
+  # Networking
+  dio: ^5.7.0
+
+  # Local Storage
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  shared_preferences: ^2.3.3
+
+  # Firebase
+  firebase_core: ^3.8.0
+  firebase_auth: ^5.3.3
+  cloud_firestore: ^5.5.0
+
+  # Video Player
+  video_player: ^2.9.2
+  chewie: ^1.8.5
+  youtube_player_flutter: ^9.0.3
+  youtube_explode_dart: ^2.2.4
+  webview_flutter: ^4.10.0
+
+  # UI & Images
+  cached_network_image: ^3.4.1
+  shimmer: ^3.0.0
+  flutter_svg: ^2.0.10+1
+
+  # Navigation
+  go_router: ^14.6.2
+
+  # Utilities
+  intl: ^0.19.0
+  freezed_annotation: ^2.4.4
+  json_annotation: ^4.9.0
+  url_launcher: ^6.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+  # Code Generation
+  build_runner: ^2.4.13
+  freezed: ^2.5.7
+  json_serializable: ^6.8.0
+  riverpod_generator: ^2.6.2
+
+  # Splash Screen & App Icon
+  flutter_native_splash: ^2.4.2
+  flutter_launcher_icons: ^0.14.2
+
+flutter:
+  uses-material-design: true
+
+  assets:
+  - assets/images/
+  - assets/icons/
+
+# App Icon Configuration
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/nivio-dark.png"
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "assets/images/nivio-dark.png"
+  min_sdk_android: 21
+  remove_alpha_ios: true
+
+# Splash Screen Configuration  
+flutter_native_splash:
+  color: "#000000"
+  image: assets/images/nivio-dark.png
+  android: true
+  ios: true
+  web: false
+  android_12:
+    image: assets/images/nivio-dark.png
+    color: "#000000"
