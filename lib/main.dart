@@ -88,10 +88,12 @@ final _router = GoRouter(
         final id = state.pathParameters['id']!;
         final season = int.parse(state.uri.queryParameters['season'] ?? '1');
         final episode = int.parse(state.uri.queryParameters['episode'] ?? '1');
+        final mediaType = state.uri.queryParameters['type'];
         return PlayerScreen(
           mediaId: int.parse(id),
           season: season,
           episode: episode,
+          mediaType: mediaType,
         );
       },
     ),

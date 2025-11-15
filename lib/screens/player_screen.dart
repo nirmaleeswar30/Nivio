@@ -15,12 +15,14 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final int mediaId;
   final int season;
   final int episode;
+  final String? mediaType;
 
   const PlayerScreen({
     super.key,
     required this.mediaId,
     required this.season,
     required this.episode,
+    this.mediaType,
   });
 
   @override
@@ -126,9 +128,39 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
 
     try {
-      final media = ref.read(selectedMediaProvider);
+      // Check if media is already selected, if not fetch it from TMDB
+      var media = ref.read(selectedMediaProvider);
       if (media == null) {
-        throw Exception('No media selected');
+        print('📥 Fetching media details from TMDB (ID: ${widget.mediaId}, Type: ${widget.mediaType})...');
+        setState(() {
+          _currentProvider = 'Loading media details...';
+        });
+        
+        // Fetch media details from TMDB
+        final tmdbService = ref.read(tmdbServiceProvider);
+        
+        // Use mediaType if provided, otherwise try TV first then movie
+        if (widget.mediaType == 'tv') {
+          media = await tmdbService.getTVShowDetails(widget.mediaId);
+          ref.read(selectedMediaProvider.notifier).state = media;
+          print('✅ Loaded TV show: ${media.name}');
+        } else if (widget.mediaType == 'movie') {
+          media = await tmdbService.getMovieDetails(widget.mediaId);
+          ref.read(selectedMediaProvider.notifier).state = media;
+          print('✅ Loaded movie: ${media.title}');
+        } else {
+          // No type specified, try TV show first, then movie
+          try {
+            media = await tmdbService.getTVShowDetails(widget.mediaId);
+            ref.read(selectedMediaProvider.notifier).state = media;
+            print('✅ Loaded TV show: ${media.name}');
+          } catch (e) {
+            // If TV show fails, try movie
+            media = await tmdbService.getMovieDetails(widget.mediaId);
+            ref.read(selectedMediaProvider.notifier).state = media;
+            print('✅ Loaded movie: ${media.title}');
+          }
+        }
       }
 
       // Show which provider we're trying
@@ -549,23 +581,32 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       
                       final currentPosition = _videoController?.value.position;
                       
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Switching to ${_providerNames[providerIndex]}...'),
-                          duration: const Duration(seconds: 2),
-                          backgroundColor: NivioTheme.netflixRed,
-                        ),
-                      );
+                      // Show snackbar before rebuilding
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Switching to ${_providerNames[providerIndex]}...'),
+                            duration: const Duration(seconds: 2),
+                            backgroundColor: NivioTheme.netflixRed,
+                          ),
+                        );
+                      }
                       
+                      // Dispose controllers first
+                      _videoController?.dispose();
+                      _chewieController?.dispose();
+                      _videoController = null;
+                      _chewieController = null;
+                      
+                      // Then update state and reinitialize
                       setState(() {
                         _currentProviderIndex = providerIndex;
                         _isLoading = true;
                         _error = null;
                         _retryCount = 0;
+                        _streamResult = null; // Clear old stream result to force rebuild
                       });
                       
-                      _videoController?.dispose();
-                      _chewieController?.dispose();
                       await _initializePlayer();
                       
                       if (currentPosition != null && _videoController != null) {
@@ -778,6 +819,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       _isLoading = true;
                       _currentProviderIndex++;
                       _retryCount = 0;
+                      _streamResult = null; // Clear old stream result
                     });
                     _initializePlayer();
                   },
@@ -792,8 +834,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               ],
               ElevatedButton.icon(
                 onPressed: () {
-                  _retryCount = 0;
-                  _currentProviderIndex = 0; // Reset to first provider
+                  setState(() {
+                    _retryCount = 0;
+                    _currentProviderIndex = 0; // Reset to first provider
+                    _streamResult = null; // Clear old stream result
+                  });
                   _initializePlayer();
                 },
                 icon: const Icon(Icons.refresh, size: 20),
@@ -831,6 +876,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Widget _buildWebViewPlayer() {
     return WebViewPlayer(
+      key: ValueKey(_streamResult!.url), // Force rebuild when URL changes
       streamUrl: _streamResult!.url,
       title: ref.read(selectedMediaProvider)?.title ??
           ref.read(selectedMediaProvider)?.name ??

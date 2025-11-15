@@ -55,7 +55,8 @@ class _MediaCardState extends State<MediaCard> with SingleTickerProviderStateMix
           context.push(
             '/player/${widget.history.tmdbId}'
             '?season=${widget.history.currentSeason}'
-            '&episode=${widget.history.currentEpisode}',
+            '&episode=${widget.history.currentEpisode}'
+            '&type=${widget.history.mediaType}',
           );
         },
         child: AnimatedBuilder(
