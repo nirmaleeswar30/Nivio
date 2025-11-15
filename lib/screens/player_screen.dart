@@ -885,9 +885,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Widget _buildVideoPlayer() {
-    return AspectRatio(
-      aspectRatio: _chewieController!.aspectRatio ?? 16 / 9,
-      child: Chewie(controller: _chewieController!),
+    return Center(
+      child: AspectRatio(
+        aspectRatio: 16 / 9, // Force 16:9 aspect ratio
+        child: Chewie(controller: _chewieController!),
+      ),
     );
   }
 }

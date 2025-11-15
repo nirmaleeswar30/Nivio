@@ -32,7 +32,7 @@ dependencies:
   chewie: ^1.8.5
   youtube_player_flutter: ^9.0.3
   youtube_explode_dart: ^2.2.4
-  webview_flutter: ^4.10.0
+  flutter_inappwebview: ^6.1.5
 
   # UI & Images
   cached_network_image: ^3.4.1

@@ -132,10 +132,10 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   void _showTrailerPlayer(BuildContext context) {
     if (_trailerUrl == null) return;
 
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.black,
+      barrierDismissible: true,
+      barrierColor: Colors.black87,
       builder: (context) => TrailerPlayer(youtubeUrl: _trailerUrl!),
     );
   }
@@ -750,87 +750,180 @@ class _TrailerPlayerState extends State<TrailerPlayer> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.7,
-      decoration: const BoxDecoration(
+    return Dialog.fullscreen(
+      backgroundColor: Colors.black,
+      child: Container(
         color: Colors.black,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      child: Column(
-        children: [
-          // Drag handle
-          Container(
-            margin: const EdgeInsets.symmetric(vertical: 8),
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.grey[600],
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          // Header
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Trailer',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header with gradient
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    NivioTheme.netflixRed.withOpacity(0.8),
+                    Colors.black,
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-          ),
-          // Video player
-          Expanded(
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(
-                      color: NivioTheme.netflixRed,
-                    ),
-                  )
-                : _error != null
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(
-                              Icons.error_outline,
-                              color: NivioTheme.netflixRed,
-                              size: 64,
-                            ),
-                            const SizedBox(height: 16),
-                            const Text(
-                              'Unable to load trailer',
-                              style: TextStyle(color: Colors.white, fontSize: 18),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              _error!,
-                              style: const TextStyle(color: NivioTheme.netflixGrey),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: const [
+                      Icon(
+                        Icons.play_circle_filled,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                      SizedBox(width: 12),
+                      Text(
+                        'Official Trailer',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
                         ),
-                      )
-                    : _chewieController != null
-                        ? Chewie(controller: _chewieController!)
-                        : const Center(
-                            child: Text(
-                              'Video player not initialized',
-                              style: TextStyle(color: Colors.white),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                    onPressed: () => Navigator.pop(context),
+                    tooltip: 'Close',
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.white.withOpacity(0.1),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Video player with 16:9 aspect ratio
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: _isLoading
+                    ? AspectRatio(
+                        aspectRatio: 16 / 9,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black87,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CircularProgressIndicator(
+                                  color: NivioTheme.netflixRed,
+                                  strokeWidth: 3,
+                                ),
+                                SizedBox(height: 16),
+                                Text(
+                                  'Loading trailer...',
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-          ),
-        ],
+                        ),
+                      )
+                    : _error != null
+                        ? AspectRatio(
+                            aspectRatio: 16 / 9,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.black87,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(20),
+                                      decoration: BoxDecoration(
+                                        color: NivioTheme.netflixRed.withOpacity(0.1),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.error_outline,
+                                        color: NivioTheme.netflixRed,
+                                        size: 48,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 24),
+                                    const Text(
+                                      'Unable to Load Trailer',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 32),
+                                      child: Text(
+                                        _error!,
+                                        style: const TextStyle(
+                                          color: NivioTheme.netflixGrey,
+                                          fontSize: 13,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          )
+                        : _chewieController != null
+                            ? Center(
+                                child: AspectRatio(
+                                  aspectRatio: 16 / 9,
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Chewie(controller: _chewieController!),
+                                  ),
+                                ),
+                              )
+                            : AspectRatio(
+                                aspectRatio: 16 / 9,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.black87,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Center(
+                                    child: Text(
+                                      'Video player not initialized',
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
