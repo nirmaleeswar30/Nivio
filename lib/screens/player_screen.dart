@@ -36,7 +36,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Timer? _progressTimer;
   String _currentProvider = '';
   int _retryCount = 0;
+  int _currentProviderIndex = 0; // Track which provider we're using
   static const int _maxRetries = 3;
+  static const int _maxProviders = 3; // vidsrc.cc, vidsrc.to, vidlink
+  static const List<String> _providerNames = ['vidsrc.cc', 'vidsrc.to', 'vidlink'];
   final FocusNode _focusNode = FocusNode();
 
   @override
@@ -133,8 +136,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _currentProvider = 'Fetching stream...';
       });
 
-  // Fetch stream URL from video source service
-  final braflixService = ref.read(videoServiceProvider);
+      // Fetch stream URL from streaming service
+      final streamingService = ref.read(streamingServiceProvider);
       
       // Use quality from settings (user's preference)
       final settingsQuality = ref.read(videoQualityProvider);
@@ -143,14 +146,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final manualQuality = ref.read(selectedQualityProvider);
       final preferredQuality = manualQuality ?? (settingsQuality == 'auto' ? null : settingsQuality);
 
-      final result = await braflixService.fetchStreamUrl(
+      final result = await streamingService.fetchStreamUrl(
         media: media,
         season: widget.season,
         episode: widget.episode,
         preferredQuality: preferredQuality,
+        providerIndex: _currentProviderIndex, // Use current provider index
       );
 
       if (result == null) {
+        // Try next provider if available
+        if (_currentProviderIndex < _maxProviders - 1) {
+          print('⏭️ Trying next provider...');
+          _currentProviderIndex++;
+          setState(() {
+            _error = 'Provider unavailable, trying next...';
+          });
+          await Future.delayed(const Duration(milliseconds: 500));
+          _initializePlayer(); // Retry with next provider
+          return;
+        }
         throw Exception('Failed to get stream URL from all providers');
       }
 
@@ -291,6 +306,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       setState(() {
         _isLoading = false;
         _retryCount = 0; // Reset retry count on success
+        _currentProviderIndex = 0; // Reset provider index on success
       });
     } catch (e) {
       setState(() {
@@ -298,11 +314,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _isLoading = false;
       });
       
-      // Auto-retry on certain errors
+      // Try next provider first before retrying same provider
+      if (_currentProviderIndex < _maxProviders - 1) {
+        print('❌ Error with provider, trying next: $e');
+        _currentProviderIndex++;
+        setState(() {
+          _error = 'Switching to next provider...';
+        });
+        await Future.delayed(const Duration(milliseconds: 500));
+        _initializePlayer();
+        return;
+      }
+      
+      // All providers failed, try auto-retry on certain errors
       if (_retryCount < _maxRetries && 
           (e.toString().contains('network') || e.toString().contains('timeout'))) {
         await Future.delayed(const Duration(seconds: 2));
         _retryCount++;
+        _currentProviderIndex = 0; // Reset to first provider
         _initializePlayer();
       }
     }
@@ -510,6 +539,65 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   ],
                 ),
                 actions: [
+                  // Switch Server button
+                  PopupMenuButton<int>(
+                    icon: const Icon(Icons.swap_horiz, color: Colors.white),
+                    tooltip: 'Switch Server',
+                    color: const Color(0xFF1F1F1F),
+                    onSelected: (providerIndex) async {
+                      if (providerIndex == _currentProviderIndex) return; // Same provider
+                      
+                      final currentPosition = _videoController?.value.position;
+                      
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Switching to ${_providerNames[providerIndex]}...'),
+                          duration: const Duration(seconds: 2),
+                          backgroundColor: NivioTheme.netflixRed,
+                        ),
+                      );
+                      
+                      setState(() {
+                        _currentProviderIndex = providerIndex;
+                        _isLoading = true;
+                        _error = null;
+                        _retryCount = 0;
+                      });
+                      
+                      _videoController?.dispose();
+                      _chewieController?.dispose();
+                      await _initializePlayer();
+                      
+                      if (currentPosition != null && _videoController != null) {
+                        await _videoController!.seekTo(currentPosition);
+                      }
+                    },
+                    itemBuilder: (context) {
+                      return List.generate(_maxProviders, (index) {
+                        final isSelected = index == _currentProviderIndex;
+                        return PopupMenuItem(
+                          value: index,
+                          child: Row(
+                            children: [
+                              Icon(
+                                isSelected ? Icons.check_circle : Icons.circle_outlined,
+                                color: isSelected ? NivioTheme.netflixRed : Colors.white70,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                _providerNames[index],
+                                style: TextStyle(
+                                  color: isSelected ? NivioTheme.netflixRed : Colors.white,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      });
+                    },
+                  ),
                   // Quality selector
                   if (_streamResult!.availableQualities.length > 1)
                     PopupMenuButton<String>(
@@ -600,7 +688,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           ),
           const SizedBox(height: 32),
           Text(
-            _currentProvider.isNotEmpty ? _currentProvider : 'Loading stream...',
+            _currentProvider.isNotEmpty ? _currentProvider : _providerNames[_currentProviderIndex],
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w500,
@@ -609,7 +697,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            'Fetching from ${_currentProvider.isNotEmpty ? _currentProvider : 'vidsrc.cc'}...',
+            'Trying provider ${_currentProviderIndex + 1}/$_maxProviders...',
             style: const TextStyle(
               fontSize: 14,
               color: Colors.white54,
@@ -681,9 +769,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              // Switch Server button (if more providers available)
+              if (_currentProviderIndex < _maxProviders - 1) ...[
+                ElevatedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _error = null;
+                      _isLoading = true;
+                      _currentProviderIndex++;
+                      _retryCount = 0;
+                    });
+                    _initializePlayer();
+                  },
+                  icon: const Icon(Icons.swap_horiz, size: 20),
+                  label: const Text('SWITCH SERVER'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  ),
+                ),
+                const SizedBox(width: 16),
+              ],
               ElevatedButton.icon(
                 onPressed: () {
                   _retryCount = 0;
+                  _currentProviderIndex = 0; // Reset to first provider
                   _initializePlayer();
                 },
                 icon: const Icon(Icons.refresh, size: 20),

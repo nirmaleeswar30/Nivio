@@ -1,8 +1,10 @@
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 
-class BraflixService {
-  BraflixService();
+/// Service for fetching streaming URLs from various providers
+/// Supports: vidsrc.cc, vidsrc.to, vidlink.pro
+class StreamingService {
+  StreamingService();
 
   /// Base URLs for streaming services (in priority order)
   static const List<Map<String, String>> _providers = [

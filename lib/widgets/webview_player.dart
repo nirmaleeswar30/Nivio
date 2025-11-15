@@ -27,6 +27,16 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
     _initializeWebView();
   }
 
+  @override
+  void didUpdateWidget(WebViewPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // If the stream URL changed, reinitialize the WebView
+    if (oldWidget.streamUrl != widget.streamUrl) {
+      print('🔄 Stream URL changed, reinitializing WebView');
+      _initializeWebView();
+    }
+  }
+
   void _initializeWebView() {
     // Create HTML content with aggressive ad-blocking
     final htmlContent = '''
@@ -361,6 +371,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
 
   @override
   void dispose() {
+    // Note: WebViewController doesn't have a dispose method in current version
     super.dispose();
   }
 }
