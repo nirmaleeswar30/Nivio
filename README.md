@@ -1,6 +1,7 @@
 <div align="center">
 
-# 🎬 Nivio
+<img src="assets/images/nivio-dark.png" alt="Nivio Logo" width="200"/>
+
 
 ### *Your Gateway to Global Entertainment*
 
@@ -33,18 +34,25 @@ A modern, Netflix-inspired streaming platform built with Flutter. Discover movie
 - **Auto-Load Optimization**: Automatically loads more pages when results are sparse
 
 ### 📺 **Seamless Viewing Experience**
-- **Continue Watching**: Pick up exactly where you left off
-- **Progress Tracking**: Automatic playback position sync
-- **Multiple Streaming Providers**: Falls back across vidsrc.cc, vidsrc.to, and vidlink for reliability
-- **Embedded Playback**: Webview-based streaming
-- **Season/Episode Picker**: Easy TV show navigation
+- **Continue Watching**: Pick up exactly where you left off with automatic resume
+- **Progress Tracking**: Automatic playback position sync across devices
+- **Multiple Streaming Providers**: Intelligent fallback across vidsrc.cc, vidsrc.to, and vidlink
+- **Manual Server Switch**: Change streaming provider on-the-fly
+- **Ultra Ad-Blocking**: Aggressive ad and popup blocking for clean playback
+- **16:9 Aspect Ratio**: Consistent cinematic viewing experience
+- **Cross-Platform WebView**: Works on Android, iOS, Windows, and Web
+- **Season/Episode Picker**: Easy TV show navigation with episode grids
+- **Official Trailers**: High-quality YouTube trailer playback in fullscreen modal
 
 ### 🎨 **Beautiful UI/UX**
 - **Netflix-Inspired Design**: Familiar dark theme with red accents
-- **Hero Slider**: Mixed regional and trending content
-- **Custom Branding**: Professional logo integration
+- **Hero Slider**: Mixed regional and trending content with smooth animations
+- **Custom Branding**: Professional logo integration in header and splash
 - **Native Splash Screen**: Branded app launch experience
-- **Adaptive Icons**: Platform-specific app icons
+- **Adaptive Icons**: Platform-specific app icons for all platforms
+- **Smooth Animations**: Hover effects, transitions, and loading states
+- **Responsive Layout**: Optimized for mobile, tablet, and desktop
+- **Fullscreen Trailer Modal**: Cinematic trailer viewing experience
 
 ### ☁️ **Cloud-Powered Features**
 - **Firebase Authentication**: Secure anonymous login
@@ -66,6 +74,8 @@ A modern, Netflix-inspired streaming platform built with Flutter. Discover movie
 
 - Flutter SDK (^3.10.0)
 - Android Studio / Xcode (for mobile development)
+- Visual Studio 2022 (for Windows development) - optional
+- NuGet (for Windows builds) - optional
 - Firebase account
 - TMDB API key ([Get one here](https://www.themoviedb.org/settings/api))
 
@@ -113,6 +123,12 @@ flutter build appbundle --release
 
 # iOS
 flutter build ios --release
+
+# Windows (requires NuGet)
+flutter build windows --release
+
+# Web
+flutter build web --release
 ```
 
 See [BUILD_GUIDE.md](BUILD_GUIDE.md) for detailed instructions.
@@ -161,6 +177,8 @@ See [BUILD_GUIDE.md](BUILD_GUIDE.md) for detailed instructions.
 - Firestore for cloud backup
 - Conflict resolution by timestamp
 - Progress tracked every 5 seconds
+- Auto-resume from last position
+- Automatic media details fetching when navigating from continue watching
 
 ---
 
@@ -173,10 +191,10 @@ See [BUILD_GUIDE.md](BUILD_GUIDE.md) for detailed instructions.
 | **Backend** | Firebase (Auth, Firestore) |
 | **APIs** | TMDB v3, Streaming Providers (vidsrc.cc, vidsrc.to, vidlink) |
 | **Storage** | Hive (local), SharedPreferences |
-| **Video** | video_player, Chewie, youtube_player_flutter |
+| **Video** | video_player, Chewie, youtube_player_flutter, flutter_inappwebview |
 | **Network** | Dio 5.7+, cached_network_image |
 | **Navigation** | GoRouter 14.6+ |
-| **UI Components** | Shimmer, flutter_svg |
+| **UI Components** | Shimmer, flutter_svg, flutter_native_splash |
 
 ---
 
@@ -211,7 +229,9 @@ lib/
     ├── content_row.dart
     ├── continue_watching_row.dart
     ├── featured_content_slider.dart
-    └── search_result_card.dart
+    ├── media_card.dart
+    ├── search_result_card.dart
+    └── webview_player.dart        # Ultra ad-blocked WebView player
 
 assets/
 └── images/
@@ -234,6 +254,11 @@ ios/
 
 ## 🎯 Roadmap
 
+- [x] **Multi-Platform Support**: Android, iOS, Windows, Web
+- [x] **Provider Switching**: Manual and automatic fallback
+- [x] **Ultra Ad-Blocking**: Clean viewing experience
+- [x] **Trailer Playback**: Official trailers with YouTube integration
+- [x] **16:9 Aspect Ratio**: Consistent cinematic experience
 - [ ] **Watchlist Feature**: Save shows for later
 - [ ] **User Profiles**: Multiple profiles per account
 - [ ] **Download Support**: Offline viewing
