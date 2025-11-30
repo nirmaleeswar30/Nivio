@@ -111,8 +111,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 8.0),
               child: IconButton(
-                icon: const Icon(Icons.settings_outlined, color: Colors.white, size: 28),
-                onPressed: () => context.push('/settings'),
+                icon: const Icon(Icons.bookmark_border, color: Colors.white, size: 28),
+                tooltip: 'My List',
+                onPressed: () => context.push('/watchlist'),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 8.0),
+              child: IconButton(
+                icon: const Icon(Icons.account_circle_outlined, color: Colors.white, size: 28),
+                tooltip: 'Profile',
+                onPressed: () => context.push('/profile'),
               ),
             ),
             const SizedBox(width: 8),

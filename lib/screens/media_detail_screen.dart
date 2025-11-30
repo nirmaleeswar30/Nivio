@@ -5,8 +5,10 @@ import 'package:go_router/go_router.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/season_info.dart';
+import 'package:nivio/models/watchlist_item.dart';
 import 'package:nivio/providers/media_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
+import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
@@ -351,23 +353,91 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   }
 
   Widget _buildMovieControls(BuildContext context, SearchResult media) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: () {
-          context.push('/player/${media.id}?season=1&episode=1');
-        },
-        icon: const Icon(Icons.play_arrow),
-        label: const Text('PLAY'),
-        style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 16),
+    final isInWatchlist = ref.watch(isInWatchlistProvider(media.id));
+    
+    return Row(
+      children: [
+        // Play button
+        Expanded(
+          flex: 2,
+          child: ElevatedButton.icon(
+            onPressed: () {
+              context.push('/player/${media.id}?season=1&episode=1');
+            },
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('PLAY'),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+          ),
         ),
-      ),
+        const SizedBox(width: 12),
+        // Watchlist button
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () => _toggleWatchlist(media, isInWatchlist),
+            icon: Icon(
+              isInWatchlist ? Icons.check : Icons.add,
+              size: 20,
+            ),
+            label: Text(isInWatchlist ? 'SAVED' : 'LIST'),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              side: BorderSide(
+                color: isInWatchlist ? NivioTheme.netflixRed : Colors.white,
+                width: 2,
+              ),
+              foregroundColor: isInWatchlist ? NivioTheme.netflixRed : Colors.white,
+            ),
+          ),
+        ),
+      ],
     );
+  }
+
+  Future<void> _toggleWatchlist(SearchResult media, bool isInWatchlist) async {
+    final watchlistService = ref.read(watchlistServiceProvider);
+    
+    if (isInWatchlist) {
+      await watchlistService.removeFromWatchlist(media.id);
+      // Trigger UI refresh
+      ref.read(watchlistRefreshProvider.notifier).refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Removed from watchlist'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } else {
+      final item = WatchlistItem(
+        id: media.id,
+        title: media.title ?? media.name ?? 'Unknown',
+        posterPath: media.posterPath,
+        mediaType: media.mediaType,
+        addedAt: DateTime.now(),
+        voteAverage: media.voteAverage,
+        releaseDate: media.releaseDate ?? media.firstAirDate,
+        overview: media.overview,
+      );
+      await watchlistService.addToWatchlist(item);
+      // Trigger UI refresh
+      ref.read(watchlistRefreshProvider.notifier).refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Added to watchlist'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildTVControls(BuildContext context, SearchResult media) {
     final seriesInfoAsync = ref.watch(seriesInfoProvider(media.id));
+    final isInWatchlist = ref.watch(isInWatchlistProvider(media.id));
 
     return seriesInfoAsync.when(
       data: (seriesInfo) {
@@ -376,6 +446,28 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Watchlist button for TV shows
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _toggleWatchlist(media, isInWatchlist),
+                icon: Icon(
+                  isInWatchlist ? Icons.check : Icons.add,
+                  size: 20,
+                ),
+                label: Text(isInWatchlist ? 'IN MY LIST' : 'ADD TO MY LIST'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  side: BorderSide(
+                    color: isInWatchlist ? NivioTheme.netflixRed : Colors.white,
+                    width: 2,
+                  ),
+                  foregroundColor: isInWatchlist ? NivioTheme.netflixRed : Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            
             // Season selector
             Text(
               'Select Season',

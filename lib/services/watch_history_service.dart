@@ -178,8 +178,9 @@ class WatchHistoryService {
     await _historyBox.clear();
     print('✅ Cleared local watch history');
 
-    // Clear from Firestore cloud if user is logged in
-    if (_userId != null) {
+    // Clear from Firestore cloud if user is logged in (but not anonymous)
+    final user = _auth.currentUser;
+    if (_userId != null && user?.isAnonymous != true) {
       try {
         final snapshot = await _firestore
             .collection('users')
@@ -204,6 +205,15 @@ class WatchHistoryService {
   Future<void> _syncToCloud(WatchHistory history) async {
     if (_userId == null) return;
 
+    // Skip cloud sync for anonymous users
+    final user = _auth.currentUser;
+    if (user?.isAnonymous == true) {
+      print('⚠️ Skipping cloud sync: User is anonymous');
+      return;
+    }
+
+    print('☁️ Syncing watch history to cloud for user: ${user?.email ?? user?.uid}');
+    
     try {
       await _firestore
           .collection('users')
@@ -211,6 +221,7 @@ class WatchHistoryService {
           .collection('watchHistory')
           .doc(history.tmdbId.toString())
           .set(history.toJson(), SetOptions(merge: true));
+      print('✅ Watch history synced to cloud');
     } catch (e) {
       print('❌ Failed to sync to cloud: $e');
       // Will retry on next sync cycle
@@ -220,6 +231,10 @@ class WatchHistoryService {
   /// Background sync from Firestore (pull latest)
   Future<void> _pullFromCloud() async {
     if (_userId == null) return;
+
+    // Skip cloud sync for anonymous users
+    final user = _auth.currentUser;
+    if (user?.isAnonymous == true) return;
 
     try {
       final snapshot = await _firestore

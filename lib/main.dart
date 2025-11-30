@@ -8,7 +8,9 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/firebase_options.dart';
 import 'package:nivio/models/cache_entry.dart';
+import 'package:nivio/models/watchlist_item.dart';
 import 'package:nivio/services/cache_service.dart';
+import 'package:nivio/services/watchlist_service.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/screens/home_screen.dart';
 import 'package:nivio/screens/search_screen.dart';
@@ -16,6 +18,8 @@ import 'package:nivio/screens/media_detail_screen.dart';
 import 'package:nivio/screens/player_screen.dart';
 import 'package:nivio/screens/auth_screen.dart';
 import 'package:nivio/screens/settings_screen.dart';
+import 'package:nivio/screens/watchlist_screen.dart';
+import 'package:nivio/screens/profile_screen.dart';
 
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -53,6 +57,9 @@ void main() async {
 Future<void> _initHive() async {
   await Hive.initFlutter();
   Hive.registerAdapter(CacheEntryAdapter());
+  Hive.registerAdapter(WatchlistItemAdapter());
+  // Initialize watchlist box
+  await WatchlistService.init();
 }
 
 // Auth state notifier for router refresh
@@ -102,6 +109,14 @@ final _router = GoRouter(
     GoRoute(
       path: '/settings',
       builder: (context, state) => const SettingsScreen(),
+    ),
+    GoRoute(
+      path: '/watchlist',
+      builder: (context, state) => const WatchlistScreen(),
+    ),
+    GoRoute(
+      path: '/profile',
+      builder: (context, state) => const ProfileScreen(),
     ),
     GoRoute(
       path: '/media/:id',

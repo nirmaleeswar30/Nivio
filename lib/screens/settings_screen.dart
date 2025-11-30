@@ -65,7 +65,7 @@ class SettingsScreen extends ConsumerWidget {
           _buildSettingsTile(
             icon: Icons.login,
             title: 'Sign In Method',
-            subtitle: 'Anonymous',
+            subtitle: _getSignInMethod(user),
             trailing: null,
           ),
           const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
@@ -254,6 +254,33 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  String _getSignInMethod(User? user) {
+    if (user == null) return 'Not signed in';
+    
+    // Check if user is anonymous
+    if (user.isAnonymous) return 'Guest Mode';
+    
+    // Check provider data for actual sign-in method
+    if (user.providerData.isEmpty) return 'Anonymous';
+    
+    // Get the first provider
+    final provider = user.providerData.first.providerId;
+    switch (provider) {
+      case 'google.com':
+        return 'Google';
+      case 'facebook.com':
+        return 'Facebook';
+      case 'twitter.com':
+        return 'Twitter';
+      case 'apple.com':
+        return 'Apple';
+      case 'password':
+        return 'Email/Password';
+      default:
+        return provider;
+    }
   }
 
   Widget _buildSectionHeader(String title) {
