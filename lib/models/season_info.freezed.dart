@@ -12,8 +12,7 @@ part of 'season_info.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-  'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models',
-);
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 EpisodeData _$EpisodeDataFromJson(Map<String, dynamic> json) {
   return _EpisodeData.fromJson(json);
@@ -35,12 +34,8 @@ mixin _$EpisodeData {
   @JsonKey(name: 'air_date')
   String? get airDate => throw _privateConstructorUsedError;
 
-  /// Serializes this EpisodeData to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of EpisodeData
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $EpisodeDataCopyWith<EpisodeData> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -48,19 +43,17 @@ mixin _$EpisodeData {
 /// @nodoc
 abstract class $EpisodeDataCopyWith<$Res> {
   factory $EpisodeDataCopyWith(
-    EpisodeData value,
-    $Res Function(EpisodeData) then,
-  ) = _$EpisodeDataCopyWithImpl<$Res, EpisodeData>;
+          EpisodeData value, $Res Function(EpisodeData) then) =
+      _$EpisodeDataCopyWithImpl<$Res, EpisodeData>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'episode_number') int episodeNumber,
-    @JsonKey(name: 'name') String? episodeName,
-    String? overview,
-    @JsonKey(name: 'still_path') String? stillPath,
-    @JsonKey(name: 'vote_average') double? voteAverage,
-    @JsonKey(name: 'runtime') int? runtime,
-    @JsonKey(name: 'air_date') String? airDate,
-  });
+  $Res call(
+      {@JsonKey(name: 'episode_number') int episodeNumber,
+      @JsonKey(name: 'name') String? episodeName,
+      String? overview,
+      @JsonKey(name: 'still_path') String? stillPath,
+      @JsonKey(name: 'vote_average') double? voteAverage,
+      @JsonKey(name: 'runtime') int? runtime,
+      @JsonKey(name: 'air_date') String? airDate});
 }
 
 /// @nodoc
@@ -73,8 +66,6 @@ class _$EpisodeDataCopyWithImpl<$Res, $Val extends EpisodeData>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of EpisodeData
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -86,39 +77,36 @@ class _$EpisodeDataCopyWithImpl<$Res, $Val extends EpisodeData>
     Object? runtime = freezed,
     Object? airDate = freezed,
   }) {
-    return _then(
-      _value.copyWith(
-            episodeNumber: null == episodeNumber
-                ? _value.episodeNumber
-                : episodeNumber // ignore: cast_nullable_to_non_nullable
-                      as int,
-            episodeName: freezed == episodeName
-                ? _value.episodeName
-                : episodeName // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            overview: freezed == overview
-                ? _value.overview
-                : overview // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            stillPath: freezed == stillPath
-                ? _value.stillPath
-                : stillPath // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            voteAverage: freezed == voteAverage
-                ? _value.voteAverage
-                : voteAverage // ignore: cast_nullable_to_non_nullable
-                      as double?,
-            runtime: freezed == runtime
-                ? _value.runtime
-                : runtime // ignore: cast_nullable_to_non_nullable
-                      as int?,
-            airDate: freezed == airDate
-                ? _value.airDate
-                : airDate // ignore: cast_nullable_to_non_nullable
-                      as String?,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      episodeNumber: null == episodeNumber
+          ? _value.episodeNumber
+          : episodeNumber // ignore: cast_nullable_to_non_nullable
+              as int,
+      episodeName: freezed == episodeName
+          ? _value.episodeName
+          : episodeName // ignore: cast_nullable_to_non_nullable
+              as String?,
+      overview: freezed == overview
+          ? _value.overview
+          : overview // ignore: cast_nullable_to_non_nullable
+              as String?,
+      stillPath: freezed == stillPath
+          ? _value.stillPath
+          : stillPath // ignore: cast_nullable_to_non_nullable
+              as String?,
+      voteAverage: freezed == voteAverage
+          ? _value.voteAverage
+          : voteAverage // ignore: cast_nullable_to_non_nullable
+              as double?,
+      runtime: freezed == runtime
+          ? _value.runtime
+          : runtime // ignore: cast_nullable_to_non_nullable
+              as int?,
+      airDate: freezed == airDate
+          ? _value.airDate
+          : airDate // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ) as $Val);
   }
 }
 
@@ -126,20 +114,18 @@ class _$EpisodeDataCopyWithImpl<$Res, $Val extends EpisodeData>
 abstract class _$$EpisodeDataImplCopyWith<$Res>
     implements $EpisodeDataCopyWith<$Res> {
   factory _$$EpisodeDataImplCopyWith(
-    _$EpisodeDataImpl value,
-    $Res Function(_$EpisodeDataImpl) then,
-  ) = __$$EpisodeDataImplCopyWithImpl<$Res>;
+          _$EpisodeDataImpl value, $Res Function(_$EpisodeDataImpl) then) =
+      __$$EpisodeDataImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'episode_number') int episodeNumber,
-    @JsonKey(name: 'name') String? episodeName,
-    String? overview,
-    @JsonKey(name: 'still_path') String? stillPath,
-    @JsonKey(name: 'vote_average') double? voteAverage,
-    @JsonKey(name: 'runtime') int? runtime,
-    @JsonKey(name: 'air_date') String? airDate,
-  });
+  $Res call(
+      {@JsonKey(name: 'episode_number') int episodeNumber,
+      @JsonKey(name: 'name') String? episodeName,
+      String? overview,
+      @JsonKey(name: 'still_path') String? stillPath,
+      @JsonKey(name: 'vote_average') double? voteAverage,
+      @JsonKey(name: 'runtime') int? runtime,
+      @JsonKey(name: 'air_date') String? airDate});
 }
 
 /// @nodoc
@@ -147,12 +133,9 @@ class __$$EpisodeDataImplCopyWithImpl<$Res>
     extends _$EpisodeDataCopyWithImpl<$Res, _$EpisodeDataImpl>
     implements _$$EpisodeDataImplCopyWith<$Res> {
   __$$EpisodeDataImplCopyWithImpl(
-    _$EpisodeDataImpl _value,
-    $Res Function(_$EpisodeDataImpl) _then,
-  ) : super(_value, _then);
+      _$EpisodeDataImpl _value, $Res Function(_$EpisodeDataImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of EpisodeData
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -164,53 +147,50 @@ class __$$EpisodeDataImplCopyWithImpl<$Res>
     Object? runtime = freezed,
     Object? airDate = freezed,
   }) {
-    return _then(
-      _$EpisodeDataImpl(
-        episodeNumber: null == episodeNumber
-            ? _value.episodeNumber
-            : episodeNumber // ignore: cast_nullable_to_non_nullable
-                  as int,
-        episodeName: freezed == episodeName
-            ? _value.episodeName
-            : episodeName // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        overview: freezed == overview
-            ? _value.overview
-            : overview // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        stillPath: freezed == stillPath
-            ? _value.stillPath
-            : stillPath // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        voteAverage: freezed == voteAverage
-            ? _value.voteAverage
-            : voteAverage // ignore: cast_nullable_to_non_nullable
-                  as double?,
-        runtime: freezed == runtime
-            ? _value.runtime
-            : runtime // ignore: cast_nullable_to_non_nullable
-                  as int?,
-        airDate: freezed == airDate
-            ? _value.airDate
-            : airDate // ignore: cast_nullable_to_non_nullable
-                  as String?,
-      ),
-    );
+    return _then(_$EpisodeDataImpl(
+      episodeNumber: null == episodeNumber
+          ? _value.episodeNumber
+          : episodeNumber // ignore: cast_nullable_to_non_nullable
+              as int,
+      episodeName: freezed == episodeName
+          ? _value.episodeName
+          : episodeName // ignore: cast_nullable_to_non_nullable
+              as String?,
+      overview: freezed == overview
+          ? _value.overview
+          : overview // ignore: cast_nullable_to_non_nullable
+              as String?,
+      stillPath: freezed == stillPath
+          ? _value.stillPath
+          : stillPath // ignore: cast_nullable_to_non_nullable
+              as String?,
+      voteAverage: freezed == voteAverage
+          ? _value.voteAverage
+          : voteAverage // ignore: cast_nullable_to_non_nullable
+              as double?,
+      runtime: freezed == runtime
+          ? _value.runtime
+          : runtime // ignore: cast_nullable_to_non_nullable
+              as int?,
+      airDate: freezed == airDate
+          ? _value.airDate
+          : airDate // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$EpisodeDataImpl implements _EpisodeData {
-  const _$EpisodeDataImpl({
-    @JsonKey(name: 'episode_number') required this.episodeNumber,
-    @JsonKey(name: 'name') this.episodeName,
-    this.overview,
-    @JsonKey(name: 'still_path') this.stillPath,
-    @JsonKey(name: 'vote_average') this.voteAverage,
-    @JsonKey(name: 'runtime') this.runtime,
-    @JsonKey(name: 'air_date') this.airDate,
-  });
+  const _$EpisodeDataImpl(
+      {@JsonKey(name: 'episode_number') required this.episodeNumber,
+      @JsonKey(name: 'name') this.episodeName,
+      this.overview,
+      @JsonKey(name: 'still_path') this.stillPath,
+      @JsonKey(name: 'vote_average') this.voteAverage,
+      @JsonKey(name: 'runtime') this.runtime,
+      @JsonKey(name: 'air_date') this.airDate});
 
   factory _$EpisodeDataImpl.fromJson(Map<String, dynamic> json) =>
       _$$EpisodeDataImplFromJson(json);
@@ -260,22 +240,12 @@ class _$EpisodeDataImpl implements _EpisodeData {
             (identical(other.airDate, airDate) || other.airDate == airDate));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(
-    runtimeType,
-    episodeNumber,
-    episodeName,
-    overview,
-    stillPath,
-    voteAverage,
-    runtime,
-    airDate,
-  );
+  int get hashCode => Object.hash(runtimeType, episodeNumber, episodeName,
+      overview, stillPath, voteAverage, runtime, airDate);
 
-  /// Create a copy of EpisodeData
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$EpisodeDataImplCopyWith<_$EpisodeDataImpl> get copyWith =>
@@ -283,20 +253,21 @@ class _$EpisodeDataImpl implements _EpisodeData {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$EpisodeDataImplToJson(this);
+    return _$$EpisodeDataImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _EpisodeData implements EpisodeData {
-  const factory _EpisodeData({
-    @JsonKey(name: 'episode_number') required final int episodeNumber,
-    @JsonKey(name: 'name') final String? episodeName,
-    final String? overview,
-    @JsonKey(name: 'still_path') final String? stillPath,
-    @JsonKey(name: 'vote_average') final double? voteAverage,
-    @JsonKey(name: 'runtime') final int? runtime,
-    @JsonKey(name: 'air_date') final String? airDate,
-  }) = _$EpisodeDataImpl;
+  const factory _EpisodeData(
+      {@JsonKey(name: 'episode_number') required final int episodeNumber,
+      @JsonKey(name: 'name') final String? episodeName,
+      final String? overview,
+      @JsonKey(name: 'still_path') final String? stillPath,
+      @JsonKey(name: 'vote_average') final double? voteAverage,
+      @JsonKey(name: 'runtime') final int? runtime,
+      @JsonKey(name: 'air_date') final String? airDate}) = _$EpisodeDataImpl;
 
   factory _EpisodeData.fromJson(Map<String, dynamic> json) =
       _$EpisodeDataImpl.fromJson;
@@ -321,11 +292,8 @@ abstract class _EpisodeData implements EpisodeData {
   @override
   @JsonKey(name: 'air_date')
   String? get airDate;
-
-  /// Create a copy of EpisodeData
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$EpisodeDataImplCopyWith<_$EpisodeDataImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -338,12 +306,8 @@ SeasonData _$SeasonDataFromJson(Map<String, dynamic> json) {
 mixin _$SeasonData {
   List<EpisodeData> get episodes => throw _privateConstructorUsedError;
 
-  /// Serializes this SeasonData to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of SeasonData
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $SeasonDataCopyWith<SeasonData> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -351,9 +315,8 @@ mixin _$SeasonData {
 /// @nodoc
 abstract class $SeasonDataCopyWith<$Res> {
   factory $SeasonDataCopyWith(
-    SeasonData value,
-    $Res Function(SeasonData) then,
-  ) = _$SeasonDataCopyWithImpl<$Res, SeasonData>;
+          SeasonData value, $Res Function(SeasonData) then) =
+      _$SeasonDataCopyWithImpl<$Res, SeasonData>;
   @useResult
   $Res call({List<EpisodeData> episodes});
 }
@@ -368,20 +331,17 @@ class _$SeasonDataCopyWithImpl<$Res, $Val extends SeasonData>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of SeasonData
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? episodes = null}) {
-    return _then(
-      _value.copyWith(
-            episodes: null == episodes
-                ? _value.episodes
-                : episodes // ignore: cast_nullable_to_non_nullable
-                      as List<EpisodeData>,
-          )
-          as $Val,
-    );
+  $Res call({
+    Object? episodes = null,
+  }) {
+    return _then(_value.copyWith(
+      episodes: null == episodes
+          ? _value.episodes
+          : episodes // ignore: cast_nullable_to_non_nullable
+              as List<EpisodeData>,
+    ) as $Val);
   }
 }
 
@@ -389,9 +349,8 @@ class _$SeasonDataCopyWithImpl<$Res, $Val extends SeasonData>
 abstract class _$$SeasonDataImplCopyWith<$Res>
     implements $SeasonDataCopyWith<$Res> {
   factory _$$SeasonDataImplCopyWith(
-    _$SeasonDataImpl value,
-    $Res Function(_$SeasonDataImpl) then,
-  ) = __$$SeasonDataImplCopyWithImpl<$Res>;
+          _$SeasonDataImpl value, $Res Function(_$SeasonDataImpl) then) =
+      __$$SeasonDataImplCopyWithImpl<$Res>;
   @override
   @useResult
   $Res call({List<EpisodeData> episodes});
@@ -402,23 +361,20 @@ class __$$SeasonDataImplCopyWithImpl<$Res>
     extends _$SeasonDataCopyWithImpl<$Res, _$SeasonDataImpl>
     implements _$$SeasonDataImplCopyWith<$Res> {
   __$$SeasonDataImplCopyWithImpl(
-    _$SeasonDataImpl _value,
-    $Res Function(_$SeasonDataImpl) _then,
-  ) : super(_value, _then);
+      _$SeasonDataImpl _value, $Res Function(_$SeasonDataImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of SeasonData
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? episodes = null}) {
-    return _then(
-      _$SeasonDataImpl(
-        episodes: null == episodes
-            ? _value._episodes
-            : episodes // ignore: cast_nullable_to_non_nullable
-                  as List<EpisodeData>,
-      ),
-    );
+  $Res call({
+    Object? episodes = null,
+  }) {
+    return _then(_$SeasonDataImpl(
+      episodes: null == episodes
+          ? _value._episodes
+          : episodes // ignore: cast_nullable_to_non_nullable
+              as List<EpisodeData>,
+    ));
   }
 }
 
@@ -426,7 +382,7 @@ class __$$SeasonDataImplCopyWithImpl<$Res>
 @JsonSerializable()
 class _$SeasonDataImpl implements _SeasonData {
   const _$SeasonDataImpl({required final List<EpisodeData> episodes})
-    : _episodes = episodes;
+      : _episodes = episodes;
 
   factory _$SeasonDataImpl.fromJson(Map<String, dynamic> json) =>
       _$$SeasonDataImplFromJson(json);
@@ -452,14 +408,12 @@ class _$SeasonDataImpl implements _SeasonData {
             const DeepCollectionEquality().equals(other._episodes, _episodes));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode =>
       Object.hash(runtimeType, const DeepCollectionEquality().hash(_episodes));
 
-  /// Create a copy of SeasonData
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$SeasonDataImplCopyWith<_$SeasonDataImpl> get copyWith =>
@@ -467,7 +421,9 @@ class _$SeasonDataImpl implements _SeasonData {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$SeasonDataImplToJson(this);
+    return _$$SeasonDataImplToJson(
+      this,
+    );
   }
 }
 
@@ -480,11 +436,8 @@ abstract class _SeasonData implements SeasonData {
 
   @override
   List<EpisodeData> get episodes;
-
-  /// Create a copy of SeasonData
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$SeasonDataImplCopyWith<_$SeasonDataImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -506,12 +459,8 @@ mixin _$SeasonInfo {
   @JsonKey(name: 'poster_path')
   String? get posterPath => throw _privateConstructorUsedError;
 
-  /// Serializes this SeasonInfo to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of SeasonInfo
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $SeasonInfoCopyWith<SeasonInfo> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -519,18 +468,16 @@ mixin _$SeasonInfo {
 /// @nodoc
 abstract class $SeasonInfoCopyWith<$Res> {
   factory $SeasonInfoCopyWith(
-    SeasonInfo value,
-    $Res Function(SeasonInfo) then,
-  ) = _$SeasonInfoCopyWithImpl<$Res, SeasonInfo>;
+          SeasonInfo value, $Res Function(SeasonInfo) then) =
+      _$SeasonInfoCopyWithImpl<$Res, SeasonInfo>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'episode_count') int episodeCount,
-    int id,
-    String name,
-    @JsonKey(name: 'season_number') int seasonNumber,
-    @JsonKey(name: 'air_date') String? airDate,
-    @JsonKey(name: 'poster_path') String? posterPath,
-  });
+  $Res call(
+      {@JsonKey(name: 'episode_count') int episodeCount,
+      int id,
+      String name,
+      @JsonKey(name: 'season_number') int seasonNumber,
+      @JsonKey(name: 'air_date') String? airDate,
+      @JsonKey(name: 'poster_path') String? posterPath});
 }
 
 /// @nodoc
@@ -543,8 +490,6 @@ class _$SeasonInfoCopyWithImpl<$Res, $Val extends SeasonInfo>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of SeasonInfo
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -555,35 +500,32 @@ class _$SeasonInfoCopyWithImpl<$Res, $Val extends SeasonInfo>
     Object? airDate = freezed,
     Object? posterPath = freezed,
   }) {
-    return _then(
-      _value.copyWith(
-            episodeCount: null == episodeCount
-                ? _value.episodeCount
-                : episodeCount // ignore: cast_nullable_to_non_nullable
-                      as int,
-            id: null == id
-                ? _value.id
-                : id // ignore: cast_nullable_to_non_nullable
-                      as int,
-            name: null == name
-                ? _value.name
-                : name // ignore: cast_nullable_to_non_nullable
-                      as String,
-            seasonNumber: null == seasonNumber
-                ? _value.seasonNumber
-                : seasonNumber // ignore: cast_nullable_to_non_nullable
-                      as int,
-            airDate: freezed == airDate
-                ? _value.airDate
-                : airDate // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            posterPath: freezed == posterPath
-                ? _value.posterPath
-                : posterPath // ignore: cast_nullable_to_non_nullable
-                      as String?,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      episodeCount: null == episodeCount
+          ? _value.episodeCount
+          : episodeCount // ignore: cast_nullable_to_non_nullable
+              as int,
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as int,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      seasonNumber: null == seasonNumber
+          ? _value.seasonNumber
+          : seasonNumber // ignore: cast_nullable_to_non_nullable
+              as int,
+      airDate: freezed == airDate
+          ? _value.airDate
+          : airDate // ignore: cast_nullable_to_non_nullable
+              as String?,
+      posterPath: freezed == posterPath
+          ? _value.posterPath
+          : posterPath // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ) as $Val);
   }
 }
 
@@ -591,19 +533,17 @@ class _$SeasonInfoCopyWithImpl<$Res, $Val extends SeasonInfo>
 abstract class _$$SeasonInfoImplCopyWith<$Res>
     implements $SeasonInfoCopyWith<$Res> {
   factory _$$SeasonInfoImplCopyWith(
-    _$SeasonInfoImpl value,
-    $Res Function(_$SeasonInfoImpl) then,
-  ) = __$$SeasonInfoImplCopyWithImpl<$Res>;
+          _$SeasonInfoImpl value, $Res Function(_$SeasonInfoImpl) then) =
+      __$$SeasonInfoImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'episode_count') int episodeCount,
-    int id,
-    String name,
-    @JsonKey(name: 'season_number') int seasonNumber,
-    @JsonKey(name: 'air_date') String? airDate,
-    @JsonKey(name: 'poster_path') String? posterPath,
-  });
+  $Res call(
+      {@JsonKey(name: 'episode_count') int episodeCount,
+      int id,
+      String name,
+      @JsonKey(name: 'season_number') int seasonNumber,
+      @JsonKey(name: 'air_date') String? airDate,
+      @JsonKey(name: 'poster_path') String? posterPath});
 }
 
 /// @nodoc
@@ -611,12 +551,9 @@ class __$$SeasonInfoImplCopyWithImpl<$Res>
     extends _$SeasonInfoCopyWithImpl<$Res, _$SeasonInfoImpl>
     implements _$$SeasonInfoImplCopyWith<$Res> {
   __$$SeasonInfoImplCopyWithImpl(
-    _$SeasonInfoImpl _value,
-    $Res Function(_$SeasonInfoImpl) _then,
-  ) : super(_value, _then);
+      _$SeasonInfoImpl _value, $Res Function(_$SeasonInfoImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of SeasonInfo
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -627,48 +564,45 @@ class __$$SeasonInfoImplCopyWithImpl<$Res>
     Object? airDate = freezed,
     Object? posterPath = freezed,
   }) {
-    return _then(
-      _$SeasonInfoImpl(
-        episodeCount: null == episodeCount
-            ? _value.episodeCount
-            : episodeCount // ignore: cast_nullable_to_non_nullable
-                  as int,
-        id: null == id
-            ? _value.id
-            : id // ignore: cast_nullable_to_non_nullable
-                  as int,
-        name: null == name
-            ? _value.name
-            : name // ignore: cast_nullable_to_non_nullable
-                  as String,
-        seasonNumber: null == seasonNumber
-            ? _value.seasonNumber
-            : seasonNumber // ignore: cast_nullable_to_non_nullable
-                  as int,
-        airDate: freezed == airDate
-            ? _value.airDate
-            : airDate // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        posterPath: freezed == posterPath
-            ? _value.posterPath
-            : posterPath // ignore: cast_nullable_to_non_nullable
-                  as String?,
-      ),
-    );
+    return _then(_$SeasonInfoImpl(
+      episodeCount: null == episodeCount
+          ? _value.episodeCount
+          : episodeCount // ignore: cast_nullable_to_non_nullable
+              as int,
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as int,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      seasonNumber: null == seasonNumber
+          ? _value.seasonNumber
+          : seasonNumber // ignore: cast_nullable_to_non_nullable
+              as int,
+      airDate: freezed == airDate
+          ? _value.airDate
+          : airDate // ignore: cast_nullable_to_non_nullable
+              as String?,
+      posterPath: freezed == posterPath
+          ? _value.posterPath
+          : posterPath // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$SeasonInfoImpl implements _SeasonInfo {
-  const _$SeasonInfoImpl({
-    @JsonKey(name: 'episode_count') required this.episodeCount,
-    required this.id,
-    required this.name,
-    @JsonKey(name: 'season_number') required this.seasonNumber,
-    @JsonKey(name: 'air_date') this.airDate,
-    @JsonKey(name: 'poster_path') this.posterPath,
-  });
+  const _$SeasonInfoImpl(
+      {@JsonKey(name: 'episode_count') required this.episodeCount,
+      required this.id,
+      required this.name,
+      @JsonKey(name: 'season_number') required this.seasonNumber,
+      @JsonKey(name: 'air_date') this.airDate,
+      @JsonKey(name: 'poster_path') this.posterPath});
 
   factory _$SeasonInfoImpl.fromJson(Map<String, dynamic> json) =>
       _$$SeasonInfoImplFromJson(json);
@@ -711,21 +645,12 @@ class _$SeasonInfoImpl implements _SeasonInfo {
                 other.posterPath == posterPath));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    episodeCount,
-    id,
-    name,
-    seasonNumber,
-    airDate,
-    posterPath,
-  );
+      runtimeType, episodeCount, id, name, seasonNumber, airDate, posterPath);
 
-  /// Create a copy of SeasonInfo
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$SeasonInfoImplCopyWith<_$SeasonInfoImpl> get copyWith =>
@@ -733,19 +658,21 @@ class _$SeasonInfoImpl implements _SeasonInfo {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$SeasonInfoImplToJson(this);
+    return _$$SeasonInfoImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _SeasonInfo implements SeasonInfo {
-  const factory _SeasonInfo({
-    @JsonKey(name: 'episode_count') required final int episodeCount,
-    required final int id,
-    required final String name,
-    @JsonKey(name: 'season_number') required final int seasonNumber,
-    @JsonKey(name: 'air_date') final String? airDate,
-    @JsonKey(name: 'poster_path') final String? posterPath,
-  }) = _$SeasonInfoImpl;
+  const factory _SeasonInfo(
+          {@JsonKey(name: 'episode_count') required final int episodeCount,
+          required final int id,
+          required final String name,
+          @JsonKey(name: 'season_number') required final int seasonNumber,
+          @JsonKey(name: 'air_date') final String? airDate,
+          @JsonKey(name: 'poster_path') final String? posterPath}) =
+      _$SeasonInfoImpl;
 
   factory _SeasonInfo.fromJson(Map<String, dynamic> json) =
       _$SeasonInfoImpl.fromJson;
@@ -766,11 +693,8 @@ abstract class _SeasonInfo implements SeasonInfo {
   @override
   @JsonKey(name: 'poster_path')
   String? get posterPath;
-
-  /// Create a copy of SeasonInfo
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$SeasonInfoImplCopyWith<_$SeasonInfoImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -785,12 +709,8 @@ mixin _$SeriesInfo {
   int get numberOfSeasons => throw _privateConstructorUsedError;
   List<SeasonInfo> get seasons => throw _privateConstructorUsedError;
 
-  /// Serializes this SeriesInfo to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of SeriesInfo
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $SeriesInfoCopyWith<SeriesInfo> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -798,14 +718,12 @@ mixin _$SeriesInfo {
 /// @nodoc
 abstract class $SeriesInfoCopyWith<$Res> {
   factory $SeriesInfoCopyWith(
-    SeriesInfo value,
-    $Res Function(SeriesInfo) then,
-  ) = _$SeriesInfoCopyWithImpl<$Res, SeriesInfo>;
+          SeriesInfo value, $Res Function(SeriesInfo) then) =
+      _$SeriesInfoCopyWithImpl<$Res, SeriesInfo>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'number_of_seasons') int numberOfSeasons,
-    List<SeasonInfo> seasons,
-  });
+  $Res call(
+      {@JsonKey(name: 'number_of_seasons') int numberOfSeasons,
+      List<SeasonInfo> seasons});
 }
 
 /// @nodoc
@@ -818,24 +736,22 @@ class _$SeriesInfoCopyWithImpl<$Res, $Val extends SeriesInfo>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of SeriesInfo
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? numberOfSeasons = null, Object? seasons = null}) {
-    return _then(
-      _value.copyWith(
-            numberOfSeasons: null == numberOfSeasons
-                ? _value.numberOfSeasons
-                : numberOfSeasons // ignore: cast_nullable_to_non_nullable
-                      as int,
-            seasons: null == seasons
-                ? _value.seasons
-                : seasons // ignore: cast_nullable_to_non_nullable
-                      as List<SeasonInfo>,
-          )
-          as $Val,
-    );
+  $Res call({
+    Object? numberOfSeasons = null,
+    Object? seasons = null,
+  }) {
+    return _then(_value.copyWith(
+      numberOfSeasons: null == numberOfSeasons
+          ? _value.numberOfSeasons
+          : numberOfSeasons // ignore: cast_nullable_to_non_nullable
+              as int,
+      seasons: null == seasons
+          ? _value.seasons
+          : seasons // ignore: cast_nullable_to_non_nullable
+              as List<SeasonInfo>,
+    ) as $Val);
   }
 }
 
@@ -843,15 +759,13 @@ class _$SeriesInfoCopyWithImpl<$Res, $Val extends SeriesInfo>
 abstract class _$$SeriesInfoImplCopyWith<$Res>
     implements $SeriesInfoCopyWith<$Res> {
   factory _$$SeriesInfoImplCopyWith(
-    _$SeriesInfoImpl value,
-    $Res Function(_$SeriesInfoImpl) then,
-  ) = __$$SeriesInfoImplCopyWithImpl<$Res>;
+          _$SeriesInfoImpl value, $Res Function(_$SeriesInfoImpl) then) =
+      __$$SeriesInfoImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'number_of_seasons') int numberOfSeasons,
-    List<SeasonInfo> seasons,
-  });
+  $Res call(
+      {@JsonKey(name: 'number_of_seasons') int numberOfSeasons,
+      List<SeasonInfo> seasons});
 }
 
 /// @nodoc
@@ -859,37 +773,35 @@ class __$$SeriesInfoImplCopyWithImpl<$Res>
     extends _$SeriesInfoCopyWithImpl<$Res, _$SeriesInfoImpl>
     implements _$$SeriesInfoImplCopyWith<$Res> {
   __$$SeriesInfoImplCopyWithImpl(
-    _$SeriesInfoImpl _value,
-    $Res Function(_$SeriesInfoImpl) _then,
-  ) : super(_value, _then);
+      _$SeriesInfoImpl _value, $Res Function(_$SeriesInfoImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of SeriesInfo
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? numberOfSeasons = null, Object? seasons = null}) {
-    return _then(
-      _$SeriesInfoImpl(
-        numberOfSeasons: null == numberOfSeasons
-            ? _value.numberOfSeasons
-            : numberOfSeasons // ignore: cast_nullable_to_non_nullable
-                  as int,
-        seasons: null == seasons
-            ? _value._seasons
-            : seasons // ignore: cast_nullable_to_non_nullable
-                  as List<SeasonInfo>,
-      ),
-    );
+  $Res call({
+    Object? numberOfSeasons = null,
+    Object? seasons = null,
+  }) {
+    return _then(_$SeriesInfoImpl(
+      numberOfSeasons: null == numberOfSeasons
+          ? _value.numberOfSeasons
+          : numberOfSeasons // ignore: cast_nullable_to_non_nullable
+              as int,
+      seasons: null == seasons
+          ? _value._seasons
+          : seasons // ignore: cast_nullable_to_non_nullable
+              as List<SeasonInfo>,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$SeriesInfoImpl implements _SeriesInfo {
-  const _$SeriesInfoImpl({
-    @JsonKey(name: 'number_of_seasons') required this.numberOfSeasons,
-    required final List<SeasonInfo> seasons,
-  }) : _seasons = seasons;
+  const _$SeriesInfoImpl(
+      {@JsonKey(name: 'number_of_seasons') required this.numberOfSeasons,
+      required final List<SeasonInfo> seasons})
+      : _seasons = seasons;
 
   factory _$SeriesInfoImpl.fromJson(Map<String, dynamic> json) =>
       _$$SeriesInfoImplFromJson(json);
@@ -920,17 +832,12 @@ class _$SeriesInfoImpl implements _SeriesInfo {
             const DeepCollectionEquality().equals(other._seasons, _seasons));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(
-    runtimeType,
-    numberOfSeasons,
-    const DeepCollectionEquality().hash(_seasons),
-  );
+  int get hashCode => Object.hash(runtimeType, numberOfSeasons,
+      const DeepCollectionEquality().hash(_seasons));
 
-  /// Create a copy of SeriesInfo
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$SeriesInfoImplCopyWith<_$SeriesInfoImpl> get copyWith =>
@@ -938,15 +845,16 @@ class _$SeriesInfoImpl implements _SeriesInfo {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$SeriesInfoImplToJson(this);
+    return _$$SeriesInfoImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _SeriesInfo implements SeriesInfo {
-  const factory _SeriesInfo({
-    @JsonKey(name: 'number_of_seasons') required final int numberOfSeasons,
-    required final List<SeasonInfo> seasons,
-  }) = _$SeriesInfoImpl;
+  const factory _SeriesInfo(
+      {@JsonKey(name: 'number_of_seasons') required final int numberOfSeasons,
+      required final List<SeasonInfo> seasons}) = _$SeriesInfoImpl;
 
   factory _SeriesInfo.fromJson(Map<String, dynamic> json) =
       _$SeriesInfoImpl.fromJson;
@@ -956,11 +864,8 @@ abstract class _SeriesInfo implements SeriesInfo {
   int get numberOfSeasons;
   @override
   List<SeasonInfo> get seasons;
-
-  /// Create a copy of SeriesInfo
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$SeriesInfoImplCopyWith<_$SeriesInfoImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

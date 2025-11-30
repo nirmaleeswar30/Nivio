@@ -4,8 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/firebase_options.dart';
+import 'package:nivio/models/cache_entry.dart';
+import 'package:nivio/services/cache_service.dart';
+import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/screens/home_screen.dart';
 import 'package:nivio/screens/search_screen.dart';
 import 'package:nivio/screens/media_detail_screen.dart';
@@ -19,14 +23,26 @@ void main() async {
   // Preserve splash screen while initializing
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
   
-  // Initialize Firebase with generated options
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  // Parallelize initialization for faster startup
+  await Future.wait([
+    // Initialize Firebase
+    Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    ),
+    // Initialize Hive in parallel
+    _initHive(),
+  ]);
+  
+  // Initialize cache service
+  final cacheService = CacheService();
+  await cacheService.init();
 
   runApp(
-    const ProviderScope(
-      child: NivioApp(),
+    ProviderScope(
+      overrides: [
+        cacheServiceProvider.overrideWithValue(cacheService),
+      ],
+      child: const NivioApp(),
     ),
   );
   
@@ -34,9 +50,25 @@ void main() async {
   FlutterNativeSplash.remove();
 }
 
+Future<void> _initHive() async {
+  await Hive.initFlutter();
+  Hive.registerAdapter(CacheEntryAdapter());
+}
+
+// Auth state notifier for router refresh
+class _AuthStateNotifier extends ChangeNotifier {
+  _AuthStateNotifier() {
+    FirebaseAuth.instance.authStateChanges().listen((_) {
+      notifyListeners();
+    });
+  }
+}
+
 // Router configuration
 final _router = GoRouter(
   initialLocation: '/',
+  // Optimize: Use refreshListenable for auth state instead of checking on every navigation
+  refreshListenable: _AuthStateNotifier(),
   redirect: (context, state) {
     final user = FirebaseAuth.instance.currentUser;
     final isAuthRoute = state.matchedLocation == '/auth';

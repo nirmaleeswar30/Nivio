@@ -43,6 +43,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   static const int _maxProviders = 3; // vidsrc.cc, vidsrc.to, vidlink
   static const List<String> _providerNames = ['vidsrc.cc', 'vidsrc.to', 'vidlink'];
   final FocusNode _focusNode = FocusNode();
+  bool _showNextEpisodeButton = false;
+  Timer? _nextEpisodeTimer;
 
   @override
   void initState() {
@@ -177,6 +179,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       // If user manually selected a quality in player, use that. Otherwise use settings.
       final manualQuality = ref.read(selectedQualityProvider);
       final preferredQuality = manualQuality ?? (settingsQuality == 'auto' ? null : settingsQuality);
+      
+      // Get anime sub/dub preference
+      final subDubPref = ref.read(animeSubDubProvider);
 
       final result = await streamingService.fetchStreamUrl(
         media: media,
@@ -184,6 +189,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         episode: widget.episode,
         preferredQuality: preferredQuality,
         providerIndex: _currentProviderIndex, // Use current provider index
+        subDubPreference: subDubPref, // Pass anime preference
       );
 
       if (result == null) {
@@ -209,15 +215,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           result.provider == 'vidsrc.to' || 
           result.provider == 'vidlink') {
         print('✅ Using WebView for ${result.provider} embed');
-        
-        // Just add to continue watching - no progress tracking for WebView
-        _markAsWatchedSimple();
+        print('📺 VidSrc will send real-time player events via postMessage');
         
         setState(() {
           _isLoading = false;
           _retryCount = 0;
         });
-        return; // WebView will be rendered in build method
+        return; // WebView will be rendered in build method with event handler
       }
 
       // For direct video URLs, use video_player + chewie
@@ -370,16 +374,39 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _onVideoPlayerStateChanged() {
-    if (_videoController == null) return;
+    if (_videoController == null || !_videoController!.value.isInitialized) return;
     
     // Handle buffering state
     if (_videoController!.value.isBuffering) {
       // Could show buffering indicator here
     }
     
+    final position = _videoController!.value.position;
+    final duration = _videoController!.value.duration;
+    
+    // Show next episode button at 95% completion (Netflix style)
+    if (duration.inSeconds > 0) {
+      final progress = position.inSeconds / duration.inSeconds;
+      if (progress >= 0.95 && !_showNextEpisodeButton && _hasNextEpisode()) {
+        setState(() {
+          _showNextEpisodeButton = true;
+        });
+      }
+    }
+    
     // Auto-save progress when video completes
-    if (_videoController!.value.position >= _videoController!.value.duration - const Duration(seconds: 30)) {
+    if (position >= duration - const Duration(seconds: 30)) {
       _markAsCompleted();
+      // Auto-play next episode immediately on completion
+      if (_hasNextEpisode() && !_showNextEpisodeButton) {
+        print('⏭️ Auto-playing next episode...');
+        setState(() {
+          _showNextEpisodeButton = true; // Prevent multiple triggers
+        });
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) _playNextEpisode();
+        });
+      }
     }
   }
 
@@ -402,15 +429,83 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  /// Simple mark as watched for WebView players (no progress tracking)
-  Future<void> _markAsWatchedSimple() async {
+  /// Handle VidSrc player events (play, pause, time, complete)
+  void _handlePlayerEvent(String event, double currentTime, double duration) {
+    print('📺 VidSrc Event: $event | ${currentTime.toInt()}s / ${duration.toInt()}s');
+    
+    final media = ref.read(selectedMediaProvider);
+    if (media == null) return;
+    
+    switch (event) {
+      case 'play':
+        print('▶️ Video started playing');
+        break;
+        
+      case 'pause':
+        print('⏸️ Video paused');
+        break;
+        
+      case 'time':
+        // Update progress every ~5 seconds (VidSrc sends this automatically)
+        _saveWebViewProgress(currentTime, duration);
+        
+        // Show next episode button at 95% completion (Netflix style)
+        final progress = currentTime / duration;
+        if (progress >= 0.95 && !_showNextEpisodeButton && _hasNextEpisode()) {
+          setState(() {
+            _showNextEpisodeButton = true;
+          });
+        }
+        break;
+        
+      case 'complete':
+        print('✅ Video completed');
+        _markWebViewAsCompleted(duration);
+        // Auto-play next episode immediately on completion
+        if (_hasNextEpisode()) {
+          print('⏭️ Auto-playing next episode...');
+          Future.delayed(const Duration(seconds: 2), () {
+            if (mounted) _playNextEpisode();
+          });
+        }
+        break;
+    }
+  }
+  
+  /// Check if there's a next episode available
+  bool _hasNextEpisode() {
+    final media = ref.read(selectedMediaProvider);
+    if (media == null || media.mediaType != 'tv') return false;
+    
+    // For now, always return true for TV shows
+    // TODO: Check actual episode count from TMDB data
+    return true;
+  }
+  
+  /// Navigate to next episode
+  void _playNextEpisode() {
+    final media = ref.read(selectedMediaProvider);
+    if (media == null || media.mediaType != 'tv') return;
+    
+    // Navigate to next episode
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) => PlayerScreen(
+          mediaId: widget.mediaId,
+          season: widget.season,
+          episode: widget.episode + 1, // Next episode
+          mediaType: media.mediaType,
+        ),
+      ),
+    );
+  }
+  
+  /// Save progress from WebView player events
+  Future<void> _saveWebViewProgress(double currentTime, double duration) async {
     final media = ref.read(selectedMediaProvider);
     if (media == null) return;
 
     final historyService = ref.read(watchHistoryServiceProvider);
-    await historyService.init();
-    
-    // Add to continue watching with minimal progress (1% to show it was started)
     await historyService.updateProgress(
       tmdbId: widget.mediaId,
       mediaType: media.mediaType,
@@ -420,11 +515,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       currentEpisode: widget.episode,
       totalSeasons: 1,
       totalEpisodes: null,
-      lastPosition: const Duration(seconds: 1), // 1 second progress
-      totalDuration: const Duration(seconds: 100), // 1% progress
+      lastPosition: Duration(seconds: currentTime.toInt()),
+      totalDuration: Duration(seconds: duration.toInt()),
+    );
+  }
+  
+  /// Mark WebView video as completed
+  Future<void> _markWebViewAsCompleted(double duration) async {
+    final media = ref.read(selectedMediaProvider);
+    if (media == null) return;
+
+    final historyService = ref.read(watchHistoryServiceProvider);
+    await historyService.updateProgress(
+      tmdbId: widget.mediaId,
+      mediaType: media.mediaType,
+      title: media.title ?? media.name ?? 'Unknown',
+      posterPath: media.posterPath,
+      currentSeason: widget.season,
+      currentEpisode: widget.episode,
+      totalSeasons: 1,
+      totalEpisodes: null,
+      lastPosition: Duration(seconds: duration.toInt()),
+      totalDuration: Duration(seconds: duration.toInt()),
     );
     
-    print('📝 Added to Continue Watching: ${media.title ?? media.name}');
+    print('✅ Marked as completed: ${media.title ?? media.name}');
   }
 
   String _formatDuration(Duration duration) {
@@ -478,6 +593,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void dispose() {
     _progressTimer?.cancel();
+    _nextEpisodeTimer?.cancel();
     
     // Save progress for video_player
     if (_videoController != null && _videoController!.value.isInitialized) {
@@ -694,20 +810,77 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 ],
               )
             : null,
-        body: Center(
-          child: _isLoading
-              ? _buildLoadingState()
-              : _error != null
-                  ? _buildErrorState()
-                  : _streamResult != null &&
-                          (_streamResult!.provider == 'vidsrc.cc' ||
-                           _streamResult!.provider == 'vidsrc.to' ||
-                           _streamResult!.provider == 'vidlink')
-                      ? _buildWebViewPlayer()
-                      : _chewieController != null &&
-                              _chewieController!.videoPlayerController.value.isInitialized
-                          ? _buildVideoPlayer()
-                          : _buildLoadingState(),
+        body: Stack(
+          children: [
+            Center(
+              child: _isLoading
+                  ? _buildLoadingState()
+                  : _error != null
+                      ? _buildErrorState()
+                      : _streamResult != null &&
+                              (_streamResult!.provider == 'vidsrc.cc' ||
+                               _streamResult!.provider == 'vidsrc.to' ||
+                               _streamResult!.provider == 'vidlink')
+                          ? _buildWebViewPlayer()
+                          : _chewieController != null &&
+                                  _chewieController!.videoPlayerController.value.isInitialized
+                              ? _buildVideoPlayer()
+                              : _buildLoadingState(),
+            ),
+            
+            // Netflix-style Next Episode button overlay (always on top, even in fullscreen)
+            if (_showNextEpisodeButton && _hasNextEpisode())
+              Positioned(
+                right: 30,
+                bottom: 100,
+                child: SafeArea(
+                  child: Material(
+                    color: Colors.transparent,
+                    elevation: 8,
+                    child: InkWell(
+                      onTap: () {
+                        _nextEpisodeTimer?.cancel();
+                        _playNextEpisode();
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(6),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.7),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Next Episode',
+                              style: const TextStyle(
+                                color: Colors.black,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Icon(
+                              Icons.skip_next_rounded,
+                              color: Colors.black,
+                              size: 28,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -875,12 +1048,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Widget _buildWebViewPlayer() {
-    return WebViewPlayer(
-      key: ValueKey(_streamResult!.url), // Force rebuild when URL changes
-      streamUrl: _streamResult!.url,
-      title: ref.read(selectedMediaProvider)?.title ??
-          ref.read(selectedMediaProvider)?.name ??
-          'Video',
+    return Center(
+      child: AspectRatio(
+        aspectRatio: 16 / 9, // Force 16:9 aspect ratio
+        child: WebViewPlayer(
+          key: ValueKey(_streamResult!.url), // Force rebuild when URL changes
+          streamUrl: _streamResult!.url,
+          title: ref.read(selectedMediaProvider)?.title ??
+              ref.read(selectedMediaProvider)?.name ??
+              'Video',
+          onPlayerEvent: _handlePlayerEvent, // Handle VidSrc player events
+        ),
+      ),
     );
   }
 

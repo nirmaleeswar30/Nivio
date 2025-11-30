@@ -6,7 +6,7 @@ import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/media_provider.dart';
-import 'package:nivio/services/tmdb_service.dart';
+import 'package:nivio/providers/service_providers.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
@@ -67,61 +67,60 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     });
 
     try {
-      // Otherwise, fetch from TMDB
-      final tmdbService = TmdbService();
+      final tmdbService = ref.read(tmdbServiceProvider);
       Map<String, dynamic>? detailsWithVideos;
       
-      // Use mediaType if provided, otherwise try both
-      if (widget.mediaType == 'movie') {
-        detailsWithVideos = await tmdbService.getMovieDetailsWithVideos(widget.mediaId);
-        detailsWithVideos['media_type'] = 'movie';
-        final movieDetails = SearchResult.fromJson(detailsWithVideos);
-        ref.read(selectedMediaProvider.notifier).state = movieDetails;
-        setState(() {
-          _media = movieDetails;
-        });
-      } else if (widget.mediaType == 'tv') {
-        detailsWithVideos = await tmdbService.getTVShowDetailsWithVideos(widget.mediaId);
-        detailsWithVideos['media_type'] = 'tv';
-        final tvDetails = SearchResult.fromJson(detailsWithVideos);
-        ref.read(selectedMediaProvider.notifier).state = tvDetails;
-        setState(() {
-          _media = tvDetails;
-        });
-      } else {
-        // Try movie first, then TV show
+      // Retry logic with exponential backoff
+      int retries = 3;
+      Duration delay = const Duration(milliseconds: 500);
+      
+      for (int attempt = 0; attempt < retries; attempt++) {
         try {
-          detailsWithVideos = await tmdbService.getMovieDetailsWithVideos(widget.mediaId);
-          detailsWithVideos['media_type'] = 'movie';
-          final movieDetails = SearchResult.fromJson(detailsWithVideos);
-          ref.read(selectedMediaProvider.notifier).state = movieDetails;
-          setState(() {
-            _media = movieDetails;
-          });
+          // Use mediaType if provided, otherwise try both
+          if (widget.mediaType == 'movie') {
+            detailsWithVideos = await tmdbService.getMovieDetailsWithVideos(widget.mediaId);
+            detailsWithVideos['media_type'] = 'movie';
+          } else if (widget.mediaType == 'tv') {
+            detailsWithVideos = await tmdbService.getTVShowDetailsWithVideos(widget.mediaId);
+            detailsWithVideos['media_type'] = 'tv';
+          } else {
+            // Try movie first, then TV show
+            try {
+              detailsWithVideos = await tmdbService.getMovieDetailsWithVideos(widget.mediaId);
+              detailsWithVideos['media_type'] = 'movie';
+            } catch (e) {
+              // If movie fails, try TV show
+              detailsWithVideos = await tmdbService.getTVShowDetailsWithVideos(widget.mediaId);
+              detailsWithVideos['media_type'] = 'tv';
+            }
+          }
+          
+          // Success - break retry loop
+          break;
         } catch (e) {
-          // If movie fails, try TV show
-          detailsWithVideos = await tmdbService.getTVShowDetailsWithVideos(widget.mediaId);
-          detailsWithVideos['media_type'] = 'tv';
-          final tvDetails = SearchResult.fromJson(detailsWithVideos);
-          ref.read(selectedMediaProvider.notifier).state = tvDetails;
-          setState(() {
-            _media = tvDetails;
-          });
+          if (attempt == retries - 1) {
+            rethrow; // Last attempt failed
+          }
+          // Wait before retry
+          await Future.delayed(delay);
+          delay *= 2; // Exponential backoff
         }
       }
-
+      
+      // Parse the details
+      final mediaDetails = SearchResult.fromJson(detailsWithVideos!);
+      ref.read(selectedMediaProvider.notifier).state = mediaDetails;
+      
       // Extract trailer URL
       final trailerUrl = _extractTrailerKey(detailsWithVideos['videos']);
-      if (trailerUrl != null) {
-        setState(() {
-          _trailerUrl = trailerUrl;
-        });
-      }
-
+      
       setState(() {
+        _media = mediaDetails;
+        _trailerUrl = trailerUrl;
         _isLoading = false;
       });
     } catch (e) {
+      print('❌ Error fetching media details: $e');
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -203,7 +202,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       );
     }
 
-    final tmdbService = TmdbService();
+    final tmdbService = ref.read(tmdbServiceProvider);
     final backdropUrl = tmdbService.getBackdropUrl(media.backdropPath);
 
     return Scaffold(

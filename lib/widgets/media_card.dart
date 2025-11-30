@@ -1,20 +1,21 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/models/watch_history.dart';
 import 'package:nivio/core/theme.dart';
-import 'package:nivio/services/tmdb_service.dart';
+import 'package:nivio/providers/service_providers.dart';
 
-class MediaCard extends StatefulWidget {
+class MediaCard extends ConsumerStatefulWidget {
   final WatchHistory history;
 
   const MediaCard({super.key, required this.history});
 
   @override
-  State<MediaCard> createState() => _MediaCardState();
+  ConsumerState<MediaCard> createState() => _MediaCardState();
 }
 
-class _MediaCardState extends State<MediaCard> with SingleTickerProviderStateMixin {
+class _MediaCardState extends ConsumerState<MediaCard> with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
   late Animation<double> _elevationAnimation;
@@ -44,7 +45,7 @@ class _MediaCardState extends State<MediaCard> with SingleTickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
-    final tmdbService = TmdbService();
+    final tmdbService = ref.watch(tmdbServiceProvider);
     final posterUrl = tmdbService.getPosterUrl(widget.history.posterPath);
 
     return MouseRegion(

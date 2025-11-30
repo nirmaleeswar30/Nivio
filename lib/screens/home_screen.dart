@@ -34,6 +34,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     });
 
+    // Preload critical data first (featured, trending) for instant display
+    // Other content loads lazily in background
+    // Removed progressive loading - providers now load lazily via Consumer widgets
+
     // Auto-slide banner every 6 seconds
     _bannerTimer = Timer.periodic(const Duration(seconds: 6), (timer) {
       if (_pageController.hasClients) {
@@ -60,33 +64,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // CRITICAL: Only watch featured content in build to avoid blocking
+    // Other providers load lazily when their widgets scroll into view
     final featuredContent = ref.watch(featuredContentProvider);
     final languagePreferences = ref.watch(languagePreferencesProvider);
-    final trendingMovies = ref.watch(trendingMoviesProvider);
-    final trendingTVShows = ref.watch(trendingTVShowsProvider);
-    final popularMovies = ref.watch(popularMoviesProvider);
-    final topRatedMovies = ref.watch(topRatedMoviesProvider);
-    final popularTVShows = ref.watch(popularTVShowsProvider);
-    
-    // Anime
-    final anime = ref.watch(animeProvider);
-    final trendingAnime = ref.watch(trendingAnimeProvider);
-    
-    // Tamil
-    final tamilMovies = ref.watch(tamilMoviesProvider);
-    final trendingTamil = ref.watch(trendingTamilMoviesProvider);
-    
-    // Telugu
-    final teluguMovies = ref.watch(teluguMoviesProvider);
-    final trendingTelugu = ref.watch(trendingTeluguMoviesProvider);
-    
-    // Hindi
-    final hindiMovies = ref.watch(hindiMoviesProvider);
-    final trendingHindi = ref.watch(trendingHindiMoviesProvider);
-    
-    // Korean
-    final koreanDramas = ref.watch(koreanDramasProvider);
-    final trendingKorean = ref.watch(trendingKoreanDramasProvider);
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -176,25 +157,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           // Anime Section (if enabled)
           if (languagePreferences.showAnime) ...[
             SliverToBoxAdapter(
-              child: anime.when(
-                data: (shows) => ContentRow(
-                  title: '🎌 Popular Anime',
-                  items: shows,
-                ),
-                loading: () => const SizedBox(height: 220),
-                error: (_, __) => const SizedBox.shrink(),
+              child: Consumer(
+                builder: (context, ref, child) {
+                  final anime = ref.watch(animeProvider);
+                  return anime.when(
+                    data: (shows) => ContentRow(
+                      title: '🎌 Popular Anime',
+                      items: shows,
+                    ),
+                    loading: () => const SizedBox(height: 220),
+                    error: (_, __) => const SizedBox.shrink(),
+                  );
+                },
               ),
             ),
 
             // Trending Anime
             SliverToBoxAdapter(
-              child: trendingAnime.when(
-                data: (shows) => ContentRow(
-                  title: '🔥 Trending Anime',
-                  items: shows,
-                ),
-                loading: () => const SizedBox(height: 220),
-                error: (_, __) => const SizedBox.shrink(),
+              child: Consumer(
+                builder: (context, ref, child) {
+                  final trendingAnime = ref.watch(trendingAnimeProvider);
+                  return trendingAnime.when(
+                    data: (shows) => ContentRow(
+                      title: '🔥 Trending Anime',
+                      items: shows,
+                    ),
+                    loading: () => const SizedBox(height: 220),
+                    error: (_, __) => const SizedBox.shrink(),
+                  );
+                },
               ),
             ),
           ],
@@ -202,25 +193,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           // Tamil Movies (if enabled)
           if (languagePreferences.showTamil) ...[
             SliverToBoxAdapter(
-              child: tamilMovies.when(
-                data: (movies) => ContentRow(
-                  title: '🎬 Latest Tamil OTT Releases',
-                  items: movies,
-                ),
-                loading: () => const SizedBox(height: 220),
-                error: (_, __) => const SizedBox.shrink(),
+              child: Consumer(
+                builder: (context, ref, child) {
+                  final tamilMovies = ref.watch(tamilMoviesProvider);
+                  return tamilMovies.when(
+                    data: (movies) => ContentRow(
+                      title: '🎬 Latest Tamil OTT Releases',
+                      items: movies,
+                    ),
+                    loading: () => const SizedBox(height: 220),
+                    error: (_, __) => const SizedBox.shrink(),
+                  );
+                },
               ),
             ),
 
             // Trending Tamil
             SliverToBoxAdapter(
-              child: trendingTamil.when(
-                data: (movies) => ContentRow(
-                  title: '🔥 Trending Tamil Movies',
-                  items: movies,
-                ),
-                loading: () => const SizedBox(height: 220),
-                error: (_, __) => const SizedBox.shrink(),
+              child: Consumer(
+                builder: (context, ref, child) {
+                  final trendingTamil = ref.watch(trendingTamilMoviesProvider);
+                  return trendingTamil.when(
+                    data: (movies) => ContentRow(
+                      title: '🔥 Trending Tamil Movies',
+                      items: movies,
+                    ),
+                    loading: () => const SizedBox(height: 220),
+                    error: (_, __) => const SizedBox.shrink(),
+                  );
+                },
               ),
             ),
           ],
@@ -228,25 +229,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           // Telugu Movies (if enabled)
           if (languagePreferences.showTelugu) ...[
             SliverToBoxAdapter(
-              child: teluguMovies.when(
-                data: (movies) => ContentRow(
-                  title: '🎥 Popular Telugu Movies',
-                  items: movies,
-                ),
-                loading: () => const SizedBox(height: 220),
-                error: (_, __) => const SizedBox.shrink(),
+              child: Consumer(
+                builder: (context, ref, child) {
+                  final teluguMovies = ref.watch(teluguMoviesProvider);
+                  return teluguMovies.when(
+                    data: (movies) => ContentRow(
+                      title: '🎥 Popular Telugu Movies',
+                      items: movies,
+                    ),
+                    loading: () => const SizedBox(height: 220),
+                    error: (_, __) => const SizedBox.shrink(),
+                  );
+                },
               ),
             ),
 
             // Trending Telugu
             SliverToBoxAdapter(
-              child: trendingTelugu.when(
-                data: (movies) => ContentRow(
-                  title: '🔥 Trending Telugu Movies',
-                  items: movies,
-                ),
-                loading: () => const SizedBox(height: 220),
-                error: (_, __) => const SizedBox.shrink(),
+              child: Consumer(
+                builder: (context, ref, child) {
+                  final trendingTelugu = ref.watch(trendingTeluguMoviesProvider);
+                  return trendingTelugu.when(
+                    data: (movies) => ContentRow(
+                      title: '🔥 Trending Telugu Movies',
+                      items: movies,
+                    ),
+                    loading: () => const SizedBox(height: 220),
+                    error: (_, __) => const SizedBox.shrink(),
+                  );
+                },
               ),
             ),
           ],
@@ -254,25 +265,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           // Hindi Movies (if enabled)
           if (languagePreferences.showHindi) ...[
             SliverToBoxAdapter(
-              child: hindiMovies.when(
-                data: (movies) => ContentRow(
-                  title: '🎞️ Popular Hindi Movies',
-                  items: movies,
-                ),
-                loading: () => const SizedBox(height: 220),
-                error: (_, __) => const SizedBox.shrink(),
+              child: Consumer(
+                builder: (context, ref, child) {
+                  final hindiMovies = ref.watch(hindiMoviesProvider);
+                  return hindiMovies.when(
+                    data: (movies) => ContentRow(
+                      title: '🎞️ Popular Hindi Movies',
+                      items: movies,
+                    ),
+                    loading: () => const SizedBox(height: 220),
+                    error: (_, __) => const SizedBox.shrink(),
+                  );
+                },
               ),
             ),
 
             // Trending Hindi
             SliverToBoxAdapter(
-              child: trendingHindi.when(
-                data: (movies) => ContentRow(
-                  title: '🔥 Trending Hindi Movies',
-                  items: movies,
-                ),
-                loading: () => const SizedBox(height: 220),
-                error: (_, __) => const SizedBox.shrink(),
+              child: Consumer(
+                builder: (context, ref, child) {
+                  final trendingHindi = ref.watch(trendingHindiMoviesProvider);
+                  return trendingHindi.when(
+                    data: (movies) => ContentRow(
+                      title: '🔥 Trending Hindi Movies',
+                      items: movies,
+                    ),
+                    loading: () => const SizedBox(height: 220),
+                    error: (_, __) => const SizedBox.shrink(),
+                  );
+                },
               ),
             ),
           ],
@@ -280,86 +301,121 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           // Korean Dramas (if enabled)
           if (languagePreferences.showKorean) ...[
             SliverToBoxAdapter(
-              child: koreanDramas.when(
-                data: (shows) => ContentRow(
-                  title: '🇰🇷 Popular Korean Dramas',
-                  items: shows,
-                ),
-                loading: () => const SizedBox(height: 220),
-                error: (_, __) => const SizedBox.shrink(),
+              child: Consumer(
+                builder: (context, ref, child) {
+                  final koreanDramas = ref.watch(koreanDramasProvider);
+                  return koreanDramas.when(
+                    data: (shows) => ContentRow(
+                      title: '🇰🇷 Popular Korean Dramas',
+                      items: shows,
+                    ),
+                    loading: () => const SizedBox(height: 220),
+                    error: (_, __) => const SizedBox.shrink(),
+                  );
+                },
               ),
             ),
 
             // Trending Korean
             SliverToBoxAdapter(
-              child: trendingKorean.when(
-                data: (shows) => ContentRow(
-                  title: '🔥 Trending Korean Dramas',
-                  items: shows,
-                ),
-                loading: () => const SizedBox(height: 220),
-                error: (_, __) => const SizedBox.shrink(),
+              child: Consumer(
+                builder: (context, ref, child) {
+                  final trendingKorean = ref.watch(trendingKoreanDramasProvider);
+                  return trendingKorean.when(
+                    data: (shows) => ContentRow(
+                      title: '🔥 Trending Korean Dramas',
+                      items: shows,
+                    ),
+                    loading: () => const SizedBox(height: 220),
+                    error: (_, __) => const SizedBox.shrink(),
+                  );
+                },
               ),
             ),
           ],
 
           // Trending Movies
           SliverToBoxAdapter(
-            child: trendingMovies.when(
-              data: (movies) => ContentRow(
-                title: 'Trending Movies',
-                items: movies,
-              ),
-              loading: () => const SizedBox(height: 220),
-              error: (_, __) => const SizedBox.shrink(),
+            child: Consumer(
+              builder: (context, ref, child) {
+                final trendingMovies = ref.watch(trendingMoviesProvider);
+                return trendingMovies.when(
+                  data: (movies) => ContentRow(
+                    title: 'Trending Movies',
+                    items: movies,
+                  ),
+                  loading: () => const SizedBox(height: 220),
+                  error: (_, __) => const SizedBox.shrink(),
+                );
+              },
             ),
           ),
 
           // Trending TV Shows
           SliverToBoxAdapter(
-            child: trendingTVShows.when(
-              data: (shows) => ContentRow(
-                title: 'Trending TV Shows',
-                items: shows,
-              ),
-              loading: () => const SizedBox(height: 220),
-              error: (_, __) => const SizedBox.shrink(),
+            child: Consumer(
+              builder: (context, ref, child) {
+                final trendingTVShows = ref.watch(trendingTVShowsProvider);
+                return trendingTVShows.when(
+                  data: (shows) => ContentRow(
+                    title: 'Trending TV Shows',
+                    items: shows,
+                  ),
+                  loading: () => const SizedBox(height: 220),
+                  error: (_, __) => const SizedBox.shrink(),
+                );
+              },
             ),
           ),
 
           // Popular Movies
           SliverToBoxAdapter(
-            child: popularMovies.when(
-              data: (movies) => ContentRow(
-                title: 'Popular Movies',
-                items: movies,
-              ),
-              loading: () => const SizedBox(height: 220),
-              error: (_, __) => const SizedBox.shrink(),
+            child: Consumer(
+              builder: (context, ref, child) {
+                final popularMovies = ref.watch(popularMoviesProvider);
+                return popularMovies.when(
+                  data: (movies) => ContentRow(
+                    title: 'Popular Movies',
+                    items: movies,
+                  ),
+                  loading: () => const SizedBox(height: 220),
+                  error: (_, __) => const SizedBox.shrink(),
+                );
+              },
             ),
           ),
 
           // Popular TV Shows
           SliverToBoxAdapter(
-            child: popularTVShows.when(
-              data: (shows) => ContentRow(
-                title: 'Popular TV Shows',
-                items: shows,
-              ),
-              loading: () => const SizedBox(height: 220),
-              error: (_, __) => const SizedBox.shrink(),
+            child: Consumer(
+              builder: (context, ref, child) {
+                final popularTVShows = ref.watch(popularTVShowsProvider);
+                return popularTVShows.when(
+                  data: (shows) => ContentRow(
+                    title: 'Popular TV Shows',
+                    items: shows,
+                  ),
+                  loading: () => const SizedBox(height: 220),
+                  error: (_, __) => const SizedBox.shrink(),
+                );
+              },
             ),
           ),
 
           // Top Rated Movies
           SliverToBoxAdapter(
-            child: topRatedMovies.when(
-              data: (movies) => ContentRow(
-                title: 'Top Rated Movies',
-                items: movies,
-              ),
-              loading: () => const SizedBox(height: 220),
-              error: (_, __) => const SizedBox.shrink(),
+            child: Consumer(
+              builder: (context, ref, child) {
+                final topRatedMovies = ref.watch(topRatedMoviesProvider);
+                return topRatedMovies.when(
+                  data: (movies) => ContentRow(
+                    title: 'Top Rated Movies',
+                    items: movies,
+                  ),
+                  loading: () => const SizedBox(height: 220),
+                  error: (_, __) => const SizedBox.shrink(),
+                );
+              },
             ),
           ),
 

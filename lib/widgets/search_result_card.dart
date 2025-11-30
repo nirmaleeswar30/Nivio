@@ -1,18 +1,19 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/core/theme.dart';
-import 'package:nivio/services/tmdb_service.dart';
+import 'package:nivio/providers/service_providers.dart';
 
-class SearchResultCard extends StatelessWidget {
+class SearchResultCard extends ConsumerWidget {
   final SearchResult media;
 
   const SearchResultCard({super.key, required this.media});
 
   @override
-  Widget build(BuildContext context) {
-    final tmdbService = TmdbService();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tmdbService = ref.watch(tmdbServiceProvider);
     final posterUrl = tmdbService.getPosterUrl(media.posterPath);
 
     return GestureDetector(

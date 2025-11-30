@@ -2,29 +2,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/providers/service_providers.dart';
 
 // Featured Content Provider (mixed regional + general trending for hero slider)
+// OPTIMIZED: Just use trending 'all' for instant load, let stale-while-revalidate handle freshness
 final featuredContentProvider = FutureProvider<List<dynamic>>((ref) async {
   final tmdbService = ref.watch(tmdbServiceProvider);
   
-  // Fetch all content types in parallel
-  final results = await Future.wait([
-    tmdbService.getTrending('all', 'day'),           // General trending
-    tmdbService.getTrendingAnime(),                   // Trending anime
-    tmdbService.getTrendingByLanguage('movie', 'ta'), // Trending Tamil
-    tmdbService.getTrendingByLanguage('movie', 'te'), // Trending Telugu
-    tmdbService.getTrendingByLanguage('movie', 'hi'), // Trending Hindi
-    tmdbService.getTrendingByLanguage('tv', 'ko'),    // Trending Korean
-  ]);
+  // Fast path: Just get general trending (single API call)
+  // This loads instantly from cache with stale-while-revalidate
+  final trending = await tmdbService.getTrending('all', 'day');
   
-  // Combine all results and shuffle for variety
-  final allContent = <dynamic>[];
-  for (final list in results) {
-    allContent.addAll(list.take(3)); // Take top 3 from each category
-  }
-  
-  // Shuffle to mix regional and general content
-  allContent.shuffle();
-  
-  return allContent.take(10).toList(); // Return top 10 for slider
+  // Return top 10 immediately - no need to wait for 6 API calls
+  return trending.take(10).toList();
 });
 
 // Trending Movies Provider

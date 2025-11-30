@@ -12,8 +12,7 @@ part of 'watch_history.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-  'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models',
-);
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 WatchHistory _$WatchHistoryFromJson(Map<String, dynamic> json) {
   return _WatchHistory.fromJson(json);
@@ -42,12 +41,8 @@ mixin _$WatchHistory {
   Map<String, EpisodeProgress> get episodes =>
       throw _privateConstructorUsedError;
 
-  /// Serializes this WatchHistory to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of WatchHistory
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $WatchHistoryCopyWith<WatchHistory> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -55,31 +50,29 @@ mixin _$WatchHistory {
 /// @nodoc
 abstract class $WatchHistoryCopyWith<$Res> {
   factory $WatchHistoryCopyWith(
-    WatchHistory value,
-    $Res Function(WatchHistory) then,
-  ) = _$WatchHistoryCopyWithImpl<$Res, WatchHistory>;
+          WatchHistory value, $Res Function(WatchHistory) then) =
+      _$WatchHistoryCopyWithImpl<$Res, WatchHistory>;
   @useResult
-  $Res call({
-    String id,
-    int tmdbId,
-    String mediaType,
-    String title,
-    String? posterPath,
-    int currentSeason,
-    int currentEpisode,
-    int totalSeasons,
-    int? totalEpisodes,
-    int lastPositionSeconds,
-    int totalDurationSeconds,
-    double progressPercent,
-    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
-    DateTime lastWatchedAt,
-    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
-    DateTime createdAt,
-    bool isCompleted,
-    @JsonKey(fromJson: _episodesFromJson, toJson: _episodesToJson)
-    Map<String, EpisodeProgress> episodes,
-  });
+  $Res call(
+      {String id,
+      int tmdbId,
+      String mediaType,
+      String title,
+      String? posterPath,
+      int currentSeason,
+      int currentEpisode,
+      int totalSeasons,
+      int? totalEpisodes,
+      int lastPositionSeconds,
+      int totalDurationSeconds,
+      double progressPercent,
+      @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
+      DateTime lastWatchedAt,
+      @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
+      DateTime createdAt,
+      bool isCompleted,
+      @JsonKey(fromJson: _episodesFromJson, toJson: _episodesToJson)
+      Map<String, EpisodeProgress> episodes});
 }
 
 /// @nodoc
@@ -92,8 +85,6 @@ class _$WatchHistoryCopyWithImpl<$Res, $Val extends WatchHistory>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of WatchHistory
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -114,75 +105,72 @@ class _$WatchHistoryCopyWithImpl<$Res, $Val extends WatchHistory>
     Object? isCompleted = null,
     Object? episodes = null,
   }) {
-    return _then(
-      _value.copyWith(
-            id: null == id
-                ? _value.id
-                : id // ignore: cast_nullable_to_non_nullable
-                      as String,
-            tmdbId: null == tmdbId
-                ? _value.tmdbId
-                : tmdbId // ignore: cast_nullable_to_non_nullable
-                      as int,
-            mediaType: null == mediaType
-                ? _value.mediaType
-                : mediaType // ignore: cast_nullable_to_non_nullable
-                      as String,
-            title: null == title
-                ? _value.title
-                : title // ignore: cast_nullable_to_non_nullable
-                      as String,
-            posterPath: freezed == posterPath
-                ? _value.posterPath
-                : posterPath // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            currentSeason: null == currentSeason
-                ? _value.currentSeason
-                : currentSeason // ignore: cast_nullable_to_non_nullable
-                      as int,
-            currentEpisode: null == currentEpisode
-                ? _value.currentEpisode
-                : currentEpisode // ignore: cast_nullable_to_non_nullable
-                      as int,
-            totalSeasons: null == totalSeasons
-                ? _value.totalSeasons
-                : totalSeasons // ignore: cast_nullable_to_non_nullable
-                      as int,
-            totalEpisodes: freezed == totalEpisodes
-                ? _value.totalEpisodes
-                : totalEpisodes // ignore: cast_nullable_to_non_nullable
-                      as int?,
-            lastPositionSeconds: null == lastPositionSeconds
-                ? _value.lastPositionSeconds
-                : lastPositionSeconds // ignore: cast_nullable_to_non_nullable
-                      as int,
-            totalDurationSeconds: null == totalDurationSeconds
-                ? _value.totalDurationSeconds
-                : totalDurationSeconds // ignore: cast_nullable_to_non_nullable
-                      as int,
-            progressPercent: null == progressPercent
-                ? _value.progressPercent
-                : progressPercent // ignore: cast_nullable_to_non_nullable
-                      as double,
-            lastWatchedAt: null == lastWatchedAt
-                ? _value.lastWatchedAt
-                : lastWatchedAt // ignore: cast_nullable_to_non_nullable
-                      as DateTime,
-            createdAt: null == createdAt
-                ? _value.createdAt
-                : createdAt // ignore: cast_nullable_to_non_nullable
-                      as DateTime,
-            isCompleted: null == isCompleted
-                ? _value.isCompleted
-                : isCompleted // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            episodes: null == episodes
-                ? _value.episodes
-                : episodes // ignore: cast_nullable_to_non_nullable
-                      as Map<String, EpisodeProgress>,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as String,
+      tmdbId: null == tmdbId
+          ? _value.tmdbId
+          : tmdbId // ignore: cast_nullable_to_non_nullable
+              as int,
+      mediaType: null == mediaType
+          ? _value.mediaType
+          : mediaType // ignore: cast_nullable_to_non_nullable
+              as String,
+      title: null == title
+          ? _value.title
+          : title // ignore: cast_nullable_to_non_nullable
+              as String,
+      posterPath: freezed == posterPath
+          ? _value.posterPath
+          : posterPath // ignore: cast_nullable_to_non_nullable
+              as String?,
+      currentSeason: null == currentSeason
+          ? _value.currentSeason
+          : currentSeason // ignore: cast_nullable_to_non_nullable
+              as int,
+      currentEpisode: null == currentEpisode
+          ? _value.currentEpisode
+          : currentEpisode // ignore: cast_nullable_to_non_nullable
+              as int,
+      totalSeasons: null == totalSeasons
+          ? _value.totalSeasons
+          : totalSeasons // ignore: cast_nullable_to_non_nullable
+              as int,
+      totalEpisodes: freezed == totalEpisodes
+          ? _value.totalEpisodes
+          : totalEpisodes // ignore: cast_nullable_to_non_nullable
+              as int?,
+      lastPositionSeconds: null == lastPositionSeconds
+          ? _value.lastPositionSeconds
+          : lastPositionSeconds // ignore: cast_nullable_to_non_nullable
+              as int,
+      totalDurationSeconds: null == totalDurationSeconds
+          ? _value.totalDurationSeconds
+          : totalDurationSeconds // ignore: cast_nullable_to_non_nullable
+              as int,
+      progressPercent: null == progressPercent
+          ? _value.progressPercent
+          : progressPercent // ignore: cast_nullable_to_non_nullable
+              as double,
+      lastWatchedAt: null == lastWatchedAt
+          ? _value.lastWatchedAt
+          : lastWatchedAt // ignore: cast_nullable_to_non_nullable
+              as DateTime,
+      createdAt: null == createdAt
+          ? _value.createdAt
+          : createdAt // ignore: cast_nullable_to_non_nullable
+              as DateTime,
+      isCompleted: null == isCompleted
+          ? _value.isCompleted
+          : isCompleted // ignore: cast_nullable_to_non_nullable
+              as bool,
+      episodes: null == episodes
+          ? _value.episodes
+          : episodes // ignore: cast_nullable_to_non_nullable
+              as Map<String, EpisodeProgress>,
+    ) as $Val);
   }
 }
 
@@ -190,32 +178,30 @@ class _$WatchHistoryCopyWithImpl<$Res, $Val extends WatchHistory>
 abstract class _$$WatchHistoryImplCopyWith<$Res>
     implements $WatchHistoryCopyWith<$Res> {
   factory _$$WatchHistoryImplCopyWith(
-    _$WatchHistoryImpl value,
-    $Res Function(_$WatchHistoryImpl) then,
-  ) = __$$WatchHistoryImplCopyWithImpl<$Res>;
+          _$WatchHistoryImpl value, $Res Function(_$WatchHistoryImpl) then) =
+      __$$WatchHistoryImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    String id,
-    int tmdbId,
-    String mediaType,
-    String title,
-    String? posterPath,
-    int currentSeason,
-    int currentEpisode,
-    int totalSeasons,
-    int? totalEpisodes,
-    int lastPositionSeconds,
-    int totalDurationSeconds,
-    double progressPercent,
-    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
-    DateTime lastWatchedAt,
-    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
-    DateTime createdAt,
-    bool isCompleted,
-    @JsonKey(fromJson: _episodesFromJson, toJson: _episodesToJson)
-    Map<String, EpisodeProgress> episodes,
-  });
+  $Res call(
+      {String id,
+      int tmdbId,
+      String mediaType,
+      String title,
+      String? posterPath,
+      int currentSeason,
+      int currentEpisode,
+      int totalSeasons,
+      int? totalEpisodes,
+      int lastPositionSeconds,
+      int totalDurationSeconds,
+      double progressPercent,
+      @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
+      DateTime lastWatchedAt,
+      @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
+      DateTime createdAt,
+      bool isCompleted,
+      @JsonKey(fromJson: _episodesFromJson, toJson: _episodesToJson)
+      Map<String, EpisodeProgress> episodes});
 }
 
 /// @nodoc
@@ -223,12 +209,9 @@ class __$$WatchHistoryImplCopyWithImpl<$Res>
     extends _$WatchHistoryCopyWithImpl<$Res, _$WatchHistoryImpl>
     implements _$$WatchHistoryImplCopyWith<$Res> {
   __$$WatchHistoryImplCopyWithImpl(
-    _$WatchHistoryImpl _value,
-    $Res Function(_$WatchHistoryImpl) _then,
-  ) : super(_value, _then);
+      _$WatchHistoryImpl _value, $Res Function(_$WatchHistoryImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of WatchHistory
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -249,101 +232,99 @@ class __$$WatchHistoryImplCopyWithImpl<$Res>
     Object? isCompleted = null,
     Object? episodes = null,
   }) {
-    return _then(
-      _$WatchHistoryImpl(
-        id: null == id
-            ? _value.id
-            : id // ignore: cast_nullable_to_non_nullable
-                  as String,
-        tmdbId: null == tmdbId
-            ? _value.tmdbId
-            : tmdbId // ignore: cast_nullable_to_non_nullable
-                  as int,
-        mediaType: null == mediaType
-            ? _value.mediaType
-            : mediaType // ignore: cast_nullable_to_non_nullable
-                  as String,
-        title: null == title
-            ? _value.title
-            : title // ignore: cast_nullable_to_non_nullable
-                  as String,
-        posterPath: freezed == posterPath
-            ? _value.posterPath
-            : posterPath // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        currentSeason: null == currentSeason
-            ? _value.currentSeason
-            : currentSeason // ignore: cast_nullable_to_non_nullable
-                  as int,
-        currentEpisode: null == currentEpisode
-            ? _value.currentEpisode
-            : currentEpisode // ignore: cast_nullable_to_non_nullable
-                  as int,
-        totalSeasons: null == totalSeasons
-            ? _value.totalSeasons
-            : totalSeasons // ignore: cast_nullable_to_non_nullable
-                  as int,
-        totalEpisodes: freezed == totalEpisodes
-            ? _value.totalEpisodes
-            : totalEpisodes // ignore: cast_nullable_to_non_nullable
-                  as int?,
-        lastPositionSeconds: null == lastPositionSeconds
-            ? _value.lastPositionSeconds
-            : lastPositionSeconds // ignore: cast_nullable_to_non_nullable
-                  as int,
-        totalDurationSeconds: null == totalDurationSeconds
-            ? _value.totalDurationSeconds
-            : totalDurationSeconds // ignore: cast_nullable_to_non_nullable
-                  as int,
-        progressPercent: null == progressPercent
-            ? _value.progressPercent
-            : progressPercent // ignore: cast_nullable_to_non_nullable
-                  as double,
-        lastWatchedAt: null == lastWatchedAt
-            ? _value.lastWatchedAt
-            : lastWatchedAt // ignore: cast_nullable_to_non_nullable
-                  as DateTime,
-        createdAt: null == createdAt
-            ? _value.createdAt
-            : createdAt // ignore: cast_nullable_to_non_nullable
-                  as DateTime,
-        isCompleted: null == isCompleted
-            ? _value.isCompleted
-            : isCompleted // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        episodes: null == episodes
-            ? _value._episodes
-            : episodes // ignore: cast_nullable_to_non_nullable
-                  as Map<String, EpisodeProgress>,
-      ),
-    );
+    return _then(_$WatchHistoryImpl(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as String,
+      tmdbId: null == tmdbId
+          ? _value.tmdbId
+          : tmdbId // ignore: cast_nullable_to_non_nullable
+              as int,
+      mediaType: null == mediaType
+          ? _value.mediaType
+          : mediaType // ignore: cast_nullable_to_non_nullable
+              as String,
+      title: null == title
+          ? _value.title
+          : title // ignore: cast_nullable_to_non_nullable
+              as String,
+      posterPath: freezed == posterPath
+          ? _value.posterPath
+          : posterPath // ignore: cast_nullable_to_non_nullable
+              as String?,
+      currentSeason: null == currentSeason
+          ? _value.currentSeason
+          : currentSeason // ignore: cast_nullable_to_non_nullable
+              as int,
+      currentEpisode: null == currentEpisode
+          ? _value.currentEpisode
+          : currentEpisode // ignore: cast_nullable_to_non_nullable
+              as int,
+      totalSeasons: null == totalSeasons
+          ? _value.totalSeasons
+          : totalSeasons // ignore: cast_nullable_to_non_nullable
+              as int,
+      totalEpisodes: freezed == totalEpisodes
+          ? _value.totalEpisodes
+          : totalEpisodes // ignore: cast_nullable_to_non_nullable
+              as int?,
+      lastPositionSeconds: null == lastPositionSeconds
+          ? _value.lastPositionSeconds
+          : lastPositionSeconds // ignore: cast_nullable_to_non_nullable
+              as int,
+      totalDurationSeconds: null == totalDurationSeconds
+          ? _value.totalDurationSeconds
+          : totalDurationSeconds // ignore: cast_nullable_to_non_nullable
+              as int,
+      progressPercent: null == progressPercent
+          ? _value.progressPercent
+          : progressPercent // ignore: cast_nullable_to_non_nullable
+              as double,
+      lastWatchedAt: null == lastWatchedAt
+          ? _value.lastWatchedAt
+          : lastWatchedAt // ignore: cast_nullable_to_non_nullable
+              as DateTime,
+      createdAt: null == createdAt
+          ? _value.createdAt
+          : createdAt // ignore: cast_nullable_to_non_nullable
+              as DateTime,
+      isCompleted: null == isCompleted
+          ? _value.isCompleted
+          : isCompleted // ignore: cast_nullable_to_non_nullable
+              as bool,
+      episodes: null == episodes
+          ? _value._episodes
+          : episodes // ignore: cast_nullable_to_non_nullable
+              as Map<String, EpisodeProgress>,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$WatchHistoryImpl implements _WatchHistory {
-  const _$WatchHistoryImpl({
-    required this.id,
-    required this.tmdbId,
-    required this.mediaType,
-    required this.title,
-    this.posterPath,
-    required this.currentSeason,
-    required this.currentEpisode,
-    required this.totalSeasons,
-    this.totalEpisodes,
-    required this.lastPositionSeconds,
-    required this.totalDurationSeconds,
-    required this.progressPercent,
-    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
-    required this.lastWatchedAt,
-    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
-    required this.createdAt,
-    required this.isCompleted,
-    @JsonKey(fromJson: _episodesFromJson, toJson: _episodesToJson)
-    final Map<String, EpisodeProgress> episodes = const {},
-  }) : _episodes = episodes;
+  const _$WatchHistoryImpl(
+      {required this.id,
+      required this.tmdbId,
+      required this.mediaType,
+      required this.title,
+      this.posterPath,
+      required this.currentSeason,
+      required this.currentEpisode,
+      required this.totalSeasons,
+      this.totalEpisodes,
+      required this.lastPositionSeconds,
+      required this.totalDurationSeconds,
+      required this.progressPercent,
+      @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
+      required this.lastWatchedAt,
+      @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
+      required this.createdAt,
+      required this.isCompleted,
+      @JsonKey(fromJson: _episodesFromJson, toJson: _episodesToJson)
+      final Map<String, EpisodeProgress> episodes = const {}})
+      : _episodes = episodes;
 
   factory _$WatchHistoryImpl.fromJson(Map<String, dynamic> json) =>
       _$$WatchHistoryImplFromJson(json);
@@ -429,31 +410,28 @@ class _$WatchHistoryImpl implements _WatchHistory {
             const DeepCollectionEquality().equals(other._episodes, _episodes));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    id,
-    tmdbId,
-    mediaType,
-    title,
-    posterPath,
-    currentSeason,
-    currentEpisode,
-    totalSeasons,
-    totalEpisodes,
-    lastPositionSeconds,
-    totalDurationSeconds,
-    progressPercent,
-    lastWatchedAt,
-    createdAt,
-    isCompleted,
-    const DeepCollectionEquality().hash(_episodes),
-  );
+      runtimeType,
+      id,
+      tmdbId,
+      mediaType,
+      title,
+      posterPath,
+      currentSeason,
+      currentEpisode,
+      totalSeasons,
+      totalEpisodes,
+      lastPositionSeconds,
+      totalDurationSeconds,
+      progressPercent,
+      lastWatchedAt,
+      createdAt,
+      isCompleted,
+      const DeepCollectionEquality().hash(_episodes));
 
-  /// Create a copy of WatchHistory
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$WatchHistoryImplCopyWith<_$WatchHistoryImpl> get copyWith =>
@@ -461,32 +439,33 @@ class _$WatchHistoryImpl implements _WatchHistory {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$WatchHistoryImplToJson(this);
+    return _$$WatchHistoryImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _WatchHistory implements WatchHistory {
-  const factory _WatchHistory({
-    required final String id,
-    required final int tmdbId,
-    required final String mediaType,
-    required final String title,
-    final String? posterPath,
-    required final int currentSeason,
-    required final int currentEpisode,
-    required final int totalSeasons,
-    final int? totalEpisodes,
-    required final int lastPositionSeconds,
-    required final int totalDurationSeconds,
-    required final double progressPercent,
-    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
-    required final DateTime lastWatchedAt,
-    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
-    required final DateTime createdAt,
-    required final bool isCompleted,
-    @JsonKey(fromJson: _episodesFromJson, toJson: _episodesToJson)
-    final Map<String, EpisodeProgress> episodes,
-  }) = _$WatchHistoryImpl;
+  const factory _WatchHistory(
+      {required final String id,
+      required final int tmdbId,
+      required final String mediaType,
+      required final String title,
+      final String? posterPath,
+      required final int currentSeason,
+      required final int currentEpisode,
+      required final int totalSeasons,
+      final int? totalEpisodes,
+      required final int lastPositionSeconds,
+      required final int totalDurationSeconds,
+      required final double progressPercent,
+      @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
+      required final DateTime lastWatchedAt,
+      @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
+      required final DateTime createdAt,
+      required final bool isCompleted,
+      @JsonKey(fromJson: _episodesFromJson, toJson: _episodesToJson)
+      final Map<String, EpisodeProgress> episodes}) = _$WatchHistoryImpl;
 
   factory _WatchHistory.fromJson(Map<String, dynamic> json) =
       _$WatchHistoryImpl.fromJson;
@@ -526,11 +505,8 @@ abstract class _WatchHistory implements WatchHistory {
   @override
   @JsonKey(fromJson: _episodesFromJson, toJson: _episodesToJson)
   Map<String, EpisodeProgress> get episodes;
-
-  /// Create a copy of WatchHistory
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$WatchHistoryImplCopyWith<_$WatchHistoryImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -549,12 +525,8 @@ mixin _$EpisodeProgress {
   @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
   DateTime get watchedAt => throw _privateConstructorUsedError;
 
-  /// Serializes this EpisodeProgress to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of EpisodeProgress
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $EpisodeProgressCopyWith<EpisodeProgress> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -562,19 +534,17 @@ mixin _$EpisodeProgress {
 /// @nodoc
 abstract class $EpisodeProgressCopyWith<$Res> {
   factory $EpisodeProgressCopyWith(
-    EpisodeProgress value,
-    $Res Function(EpisodeProgress) then,
-  ) = _$EpisodeProgressCopyWithImpl<$Res, EpisodeProgress>;
+          EpisodeProgress value, $Res Function(EpisodeProgress) then) =
+      _$EpisodeProgressCopyWithImpl<$Res, EpisodeProgress>;
   @useResult
-  $Res call({
-    int season,
-    int episode,
-    int lastPositionSeconds,
-    int totalDurationSeconds,
-    bool isCompleted,
-    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
-    DateTime watchedAt,
-  });
+  $Res call(
+      {int season,
+      int episode,
+      int lastPositionSeconds,
+      int totalDurationSeconds,
+      bool isCompleted,
+      @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
+      DateTime watchedAt});
 }
 
 /// @nodoc
@@ -587,8 +557,6 @@ class _$EpisodeProgressCopyWithImpl<$Res, $Val extends EpisodeProgress>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of EpisodeProgress
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -599,56 +567,51 @@ class _$EpisodeProgressCopyWithImpl<$Res, $Val extends EpisodeProgress>
     Object? isCompleted = null,
     Object? watchedAt = null,
   }) {
-    return _then(
-      _value.copyWith(
-            season: null == season
-                ? _value.season
-                : season // ignore: cast_nullable_to_non_nullable
-                      as int,
-            episode: null == episode
-                ? _value.episode
-                : episode // ignore: cast_nullable_to_non_nullable
-                      as int,
-            lastPositionSeconds: null == lastPositionSeconds
-                ? _value.lastPositionSeconds
-                : lastPositionSeconds // ignore: cast_nullable_to_non_nullable
-                      as int,
-            totalDurationSeconds: null == totalDurationSeconds
-                ? _value.totalDurationSeconds
-                : totalDurationSeconds // ignore: cast_nullable_to_non_nullable
-                      as int,
-            isCompleted: null == isCompleted
-                ? _value.isCompleted
-                : isCompleted // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            watchedAt: null == watchedAt
-                ? _value.watchedAt
-                : watchedAt // ignore: cast_nullable_to_non_nullable
-                      as DateTime,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      season: null == season
+          ? _value.season
+          : season // ignore: cast_nullable_to_non_nullable
+              as int,
+      episode: null == episode
+          ? _value.episode
+          : episode // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastPositionSeconds: null == lastPositionSeconds
+          ? _value.lastPositionSeconds
+          : lastPositionSeconds // ignore: cast_nullable_to_non_nullable
+              as int,
+      totalDurationSeconds: null == totalDurationSeconds
+          ? _value.totalDurationSeconds
+          : totalDurationSeconds // ignore: cast_nullable_to_non_nullable
+              as int,
+      isCompleted: null == isCompleted
+          ? _value.isCompleted
+          : isCompleted // ignore: cast_nullable_to_non_nullable
+              as bool,
+      watchedAt: null == watchedAt
+          ? _value.watchedAt
+          : watchedAt // ignore: cast_nullable_to_non_nullable
+              as DateTime,
+    ) as $Val);
   }
 }
 
 /// @nodoc
 abstract class _$$EpisodeProgressImplCopyWith<$Res>
     implements $EpisodeProgressCopyWith<$Res> {
-  factory _$$EpisodeProgressImplCopyWith(
-    _$EpisodeProgressImpl value,
-    $Res Function(_$EpisodeProgressImpl) then,
-  ) = __$$EpisodeProgressImplCopyWithImpl<$Res>;
+  factory _$$EpisodeProgressImplCopyWith(_$EpisodeProgressImpl value,
+          $Res Function(_$EpisodeProgressImpl) then) =
+      __$$EpisodeProgressImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    int season,
-    int episode,
-    int lastPositionSeconds,
-    int totalDurationSeconds,
-    bool isCompleted,
-    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
-    DateTime watchedAt,
-  });
+  $Res call(
+      {int season,
+      int episode,
+      int lastPositionSeconds,
+      int totalDurationSeconds,
+      bool isCompleted,
+      @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
+      DateTime watchedAt});
 }
 
 /// @nodoc
@@ -656,12 +619,9 @@ class __$$EpisodeProgressImplCopyWithImpl<$Res>
     extends _$EpisodeProgressCopyWithImpl<$Res, _$EpisodeProgressImpl>
     implements _$$EpisodeProgressImplCopyWith<$Res> {
   __$$EpisodeProgressImplCopyWithImpl(
-    _$EpisodeProgressImpl _value,
-    $Res Function(_$EpisodeProgressImpl) _then,
-  ) : super(_value, _then);
+      _$EpisodeProgressImpl _value, $Res Function(_$EpisodeProgressImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of EpisodeProgress
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -672,49 +632,46 @@ class __$$EpisodeProgressImplCopyWithImpl<$Res>
     Object? isCompleted = null,
     Object? watchedAt = null,
   }) {
-    return _then(
-      _$EpisodeProgressImpl(
-        season: null == season
-            ? _value.season
-            : season // ignore: cast_nullable_to_non_nullable
-                  as int,
-        episode: null == episode
-            ? _value.episode
-            : episode // ignore: cast_nullable_to_non_nullable
-                  as int,
-        lastPositionSeconds: null == lastPositionSeconds
-            ? _value.lastPositionSeconds
-            : lastPositionSeconds // ignore: cast_nullable_to_non_nullable
-                  as int,
-        totalDurationSeconds: null == totalDurationSeconds
-            ? _value.totalDurationSeconds
-            : totalDurationSeconds // ignore: cast_nullable_to_non_nullable
-                  as int,
-        isCompleted: null == isCompleted
-            ? _value.isCompleted
-            : isCompleted // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        watchedAt: null == watchedAt
-            ? _value.watchedAt
-            : watchedAt // ignore: cast_nullable_to_non_nullable
-                  as DateTime,
-      ),
-    );
+    return _then(_$EpisodeProgressImpl(
+      season: null == season
+          ? _value.season
+          : season // ignore: cast_nullable_to_non_nullable
+              as int,
+      episode: null == episode
+          ? _value.episode
+          : episode // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastPositionSeconds: null == lastPositionSeconds
+          ? _value.lastPositionSeconds
+          : lastPositionSeconds // ignore: cast_nullable_to_non_nullable
+              as int,
+      totalDurationSeconds: null == totalDurationSeconds
+          ? _value.totalDurationSeconds
+          : totalDurationSeconds // ignore: cast_nullable_to_non_nullable
+              as int,
+      isCompleted: null == isCompleted
+          ? _value.isCompleted
+          : isCompleted // ignore: cast_nullable_to_non_nullable
+              as bool,
+      watchedAt: null == watchedAt
+          ? _value.watchedAt
+          : watchedAt // ignore: cast_nullable_to_non_nullable
+              as DateTime,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$EpisodeProgressImpl implements _EpisodeProgress {
-  const _$EpisodeProgressImpl({
-    required this.season,
-    required this.episode,
-    required this.lastPositionSeconds,
-    required this.totalDurationSeconds,
-    required this.isCompleted,
-    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
-    required this.watchedAt,
-  });
+  const _$EpisodeProgressImpl(
+      {required this.season,
+      required this.episode,
+      required this.lastPositionSeconds,
+      required this.totalDurationSeconds,
+      required this.isCompleted,
+      @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
+      required this.watchedAt});
 
   factory _$EpisodeProgressImpl.fromJson(Map<String, dynamic> json) =>
       _$$EpisodeProgressImplFromJson(json);
@@ -755,45 +712,35 @@ class _$EpisodeProgressImpl implements _EpisodeProgress {
                 other.watchedAt == watchedAt));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(
-    runtimeType,
-    season,
-    episode,
-    lastPositionSeconds,
-    totalDurationSeconds,
-    isCompleted,
-    watchedAt,
-  );
+  int get hashCode => Object.hash(runtimeType, season, episode,
+      lastPositionSeconds, totalDurationSeconds, isCompleted, watchedAt);
 
-  /// Create a copy of EpisodeProgress
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$EpisodeProgressImplCopyWith<_$EpisodeProgressImpl> get copyWith =>
       __$$EpisodeProgressImplCopyWithImpl<_$EpisodeProgressImpl>(
-        this,
-        _$identity,
-      );
+          this, _$identity);
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$EpisodeProgressImplToJson(this);
+    return _$$EpisodeProgressImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _EpisodeProgress implements EpisodeProgress {
-  const factory _EpisodeProgress({
-    required final int season,
-    required final int episode,
-    required final int lastPositionSeconds,
-    required final int totalDurationSeconds,
-    required final bool isCompleted,
-    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
-    required final DateTime watchedAt,
-  }) = _$EpisodeProgressImpl;
+  const factory _EpisodeProgress(
+      {required final int season,
+      required final int episode,
+      required final int lastPositionSeconds,
+      required final int totalDurationSeconds,
+      required final bool isCompleted,
+      @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
+      required final DateTime watchedAt}) = _$EpisodeProgressImpl;
 
   factory _EpisodeProgress.fromJson(Map<String, dynamic> json) =
       _$EpisodeProgressImpl.fromJson;
@@ -811,11 +758,8 @@ abstract class _EpisodeProgress implements EpisodeProgress {
   @override
   @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
   DateTime get watchedAt;
-
-  /// Create a copy of EpisodeProgress
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$EpisodeProgressImplCopyWith<_$EpisodeProgressImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

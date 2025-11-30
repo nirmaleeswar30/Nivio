@@ -105,3 +105,30 @@ class AnimationsEnabledNotifier extends StateNotifier<bool> {
     await prefs.setBool('animations_enabled', state);
   }
 }
+
+// Anime Sub/Dub Preference Provider
+final animeSubDubProvider = StateNotifierProvider<AnimeSubDubNotifier, String>((ref) {
+  return AnimeSubDubNotifier();
+});
+
+class AnimeSubDubNotifier extends StateNotifier<String> {
+  AnimeSubDubNotifier() : super('sub') {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getString('anime_subdub') ?? 'sub';
+  }
+
+  Future<void> setPreference(String preference) async {
+    if (preference != 'sub' && preference != 'dub') return;
+    state = preference;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('anime_subdub', preference);
+  }
+
+  String get displayName {
+    return state == 'sub' ? 'Subtitled (Sub)' : 'Dubbed (Dub)';
+  }
+}

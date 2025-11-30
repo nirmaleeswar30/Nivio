@@ -6,11 +6,13 @@ import 'package:nivio/core/theme.dart';
 class WebViewPlayer extends StatefulWidget {
   final String streamUrl;
   final String title;
+  final Function(String event, double currentTime, double duration)? onPlayerEvent;
 
   const WebViewPlayer({
     super.key,
     required this.streamUrl,
     required this.title,
+    this.onPlayerEvent,
   });
 
   @override
@@ -26,11 +28,8 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        Center(
-          child: AspectRatio(
-            aspectRatio: 16 / 9,
-            child: InAppWebView(
-              initialUrlRequest: URLRequest(url: WebUri(widget.streamUrl)),
+        InAppWebView(
+          initialUrlRequest: URLRequest(url: WebUri(widget.streamUrl)),
           initialSettings: InAppWebViewSettings(
             javaScriptEnabled: true,
             mediaPlaybackRequiresUserGesture: false,
@@ -38,7 +37,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
             useOnLoadResource: true,
             useShouldOverrideUrlLoading: true,
             useShouldInterceptRequest: true, // Enable request interception for ad blocking
-            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            // userAgent: Use device default for proper mobile detection
             transparentBackground: true,
             // Additional settings for better ad blocking
             blockNetworkImage: false,
@@ -47,10 +46,30 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
             clearCache: true,
             disableContextMenu: true,
             supportZoom: false,
+            // Enable fullscreen support
+            javaScriptCanOpenWindowsAutomatically: true,
           ),
           onWebViewCreated: (controller) {
             _webViewController = controller;
             print('🌐 WebView created for: ${widget.streamUrl}');
+            
+            // Add JavaScript handler to receive player events from vidsrc.cc
+            controller.addJavaScriptHandler(
+              handlerName: 'playerEvent',
+              callback: (args) {
+                if (args.isNotEmpty) {
+                  final data = args[0] as Map<String, dynamic>;
+                  final event = data['event'] as String?;
+                  final currentTime = (data['currentTime'] as num?)?.toDouble() ?? 0.0;
+                  final duration = (data['duration'] as num?)?.toDouble() ?? 0.0;
+                  
+                  if (event != null && widget.onPlayerEvent != null) {
+                    widget.onPlayerEvent!(event, currentTime, duration);
+                    print('📺 Player event: $event at ${currentTime.toInt()}s / ${duration.toInt()}s');
+                  }
+                }
+              },
+            );
           },
           onLoadStart: (controller, url) {
             setState(() {
@@ -64,128 +83,168 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
             });
             print('✅ Loading completed: $url');
             
-            // Inject ultra aggressive ad-blocking and overlay removal script
+            // Inject ultra-aggressive ad-blocking
             await controller.evaluateJavascript(source: '''
               (function() {
                 console.log('🛡️ Ultra ad-blocking activated');
                 
                 // Block ALL popups and redirects
-                window.open = function() {
-                  console.log('🚫 Blocked popup');
-                  return null;
-                };
-                
-                // Override alert, confirm, prompt
+                window.open = function() { console.log('🚫 Blocked popup'); return null; };
                 window.alert = function() { return true; };
                 window.confirm = function() { return true; };
                 window.prompt = function() { return null; };
                 
-                // Block location changes
-                const originalLocation = window.location.href;
-                Object.defineProperty(window, 'location', {
-                  get: function() {
-                    return {
-                      href: originalLocation,
-                      assign: function() { console.log('🚫 Blocked redirect'); },
-                      replace: function() { console.log('🚫 Blocked redirect'); },
-                      reload: function() { console.log('🚫 Blocked reload'); }
-                    };
+                // Prevent location changes (safer approach)
+                try {
+                  let currentHref = window.location.href;
+                  let descriptor = Object.getOwnPropertyDescriptor(window.location, 'href');
+                  if (descriptor && descriptor.configurable) {
+                    Object.defineProperty(window.location, 'href', {
+                      set: function(val) {
+                        if (val !== currentHref && !val.includes('vidsrc')) {
+                          console.log('🚫 Blocked redirect to:', val);
+                          return;
+                        }
+                        currentHref = val;
+                      },
+                      get: function() { return currentHref; }
+                    });
                   }
-                });
+                } catch(e) {
+                  // If redefine fails, just intercept assign
+                  Object.defineProperty(window.location, 'assign', {
+                    value: function(url) {
+                      if (!url.includes('vidsrc')) {
+                        console.log('🚫 Blocked location.assign:', url);
+                        return;
+                      }
+                    }
+                  });
+                  Object.defineProperty(window.location, 'replace', {
+                    value: function(url) {
+                      if (!url.includes('vidsrc')) {
+                        console.log('🚫 Blocked location.replace:', url);
+                        return;
+                      }
+                    }
+                  });
+                }
                 
-                // Aggressive element removal
+                // Aggressive ad element removal
                 function removeAds() {
                   try {
-                    // Remove by class/id patterns
+                    // Expanded selector list
                     const selectors = [
-                      '[class*="ad-"]', '[class*="ads-"]', '[class*="advert"]',
-                      '[id*="ad-"]', '[id*="ads-"]', '[id*="advert"]',
-                      '[class*="banner"]', '[id*="banner"]',
-                      '[class*="popup"]', '[id*="popup"]',
-                      '[class*="modal"]', '[id*="modal"]',
-                      '[class*="overlay"]', '[id*="overlay"]',
-                      '[class*="sponsor"]', '[id*="sponsor"]',
-                      'iframe[src*="ad"]', 'iframe[src*="banner"]',
-                      'iframe[src*="popup"]', 'iframe[src*="doubleclick"]',
-                      'ins.adsbygoogle', '.advertisement', '.ad-container',
-                      '[data-ad-slot]', '[data-ad-client]'
+                      '[class*="ad-"]', '[class*="ads-"]', '[class*="advert"]', '[class*="banner"]',
+                      '[id*="ad-"]', '[id*="ads-"]', '[id*="advert"]', '[id*="banner"]',
+                      '[class*="popup"]', '[id*="popup"]', '[class*="modal"]:not([class*="player"])',
+                      '[class*="overlay"]:not([class*="player"])', '[id*="overlay"]:not([id*="player"])',
+                      'ins.adsbygoogle', '.advertisement', '.ad-container', '.ad-wrapper',
+                      '[data-ad-slot]', '[data-ad-client]', '[data-ad-unit]',
+                      'iframe[src*="doubleclick"]', 'iframe[src*="googlesyndication"]',
+                      'iframe[src*="adservice"]', 'div[style*="z-index: 2147483647"]',
+                      'div[style*="position: fixed"][style*="top: 0"]'
                     ];
                     
-                    selectors.forEach(function(selector) {
-                      try {
-                        document.querySelectorAll(selector).forEach(function(el) {
+                    selectors.forEach(sel => {
+                      document.querySelectorAll(sel).forEach(el => {
+                        const isPlayer = el.closest('[class*="player"]') || 
+                                        el.closest('[class*="video"]') ||
+                                        el.closest('[class*="episode"]') ||
+                                        el.closest('[id*="player"]') ||
+                                        el.id === 'vidsrc-player';
+                        if (!isPlayer) {
                           el.remove();
-                        });
-                      } catch(e) {}
-                    });
-                    
-                    // Remove elements with position fixed/absolute and high z-index
-                    document.querySelectorAll('*').forEach(function(el) {
-                      try {
-                        const style = window.getComputedStyle(el);
-                        const zIndex = parseInt(style.zIndex);
-                        const position = style.position;
-                        
-                        if ((position === 'fixed' || position === 'absolute') && 
-                            zIndex > 1000 && 
-                            (el.offsetWidth > window.innerWidth * 0.5 || 
-                             el.offsetHeight > window.innerHeight * 0.5)) {
-                          el.remove();
+                          console.log('🗑️ Removed ad element:', sel);
                         }
-                      } catch(e) {}
+                      });
                     });
                     
-                    // Force enable scrolling
+                    // Remove suspicious fixed/absolute positioned overlays
+                    document.querySelectorAll('div, section').forEach(el => {
+                      const style = window.getComputedStyle(el);
+                      const zIndex = parseInt(style.zIndex) || 0;
+                      const position = style.position;
+                      
+                      if ((position === 'fixed' || position === 'absolute') && zIndex > 999999) {
+                        const isPlayer = el.closest('[class*="player"]') || 
+                                        el.closest('[id*="player"]') ||
+                                        el.querySelector('video') ||
+                                        el.querySelector('[class*="episode"]');
+                        if (!isPlayer && el.offsetHeight > 100 && el.offsetWidth > 100) {
+                          el.remove();
+                          console.log('🗑️ Removed suspicious overlay');
+                        }
+                      }
+                    });
+                    
+                    // Force enable interactions
                     document.body.style.overflow = 'auto !important';
+                    document.body.style.pointerEvents = 'auto !important';
                     document.documentElement.style.overflow = 'auto !important';
-                    document.body.style.pointerEvents = 'auto';
                   } catch(e) {
                     console.error('Error removing ads:', e);
                   }
                 }
                 
-                // Run immediately
+                // Run immediately and repeatedly
                 removeAds();
+                setInterval(removeAds, 500);
                 
-                // Run repeatedly to catch dynamically loaded ads
-                setInterval(removeAds, 300);
-                
-                // Observer for DOM changes
+                // MutationObserver to catch dynamically added ads
                 const observer = new MutationObserver(removeAds);
-                observer.observe(document.body, {
-                  childList: true,
-                  subtree: true
-                });
+                observer.observe(document.body, { childList: true, subtree: true });
                 
-                // Block fetch requests to ad servers
+                // Block fetch/XHR to ad servers
                 const originalFetch = window.fetch;
                 window.fetch = function() {
-                  const url = arguments[0];
-                  if (typeof url === 'string') {
-                    const adPatterns = ['ad', 'analytics', 'tracking', 'doubleclick', 'googlesyndication'];
-                    if (adPatterns.some(pattern => url.toLowerCase().includes(pattern))) {
-                      console.log('🚫 Blocked fetch:', url);
-                      return Promise.reject(new Error('Blocked'));
-                    }
+                  const url = String(arguments[0]);
+                  const blockPatterns = ['doubleclick', 'googlesyndication', 'google-analytics', 
+                                        'googletagmanager', 'adservice', 'adsystem', 'facebook.com/tr'];
+                  if (blockPatterns.some(p => url.toLowerCase().includes(p))) {
+                    console.log('🚫 Blocked fetch:', url);
+                    return Promise.reject(new Error('Blocked'));
                   }
                   return originalFetch.apply(this, arguments);
                 };
                 
-                // Block XHR requests to ad servers
                 const originalXHR = XMLHttpRequest.prototype.open;
                 XMLHttpRequest.prototype.open = function() {
-                  const url = arguments[1];
-                  if (typeof url === 'string') {
-                    const adPatterns = ['ad', 'analytics', 'tracking', 'doubleclick', 'googlesyndication'];
-                    if (adPatterns.some(pattern => url.toLowerCase().includes(pattern))) {
-                      console.log('🚫 Blocked XHR:', url);
-                      throw new Error('Blocked');
-                    }
+                  const url = String(arguments[1]);
+                  const blockPatterns = ['doubleclick', 'googlesyndication', 'adservice'];
+                  if (blockPatterns.some(p => url.toLowerCase().includes(p))) {
+                    console.log('🚫 Blocked XHR:', url);
+                    throw new Error('Blocked');
                   }
                   return originalXHR.apply(this, arguments);
                 };
                 
-                console.log('✅ Ad-blocking fully initialized');
+                console.log('✅ Ultra ad-blocking initialized');
+                
+                // Listen for VidSrc player events via postMessage
+                window.addEventListener('message', function(event) {
+                  if (event.origin !== 'https://vidsrc.cc') return;
+                  
+                  if (event.data && event.data.type === 'PLAYER_EVENT') {
+                    const eventData = event.data.data;
+                    console.log('📺 VidSrc event:', eventData.event, 'at', eventData.currentTime, '/', eventData.duration);
+                    
+                    // Send to Flutter via JavaScript handler
+                    if (window.flutter_inappwebview) {
+                      window.flutter_inappwebview.callHandler('playerEvent', {
+                        event: eventData.event,
+                        currentTime: eventData.currentTime || 0,
+                        duration: eventData.duration || 0,
+                        tmdbId: eventData.tmdbId,
+                        mediaType: eventData.mediaType,
+                        season: eventData.season,
+                        episode: eventData.episode
+                      });
+                    }
+                  }
+                });
+                
+                console.log('✅ VidSrc player event listener initialized');
               })();
             ''');
           },
@@ -200,58 +259,106 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
           shouldInterceptRequest: (controller, request) async {
             final url = request.url.toString().toLowerCase();
             
-            // Ultra aggressive ad blocking - block any suspicious domains
+            // Comprehensive ad blocking patterns
             final adPatterns = [
-              'ad', 'ads', 'advert', 'advertising', 'advertisement',
-              'doubleclick', 'googlesyndication', 'googleadservices',
-              'google-analytics', 'googletagmanager', 'googletagservices',
-              'facebook.com/tr', 'facebook.net',
-              'analytics', 'tracking', 'tracker', 'track',
-              'banner', 'popup', 'popunder', 'sponsor',
-              'pagead', 'adservice', 'adserver', 'adsystem',
-              'taboola', 'outbrain', 'revcontent', 'mgid',
-              'criteo', 'pubmatic', 'openx', 'rubiconproject',
-              'smartadserver', 'appnexus', 'adnxs',
-              'exoclick', 'propellerads', 'popcash', 'popads',
-              'clickadu', 'hilltopads', 'adsterra',
+              // Google ads
+              'doubleclick', 'googlesyndication', 'googleadservices', 'google-analytics',
+              'googletagmanager', 'googletagservices', 'pagead',
+              // Facebook
+              'facebook.com/tr', 'facebook.net', 'connect.facebook',
+              // General ad keywords
+              'ad.', 'ads.', 'advert', 'advertising', 'advertisement',
+              '/ad/', '/ads/', 'adserver', 'adservice', 'adsystem', 'adtech',
+              // Analytics & tracking
+              'analytics', 'tracking', 'tracker', 'track.', 'telemetry',
+              // Ad networks
+              'taboola', 'outbrain', 'revcontent', 'mgid', 'criteo',
+              'pubmatic', 'openx', 'rubiconproject', 'smartadserver',
+              'appnexus', 'adnxs', 'moatads', 'adsafeprotected',
+              // Popup/redirect networks
+              'exoclick', 'propellerads', 'popcash', 'popads', 'pop-ad',
+              'clickadu', 'hilltopads', 'adsterra', 'popunder',
+              // Banner & sponsor
+              'banner', 'sponsor', 'promo.',
+              // Video ad platforms
+              'imasdk', 'doubleclick.net/instream',
+              // Specific ad script domains
+              'adform', 'advertising.com', 'adnxs.com', 'adsrvr.org',
             ];
             
             // Check if URL contains any ad pattern
             for (final pattern in adPatterns) {
               if (url.contains(pattern)) {
-                print('🚫 Blocked request: $url');
+                print('🚫 Blocked: $url');
                 return null; // Block the request
               }
             }
             
-            return null; // Allow the request to proceed normally
+            return null; // Allow
           },
           shouldOverrideUrlLoading: (controller, navigationAction) async {
             final url = navigationAction.request.url;
             
-            // Block navigation to ad domains
             if (url != null) {
-              final urlString = url.toString().toLowerCase();
-              final adDomains = [
-                'ad', 'ads', 'doubleclick', 'googlesyndication',
-                'advertising', 'popup', 'banner', 'sponsor',
-                'analytics', 'tracking', 'facebook.com/tr',
-                'exoclick', 'propeller', 'popcash', 'popads',
-                'clickadu', 'adsterra',
+              final urlString = url.toString();
+              final urlStringLower = urlString.toLowerCase();
+              final scheme = url.scheme.toLowerCase();
+              final host = url.host.toLowerCase();
+              
+              // BLOCK non-HTTP/HTTPS schemes (app deep links, malware redirects)
+              if (scheme != 'http' && scheme != 'https') {
+                print('🚫 Blocked non-HTTP scheme: $urlString');
+                return NavigationActionPolicy.CANCEL;
+              }
+              
+              // Block specific ad/malware domains
+              final blockedDomains = [
+                'zrlqm.com', 'enalibaba.com', 'taobao.com', 'alibaba.com',
+                'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
+                'exoclick.com', 'propellerads.com', 'popcash.net', 'popads.net',
+                'clickadu.com', 'adsterra.com', 'hilltopads.net', 'adcash.com',
+                'facebook.com', 'facebook.net', 'fbcdn.net',
+                'outbrain.com', 'taboola.com', 'revcontent.com', 'mgid.com',
               ];
               
-              for (final domain in adDomains) {
-                if (urlString.contains(domain)) {
-                  print('🚫 Blocked navigation to: $urlString');
+              for (final domain in blockedDomains) {
+                if (host.contains(domain)) {
+                  print('🚫 Blocked domain: $urlString');
                   return NavigationActionPolicy.CANCEL;
                 }
+              }
+              
+              // Block URLs with ad/tracking patterns
+              final blockedPatterns = [
+                '/ad/', '/ads/', '/advert', '/banner', '/popup',
+                '/track/', '/tracker', '/analytics', '/telemetry',
+                '?c=', '&c=', // Tracking campaign parameters seen in logs
+                'click.', 'clk.', 'redirect', 'redir',
+              ];
+              
+              for (final pattern in blockedPatterns) {
+                if (urlStringLower.contains(pattern) && !host.contains('vidsrc')) {
+                  print('🚫 Blocked pattern "$pattern": $urlString');
+                  return NavigationActionPolicy.CANCEL;
+                }
+              }
+              
+              // Only allow trusted streaming domains (prevent cross-domain redirects)
+              final trustedDomains = [
+                'vidsrc.cc', 'vidsrc.to', 'vidsrc.xyz', 'vidsrc.me',
+                'vidlink.pro', 'vidlink.org',
+              ];
+              
+              final isTrustedDomain = trustedDomains.any((trusted) => host.contains(trusted));
+              
+              if (!isTrustedDomain) {
+                print('🚫 Blocked untrusted domain: $urlString');
+                return NavigationActionPolicy.CANCEL;
               }
             }
             
             return NavigationActionPolicy.ALLOW;
           },
-            ),
-          ),
         ),
         
         // Loading indicator

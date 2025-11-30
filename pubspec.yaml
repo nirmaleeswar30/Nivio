@@ -55,9 +55,10 @@ dev_dependencies:
 
   # Code Generation
   build_runner: ^2.4.13
-  freezed: ^2.5.7
+  freezed: ^2.5.2
   json_serializable: ^6.8.0
-  riverpod_generator: ^2.6.2
+  riverpod_generator: ^2.4.0
+  hive_generator: ^2.0.1
 
   # Splash Screen & App Icon
   flutter_native_splash: ^2.4.2
