@@ -500,6 +500,185 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
   
+  /// Show episodes bottom sheet
+  void _showEpisodesBottomSheet() {
+    final media = ref.read(selectedMediaProvider);
+    if (media == null || media.mediaType != 'tv') return;
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (context, scrollController) {
+          final seasonDataAsync = ref.watch(
+            seasonDataProvider((showId: widget.mediaId, seasonNumber: widget.season)),
+          );
+          
+          return seasonDataAsync.when(
+            data: (seasonData) => Container(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Handle
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[600],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  // Title
+                  Text(
+                    'Season ${widget.season}',
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${seasonData.episodes.length} Episodes',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[400],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // Episodes list
+                  Expanded(
+                    child: ListView.builder(
+                      controller: scrollController,
+                      itemCount: seasonData.episodes.length,
+                      itemBuilder: (context, index) {
+                        final episode = seasonData.episodes[index];
+                        final isCurrentEpisode = episode.episodeNumber == widget.episode;
+                        
+                        return InkWell(
+                          onTap: () {
+                            Navigator.pop(context); // Close bottom sheet
+                            if (!isCurrentEpisode) {
+                              // Navigate to selected episode
+                              Navigator.of(context).pushReplacement(
+                                MaterialPageRoute(
+                                  builder: (context) => PlayerScreen(
+                                    mediaId: widget.mediaId,
+                                    season: widget.season,
+                                    episode: episode.episodeNumber,
+                                    mediaType: media.mediaType,
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isCurrentEpisode
+                                  ? NivioTheme.netflixRed.withOpacity(0.2)
+                                  : const Color(0xFF2A2A2A),
+                              borderRadius: BorderRadius.circular(8),
+                              border: isCurrentEpisode
+                                  ? Border.all(color: NivioTheme.netflixRed, width: 2)
+                                  : null,
+                            ),
+                            child: Row(
+                              children: [
+                                // Episode number
+                                Container(
+                                  width: 50,
+                                  height: 50,
+                                  decoration: BoxDecoration(
+                                    color: isCurrentEpisode
+                                        ? NivioTheme.netflixRed
+                                        : Colors.grey[800],
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      '${episode.episodeNumber}',
+                                      style: const TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                // Episode info
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        episode.episodeName ?? 'Episode ${episode.episodeNumber}',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                          color: isCurrentEpisode ? NivioTheme.netflixRed : Colors.white,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      if (episode.runtime != null) ...[
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '${episode.runtime} min',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[400],
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                // Play icon
+                                Icon(
+                                  isCurrentEpisode ? Icons.play_circle_filled : Icons.play_arrow,
+                                  color: isCurrentEpisode ? NivioTheme.netflixRed : Colors.white,
+                                  size: 32,
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            loading: () => const Center(
+              child: CircularProgressIndicator(color: NivioTheme.netflixRed),
+            ),
+            error: (error, stack) => Center(
+              child: Text(
+                'Error loading episodes',
+                style: const TextStyle(color: Colors.white),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+  
   /// Save progress from WebView player events
   Future<void> _saveWebViewProgress(double currentTime, double duration) async {
     final media = ref.read(selectedMediaProvider);
@@ -687,6 +866,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   ],
                 ),
                 actions: [
+                  // Episodes button (only for TV shows)
+                  if (media?.mediaType == 'tv')
+                    IconButton(
+                      icon: const Icon(Icons.list, color: Colors.white),
+                      tooltip: 'Episodes',
+                      onPressed: () => _showEpisodesBottomSheet(),
+                    ),
                   // Switch Server button
                   PopupMenuButton<int>(
                     icon: const Icon(Icons.swap_horiz, color: Colors.white),
