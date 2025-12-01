@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
@@ -9,6 +12,7 @@ import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/widgets/webview_player.dart';
+import 'package:window_manager/window_manager.dart';
 import 'dart:async';
 
 class PlayerScreen extends ConsumerStatefulWidget {
@@ -45,6 +49,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   final FocusNode _focusNode = FocusNode();
   bool _showNextEpisodeButton = false;
   Timer? _nextEpisodeTimer;
+  bool _isDesktopFullscreen = false; // Track desktop fullscreen state
+  bool _showControls = true; // Track control visibility
+  Timer? _hideControlsTimer; // Timer to auto-hide controls
+
+  /// Check if we're on a desktop platform that supports window_manager
+  bool get _isDesktopPlatform {
+    if (kIsWeb) return false;
+    return Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  }
 
   @override
   void initState() {
@@ -97,7 +110,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         return KeyEventResult.handled;
 
       case LogicalKeyboardKey.keyF:
-        // Toggle fullscreen (handled by Chewie)
+        // Toggle fullscreen
+        if (_isDesktopPlatform) {
+          _toggleDesktopFullscreen();
+          return KeyEventResult.handled;
+        }
+        // For mobile, let Chewie handle it
         return KeyEventResult.ignored;
 
       case LogicalKeyboardKey.keyM:
@@ -117,6 +135,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         final currentVolume = _videoController!.value.volume;
         _videoController!.setVolume((currentVolume - 0.1).clamp(0, 1));
         return KeyEventResult.handled;
+
+      case LogicalKeyboardKey.escape:
+        // Exit fullscreen on desktop
+        if (_isDesktopPlatform && _isDesktopFullscreen) {
+          _toggleDesktopFullscreen();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
 
       default:
         return KeyEventResult.ignored;
@@ -774,6 +800,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _progressTimer?.cancel();
     _nextEpisodeTimer?.cancel();
     
+    // Exit desktop fullscreen if active
+    if (_isDesktopFullscreen && _isDesktopPlatform) {
+      windowManager.setFullScreen(false);
+    }
+    
     // Save progress for video_player
     if (_videoController != null && _videoController!.value.isInitialized) {
       _saveProgress();
@@ -783,6 +814,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _videoController?.dispose();
     _chewieController?.dispose();
     _focusNode.dispose();
+    _hideControlsTimer?.cancel();
     
     // Reset orientations
     SystemChrome.setPreferredOrientations([
@@ -793,79 +825,132 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     super.dispose();
   }
 
+  /// Toggle true fullscreen on desktop platforms (hides title bar)
+  Future<void> _toggleDesktopFullscreen() async {
+    if (!_isDesktopPlatform) return;
+    
+    final newState = !_isDesktopFullscreen;
+    await windowManager.setFullScreen(newState);
+    setState(() {
+      _isDesktopFullscreen = newState;
+      // Show controls briefly when toggling fullscreen
+      _showControls = true;
+      _startHideControlsTimer();
+    });
+  }
+
+  /// Start timer to auto-hide controls after 3 seconds
+  void _startHideControlsTimer() {
+    _hideControlsTimer?.cancel();
+    _hideControlsTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && _isDesktopFullscreen) {
+        setState(() {
+          _showControls = false;
+        });
+      }
+    });
+  }
+
+  /// Show controls and reset hide timer
+  void _onUserInteraction() {
+    if (_isDesktopFullscreen) {
+      setState(() {
+        _showControls = true;
+      });
+      _startHideControlsTimer();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final media = ref.watch(selectedMediaProvider);
     
-    return Focus(
-      focusNode: _focusNode,
-      onKeyEvent: _handleKeyEvent,
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        extendBodyBehindAppBar: true,
-        appBar: _streamResult != null
-            ? AppBar(
-                backgroundColor: Colors.black.withOpacity(0.7),
-                elevation: 0,
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                  tooltip: 'Back',
-                ),
-                title: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      media?.title ?? media?.name ?? 'Playing',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Row(
-                      children: [
-                        if (media?.mediaType == 'tv')
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: NivioTheme.netflixRed,
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                            child: Text(
-                              'S${widget.season} E${widget.episode}',
+    // Determine if we should show the AppBar
+    final shouldShowAppBar = _streamResult != null && (!_isDesktopFullscreen || _showControls);
+    
+    return MouseRegion(
+      onHover: (_) => _onUserInteraction(),
+      child: GestureDetector(
+        onTap: _onUserInteraction,
+        child: Focus(
+          focusNode: _focusNode,
+          onKeyEvent: _handleKeyEvent,
+          child: Scaffold(
+            backgroundColor: Colors.black,
+            extendBodyBehindAppBar: true,
+            appBar: shouldShowAppBar
+                ? PreferredSize(
+                    preferredSize: const Size.fromHeight(kToolbarHeight),
+                    child: AnimatedOpacity(
+                      opacity: (!_isDesktopFullscreen || _showControls) ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 300),
+                      child: AppBar(
+                        backgroundColor: Colors.black.withOpacity(0.7),
+                        elevation: 0,
+                        leading: IconButton(
+                          icon: const Icon(Icons.arrow_back, color: Colors.white),
+                          onPressed: () {
+                            if (_isDesktopFullscreen) {
+                              _toggleDesktopFullscreen();
+                            }
+                            Navigator.pop(context);
+                          },
+                          tooltip: 'Back',
+                        ),
+                        title: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              media?.title ?? media?.name ?? 'Playing',
                               style: const TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
                                 color: Colors.white,
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                          child: Text(
-                            _streamResult!.provider.toUpperCase(),
-                            style: const TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.white70,
-                              letterSpacing: 0.5,
+                            Row(
+                              children: [
+                                if (media?.mediaType == 'tv')
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: NivioTheme.netflixRed,
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                    child: Text(
+                                      'S${widget.season} E${widget.episode}',
+                                      style: const TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                  child: Text(
+                                    _streamResult!.provider.toUpperCase(),
+                                    style: const TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.white70,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ],
-                ),
-                actions: [
+                        actions: [
                   // Episodes button (only for TV shows)
                   if (media?.mediaType == 'tv')
                     IconButton(
@@ -993,80 +1078,94 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         }).toList();
                       },
                     ),
-                ],
-              )
-            : null,
-        body: Stack(
-          children: [
-            Center(
-              child: _isLoading
-                  ? _buildLoadingState()
-                  : _error != null
-                      ? _buildErrorState()
-                      : _streamResult != null &&
-                              (_streamResult!.provider == 'vidsrc.cc' ||
-                               _streamResult!.provider == 'vidsrc.to' ||
-                               _streamResult!.provider == 'vidlink')
-                          ? _buildWebViewPlayer()
-                          : _chewieController != null &&
-                                  _chewieController!.videoPlayerController.value.isInitialized
-                              ? _buildVideoPlayer()
-                              : _buildLoadingState(),
-            ),
-            
-            // Netflix-style Next Episode button overlay (always on top, even in fullscreen)
-            if (_showNextEpisodeButton && _hasNextEpisode())
-              Positioned(
-                right: 30,
-                bottom: 100,
-                child: SafeArea(
-                  child: Material(
-                    color: Colors.transparent,
-                    elevation: 8,
-                    child: InkWell(
-                      onTap: () {
-                        _nextEpisodeTimer?.cancel();
-                        _playNextEpisode();
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(6),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.7),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
+                  // Desktop fullscreen button
+                  if (_isDesktopPlatform)
+                    IconButton(
+                      icon: Icon(
+                        _isDesktopFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                        color: Colors.white,
+                      ),
+                      tooltip: _isDesktopFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)',
+                      onPressed: _toggleDesktopFullscreen,
+                    ),
+                        ],
+                      ),
+                    ),
+                  )
+                : null,
+            body: Stack(
+              children: [
+                Center(
+                  child: _isLoading
+                      ? _buildLoadingState()
+                      : _error != null
+                          ? _buildErrorState()
+                          : _streamResult != null &&
+                                  (_streamResult!.provider == 'vidsrc.cc' ||
+                                   _streamResult!.provider == 'vidsrc.to' ||
+                                   _streamResult!.provider == 'vidlink')
+                              ? _buildWebViewPlayer()
+                              : _chewieController != null &&
+                                      _chewieController!.videoPlayerController.value.isInitialized
+                                  ? _buildVideoPlayer()
+                                  : _buildLoadingState(),
+                ),
+                
+                // Netflix-style Next Episode button overlay (always on top, even in fullscreen)
+                if (_showNextEpisodeButton && _hasNextEpisode())
+                  Positioned(
+                    right: 30,
+                    bottom: 100,
+                    child: SafeArea(
+                      child: Material(
+                        color: Colors.transparent,
+                        elevation: 8,
+                        child: InkWell(
+                          onTap: () {
+                            _nextEpisodeTimer?.cancel();
+                            _playNextEpisode();
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(6),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.7),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'Next Episode',
-                              style: const TextStyle(
-                                color: Colors.black,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
-                              ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text(
+                                  'Next Episode',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                const Icon(
+                                  Icons.skip_next_rounded,
+                                  color: Colors.black,
+                                  size: 28,
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 12),
-                            const Icon(
-                              Icons.skip_next_rounded,
-                              color: Colors.black,
-                              size: 28,
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ),
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1234,26 +1333,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Widget _buildWebViewPlayer() {
-    return Center(
-      child: AspectRatio(
-        aspectRatio: 16 / 9, // Force 16:9 aspect ratio
-        child: WebViewPlayer(
-          key: ValueKey(_streamResult!.url), // Force rebuild when URL changes
-          streamUrl: _streamResult!.url,
-          title: ref.read(selectedMediaProvider)?.title ??
-              ref.read(selectedMediaProvider)?.name ??
-              'Video',
-          onPlayerEvent: _handlePlayerEvent, // Handle VidSrc player events
+    return RepaintBoundary(
+      child: Center(
+        child: AspectRatio(
+          aspectRatio: 16 / 9, // Force 16:9 aspect ratio
+          child: WebViewPlayer(
+            key: ValueKey(_streamResult!.url), // Force rebuild when URL changes
+            streamUrl: _streamResult!.url,
+            title: ref.read(selectedMediaProvider)?.title ??
+                ref.read(selectedMediaProvider)?.name ??
+                'Video',
+            onPlayerEvent: _handlePlayerEvent, // Handle VidSrc player events
+          ),
         ),
       ),
     );
   }
 
   Widget _buildVideoPlayer() {
-    return Center(
-      child: AspectRatio(
-        aspectRatio: 16 / 9, // Force 16:9 aspect ratio
-        child: Chewie(controller: _chewieController!),
+    return RepaintBoundary(
+      child: Center(
+        child: AspectRatio(
+          aspectRatio: 16 / 9, // Force 16:9 aspect ratio
+          child: Chewie(controller: _chewieController!),
+        ),
       ),
     );
   }

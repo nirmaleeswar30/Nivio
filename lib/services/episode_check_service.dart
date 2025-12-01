@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,7 +13,7 @@ import '../models/new_episode.dart';
 import '../models/watchlist_item.dart';
 
 /// Service for checking new episodes of watchlist TV shows
-/// Uses WorkManager for battery-efficient background tasks
+/// Uses WorkManager for battery-efficient background tasks (Android/iOS only)
 class EpisodeCheckService {
   static const String _taskName = 'episodeCheckTask';
   static const String _boxName = 'new_episodes';
@@ -32,9 +33,15 @@ class EpisodeCheckService {
     ),
   );
 
+  /// Check if the current platform supports background tasks
+  static bool get _supportsBackgroundTasks {
+    if (kIsWeb) return false;
+    return Platform.isAndroid || Platform.isIOS;
+  }
+
   /// Initialize the service and notifications
   static Future<void> init() async {
-    // Initialize notifications
+    // Initialize notifications (supported on most platforms)
     await _initNotifications();
     
     // Initialize Hive box for new episodes
@@ -42,47 +49,75 @@ class EpisodeCheckService {
       await Hive.openBox<NewEpisode>(_boxName);
     }
     
-    // Initialize WorkManager
-    await Workmanager().initialize(
-      episodeCheckCallbackDispatcher,
-      isInDebugMode: false, // Set to true for debugging
-    );
-    
-    // Register periodic task if enabled
-    final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool(_enabledKey) ?? true;
-    if (enabled) {
-      await registerPeriodicTask();
+    // WorkManager only works on Android and iOS
+    if (_supportsBackgroundTasks) {
+      // Initialize WorkManager
+      await Workmanager().initialize(
+        episodeCheckCallbackDispatcher,
+        isInDebugMode: false, // Set to true for debugging
+      );
+      
+      // Register periodic task if enabled
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool(_enabledKey) ?? true;
+      if (enabled) {
+        await registerPeriodicTask();
+      }
     }
     
-    print('📺 EpisodeCheckService initialized');
+    print('📺 EpisodeCheckService initialized${_supportsBackgroundTasks ? '' : ' (background tasks not supported on this platform)'}');
   }
 
   /// Initialize local notifications
   static Future<void> _initNotifications() async {
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
+    // Skip on web
+    if (kIsWeb) return;
     
-    const initSettings = InitializationSettings(
-      android: androidSettings,
-      iOS: iosSettings,
-    );
-    
-    await _notifications.initialize(
-      initSettings,
-      onDidReceiveNotificationResponse: _onNotificationTap,
-    );
-    
-    // Request permissions on Android 13+
-    if (Platform.isAndroid) {
-      await _notifications
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
-          ?.requestNotificationsPermission();
+    try {
+      if (Platform.isAndroid) {
+        const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+        const initSettings = InitializationSettings(android: androidSettings);
+        
+        await _notifications.initialize(
+          initSettings,
+          onDidReceiveNotificationResponse: _onNotificationTap,
+        );
+        
+        // Request permissions on Android 13+
+        await _notifications
+            .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin>()
+            ?.requestNotificationsPermission();
+      } else if (Platform.isIOS || Platform.isMacOS) {
+        const iosSettings = DarwinInitializationSettings(
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+        );
+        const initSettings = InitializationSettings(
+          iOS: iosSettings,
+          macOS: iosSettings,
+        );
+        
+        await _notifications.initialize(
+          initSettings,
+          onDidReceiveNotificationResponse: _onNotificationTap,
+        );
+      } else if (Platform.isLinux) {
+        const linuxSettings = LinuxInitializationSettings(
+          defaultActionName: 'Open notification',
+        );
+        const initSettings = InitializationSettings(linux: linuxSettings);
+        
+        await _notifications.initialize(
+          initSettings,
+          onDidReceiveNotificationResponse: _onNotificationTap,
+        );
+      }
+      // Windows notifications are not fully supported by flutter_local_notifications
+      // Skip initialization on Windows for now
+    } catch (e) {
+      print('⚠️ Failed to initialize notifications: $e');
     }
   }
 
@@ -95,6 +130,8 @@ class EpisodeCheckService {
 
   /// Register the periodic background task
   static Future<void> registerPeriodicTask() async {
+    if (!_supportsBackgroundTasks) return;
+    
     final prefs = await SharedPreferences.getInstance();
     final frequencyHours = prefs.getInt(_frequencyKey) ?? 24;
     
@@ -121,6 +158,8 @@ class EpisodeCheckService {
 
   /// Cancel the periodic task
   static Future<void> cancelPeriodicTask() async {
+    if (!_supportsBackgroundTasks) return;
+    
     await Workmanager().cancelByUniqueName(_taskName);
     print('❌ Cancelled periodic episode check task');
   }

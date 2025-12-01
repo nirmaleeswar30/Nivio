@@ -136,13 +136,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
       body: CustomScrollView(
         controller: _scrollController,
+        cacheExtent: 1000, // Pre-render more content for smoother scrolling
         slivers: [
           // Hero Banner Carousel with Regional + General Content
           SliverToBoxAdapter(
-            child: featuredContent.when(
-              data: (content) => _buildHeroBannerCarousel(context, content),
-              loading: () => _buildHeroBannerShimmer(),
-              error: (_, __) => const SizedBox(height: 500),
+            child: RepaintBoundary(
+              child: featuredContent.when(
+                data: (content) => _buildHeroBannerCarousel(context, content),
+                loading: () => _buildHeroBannerShimmer(),
+                error: (_, __) => const SizedBox(height: 500),
+              ),
             ),
           ),
 

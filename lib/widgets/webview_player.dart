@@ -48,6 +48,11 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
             supportZoom: false,
             // Enable fullscreen support
             javaScriptCanOpenWindowsAutomatically: true,
+            // Performance optimizations for smoother playback
+            hardwareAcceleration: true,
+            useWideViewPort: true,
+            loadWithOverviewMode: true,
+            layoutAlgorithm: LayoutAlgorithm.NORMAL,
           ),
           onWebViewCreated: (controller) {
             _webViewController = controller;

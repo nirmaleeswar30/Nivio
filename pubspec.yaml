@@ -54,6 +54,9 @@ dependencies:
   flutter_local_notifications: ^18.0.1
   connectivity_plus: ^6.1.1
 
+  # Desktop Window Management
+  window_manager: ^0.5.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

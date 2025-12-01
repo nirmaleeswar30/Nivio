@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -16,6 +19,14 @@ class AuthScreen extends ConsumerStatefulWidget {
 class _AuthScreenState extends ConsumerState<AuthScreen> {
   bool _isLoading = false;
 
+  /// Check if Google Sign-In is supported on this platform
+  bool get _supportsGoogleSignIn {
+    if (kIsWeb) return true; // Web supports Google Sign-In
+    // Google Sign-In works on Android, iOS, macOS
+    // Not supported on Windows and Linux
+    return Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -31,6 +42,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   }
 
   Future<void> _signInWithGoogle() async {
+    if (!_supportsGoogleSignIn) return;
+    
     setState(() => _isLoading = true);
     
     try {
@@ -148,54 +161,81 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                   color: NivioTheme.netflixRed,
                 )
               else ...[
-                // Google Sign In Button
-                ElevatedButton.icon(
-                  onPressed: _signInWithGoogle,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 32,
-                      vertical: 16,
+                // Google Sign In Button (only show on supported platforms)
+                if (_supportsGoogleSignIn) ...[
+                  ElevatedButton.icon(
+                    onPressed: _signInWithGoogle,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 32,
+                        vertical: 16,
+                      ),
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black87,
                     ),
-                    backgroundColor: Colors.white,
-                    foregroundColor: Colors.black87,
-                  ),
-                  icon: const Icon(Icons.login, size: 24),
-                  label: const Text(
-                    'SIGN IN WITH GOOGLE',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
+                    icon: const Icon(Icons.login, size: 24),
+                    label: const Text(
+                      'SIGN IN WITH GOOGLE',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
+                  const SizedBox(height: 16),
+                ],
                 
-                // Guest/Anonymous Button
-                OutlinedButton(
-                  onPressed: _signInAnonymously,
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 32,
-                      vertical: 16,
+                // Guest/Anonymous Button (or main button on Windows/Linux)
+                if (_supportsGoogleSignIn)
+                  OutlinedButton(
+                    onPressed: _signInAnonymously,
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 32,
+                        vertical: 16,
+                      ),
+                      side: const BorderSide(color: Colors.white70, width: 2),
+                      foregroundColor: Colors.white,
                     ),
-                    side: const BorderSide(color: Colors.white70, width: 2),
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text(
-                    'CONTINUE AS GUEST',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
+                    child: const Text(
+                      'CONTINUE AS GUEST',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  )
+                else
+                  // On Windows/Linux, show a primary button for guest mode
+                  ElevatedButton.icon(
+                    onPressed: _signInAnonymously,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 32,
+                        vertical: 16,
+                      ),
+                      backgroundColor: NivioTheme.netflixRed,
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: const Icon(Icons.play_arrow, size: 24),
+                    label: const Text(
+                      'GET STARTED',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
+                      ),
                     ),
                   ),
-                ),
                 const SizedBox(height: 16),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 48.0),
                   child: Text(
-                    'Guest mode: Your watchlist will only be saved locally',
+                    _supportsGoogleSignIn
+                        ? 'Guest mode: Your watchlist will only be saved locally'
+                        : 'Your watchlist will be saved locally on this device',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.white60,
                     ),

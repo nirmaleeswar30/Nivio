@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -27,6 +30,12 @@ import 'package:intl/intl.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
+
+  /// Check if background tasks are supported on this platform
+  bool get _supportsBackgroundTasks {
+    if (kIsWeb) return false;
+    return Platform.isAndroid || Platform.isIOS;
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -172,56 +181,58 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
 
-          // Notifications Section
-          _buildSectionHeader('Notifications'),
-          _buildSettingsTile(
-            icon: Icons.notifications_outlined,
-            title: 'New Episode Alerts',
-            subtitle: episodeCheckEnabled ? 'Enabled' : 'Disabled',
-            trailing: Switch(
-              value: episodeCheckEnabled,
-              onChanged: (value) {
-                ref.read(episodeCheckEnabledProvider.notifier).setEnabled(value);
-              },
-              activeColor: NivioTheme.netflixRed,
-            ),
-          ),
-          if (episodeCheckEnabled) ...[
+          // Notifications Section (only show on platforms that support background tasks)
+          if (_supportsBackgroundTasks) ...[
+            _buildSectionHeader('Notifications'),
             _buildSettingsTile(
-              icon: Icons.schedule_outlined,
-              title: 'Check Frequency',
-              subtitle: ref.read(episodeCheckFrequencyProvider.notifier).displayName,
-              trailing: const Icon(Icons.chevron_right, color: Colors.white70),
-              onTap: () {
-                _showFrequencyDialog(context, ref);
-              },
+              icon: Icons.notifications_outlined,
+              title: 'New Episode Alerts',
+              subtitle: episodeCheckEnabled ? 'Enabled' : 'Disabled',
+              trailing: Switch(
+                value: episodeCheckEnabled,
+                onChanged: (value) {
+                  ref.read(episodeCheckEnabledProvider.notifier).setEnabled(value);
+                },
+                activeColor: NivioTheme.netflixRed,
+              ),
             ),
-            _buildSettingsTile(
-              icon: Icons.refresh_outlined,
-              title: 'Check Now',
-              subtitle: 'Manually check for new episodes',
-              trailing: const Icon(Icons.chevron_right, color: Colors.white70),
-              onTap: () async {
-                _showCheckingDialog(context, ref);
-              },
-            ),
-            FutureBuilder<DateTime?>(
-              future: EpisodeCheckService.getLastCheckTime(),
-              builder: (context, snapshot) {
-                final lastCheck = snapshot.data;
-                final subtitle = lastCheck != null
-                    ? 'Last checked: ${DateFormat.yMMMd().add_jm().format(lastCheck)}'
-                    : 'Never checked';
-                return _buildSettingsTile(
-                  icon: Icons.history_outlined,
-                  title: 'Last Check',
-                  subtitle: subtitle,
-                  trailing: null,
-                );
-              },
-            ),
+            if (episodeCheckEnabled) ...[
+              _buildSettingsTile(
+                icon: Icons.schedule_outlined,
+                title: 'Check Frequency',
+                subtitle: ref.read(episodeCheckFrequencyProvider.notifier).displayName,
+                trailing: const Icon(Icons.chevron_right, color: Colors.white70),
+                onTap: () {
+                  _showFrequencyDialog(context, ref);
+                },
+              ),
+              _buildSettingsTile(
+                icon: Icons.refresh_outlined,
+                title: 'Check Now',
+                subtitle: 'Manually check for new episodes',
+                trailing: const Icon(Icons.chevron_right, color: Colors.white70),
+                onTap: () async {
+                  _showCheckingDialog(context, ref);
+                },
+              ),
+              FutureBuilder<DateTime?>(
+                future: EpisodeCheckService.getLastCheckTime(),
+                builder: (context, snapshot) {
+                  final lastCheck = snapshot.data;
+                  final subtitle = lastCheck != null
+                      ? 'Last checked: ${DateFormat.yMMMd().add_jm().format(lastCheck)}'
+                      : 'Never checked';
+                  return _buildSettingsTile(
+                    icon: Icons.history_outlined,
+                    title: 'Last Check',
+                    subtitle: subtitle,
+                    trailing: null,
+                  );
+                },
+              ),
+            ],
+            const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
           ],
-          const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
 
           // Data & Storage
           _buildSectionHeader('Data & Storage'),

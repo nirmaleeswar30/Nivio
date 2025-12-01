@@ -40,6 +40,7 @@ class ContentRow extends StatelessWidget {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 12),
               itemCount: items.length,
+              cacheExtent: 500, // Pre-render items for smoother scrolling
               itemBuilder: (context, index) {
                 final item = items[index];
                 final posterPath = item['poster_path'];
@@ -47,12 +48,14 @@ class ContentRow extends StatelessWidget {
                 final mediaType = item['media_type'] ?? 
                     (item['title'] != null ? 'movie' : 'tv');
 
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: _AnimatedPosterCard(
-                    posterPath: posterPath,
-                    tmdbId: tmdbId,
-                    mediaType: mediaType,
+                return RepaintBoundary(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: _AnimatedPosterCard(
+                      posterPath: posterPath,
+                      tmdbId: tmdbId,
+                      mediaType: mediaType,
+                    ),
                   ),
                 );
               },
