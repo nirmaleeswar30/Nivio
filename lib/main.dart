@@ -9,8 +9,10 @@ import 'package:nivio/core/theme.dart';
 import 'package:nivio/firebase_options.dart';
 import 'package:nivio/models/cache_entry.dart';
 import 'package:nivio/models/watchlist_item.dart';
+import 'package:nivio/models/new_episode.dart';
 import 'package:nivio/services/cache_service.dart';
 import 'package:nivio/services/watchlist_service.dart';
+import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/screens/home_screen.dart';
 import 'package:nivio/screens/search_screen.dart';
@@ -20,6 +22,7 @@ import 'package:nivio/screens/auth_screen.dart';
 import 'package:nivio/screens/settings_screen.dart';
 import 'package:nivio/screens/watchlist_screen.dart';
 import 'package:nivio/screens/profile_screen.dart';
+import 'package:nivio/screens/new_episodes_screen.dart';
 
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -41,6 +44,9 @@ void main() async {
   final cacheService = CacheService();
   await cacheService.init();
 
+  // Initialize episode check service (background notifications)
+  await EpisodeCheckService.init();
+
   runApp(
     ProviderScope(
       overrides: [
@@ -58,6 +64,7 @@ Future<void> _initHive() async {
   await Hive.initFlutter();
   Hive.registerAdapter(CacheEntryAdapter());
   Hive.registerAdapter(WatchlistItemAdapter());
+  Hive.registerAdapter(NewEpisodeAdapter());
   // Initialize watchlist box
   await WatchlistService.init();
 }
@@ -117,6 +124,10 @@ final _router = GoRouter(
     GoRoute(
       path: '/profile',
       builder: (context, state) => const ProfileScreen(),
+    ),
+    GoRoute(
+      path: '/new-episodes',
+      builder: (context, state) => const NewEpisodesScreen(),
     ),
     GoRoute(
       path: '/media/:id',

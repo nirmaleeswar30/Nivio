@@ -7,7 +7,9 @@ import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
+import 'package:nivio/services/episode_check_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:intl/intl.dart';
 
 /// Settings Screen - All settings are functional and persist via SharedPreferences
 /// 
@@ -34,6 +36,8 @@ class SettingsScreen extends ConsumerWidget {
     final subtitlesEnabled = ref.watch(subtitlesEnabledProvider);
     final animationsEnabled = ref.watch(animationsEnabledProvider);
     final languagePreferences = ref.watch(languagePreferencesProvider);
+    final episodeCheckEnabled = ref.watch(episodeCheckEnabledProvider);
+    final episodeCheckFrequency = ref.watch(episodeCheckFrequencyProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -166,6 +170,57 @@ class SettingsScreen extends ConsumerWidget {
               activeColor: NivioTheme.netflixRed,
             ),
           ),
+          const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
+
+          // Notifications Section
+          _buildSectionHeader('Notifications'),
+          _buildSettingsTile(
+            icon: Icons.notifications_outlined,
+            title: 'New Episode Alerts',
+            subtitle: episodeCheckEnabled ? 'Enabled' : 'Disabled',
+            trailing: Switch(
+              value: episodeCheckEnabled,
+              onChanged: (value) {
+                ref.read(episodeCheckEnabledProvider.notifier).setEnabled(value);
+              },
+              activeColor: NivioTheme.netflixRed,
+            ),
+          ),
+          if (episodeCheckEnabled) ...[
+            _buildSettingsTile(
+              icon: Icons.schedule_outlined,
+              title: 'Check Frequency',
+              subtitle: ref.read(episodeCheckFrequencyProvider.notifier).displayName,
+              trailing: const Icon(Icons.chevron_right, color: Colors.white70),
+              onTap: () {
+                _showFrequencyDialog(context, ref);
+              },
+            ),
+            _buildSettingsTile(
+              icon: Icons.refresh_outlined,
+              title: 'Check Now',
+              subtitle: 'Manually check for new episodes',
+              trailing: const Icon(Icons.chevron_right, color: Colors.white70),
+              onTap: () async {
+                _showCheckingDialog(context, ref);
+              },
+            ),
+            FutureBuilder<DateTime?>(
+              future: EpisodeCheckService.getLastCheckTime(),
+              builder: (context, snapshot) {
+                final lastCheck = snapshot.data;
+                final subtitle = lastCheck != null
+                    ? 'Last checked: ${DateFormat.yMMMd().add_jm().format(lastCheck)}'
+                    : 'Never checked';
+                return _buildSettingsTile(
+                  icon: Icons.history_outlined,
+                  title: 'Last Check',
+                  subtitle: subtitle,
+                  trailing: null,
+                );
+              },
+            ),
+          ],
           const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
 
           // Data & Storage
@@ -534,6 +589,101 @@ class SettingsScreen extends ConsumerWidget {
         onChanged: onChanged,
         activeColor: const Color(0xFFE50914),
         activeTrackColor: const Color(0xFFE50914).withOpacity(0.5),
+      ),
+    );
+  }
+
+  void _showFrequencyDialog(BuildContext context, WidgetRef ref) {
+    final frequencies = [
+      {'value': 12, 'label': 'Every 12 hours (Frequent)'},
+      {'value': 24, 'label': 'Daily (Recommended)'},
+      {'value': 48, 'label': 'Every 2 days (Battery Saver)'},
+    ];
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: NivioTheme.netflixDarkGrey,
+        title: const Text(
+          'Check Frequency',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(bottom: 16.0),
+              child: Text(
+                'Choose how often to check for new episodes. More frequent checks use more battery.',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ),
+            ...frequencies.map((freq) {
+              final currentFreq = ref.read(episodeCheckFrequencyProvider);
+              return RadioListTile<int>(
+                value: freq['value'] as int,
+                groupValue: currentFreq,
+                activeColor: NivioTheme.netflixRed,
+                title: Text(
+                  freq['label'] as String,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                ),
+                onChanged: (value) {
+                  if (value != null) {
+                    ref.read(episodeCheckFrequencyProvider.notifier).setFrequency(value);
+                    Navigator.pop(dialogContext);
+                  }
+                },
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCheckingDialog(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: NivioTheme.netflixDarkGrey,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(color: NivioTheme.netflixRed),
+            const SizedBox(height: 20),
+            const Text(
+              'Checking for new episodes...',
+              style: TextStyle(color: Colors.white),
+            ),
+            FutureBuilder<int>(
+              future: EpisodeCheckService.checkNow(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.done) {
+                  // Auto-close dialog and show result
+                  Future.delayed(const Duration(milliseconds: 500), () {
+                    if (dialogContext.mounted) {
+                      Navigator.pop(dialogContext);
+                      final count = snapshot.data ?? 0;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            count > 0
+                                ? '🎉 Found $count new episode${count > 1 ? 's' : ''}!'
+                                : 'No new episodes found',
+                          ),
+                          backgroundColor: NivioTheme.netflixRed,
+                        ),
+                      );
+                    }
+                  });
+                }
+                return const SizedBox.shrink();
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

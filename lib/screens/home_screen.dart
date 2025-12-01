@@ -8,6 +8,7 @@ import 'package:nivio/providers/home_providers.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/widgets/continue_watching_row.dart';
 import 'package:nivio/widgets/content_row.dart';
+import 'package:nivio/services/episode_check_service.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -107,6 +108,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 icon: const Icon(Icons.search, color: Colors.white, size: 28),
                 onPressed: () => context.push('/search'),
               ),
+            ),
+            // Notification bell with badge
+            Padding(
+              padding: const EdgeInsets.only(top: 8.0),
+              child: _buildNotificationBell(context),
             ),
             Padding(
               padding: const EdgeInsets.only(top: 8.0),
@@ -635,6 +641,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: const Center(
         child: CircularProgressIndicator(color: Color(0xFFE50914)),
       ),
+    );
+  }
+
+  Widget _buildNotificationBell(BuildContext context) {
+    final unreadCount = EpisodeCheckService.getUnreadCount();
+    
+    return Stack(
+      children: [
+        IconButton(
+          icon: Icon(
+            unreadCount > 0 ? Icons.notifications : Icons.notifications_none,
+            color: Colors.white,
+            size: 28,
+          ),
+          tooltip: 'New Episodes',
+          onPressed: () => context.push('/new-episodes'),
+        ),
+        if (unreadCount > 0)
+          Positioned(
+            right: 6,
+            top: 6,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: Color(0xFFE50914),
+                shape: BoxShape.circle,
+              ),
+              constraints: const BoxConstraints(
+                minWidth: 18,
+                minHeight: 18,
+              ),
+              child: Text(
+                unreadCount > 9 ? '9+' : unreadCount.toString(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

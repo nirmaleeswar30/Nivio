@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/episode_check_service.dart';
 
 // Playback Speed Provider
 final playbackSpeedProvider = StateNotifierProvider<PlaybackSpeedNotifier, double>((ref) {
@@ -130,5 +131,63 @@ class AnimeSubDubNotifier extends StateNotifier<String> {
 
   String get displayName {
     return state == 'sub' ? 'Subtitled (Sub)' : 'Dubbed (Dub)';
+  }
+}
+
+// Episode Check Enabled Provider
+final episodeCheckEnabledProvider = StateNotifierProvider<EpisodeCheckEnabledNotifier, bool>((ref) {
+  return EpisodeCheckEnabledNotifier();
+});
+
+class EpisodeCheckEnabledNotifier extends StateNotifier<bool> {
+  EpisodeCheckEnabledNotifier() : super(true) {
+    _loadSetting();
+  }
+
+  Future<void> _loadSetting() async {
+    state = await EpisodeCheckService.isEnabled();
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    await EpisodeCheckService.setEnabled(state);
+  }
+
+  Future<void> setEnabled(bool enabled) async {
+    state = enabled;
+    await EpisodeCheckService.setEnabled(enabled);
+  }
+}
+
+// Episode Check Frequency Provider
+final episodeCheckFrequencyProvider = StateNotifierProvider<EpisodeCheckFrequencyNotifier, int>((ref) {
+  return EpisodeCheckFrequencyNotifier();
+});
+
+class EpisodeCheckFrequencyNotifier extends StateNotifier<int> {
+  EpisodeCheckFrequencyNotifier() : super(24) {
+    _loadSetting();
+  }
+
+  Future<void> _loadSetting() async {
+    state = await EpisodeCheckService.getFrequency();
+  }
+
+  Future<void> setFrequency(int hours) async {
+    state = hours;
+    await EpisodeCheckService.setFrequency(hours);
+  }
+
+  String get displayName {
+    switch (state) {
+      case 12:
+        return 'Every 12 hours';
+      case 24:
+        return 'Daily';
+      case 48:
+        return 'Every 2 days';
+      default:
+        return 'Every $state hours';
+    }
   }
 }
