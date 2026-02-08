@@ -1,8 +1,6 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:ui';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,10 +18,10 @@ class EpisodeCheckService {
   static const String _lastCheckKey = 'last_episode_check';
   static const String _frequencyKey = 'episode_check_frequency';
   static const String _enabledKey = 'episode_check_enabled';
-  
-  static final FlutterLocalNotificationsPlugin _notifications = 
+
+  static final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
-  
+
   static final Dio _dio = Dio(
     BaseOptions(
       baseUrl: tmdbBaseUrl,
@@ -33,22 +31,19 @@ class EpisodeCheckService {
     ),
   );
 
-  /// Check if the current platform supports background tasks
-  static bool get _supportsBackgroundTasks {
-    if (kIsWeb) return false;
-    return Platform.isAndroid || Platform.isIOS;
-  }
+  /// Android always supports background tasks
+  static bool get _supportsBackgroundTasks => true;
 
   /// Initialize the service and notifications
   static Future<void> init() async {
     // Initialize notifications (supported on most platforms)
     await _initNotifications();
-    
+
     // Initialize Hive box for new episodes
     if (!Hive.isBoxOpen(_boxName)) {
       await Hive.openBox<NewEpisode>(_boxName);
     }
-    
+
     // WorkManager only works on Android and iOS
     if (_supportsBackgroundTasks) {
       // Initialize WorkManager
@@ -56,7 +51,7 @@ class EpisodeCheckService {
         episodeCheckCallbackDispatcher,
         isInDebugMode: false, // Set to true for debugging
       );
-      
+
       // Register periodic task if enabled
       final prefs = await SharedPreferences.getInstance();
       final enabled = prefs.getBool(_enabledKey) ?? true;
@@ -64,58 +59,31 @@ class EpisodeCheckService {
         await registerPeriodicTask();
       }
     }
-    
-    print('📺 EpisodeCheckService initialized${_supportsBackgroundTasks ? '' : ' (background tasks not supported on this platform)'}');
+
+    print(
+      '📺 EpisodeCheckService initialized${_supportsBackgroundTasks ? '' : ' (background tasks not supported on this platform)'}',
+    );
   }
 
   /// Initialize local notifications
   static Future<void> _initNotifications() async {
-    // Skip on web
-    if (kIsWeb) return;
-    
     try {
-      if (Platform.isAndroid) {
-        const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-        const initSettings = InitializationSettings(android: androidSettings);
-        
-        await _notifications.initialize(
-          initSettings,
-          onDidReceiveNotificationResponse: _onNotificationTap,
-        );
-        
-        // Request permissions on Android 13+
-        await _notifications
-            .resolvePlatformSpecificImplementation<
-                AndroidFlutterLocalNotificationsPlugin>()
-            ?.requestNotificationsPermission();
-      } else if (Platform.isIOS || Platform.isMacOS) {
-        const iosSettings = DarwinInitializationSettings(
-          requestAlertPermission: true,
-          requestBadgePermission: true,
-          requestSoundPermission: true,
-        );
-        const initSettings = InitializationSettings(
-          iOS: iosSettings,
-          macOS: iosSettings,
-        );
-        
-        await _notifications.initialize(
-          initSettings,
-          onDidReceiveNotificationResponse: _onNotificationTap,
-        );
-      } else if (Platform.isLinux) {
-        const linuxSettings = LinuxInitializationSettings(
-          defaultActionName: 'Open notification',
-        );
-        const initSettings = InitializationSettings(linux: linuxSettings);
-        
-        await _notifications.initialize(
-          initSettings,
-          onDidReceiveNotificationResponse: _onNotificationTap,
-        );
-      }
-      // Windows notifications are not fully supported by flutter_local_notifications
-      // Skip initialization on Windows for now
+      const androidSettings = AndroidInitializationSettings(
+        '@mipmap/ic_launcher',
+      );
+      const initSettings = InitializationSettings(android: androidSettings);
+
+      await _notifications.initialize(
+        initSettings,
+        onDidReceiveNotificationResponse: _onNotificationTap,
+      );
+
+      // Request permissions on Android 13+
+      await _notifications
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.requestNotificationsPermission();
     } catch (e) {
       print('⚠️ Failed to initialize notifications: $e');
     }
@@ -131,13 +99,13 @@ class EpisodeCheckService {
   /// Register the periodic background task
   static Future<void> registerPeriodicTask() async {
     if (!_supportsBackgroundTasks) return;
-    
+
     final prefs = await SharedPreferences.getInstance();
     final frequencyHours = prefs.getInt(_frequencyKey) ?? 24;
-    
+
     // Cancel existing task first
     await Workmanager().cancelByUniqueName(_taskName);
-    
+
     // Register new task with updated frequency
     await Workmanager().registerPeriodicTask(
       _taskName,
@@ -152,14 +120,14 @@ class EpisodeCheckService {
       backoffPolicy: BackoffPolicy.exponential,
       backoffPolicyDelay: const Duration(minutes: 10),
     );
-    
+
     print('📅 Registered periodic task with frequency: ${frequencyHours}h');
   }
 
   /// Cancel the periodic task
   static Future<void> cancelPeriodicTask() async {
     if (!_supportsBackgroundTasks) return;
-    
+
     await Workmanager().cancelByUniqueName(_taskName);
     print('❌ Cancelled periodic episode check task');
   }
@@ -174,7 +142,7 @@ class EpisodeCheckService {
   static Future<void> setFrequency(int hours) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_frequencyKey, hours);
-    
+
     // Re-register task with new frequency
     final enabled = prefs.getBool(_enabledKey) ?? true;
     if (enabled) {
@@ -192,7 +160,7 @@ class EpisodeCheckService {
   static Future<void> setEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_enabledKey, enabled);
-    
+
     if (enabled) {
       await registerPeriodicTask();
     } else {
@@ -204,7 +172,7 @@ class EpisodeCheckService {
   static Future<DateTime?> getLastCheckTime() async {
     final prefs = await SharedPreferences.getInstance();
     final timestamp = prefs.getInt(_lastCheckKey);
-    return timestamp != null 
+    return timestamp != null
         ? DateTime.fromMillisecondsSinceEpoch(timestamp)
         : null;
   }
@@ -316,14 +284,14 @@ class EpisodeCheckService {
         try {
           // Add delay between requests to avoid rate limiting
           await Future.delayed(const Duration(milliseconds: 500));
-          
+
           final episodes = await _checkShowForNewEpisodes(
             show.id,
             show.title,
             show.posterPath,
             lastCheck,
           );
-          
+
           for (final episode in episodes) {
             // Check if we already have this episode
             if (!episodesBox.containsKey(episode.key)) {
@@ -367,28 +335,31 @@ class EpisodeCheckService {
       // Get show details to find latest season
       final response = await _dio.get('/3/tv/$showId');
       final showData = response.data;
-      
+
       final seasons = showData['seasons'] as List<dynamic>? ?? [];
       if (seasons.isEmpty) return [];
 
       // Get the last 2 seasons (current and previous)
-      final seasonsToCheck = seasons
-          .where((s) => (s['season_number'] as int? ?? 0) > 0)
-          .toList()
-        ..sort((a, b) => 
-            (b['season_number'] as int).compareTo(a['season_number'] as int));
-      
+      final seasonsToCheck =
+          seasons.where((s) => (s['season_number'] as int? ?? 0) > 0).toList()
+            ..sort(
+              (a, b) => (b['season_number'] as int).compareTo(
+                a['season_number'] as int,
+              ),
+            );
+
       final recentSeasons = seasonsToCheck.take(2).toList();
 
       for (final season in recentSeasons) {
         final seasonNumber = season['season_number'] as int;
-        
+
         try {
           // Get season episodes
           final seasonResponse = await _dio.get(
             '/3/tv/$showId/season/$seasonNumber',
           );
-          final episodes = seasonResponse.data['episodes'] as List<dynamic>? ?? [];
+          final episodes =
+              seasonResponse.data['episodes'] as List<dynamic>? ?? [];
 
           for (final episode in episodes) {
             final airDateStr = episode['air_date'] as String?;
@@ -399,16 +370,20 @@ class EpisodeCheckService {
 
             // Check if episode aired after last check AND not in the future
             if (airDate.isAfter(since) && airDate.isBefore(DateTime.now())) {
-              newEpisodes.add(NewEpisode(
-                showId: showId,
-                showName: showName,
-                seasonNumber: seasonNumber,
-                episodeNumber: episode['episode_number'] as int,
-                episodeName: episode['name'] as String? ?? 'Episode ${episode['episode_number']}',
-                posterPath: posterPath,
-                airDate: airDate,
-                detectedAt: DateTime.now(),
-              ));
+              newEpisodes.add(
+                NewEpisode(
+                  showId: showId,
+                  showName: showName,
+                  seasonNumber: seasonNumber,
+                  episodeNumber: episode['episode_number'] as int,
+                  episodeName:
+                      episode['name'] as String? ??
+                      'Episode ${episode['episode_number']}',
+                  posterPath: posterPath,
+                  airDate: airDate,
+                  detectedAt: DateTime.now(),
+                ),
+              );
             }
           }
         } catch (e) {
@@ -423,13 +398,16 @@ class EpisodeCheckService {
   }
 
   /// Show notification for new episodes
-  static Future<void> _showNewEpisodeNotification(List<NewEpisode> episodes) async {
+  static Future<void> _showNewEpisodeNotification(
+    List<NewEpisode> episodes,
+  ) async {
     if (episodes.isEmpty) return;
 
     const androidDetails = AndroidNotificationDetails(
       'new_episodes',
       'New Episodes',
-      channelDescription: 'Notifications for new episodes of shows in your watchlist',
+      channelDescription:
+          'Notifications for new episodes of shows in your watchlist',
       importance: Importance.high,
       priority: Priority.high,
       icon: '@mipmap/ic_launcher',
@@ -483,10 +461,10 @@ void episodeCheckCallbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     try {
       print('🔔 Background task started: $task');
-      
+
       // Initialize Hive for background isolate
       await Hive.initFlutter();
-      
+
       // Register adapters
       if (!Hive.isAdapterRegistered(2)) {
         Hive.registerAdapter(WatchlistItemAdapter());
@@ -494,13 +472,13 @@ void episodeCheckCallbackDispatcher() {
       if (!Hive.isAdapterRegistered(3)) {
         Hive.registerAdapter(NewEpisodeAdapter());
       }
-      
+
       // Initialize notifications
       await EpisodeCheckService.initNotificationsForBackground();
-      
+
       // Perform the check
       await EpisodeCheckService.performEpisodeCheckForBackground();
-      
+
       print('✅ Background task completed');
       return true;
     } catch (e) {

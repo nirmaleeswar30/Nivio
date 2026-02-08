@@ -1,6 +1,3 @@
-import 'dart:io';
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,27 +12,24 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 
 /// Settings Screen - All settings are functional and persist via SharedPreferences
-/// 
+///
 /// ✅ INTEGRATED SETTINGS:
 /// - Playback Speed: Applied to VideoPlayerController in player_screen.dart
 /// - Video Quality: Used when fetching stream URLs from configured providers
 /// - Clear Watch History: Deletes Hive watch_history box
 /// - Sign Out: Calls Firebase Auth sign out
-/// 
+///
 /// ⏳ SAVED BUT NOT YET INTEGRATED:
 /// - Subtitles: Saved to SharedPreferences, needs subtitle parser integration
 /// - Animations: Saved to SharedPreferences, needs conditional checks in widgets
-/// 
+///
 /// See SETTINGS_INTEGRATION.md for complete integration details
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
-  /// Check if background tasks are supported on this platform
-  bool get _supportsBackgroundTasks {
-    if (kIsWeb) return false;
-    return Platform.isAndroid || Platform.isIOS;
-  }
+  /// Android supports background tasks
+  bool get _supportsBackgroundTasks => true;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -86,7 +80,10 @@ class SettingsScreen extends ConsumerWidget {
           // Content Preferences
           _buildSectionHeader('Content Preferences'),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 8.0,
+            ),
             child: Text(
               'Choose which regional content appears on your home screen',
               style: TextStyle(
@@ -122,7 +119,9 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: 'Telugu Movies & Shows',
             value: languagePreferences.showTelugu,
             onChanged: (value) {
-              ref.read(languagePreferencesProvider.notifier).toggleTelugu(value);
+              ref
+                  .read(languagePreferencesProvider.notifier)
+                  .toggleTelugu(value);
             },
           ),
           _buildLanguageToggle(
@@ -142,7 +141,9 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: 'Korean Dramas',
             value: languagePreferences.showKorean,
             onChanged: (value) {
-              ref.read(languagePreferencesProvider.notifier).toggleKorean(value);
+              ref
+                  .read(languagePreferencesProvider.notifier)
+                  .toggleKorean(value);
             },
           ),
           const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
@@ -191,7 +192,9 @@ class SettingsScreen extends ConsumerWidget {
               trailing: Switch(
                 value: episodeCheckEnabled,
                 onChanged: (value) {
-                  ref.read(episodeCheckEnabledProvider.notifier).setEnabled(value);
+                  ref
+                      .read(episodeCheckEnabledProvider.notifier)
+                      .setEnabled(value);
                 },
                 activeColor: NivioTheme.netflixRed,
               ),
@@ -200,8 +203,13 @@ class SettingsScreen extends ConsumerWidget {
               _buildSettingsTile(
                 icon: Icons.schedule_outlined,
                 title: 'Check Frequency',
-                subtitle: ref.read(episodeCheckFrequencyProvider.notifier).displayName,
-                trailing: const Icon(Icons.chevron_right, color: Colors.white70),
+                subtitle: ref
+                    .read(episodeCheckFrequencyProvider.notifier)
+                    .displayName,
+                trailing: const Icon(
+                  Icons.chevron_right,
+                  color: Colors.white70,
+                ),
                 onTap: () {
                   _showFrequencyDialog(context, ref);
                 },
@@ -210,7 +218,10 @@ class SettingsScreen extends ConsumerWidget {
                 icon: Icons.refresh_outlined,
                 title: 'Check Now',
                 subtitle: 'Manually check for new episodes',
-                trailing: const Icon(Icons.chevron_right, color: Colors.white70),
+                trailing: const Icon(
+                  Icons.chevron_right,
+                  color: Colors.white70,
+                ),
                 onTap: () async {
                   _showCheckingDialog(context, ref);
                 },
@@ -324,13 +335,13 @@ class SettingsScreen extends ConsumerWidget {
 
   String _getSignInMethod(User? user) {
     if (user == null) return 'Not signed in';
-    
+
     // Check if user is anonymous
     if (user.isAnonymous) return 'Guest Mode';
-    
+
     // Check provider data for actual sign-in method
     if (user.providerData.isEmpty) return 'Anonymous';
-    
+
     // Get the first provider
     final provider = user.providerData.first.providerId;
     switch (provider) {
@@ -373,11 +384,7 @@ class SettingsScreen extends ConsumerWidget {
     Color? textColor,
   }) {
     return ListTile(
-      leading: Icon(
-        icon,
-        color: textColor ?? Colors.white,
-        size: 28,
-      ),
+      leading: Icon(icon, color: textColor ?? Colors.white, size: 28),
       title: Text(
         title,
         style: TextStyle(
@@ -388,10 +395,7 @@ class SettingsScreen extends ConsumerWidget {
       ),
       subtitle: Text(
         subtitle,
-        style: const TextStyle(
-          color: Colors.white60,
-          fontSize: 13,
-        ),
+        style: const TextStyle(color: Colors.white60, fontSize: 13),
       ),
       trailing: trailing,
       onTap: onTap,
@@ -425,10 +429,10 @@ class SettingsScreen extends ConsumerWidget {
               // Use the service to clear history (local + cloud)
               final historyService = ref.read(watchHistoryServiceProvider);
               await historyService.clearAllHistory();
-              
+
               // Invalidate the provider to refresh UI
               ref.invalidate(continueWatchingProvider);
-              
+
               if (dialogContext.mounted) {
                 Navigator.pop(dialogContext);
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -451,7 +455,7 @@ class SettingsScreen extends ConsumerWidget {
 
   void _showPlaybackSpeedDialog(BuildContext context, WidgetRef ref) {
     final speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
-    
+
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -493,7 +497,7 @@ class SettingsScreen extends ConsumerWidget {
       {'value': '720p', 'label': 'HD (720p)'},
       {'value': '480p', 'label': 'SD (480p)'},
     ];
-    
+
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -532,10 +536,7 @@ class SettingsScreen extends ConsumerWidget {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: NivioTheme.netflixDarkGrey,
-        title: const Text(
-          'Sign Out?',
-          style: TextStyle(color: Colors.white),
-        ),
+        title: const Text('Sign Out?', style: TextStyle(color: Colors.white)),
         content: const Text(
           'Are you sure you want to sign out?',
           style: TextStyle(color: Colors.white70),
@@ -591,10 +592,7 @@ class SettingsScreen extends ConsumerWidget {
         ),
         subtitle: Text(
           subtitle,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.6),
-            fontSize: 13,
-          ),
+          style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13),
         ),
         value: value,
         onChanged: onChanged,
@@ -641,7 +639,9 @@ class SettingsScreen extends ConsumerWidget {
                 ),
                 onChanged: (value) {
                   if (value != null) {
-                    ref.read(episodeCheckFrequencyProvider.notifier).setFrequency(value);
+                    ref
+                        .read(episodeCheckFrequencyProvider.notifier)
+                        .setFrequency(value);
                     Navigator.pop(dialogContext);
                   }
                 },

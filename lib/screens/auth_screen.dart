@@ -1,7 +1,4 @@
-import 'dart:io';
-
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -19,13 +16,8 @@ class AuthScreen extends ConsumerStatefulWidget {
 class _AuthScreenState extends ConsumerState<AuthScreen> {
   bool _isLoading = false;
 
-  /// Check if Google Sign-In is supported on this platform
-  bool get _supportsGoogleSignIn {
-    if (kIsWeb) return true; // Web supports Google Sign-In
-    // Google Sign-In works on Android, iOS, macOS
-    // Not supported on Windows and Linux
-    return Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
-  }
+  /// Google Sign-In is supported on Android
+  bool get _supportsGoogleSignIn => true;
 
   @override
   void initState() {
@@ -43,18 +35,18 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   Future<void> _signInWithGoogle() async {
     if (!_supportsGoogleSignIn) return;
-    
+
     setState(() => _isLoading = true);
-    
+
     try {
       final authService = ref.read(authServiceProvider);
       final result = await authService.signInWithGoogle();
-      
+
       if (result != null && mounted) {
         // Sync watchlist to cloud after sign in
         final watchlistService = ref.read(watchlistServiceProvider);
         await watchlistService.syncAllToCloud();
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -83,7 +75,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   Future<void> _signInAnonymously() async {
     setState(() => _isLoading = true);
-    
+
     try {
       final authService = ref.read(authServiceProvider);
       await authService.signInAnonymously();
@@ -98,9 +90,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to sign in: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to sign in: $e')));
       }
     } finally {
       if (mounted) {
@@ -117,10 +109,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              NivioTheme.netflixBlack,
-              Color(0xFF000000),
-            ],
+            colors: [NivioTheme.netflixBlack, Color(0xFF000000)],
           ),
         ),
         child: Center(
@@ -147,19 +136,17 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 32.0),
                 child: Text(
                   'Sign in to sync your watchlist across devices',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.white70,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
                   textAlign: TextAlign.center,
                 ),
               ),
               const SizedBox(height: 64),
-              
+
               // Sign In Buttons
               if (_isLoading)
-                const CircularProgressIndicator(
-                  color: NivioTheme.netflixRed,
-                )
+                const CircularProgressIndicator(color: NivioTheme.netflixRed)
               else ...[
                 // Google Sign In Button (only show on supported platforms)
                 if (_supportsGoogleSignIn) ...[
@@ -185,7 +172,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                   ),
                   const SizedBox(height: 16),
                 ],
-                
+
                 // Guest/Anonymous Button (or main button on Windows/Linux)
                 if (_supportsGoogleSignIn)
                   OutlinedButton(
@@ -236,9 +223,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     _supportsGoogleSignIn
                         ? 'Guest mode: Your watchlist will only be saved locally'
                         : 'Your watchlist will be saved locally on this device',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.white60,
-                    ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.white60),
                     textAlign: TextAlign.center,
                   ),
                 ),

@@ -3,6 +3,9 @@ description: "Netflix-style streaming app"
 publish_to: 'none'
 version: 1.0.0
 
+platforms:
+  android:
+
 environment:
   sdk: ^3.10.0
 
@@ -29,8 +32,6 @@ dependencies:
   google_sign_in: ^6.2.2
 
   # Video Player
-  video_player: ^2.9.2
-  chewie: ^1.8.5
   youtube_player_flutter: ^9.0.3
   youtube_explode_dart: ^2.2.4
   flutter_inappwebview: ^6.1.5
@@ -44,7 +45,7 @@ dependencies:
   go_router: ^14.6.2
 
   # Utilities
-  intl: ^0.19.0
+  intl: ^0.20.2
   freezed_annotation: ^2.4.4
   json_annotation: ^4.9.0
   url_launcher: ^6.3.1
@@ -53,9 +54,9 @@ dependencies:
   workmanager: ^0.9.0
   flutter_local_notifications: ^18.0.1
   connectivity_plus: ^6.1.1
+  palette_generator: ^0.3.3+7
+  better_player_plus: ^1.1.5
 
-  # Desktop Window Management
-  window_manager: ^0.5.1
 
 dev_dependencies:
   flutter_test:
@@ -78,24 +79,22 @@ flutter:
 
   assets:
   - assets/images/
-  - assets/icons/
 
 # App Icon Configuration
 flutter_launcher_icons:
   android: true
-  ios: true
+  ios: false
   image_path: "assets/images/nivio-dark.png"
   adaptive_icon_background: "#000000"
   adaptive_icon_foreground: "assets/images/nivio-dark.png"
   min_sdk_android: 21
-  remove_alpha_ios: true
 
 # Splash Screen Configuration  
 flutter_native_splash:
   color: "#000000"
   image: assets/images/nivio-dark.png
   android: true
-  ios: true
+  ios: false
   web: false
   android_12:
     image: assets/images/nivio-dark.png

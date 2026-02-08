@@ -1,19 +1,18 @@
-import 'dart:io';
-
+import 'package:better_player_plus/better_player_plus.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:video_player/video_player.dart';
-import 'package:chewie/chewie.dart';
 import 'package:nivio/core/theme.dart';
+import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/media_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/models/stream_result.dart';
+import 'package:nivio/services/streaming_service.dart';
 import 'package:nivio/widgets/webview_player.dart';
-import 'package:window_manager/window_manager.dart';
 import 'dart:async';
+import 'dart:math' as math;
 
 class PlayerScreen extends ConsumerStatefulWidget {
   final int mediaId;
@@ -34,121 +33,101 @@ class PlayerScreen extends ConsumerStatefulWidget {
 }
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen> {
-  VideoPlayerController? _videoController;
-  ChewieController? _chewieController;
+  BetterPlayerController? _betterPlayerController;
   StreamResult? _streamResult;
   bool _isLoading = true;
   String? _error;
   Timer? _progressTimer;
   String _currentProvider = '';
   int _retryCount = 0;
-  int _currentProviderIndex = 0; // Track which provider we're using
+  int _currentProviderIndex = 0;
   static const int _maxRetries = 3;
-  static const int _maxProviders = 3; // vidsrc.cc, vidsrc.to, vidlink
-  static const List<String> _providerNames = ['vidsrc.cc', 'vidsrc.to', 'vidlink'];
+  final int _maxProviders = StreamingService.totalProviders;
   final FocusNode _focusNode = FocusNode();
   bool _showNextEpisodeButton = false;
+  bool _nextEpisodeDismissed = false;
   Timer? _nextEpisodeTimer;
-  bool _isDesktopFullscreen = false; // Track desktop fullscreen state
-  bool _showControls = true; // Track control visibility
-  Timer? _hideControlsTimer; // Timer to auto-hide controls
+  int? _nextEpisodeCountdown;
+  bool _isDirectStream = false;
+  Duration? _resumePosition;
+  int _currentEpisode = 0;
+  bool _isSwappingEpisode = false;
 
-  /// Check if we're on a desktop platform that supports window_manager
-  bool get _isDesktopPlatform {
-    if (kIsWeb) return false;
-    return Platform.isWindows || Platform.isLinux || Platform.isMacOS;
-  }
+  // Notifier so overlay updates inside BetterPlayer fullscreen
+  final ValueNotifier<_NextEpState> _nextEpNotifier = ValueNotifier(
+    _NextEpState(show: false, countdown: null),
+  );
+  OverlayEntry? _nextEpOverlayEntry;
+
+  SeasonData? _currentSeasonData;
 
   @override
   void initState() {
     super.initState();
+    _currentEpisode = widget.episode;
     _initializePlayer();
-    // Set preferred orientations for better video experience
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
       DeviceOrientation.portraitUp,
     ]);
-    // Request focus for keyboard shortcuts
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
     });
   }
 
+  // ── Keyboard shortcuts ──────────────────────────────────────────
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    if (_videoController == null || !_videoController!.value.isInitialized) {
+    if (_betterPlayerController?.isVideoInitialized() != true) {
       return KeyEventResult.ignored;
     }
-
+    final vpc = _betterPlayerController!.videoPlayerController!;
     switch (event.logicalKey) {
       case LogicalKeyboardKey.space:
       case LogicalKeyboardKey.keyK:
-        // Play/Pause
-        if (_videoController!.value.isPlaying) {
-          _videoController!.pause();
+        if (_betterPlayerController?.isPlaying() == true) {
+          _betterPlayerController?.pause();
         } else {
-          _videoController!.play();
+          _betterPlayerController?.play();
         }
         return KeyEventResult.handled;
-
       case LogicalKeyboardKey.arrowLeft:
       case LogicalKeyboardKey.keyJ:
-        // Seek backward 10s
-        final currentPos = _videoController!.value.position;
-        final newPos = currentPos - const Duration(seconds: 10);
-        _videoController!.seekTo(newPos < Duration.zero ? Duration.zero : newPos);
+        final pos = vpc.value.position;
+        _betterPlayerController?.seekTo(
+          pos - const Duration(seconds: 10) < Duration.zero
+              ? Duration.zero
+              : pos - const Duration(seconds: 10),
+        );
         return KeyEventResult.handled;
-
       case LogicalKeyboardKey.arrowRight:
       case LogicalKeyboardKey.keyL:
-        // Seek forward 10s
-        final currentPos = _videoController!.value.position;
-        final duration = _videoController!.value.duration;
-        final newPos = currentPos + const Duration(seconds: 10);
-        _videoController!.seekTo(newPos > duration ? duration : newPos);
-        return KeyEventResult.handled;
-
-      case LogicalKeyboardKey.keyF:
-        // Toggle fullscreen
-        if (_isDesktopPlatform) {
-          _toggleDesktopFullscreen();
-          return KeyEventResult.handled;
+        final pos = vpc.value.position;
+        final dur = vpc.value.duration;
+        if (dur != null) {
+          final newPos = pos + const Duration(seconds: 10);
+          _betterPlayerController?.seekTo(newPos > dur ? dur : newPos);
         }
-        // For mobile, let Chewie handle it
-        return KeyEventResult.ignored;
-
+        return KeyEventResult.handled;
       case LogicalKeyboardKey.keyM:
-        // Mute/Unmute
-        final currentVolume = _videoController!.value.volume;
-        _videoController!.setVolume(currentVolume > 0 ? 0 : 1);
+        final vol = vpc.value.volume;
+        _betterPlayerController?.setVolume(vol > 0 ? 0 : 1);
         return KeyEventResult.handled;
-
       case LogicalKeyboardKey.arrowUp:
-        // Volume up
-        final currentVolume = _videoController!.value.volume;
-        _videoController!.setVolume((currentVolume + 0.1).clamp(0, 1));
+        final vol = vpc.value.volume;
+        _betterPlayerController?.setVolume((vol + 0.1).clamp(0.0, 1.0));
         return KeyEventResult.handled;
-
       case LogicalKeyboardKey.arrowDown:
-        // Volume down
-        final currentVolume = _videoController!.value.volume;
-        _videoController!.setVolume((currentVolume - 0.1).clamp(0, 1));
+        final vol = vpc.value.volume;
+        _betterPlayerController?.setVolume((vol - 0.1).clamp(0.0, 1.0));
         return KeyEventResult.handled;
-
-      case LogicalKeyboardKey.escape:
-        // Exit fullscreen on desktop
-        if (_isDesktopPlatform && _isDesktopFullscreen) {
-          _toggleDesktopFullscreen();
-          return KeyEventResult.handled;
-        }
-        return KeyEventResult.ignored;
-
       default:
         return KeyEventResult.ignored;
     }
   }
 
+  // ── Player initialization ───────────────────────────────────────
   Future<void> _initializePlayer() async {
     setState(() {
       _isLoading = true;
@@ -156,78 +135,57 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
 
     try {
-      // Check if media is already selected, if not fetch it from TMDB
       var media = ref.read(selectedMediaProvider);
-      if (media == null) {
-        print('📥 Fetching media details from TMDB (ID: ${widget.mediaId}, Type: ${widget.mediaType})...');
-        setState(() {
-          _currentProvider = 'Loading media details...';
-        });
-        
-        // Fetch media details from TMDB
+      final hasMatchingSelectedMedia =
+          media != null &&
+          media.id == widget.mediaId &&
+          (widget.mediaType == null || media.mediaType == widget.mediaType);
+
+      if (!hasMatchingSelectedMedia) {
+        setState(() => _currentProvider = 'Loading media details...');
         final tmdbService = ref.read(tmdbServiceProvider);
-        
-        // Use mediaType if provided, otherwise try TV first then movie
         if (widget.mediaType == 'tv') {
           media = await tmdbService.getTVShowDetails(widget.mediaId);
-          ref.read(selectedMediaProvider.notifier).state = media;
-          print('✅ Loaded TV show: ${media.name}');
         } else if (widget.mediaType == 'movie') {
           media = await tmdbService.getMovieDetails(widget.mediaId);
-          ref.read(selectedMediaProvider.notifier).state = media;
-          print('✅ Loaded movie: ${media.title}');
         } else {
-          // No type specified, try TV show first, then movie
           try {
             media = await tmdbService.getTVShowDetails(widget.mediaId);
-            ref.read(selectedMediaProvider.notifier).state = media;
-            print('✅ Loaded TV show: ${media.name}');
           } catch (e) {
-            // If TV show fails, try movie
             media = await tmdbService.getMovieDetails(widget.mediaId);
-            ref.read(selectedMediaProvider.notifier).state = media;
-            print('✅ Loaded movie: ${media.title}');
           }
         }
+        ref.read(selectedMediaProvider.notifier).state = media;
       }
 
-      // Show which provider we're trying
-      setState(() {
-        _currentProvider = 'Fetching stream...';
-      });
+      if (media.mediaType == 'tv') {
+        _fetchSeasonData();
+      }
 
-      // Fetch stream URL from streaming service
+      setState(() => _currentProvider = 'Fetching stream...');
+
       final streamingService = ref.read(streamingServiceProvider);
-      
-      // Use quality from settings (user's preference)
       final settingsQuality = ref.read(videoQualityProvider);
-      
-      // If user manually selected a quality in player, use that. Otherwise use settings.
       final manualQuality = ref.read(selectedQualityProvider);
-      final preferredQuality = manualQuality ?? (settingsQuality == 'auto' ? null : settingsQuality);
-      
-      // Get anime sub/dub preference
+      final preferredQuality =
+          manualQuality ?? (settingsQuality == 'auto' ? null : settingsQuality);
       final subDubPref = ref.read(animeSubDubProvider);
 
       final result = await streamingService.fetchStreamUrl(
         media: media,
         season: widget.season,
-        episode: widget.episode,
+        episode: _currentEpisode,
         preferredQuality: preferredQuality,
-        providerIndex: _currentProviderIndex, // Use current provider index
-        subDubPreference: subDubPref, // Pass anime preference
+        providerIndex: _currentProviderIndex,
+        subDubPreference: subDubPref,
       );
 
       if (result == null) {
-        // Try next provider if available
         if (_currentProviderIndex < _maxProviders - 1) {
-          print('⏭️ Trying next provider...');
           _currentProviderIndex++;
-          setState(() {
-            _error = 'Provider unavailable, trying next...';
-          });
+          setState(() => _error = 'Provider unavailable, trying next...');
           await Future.delayed(const Duration(milliseconds: 500));
-          _initializePlayer(); // Retry with next provider
+          _initializePlayer();
           return;
         }
         throw Exception('Failed to get stream URL from all providers');
@@ -235,211 +193,314 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       _streamResult = result;
       _currentProvider = result.provider;
+      _isDirectStream = result.isM3U8;
 
-      // Check if this is an iframe embed provider (vidsrc.cc, vidsrc.to, vidlink)
-      if (result.provider == 'vidsrc.cc' || 
-          result.provider == 'vidsrc.to' || 
-          result.provider == 'vidlink') {
-        print('✅ Using WebView for ${result.provider} embed');
-        print('📺 VidSrc will send real-time player events via postMessage');
-        
+      // Embed providers use WebView
+      if (!_isDirectStream) {
         setState(() {
           _isLoading = false;
           _retryCount = 0;
         });
-        return; // WebView will be rendered in build method with event handler
+        return;
       }
 
-      // For direct video URLs, use video_player + chewie
-      print('✅ Using video_player for direct stream URL');
-      
-      // Initialize video player with error handling
-      _videoController = VideoPlayerController.networkUrl(
-        Uri.parse(result.url),
-        httpHeaders: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-      );
-
-      // Add listener for player state changes
-      _videoController!.addListener(_onVideoPlayerStateChanged);
-
-      await _videoController!.initialize();
-
-      // Get playback speed from settings and apply it
-      final playbackSpeed = ref.read(playbackSpeedProvider);
-      await _videoController!.setPlaybackSpeed(playbackSpeed);
-
-      _chewieController = ChewieController(
-        videoPlayerController: _videoController!,
-        autoPlay: true,
-        looping: false,
-        allowFullScreen: true,
-        allowMuting: true,
-        showControls: true,
-        playbackSpeeds: const [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0],
-        materialProgressColors: ChewieProgressColors(
-          playedColor: NivioTheme.netflixRed,
-          handleColor: NivioTheme.netflixRed,
-          backgroundColor: NivioTheme.netflixGrey,
-          bufferedColor: NivioTheme.netflixLightGrey,
-        ),
-        placeholder: Container(
-          color: Colors.black,
-          child: const Center(
-            child: CircularProgressIndicator(
-              color: NivioTheme.netflixRed,
-            ),
-          ),
-        ),
-        errorBuilder: (context, errorMessage) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(
-                  Icons.error_outline,
-                  color: NivioTheme.netflixRed,
-                  size: 64,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Playback Error',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  errorMessage,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    if (_retryCount < _maxRetries) {
-                      _retryCount++;
-                      _initializePlayer();
-                    }
-                  },
-                  icon: const Icon(Icons.refresh),
-                  label: Text('Retry ($_retryCount/$_maxRetries)'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: NivioTheme.netflixRed,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-        autoInitialize: true,
-      );
-
-      // Start progress tracking
-      _startProgressTracking();
-
-      // Check for existing watch history to resume
+      // ── Check watch history for resume ──
       final historyService = ref.read(watchHistoryServiceProvider);
       await historyService.init();
       final history = await historyService.getHistory(widget.mediaId);
-      
+      Duration? startAt;
+
       if (history != null &&
           history.currentSeason == widget.season &&
-          history.currentEpisode == widget.episode &&
+          history.currentEpisode == _currentEpisode &&
           history.lastPositionSeconds > 0 &&
           history.lastPositionSeconds < history.totalDurationSeconds - 30) {
-        // Resume from last position (if not within 30s of end)
-        await _videoController!.seekTo(
-          Duration(seconds: history.lastPositionSeconds),
+        startAt = Duration(seconds: history.lastPositionSeconds);
+        _resumePosition = startAt;
+      }
+
+      // ── Build subtitle sources from Consumet ──
+      final subtitleSources = result.subtitles.map((sub) {
+        return BetterPlayerSubtitlesSource(
+          type: BetterPlayerSubtitlesSourceType.network,
+          name: sub.lang,
+          urls: [sub.url],
         );
-        
-        // Show resume notification
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Resumed from ${_formatDuration(Duration(seconds: history.lastPositionSeconds))}'),
-              duration: const Duration(seconds: 2),
-              backgroundColor: NivioTheme.netflixRed,
-            ),
-          );
+      }).toList();
+
+      // ── Build resolutions map for non-HLS multi-quality ──
+      Map<String, String>? resolutions;
+      if (!result.isM3U8 && result.sources.length > 1) {
+        resolutions = {};
+        for (var source in result.sources) {
+          resolutions[source.quality] = source.url;
         }
       }
 
+      // ── Headers ──
+      final headers = <String, String>{
+        'User-Agent':
+            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        ...result.headers,
+      };
+
+      // ── Data source ──
+      final dataSource = BetterPlayerDataSource(
+        BetterPlayerDataSourceType.network,
+        result.url,
+        headers: headers,
+        videoFormat: result.isM3U8
+            ? BetterPlayerVideoFormat.hls
+            : BetterPlayerVideoFormat.other,
+        useAsmsTracks: result.isM3U8,
+        useAsmsSubtitles: result.isM3U8,
+        useAsmsAudioTracks: result.isM3U8,
+        subtitles: subtitleSources.isNotEmpty ? subtitleSources : null,
+        resolutions: resolutions,
+        bufferingConfiguration: const BetterPlayerBufferingConfiguration(
+          minBufferMs: 30000,
+          maxBufferMs: 120000,
+          bufferForPlaybackMs: 2500,
+          bufferForPlaybackAfterRebufferMs: 5000,
+        ),
+      );
+
+      // ── Controller config ──
+      _betterPlayerController = BetterPlayerController(
+        BetterPlayerConfiguration(
+          autoPlay: true,
+          looping: false,
+          fullScreenByDefault: false,
+          fit: BoxFit.contain,
+          autoDispose: false,
+          handleLifecycle: true,
+          startAt: startAt,
+          controlsConfiguration: BetterPlayerControlsConfiguration(
+            enablePlayPause: true,
+            enableMute: true,
+            enableFullscreen: true,
+            enableProgressBar: true,
+            enablePlaybackSpeed: true,
+            enableSubtitles: true,
+            enableQualities: true,
+            enableAudioTracks: true,
+            enableSkips: true,
+            forwardSkipTimeInMilliseconds: 10000,
+            backwardSkipTimeInMilliseconds: 10000,
+            progressBarPlayedColor: NivioTheme.netflixRed,
+            progressBarHandleColor: NivioTheme.netflixRed,
+            progressBarBufferedColor: NivioTheme.netflixLightGrey,
+            progressBarBackgroundColor: NivioTheme.netflixGrey,
+            controlBarColor: Colors.black54,
+            loadingColor: NivioTheme.netflixRed,
+            overflowModalColor: const Color(0xFF1F1F1F),
+            overflowModalTextColor: Colors.white,
+            overflowMenuIconsColor: Colors.white70,
+            playerTheme: BetterPlayerTheme.material,
+            overflowMenuCustomItems: [
+              if (media!.mediaType == 'tv')
+                BetterPlayerOverflowMenuItem(
+                  Icons.list,
+                  'Episodes',
+                  _showEpisodesBottomSheet,
+                ),
+            ],
+          ),
+          placeholder: Container(
+            color: Colors.black,
+            child: const Center(
+              child: CircularProgressIndicator(color: NivioTheme.netflixRed),
+            ),
+          ),
+          errorBuilder: (context, errorMessage) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    color: NivioTheme.netflixRed,
+                    size: 64,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Playback Error',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    errorMessage ?? 'Unknown error',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      if (_retryCount < _maxRetries) {
+                        _retryCount++;
+                        _disposePlayer();
+                        _initializePlayer();
+                      }
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: Text('Retry ($_retryCount/$_maxRetries)'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: NivioTheme.netflixRed,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+
+      // Register event listener BEFORE setting up data source
+      _betterPlayerController!.addEventsListener(_onBetterPlayerEvent);
+
+      // Show the player immediately — BetterPlayer handles its own buffering UI
       setState(() {
         _isLoading = false;
-        _retryCount = 0; // Reset retry count on success
-        _currentProviderIndex = 0; // Reset provider index on success
+        _retryCount = 0;
       });
+
+      await _betterPlayerController!.setupDataSource(dataSource);
+
+      // Start progress tracking timer
+      _startProgressTracking();
     } catch (e) {
       setState(() {
         _error = e.toString();
         _isLoading = false;
       });
-      
-      // Try next provider first before retrying same provider
+
       if (_currentProviderIndex < _maxProviders - 1) {
-        print('❌ Error with provider, trying next: $e');
         _currentProviderIndex++;
-        setState(() {
-          _error = 'Switching to next provider...';
-        });
+        setState(() => _error = 'Switching to next provider...');
         await Future.delayed(const Duration(milliseconds: 500));
         _initializePlayer();
         return;
       }
-      
-      // All providers failed, try auto-retry on certain errors
-      if (_retryCount < _maxRetries && 
-          (e.toString().contains('network') || e.toString().contains('timeout'))) {
+
+      if (_retryCount < _maxRetries &&
+          (e.toString().contains('network') ||
+              e.toString().contains('timeout'))) {
         await Future.delayed(const Duration(seconds: 2));
         _retryCount++;
-        _currentProviderIndex = 0; // Reset to first provider
+        _currentProviderIndex = 0;
         _initializePlayer();
       }
     }
   }
 
-  void _onVideoPlayerStateChanged() {
-    if (_videoController == null || !_videoController!.value.isInitialized) return;
-    
-    // Handle buffering state
-    if (_videoController!.value.isBuffering) {
-      // Could show buffering indicator here
+  // ── BetterPlayer event listener ─────────────────────────────────
+  void _onBetterPlayerEvent(BetterPlayerEvent event) {
+    if (!mounted) return;
+
+    switch (event.betterPlayerEventType) {
+      case BetterPlayerEventType.initialized:
+        // Set playback speed after initialization
+        final speed = ref.read(playbackSpeedProvider);
+        _betterPlayerController?.setSpeed(speed);
+        // Enter fullscreen with a delay so BetterPlayer is fully ready
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted && _betterPlayerController?.isFullScreen == false) {
+            _betterPlayerController?.enterFullScreen();
+          }
+        });
+        // Show resume snackbar
+        if (_resumePosition != null && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Resumed from ${_formatDuration(_resumePosition!)}',
+              ),
+              duration: const Duration(seconds: 2),
+              backgroundColor: NivioTheme.netflixRed,
+            ),
+          );
+          _resumePosition = null;
+        }
+        break;
+      case BetterPlayerEventType.progress:
+        _checkNextEpisode();
+        break;
+      case BetterPlayerEventType.finished:
+        _markAsCompleted();
+        if (_hasNextEpisode()) _showNextEpisodePopup();
+        break;
+      default:
+        break;
     }
-    
-    final position = _videoController!.value.position;
-    final duration = _videoController!.value.duration;
-    
-    // Show next episode button at 95% completion (Netflix style)
-    if (duration.inSeconds > 0) {
+  }
+
+  void _checkNextEpisode() {
+    if (_betterPlayerController?.isVideoInitialized() != true) return;
+    final vpc = _betterPlayerController!.videoPlayerController!;
+
+    final position = vpc.value.position;
+    final duration = vpc.value.duration;
+    if (duration != null && duration.inSeconds > 0) {
       final progress = position.inSeconds / duration.inSeconds;
-      if (progress >= 0.95 && !_showNextEpisodeButton && _hasNextEpisode()) {
-        setState(() {
-          _showNextEpisodeButton = true;
-        });
+      if (progress >= 0.90 &&
+          !_showNextEpisodeButton &&
+          !_nextEpisodeDismissed &&
+          _hasNextEpisode()) {
+        _showNextEpisodePopup();
       }
     }
-    
-    // Auto-save progress when video completes
-    if (position >= duration - const Duration(seconds: 30)) {
+
+    if (duration != null &&
+        position >= duration - const Duration(seconds: 10) &&
+        duration.inSeconds > 0) {
       _markAsCompleted();
-      // Auto-play next episode immediately on completion
-      if (_hasNextEpisode() && !_showNextEpisodeButton) {
-        print('⏭️ Auto-playing next episode...');
-        setState(() {
-          _showNextEpisodeButton = true; // Prevent multiple triggers
-        });
-        Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) _playNextEpisode();
-        });
-      }
     }
+  }
+
+  // ── Season data fetch ───────────────────────────────────────────
+  Future<void> _fetchSeasonData() async {
+    try {
+      final tmdbService = ref.read(tmdbServiceProvider);
+      _currentSeasonData = await tmdbService.getSeasonInfo(
+        widget.mediaId,
+        widget.season,
+      );
+    } catch (_) {}
+  }
+
+  // ── Next episode popup ──────────────────────────────────────────
+  void _showNextEpisodePopup() {
+    if (_showNextEpisodeButton) return;
+    setState(() {
+      _showNextEpisodeButton = true;
+      _nextEpisodeCountdown = 15;
+    });
+    _nextEpNotifier.value = _NextEpState(show: true, countdown: 15);
+    _showOverlayEntry();
+    _nextEpisodeTimer?.cancel();
+    _nextEpisodeTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() => _nextEpisodeCountdown = (_nextEpisodeCountdown ?? 1) - 1);
+      _nextEpNotifier.value = _NextEpState(
+        show: true,
+        countdown: _nextEpisodeCountdown,
+      );
+      if ((_nextEpisodeCountdown ?? 0) <= 0) {
+        timer.cancel();
+        _playNextEpisode();
+      }
+    });
   }
 
   Future<void> _markAsCompleted() async {
     final media = ref.read(selectedMediaProvider);
     if (media == null) return;
-
+    final vpc = _betterPlayerController?.videoPlayerController;
+    final dur = vpc?.value.duration ?? Duration.zero;
     final historyService = ref.read(watchHistoryServiceProvider);
     await historyService.updateProgress(
       tmdbId: widget.mediaId,
@@ -447,269 +508,107 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       title: media.title ?? media.name ?? 'Unknown',
       posterPath: media.posterPath,
       currentSeason: widget.season,
-      currentEpisode: widget.episode,
+      currentEpisode: _currentEpisode,
       totalSeasons: 1,
       totalEpisodes: null,
-      lastPosition: _videoController!.value.duration,
-      totalDuration: _videoController!.value.duration,
+      lastPosition: dur,
+      totalDuration: dur,
     );
   }
 
-  /// Handle VidSrc player events (play, pause, time, complete)
+  // ── WebView event handler ───────────────────────────────────────
   void _handlePlayerEvent(String event, double currentTime, double duration) {
-    print('📺 VidSrc Event: $event | ${currentTime.toInt()}s / ${duration.toInt()}s');
-    
     final media = ref.read(selectedMediaProvider);
     if (media == null) return;
-    
     switch (event) {
-      case 'play':
-        print('▶️ Video started playing');
-        break;
-        
-      case 'pause':
-        print('⏸️ Video paused');
-        break;
-        
       case 'time':
-        // Update progress every ~5 seconds (VidSrc sends this automatically)
         _saveWebViewProgress(currentTime, duration);
-        
-        // Show next episode button at 95% completion (Netflix style)
-        final progress = currentTime / duration;
-        if (progress >= 0.95 && !_showNextEpisodeButton && _hasNextEpisode()) {
-          setState(() {
-            _showNextEpisodeButton = true;
-          });
+        final progress = duration > 0 ? currentTime / duration : 0.0;
+        if (progress >= 0.90 &&
+            !_showNextEpisodeButton &&
+            !_nextEpisodeDismissed &&
+            _hasNextEpisode()) {
+          _showNextEpisodePopup();
         }
         break;
-        
       case 'complete':
-        print('✅ Video completed');
         _markWebViewAsCompleted(duration);
-        // Auto-play next episode immediately on completion
-        if (_hasNextEpisode()) {
-          print('⏭️ Auto-playing next episode...');
-          Future.delayed(const Duration(seconds: 2), () {
-            if (mounted) _playNextEpisode();
-          });
-        }
+        if (_hasNextEpisode()) _showNextEpisodePopup();
         break;
     }
   }
-  
-  /// Check if there's a next episode available
+
   bool _hasNextEpisode() {
     final media = ref.read(selectedMediaProvider);
     if (media == null || media.mediaType != 'tv') return false;
-    
-    // For now, always return true for TV shows
-    // TODO: Check actual episode count from TMDB data
+    if (_currentSeasonData != null) {
+      return _currentEpisode < _currentSeasonData!.episodes.length;
+    }
     return true;
   }
-  
-  /// Navigate to next episode
+
   void _playNextEpisode() {
+    _nextEpisodeTimer?.cancel();
+    _removeOverlayEntry();
     final media = ref.read(selectedMediaProvider);
     if (media == null || media.mediaType != 'tv') return;
-    
-    // Navigate to next episode
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (context) => PlayerScreen(
-          mediaId: widget.mediaId,
-          season: widget.season,
-          episode: widget.episode + 1, // Next episode
-          mediaType: media.mediaType,
-        ),
-      ),
-    );
+
+    // Exit fullscreen first so BetterPlayer's route is popped
+    // before we dispose the controller
+    final wasFullScreen = _betterPlayerController?.isFullScreen == true;
+    if (wasFullScreen) {
+      _betterPlayerController?.exitFullScreen();
+    }
+
+    // Delay to let the fullscreen route fully pop before disposing
+    Future.delayed(Duration(milliseconds: wasFullScreen ? 300 : 50), () {
+      if (!mounted) return;
+      final oldController = _betterPlayerController;
+      _progressTimer?.cancel();
+      setState(() {
+        _currentEpisode = _currentEpisode + 1;
+        _isSwappingEpisode = true;
+        _showNextEpisodeButton = false;
+        _nextEpisodeDismissed = false;
+        _nextEpisodeCountdown = null;
+        _isLoading = true;
+        _error = null;
+        _retryCount = 0;
+        _currentProviderIndex = 0;
+        _streamResult = null;
+        _betterPlayerController = null;
+      });
+      // Dispose after the widget tree has rebuilt without the controller
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (oldController != null) {
+          oldController.removeEventsListener(_onBetterPlayerEvent);
+          oldController.dispose(forceDispose: true);
+        }
+        if (mounted) _initializePlayer();
+      });
+    });
   }
-  
-  /// Show episodes bottom sheet
+
   void _showEpisodesBottomSheet() {
     final media = ref.read(selectedMediaProvider);
     if (media == null || media.mediaType != 'tv') return;
-    
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1A1A1A),
+      backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.5,
-        maxChildSize: 0.9,
-        expand: false,
-        builder: (context, scrollController) {
-          final seasonDataAsync = ref.watch(
-            seasonDataProvider((showId: widget.mediaId, seasonNumber: widget.season)),
-          );
-          
-          return seasonDataAsync.when(
-            data: (seasonData) => Container(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Handle
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      margin: const EdgeInsets.only(bottom: 20),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[600],
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  // Title
-                  Text(
-                    'Season ${widget.season}',
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${seasonData.episodes.length} Episodes',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[400],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  // Episodes list
-                  Expanded(
-                    child: ListView.builder(
-                      controller: scrollController,
-                      itemCount: seasonData.episodes.length,
-                      itemBuilder: (context, index) {
-                        final episode = seasonData.episodes[index];
-                        final isCurrentEpisode = episode.episodeNumber == widget.episode;
-                        
-                        return InkWell(
-                          onTap: () {
-                            Navigator.pop(context); // Close bottom sheet
-                            if (!isCurrentEpisode) {
-                              // Navigate to selected episode
-                              Navigator.of(context).pushReplacement(
-                                MaterialPageRoute(
-                                  builder: (context) => PlayerScreen(
-                                    mediaId: widget.mediaId,
-                                    season: widget.season,
-                                    episode: episode.episodeNumber,
-                                    mediaType: media.mediaType,
-                                  ),
-                                ),
-                              );
-                            }
-                          },
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: isCurrentEpisode
-                                  ? NivioTheme.netflixRed.withOpacity(0.2)
-                                  : const Color(0xFF2A2A2A),
-                              borderRadius: BorderRadius.circular(8),
-                              border: isCurrentEpisode
-                                  ? Border.all(color: NivioTheme.netflixRed, width: 2)
-                                  : null,
-                            ),
-                            child: Row(
-                              children: [
-                                // Episode number
-                                Container(
-                                  width: 50,
-                                  height: 50,
-                                  decoration: BoxDecoration(
-                                    color: isCurrentEpisode
-                                        ? NivioTheme.netflixRed
-                                        : Colors.grey[800],
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      '${episode.episodeNumber}',
-                                      style: const TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                // Episode info
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        episode.episodeName ?? 'Episode ${episode.episodeNumber}',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                          color: isCurrentEpisode ? NivioTheme.netflixRed : Colors.white,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      if (episode.runtime != null) ...[
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          '${episode.runtime} min',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey[400],
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                                // Play icon
-                                Icon(
-                                  isCurrentEpisode ? Icons.play_circle_filled : Icons.play_arrow,
-                                  color: isCurrentEpisode ? NivioTheme.netflixRed : Colors.white,
-                                  size: 32,
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            loading: () => const Center(
-              child: CircularProgressIndicator(color: NivioTheme.netflixRed),
-            ),
-            error: (error, stack) => Center(
-              child: Text(
-                'Error loading episodes',
-                style: const TextStyle(color: Colors.white),
-              ),
-            ),
-          );
-        },
+      builder: (context) => _EpisodePickerSheet(
+        mediaId: widget.mediaId,
+        currentSeason: widget.season,
+        currentEpisode: _currentEpisode,
+        mediaType: media.mediaType,
       ),
     );
   }
-  
-  /// Save progress from WebView player events
+
+  // ── WebView progress helpers ────────────────────────────────────
   Future<void> _saveWebViewProgress(double currentTime, double duration) async {
     final media = ref.read(selectedMediaProvider);
     if (media == null) return;
-
     final historyService = ref.read(watchHistoryServiceProvider);
     await historyService.updateProgress(
       tmdbId: widget.mediaId,
@@ -717,19 +616,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       title: media.title ?? media.name ?? 'Unknown',
       posterPath: media.posterPath,
       currentSeason: widget.season,
-      currentEpisode: widget.episode,
+      currentEpisode: _currentEpisode,
       totalSeasons: 1,
       totalEpisodes: null,
       lastPosition: Duration(seconds: currentTime.toInt()),
       totalDuration: Duration(seconds: duration.toInt()),
     );
   }
-  
-  /// Mark WebView video as completed
+
   Future<void> _markWebViewAsCompleted(double duration) async {
     final media = ref.read(selectedMediaProvider);
     if (media == null) return;
-
     final historyService = ref.read(watchHistoryServiceProvider);
     await historyService.updateProgress(
       tmdbId: widget.mediaId,
@@ -737,49 +634,41 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       title: media.title ?? media.name ?? 'Unknown',
       posterPath: media.posterPath,
       currentSeason: widget.season,
-      currentEpisode: widget.episode,
+      currentEpisode: _currentEpisode,
       totalSeasons: 1,
       totalEpisodes: null,
       lastPosition: Duration(seconds: duration.toInt()),
       totalDuration: Duration(seconds: duration.toInt()),
     );
-    
-    print('✅ Marked as completed: ${media.title ?? media.name}');
   }
 
+  // ── Formatting & progress ───────────────────────────────────────
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes.remainder(60);
-    final seconds = duration.inSeconds.remainder(60);
-    
-    if (hours > 0) {
-      return '${twoDigits(hours)}:${twoDigits(minutes)}:${twoDigits(seconds)}';
-    }
-    return '${twoDigits(minutes)}:${twoDigits(seconds)}';
+    final h = duration.inHours;
+    final m = duration.inMinutes.remainder(60);
+    final s = duration.inSeconds.remainder(60);
+    if (h > 0) return '${twoDigits(h)}:${twoDigits(m)}:${twoDigits(s)}';
+    return '${twoDigits(m)}:${twoDigits(s)}';
   }
 
   void _startProgressTracking() {
+    _progressTimer?.cancel();
     _progressTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      if (_videoController != null &&
-          _videoController!.value.isInitialized &&
-          _videoController!.value.isPlaying) {
+      if (_betterPlayerController != null &&
+          _betterPlayerController!.isVideoInitialized() == true &&
+          _betterPlayerController!.isPlaying() == true) {
         _saveProgress();
       }
     });
   }
 
   Future<void> _saveProgress() async {
-    if (_videoController == null || !_videoController!.value.isInitialized) {
-      return;
-    }
+    if (_betterPlayerController?.isVideoInitialized() != true) return;
+    final vpc = _betterPlayerController!.videoPlayerController!;
 
     final media = ref.read(selectedMediaProvider);
     if (media == null) return;
-
-    final position = _videoController!.value.position;
-    final duration = _videoController!.value.duration;
-
     final historyService = ref.read(watchHistoryServiceProvider);
     await historyService.updateProgress(
       tmdbId: widget.mediaId,
@@ -787,36 +676,39 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       title: media.title ?? media.name ?? 'Unknown',
       posterPath: media.posterPath,
       currentSeason: widget.season,
-      currentEpisode: widget.episode,
-      totalSeasons: 1, // TODO: Get from series info
+      currentEpisode: _currentEpisode,
+      totalSeasons: 1,
       totalEpisodes: null,
-      lastPosition: position,
-      totalDuration: duration,
+      lastPosition: vpc.value.position,
+      totalDuration: vpc.value.duration ?? Duration.zero,
     );
+  }
+
+  void _disposePlayer() {
+    _progressTimer?.cancel();
+    if (_betterPlayerController != null) {
+      _betterPlayerController!.removeEventsListener(_onBetterPlayerEvent);
+      _betterPlayerController!.dispose(forceDispose: true);
+      _betterPlayerController = null;
+    }
   }
 
   @override
   void dispose() {
     _progressTimer?.cancel();
     _nextEpisodeTimer?.cancel();
-    
-    // Exit desktop fullscreen if active
-    if (_isDesktopFullscreen && _isDesktopPlatform) {
-      windowManager.setFullScreen(false);
-    }
-    
-    // Save progress for video_player
-    if (_videoController != null && _videoController!.value.isInitialized) {
+    _removeOverlayEntry();
+    _nextEpNotifier.dispose();
+    // Save progress before disposing
+    if (_betterPlayerController?.isVideoInitialized() == true) {
       _saveProgress();
     }
-    
-    _videoController?.removeListener(_onVideoPlayerStateChanged);
-    _videoController?.dispose();
-    _chewieController?.dispose();
+    if (_betterPlayerController != null) {
+      _betterPlayerController!.removeEventsListener(_onBetterPlayerEvent);
+      _betterPlayerController!.dispose(forceDispose: true);
+      _betterPlayerController = null;
+    }
     _focusNode.dispose();
-    _hideControlsTimer?.cancel();
-    
-    // Reset orientations
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.landscapeLeft,
@@ -825,411 +717,349 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     super.dispose();
   }
 
-  /// Toggle true fullscreen on desktop platforms (hides title bar)
-  Future<void> _toggleDesktopFullscreen() async {
-    if (!_isDesktopPlatform) return;
-    
-    final newState = !_isDesktopFullscreen;
-    await windowManager.setFullScreen(newState);
-    setState(() {
-      _isDesktopFullscreen = newState;
-      // Show controls briefly when toggling fullscreen
-      _showControls = true;
-      _startHideControlsTimer();
-    });
-  }
-
-  /// Start timer to auto-hide controls after 3 seconds
-  void _startHideControlsTimer() {
-    _hideControlsTimer?.cancel();
-    _hideControlsTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted && _isDesktopFullscreen) {
-        setState(() {
-          _showControls = false;
-        });
-      }
-    });
-  }
-
-  /// Show controls and reset hide timer
-  void _onUserInteraction() {
-    if (_isDesktopFullscreen) {
-      setState(() {
-        _showControls = true;
-      });
-      _startHideControlsTimer();
-    }
-  }
-
+  // ── Build ───────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final media = ref.watch(selectedMediaProvider);
-    
-    // Determine if we should show the AppBar
-    final shouldShowAppBar = _streamResult != null && (!_isDesktopFullscreen || _showControls);
-    
-    return MouseRegion(
-      onHover: (_) => _onUserInteraction(),
-      child: GestureDetector(
-        onTap: _onUserInteraction,
-        child: Focus(
-          focusNode: _focusNode,
-          onKeyEvent: _handleKeyEvent,
-          child: Scaffold(
-            backgroundColor: Colors.black,
-            extendBodyBehindAppBar: true,
-            appBar: shouldShowAppBar
-                ? PreferredSize(
-                    preferredSize: const Size.fromHeight(kToolbarHeight),
-                    child: AnimatedOpacity(
-                      opacity: (!_isDesktopFullscreen || _showControls) ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 300),
-                      child: AppBar(
-                        backgroundColor: Colors.black.withOpacity(0.7),
-                        elevation: 0,
-                        leading: IconButton(
-                          icon: const Icon(Icons.arrow_back, color: Colors.white),
-                          onPressed: () {
-                            if (_isDesktopFullscreen) {
-                              _toggleDesktopFullscreen();
-                            }
-                            Navigator.pop(context);
-                          },
-                          tooltip: 'Back',
+    final shouldShowAppBar = _streamResult != null;
+
+    return GestureDetector(
+      child: Focus(
+        focusNode: _focusNode,
+        onKeyEvent: _handleKeyEvent,
+        child: Scaffold(
+          backgroundColor: Colors.black,
+          extendBodyBehindAppBar: true,
+          appBar: shouldShowAppBar
+              ? PreferredSize(
+                  preferredSize: const Size.fromHeight(kToolbarHeight),
+                  child: AppBar(
+                    backgroundColor: Colors.black.withOpacity(0.7),
+                    elevation: 0,
+                    leading: IconButton(
+                      icon: const Icon(Icons.arrow_back, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    title: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          media?.title ?? media?.name ?? 'Playing',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        title: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
+                        Row(
                           children: [
-                            Text(
-                              media?.title ?? media?.name ?? 'Playing',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Row(
-                              children: [
-                                if (media?.mediaType == 'tv')
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: NivioTheme.netflixRed,
-                                      borderRadius: BorderRadius.circular(3),
-                                    ),
-                                    child: Text(
-                                      'S${widget.season} E${widget.episode}',
-                                      style: const TextStyle(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(3),
-                                  ),
-                                  child: Text(
-                                    _streamResult!.provider.toUpperCase(),
-                                    style: const TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.white70,
-                                      letterSpacing: 0.5,
-                                    ),
+                            if (media?.mediaType == 'tv')
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: NivioTheme.netflixRed,
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                                child: Text(
+                                  'S${widget.season} E$_currentEpisode',
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
                                   ),
                                 ),
-                              ],
+                              ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                              child: Text(
+                                _streamResult!.provider.toUpperCase(),
+                                style: const TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white70,
+                                ),
+                              ),
                             ),
                           ],
                         ),
-                        actions: [
-                  // Episodes button (only for TV shows)
-                  if (media?.mediaType == 'tv')
-                    IconButton(
-                      icon: const Icon(Icons.list, color: Colors.white),
-                      tooltip: 'Episodes',
-                      onPressed: () => _showEpisodesBottomSheet(),
+                      ],
                     ),
-                  // Switch Server button
-                  PopupMenuButton<int>(
-                    icon: const Icon(Icons.swap_horiz, color: Colors.white),
-                    tooltip: 'Switch Server',
-                    color: const Color(0xFF1F1F1F),
-                    onSelected: (providerIndex) async {
-                      if (providerIndex == _currentProviderIndex) return; // Same provider
-                      
-                      final currentPosition = _videoController?.value.position;
-                      
-                      // Show snackbar before rebuilding
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Switching to ${_providerNames[providerIndex]}...'),
-                            duration: const Duration(seconds: 2),
-                            backgroundColor: NivioTheme.netflixRed,
-                          ),
-                        );
-                      }
-                      
-                      // Dispose controllers first
-                      _videoController?.dispose();
-                      _chewieController?.dispose();
-                      _videoController = null;
-                      _chewieController = null;
-                      
-                      // Then update state and reinitialize
-                      setState(() {
-                        _currentProviderIndex = providerIndex;
-                        _isLoading = true;
-                        _error = null;
-                        _retryCount = 0;
-                        _streamResult = null; // Clear old stream result to force rebuild
-                      });
-                      
-                      await _initializePlayer();
-                      
-                      if (currentPosition != null && _videoController != null) {
-                        await _videoController!.seekTo(currentPosition);
-                      }
-                    },
-                    itemBuilder: (context) {
-                      return List.generate(_maxProviders, (index) {
-                        final isSelected = index == _currentProviderIndex;
-                        return PopupMenuItem(
-                          value: index,
-                          child: Row(
-                            children: [
-                              Icon(
-                                isSelected ? Icons.check_circle : Icons.circle_outlined,
-                                color: isSelected ? NivioTheme.netflixRed : Colors.white70,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                _providerNames[index],
-                                style: TextStyle(
-                                  color: isSelected ? NivioTheme.netflixRed : Colors.white,
-                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      });
-                    },
-                  ),
-                  // Quality selector
-                  if (_streamResult!.availableQualities.length > 1)
-                    PopupMenuButton<String>(
-                      icon: const Icon(Icons.hd, color: Colors.white),
-                      tooltip: 'Quality',
-                      color: const Color(0xFF1F1F1F),
-                      onSelected: (quality) async {
-                        final currentPosition = _videoController?.value.position;
-                        ref.read(selectedQualityProvider.notifier).state = quality;
-                        
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Switching to $quality...'),
-                            duration: const Duration(seconds: 2),
-                            backgroundColor: NivioTheme.netflixRed,
-                          ),
-                        );
-                        
-                        _videoController?.dispose();
-                        _chewieController?.dispose();
-                        await _initializePlayer();
-                        
-                        if (currentPosition != null && _videoController != null) {
-                          await _videoController!.seekTo(currentPosition);
-                        }
-                      },
-                      itemBuilder: (context) {
-                        return _streamResult!.availableQualities.map((quality) {
-                          final isSelected = quality == _streamResult!.quality;
-                          return PopupMenuItem(
-                            value: quality,
-                            child: Row(
-                              children: [
-                                Icon(
-                                  isSelected ? Icons.check_circle : Icons.circle_outlined,
-                                  color: isSelected ? NivioTheme.netflixRed : Colors.white70,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  quality,
-                                  style: TextStyle(
-                                    color: isSelected ? NivioTheme.netflixRed : Colors.white,
-                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList();
-                      },
-                    ),
-                  // Desktop fullscreen button
-                  if (_isDesktopPlatform)
-                    IconButton(
-                      icon: Icon(
-                        _isDesktopFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
-                        color: Colors.white,
-                      ),
-                      tooltip: _isDesktopFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)',
-                      onPressed: _toggleDesktopFullscreen,
-                    ),
-                        ],
-                      ),
-                    ),
-                  )
-                : null,
-            body: Stack(
-              children: [
-                Center(
-                  child: _isLoading
-                      ? _buildLoadingState()
-                      : _error != null
-                          ? _buildErrorState()
-                          : _streamResult != null &&
-                                  (_streamResult!.provider == 'vidsrc.cc' ||
-                                   _streamResult!.provider == 'vidsrc.to' ||
-                                   _streamResult!.provider == 'vidlink')
-                              ? _buildWebViewPlayer()
-                              : _chewieController != null &&
-                                      _chewieController!.videoPlayerController.value.isInitialized
-                                  ? _buildVideoPlayer()
-                                  : _buildLoadingState(),
-                ),
-                
-                // Netflix-style Next Episode button overlay (always on top, even in fullscreen)
-                if (_showNextEpisodeButton && _hasNextEpisode())
-                  Positioned(
-                    right: 30,
-                    bottom: 100,
-                    child: SafeArea(
-                      child: Material(
-                        color: Colors.transparent,
-                        elevation: 8,
-                        child: InkWell(
-                          onTap: () {
-                            _nextEpisodeTimer?.cancel();
-                            _playNextEpisode();
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(6),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.7),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Text(
-                                  'Next Episode',
-                                  style: TextStyle(
-                                    color: Colors.black,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                const Icon(
-                                  Icons.skip_next_rounded,
-                                  color: Colors.black,
-                                  size: 28,
-                                ),
-                              ],
-                            ),
-                          ),
+                    actions: [
+                      if (media?.mediaType == 'tv')
+                        IconButton(
+                          icon: const Icon(Icons.list, color: Colors.white),
+                          tooltip: 'Episodes',
+                          onPressed: _showEpisodesBottomSheet,
                         ),
+                      // Switch Server
+                      PopupMenuButton<int>(
+                        icon: const Icon(Icons.swap_horiz, color: Colors.white),
+                        tooltip: 'Switch Server',
+                        color: const Color(0xFF1F1F1F),
+                        onSelected: (providerIndex) async {
+                          if (providerIndex == _currentProviderIndex) return;
+
+                          // Save current position before switching
+                          await _saveProgress();
+
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Switching to ${StreamingService.getProviderName(providerIndex)}...',
+                                ),
+                                duration: const Duration(seconds: 2),
+                                backgroundColor: NivioTheme.netflixRed,
+                              ),
+                            );
+                          }
+
+                          _disposePlayer();
+
+                          setState(() {
+                            _currentProviderIndex = providerIndex;
+                            _isLoading = true;
+                            _error = null;
+                            _retryCount = 0;
+                            _streamResult = null;
+                          });
+
+                          await _initializePlayer();
+                        },
+                        itemBuilder: (context) {
+                          return List.generate(_maxProviders, (index) {
+                            final isSelected = index == _currentProviderIndex;
+                            return PopupMenuItem(
+                              value: index,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    isSelected
+                                        ? Icons.check_circle
+                                        : Icons.circle_outlined,
+                                    color: isSelected
+                                        ? NivioTheme.netflixRed
+                                        : Colors.white70,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    StreamingService.getProviderName(index),
+                                    style: TextStyle(
+                                      color: isSelected
+                                          ? NivioTheme.netflixRed
+                                          : Colors.white,
+                                      fontWeight: isSelected
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
+                                    ),
+                                  ),
+                                  if (index == 0)
+                                    Container(
+                                      margin: const EdgeInsets.only(left: 8),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.green.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Text(
+                                        'HD',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.green,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            );
+                          });
+                        },
                       ),
-                    ),
+                    ],
                   ),
-              ],
-            ),
+                )
+              : null,
+          body: Stack(
+            children: [
+              Center(
+                child: _isLoading
+                    ? _buildLoadingState()
+                    : _error != null
+                    ? _buildErrorState()
+                    : _streamResult != null && !_isDirectStream
+                    ? _buildWebViewPlayer()
+                    : _betterPlayerController != null
+                    ? _buildVideoPlayer()
+                    : _buildLoadingState(),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
+  // ── OverlayEntry management ─────────────────────────────────────
+  void _showOverlayEntry() {
+    _removeOverlayEntry();
+    _nextEpOverlayEntry = OverlayEntry(
+      builder: (_) => _NextEpisodeOverlayWidget(
+        notifier: _nextEpNotifier,
+        episode: _currentEpisode,
+        season: widget.season,
+        seasonData: _currentSeasonData,
+        onPlay: () {
+          _nextEpisodeTimer?.cancel();
+          _playNextEpisode();
+        },
+        onDismiss: () {
+          _nextEpisodeTimer?.cancel();
+          _showNextEpisodeButton = false;
+          _nextEpisodeDismissed = true;
+          _nextEpNotifier.value = _NextEpState(show: false, countdown: null);
+          _removeOverlayEntry();
+        },
+      ),
+    );
+    Overlay.of(context, rootOverlay: true).insert(_nextEpOverlayEntry!);
+  }
+
+  void _removeOverlayEntry() {
+    _nextEpOverlayEntry?.remove();
+    _nextEpOverlayEntry = null;
+  }
+
+  // ── Loading state ───────────────────────────────────────────────
   Widget _buildLoadingState() {
+    final media = ref.read(selectedMediaProvider);
+    final posterPath = media?.posterPath;
+    final title = media?.title ?? media?.name ?? '';
+
     return Container(
       color: Colors.black,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Stack(
         children: [
-          const SizedBox(
-            width: 60,
-            height: 60,
-            child: CircularProgressIndicator(
-              color: NivioTheme.netflixRed,
-              strokeWidth: 4,
-            ),
-          ),
-          const SizedBox(height: 32),
-          Text(
-            _currentProvider.isNotEmpty ? _currentProvider : _providerNames[_currentProviderIndex],
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w500,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Trying provider ${_currentProviderIndex + 1}/$_maxProviders...',
-            style: const TextStyle(
-              fontSize: 14,
-              color: Colors.white54,
-            ),
-          ),
-          if (_retryCount > 0) ...[
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.orange, width: 1),
-              ),
-              child: Text(
-                'Retry $_retryCount/$_maxRetries',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.orange,
-                  fontWeight: FontWeight.w600,
+          // Background poster with blur effect
+          if (posterPath != null)
+            Positioned.fill(
+              child: Opacity(
+                opacity: 0.15,
+                child: CachedNetworkImage(
+                  imageUrl: 'https://image.tmdb.org/t/p/w500$posterPath',
+                  fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => const SizedBox.shrink(),
                 ),
               ),
             ),
-          ],
+          // Content
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Animated Netflix-style loading ring
+                SizedBox(width: 56, height: 56, child: _NivioLoadingSpinner()),
+                const SizedBox(height: 24),
+                if (title.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 40),
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                if (media?.mediaType == 'tv')
+                  Text(
+                    'S${widget.season} E$_currentEpisode',
+                    style: const TextStyle(color: Colors.white54, fontSize: 13),
+                  ),
+                const SizedBox(height: 16),
+                // Provider pill
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.5,
+                          color: NivioTheme.netflixRed.withOpacity(0.7),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _currentProvider.isNotEmpty
+                            ? _currentProvider
+                            : StreamingService.getProviderName(
+                                _currentProviderIndex,
+                              ),
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_retryCount > 0) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Retry $_retryCount/$_maxRetries',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.orange.withOpacity(0.8),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
+  // ── Error state ─────────────────────────────────────────────────
   Widget _buildErrorState() {
     return Container(
       color: Colors.black,
-      padding: const EdgeInsets.all(32.0),
+      padding: const EdgeInsets.all(32),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -1265,19 +1095,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             ),
           ),
           const SizedBox(height: 40),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          Wrap(
+            spacing: 16,
+            runSpacing: 12,
+            alignment: WrapAlignment.center,
             children: [
-              // Switch Server button (if more providers available)
-              if (_currentProviderIndex < _maxProviders - 1) ...[
+              if (_currentProviderIndex < _maxProviders - 1)
                 ElevatedButton.icon(
                   onPressed: () {
+                    _disposePlayer();
                     setState(() {
                       _error = null;
                       _isLoading = true;
                       _currentProviderIndex++;
                       _retryCount = 0;
-                      _streamResult = null; // Clear old stream result
+                      _streamResult = null;
                     });
                     _initializePlayer();
                   },
@@ -1285,17 +1117,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   label: const Text('SWITCH SERVER'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.orange,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 16,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 16),
-              ],
               ElevatedButton.icon(
                 onPressed: () {
+                  _disposePlayer();
                   setState(() {
                     _retryCount = 0;
-                    _currentProviderIndex = 0; // Reset to first provider
-                    _streamResult = null; // Clear old stream result
+                    _currentProviderIndex = 0;
+                    _streamResult = null;
                   });
                   _initializePlayer();
                 },
@@ -1304,14 +1138,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: NivioTheme.netflixRed,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 16,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  elevation: 0,
                 ),
               ),
-              const SizedBox(width: 16),
               OutlinedButton.icon(
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(Icons.arrow_back, size: 20),
@@ -1319,7 +1154,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.white,
                   side: const BorderSide(color: Colors.white54, width: 1.5),
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 16,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -1332,32 +1170,730 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
+  // ── WebView player (embed fallback) ─────────────────────────────
   Widget _buildWebViewPlayer() {
     return RepaintBoundary(
       child: Center(
         child: AspectRatio(
-          aspectRatio: 16 / 9, // Force 16:9 aspect ratio
+          aspectRatio: 16 / 9,
           child: WebViewPlayer(
-            key: ValueKey(_streamResult!.url), // Force rebuild when URL changes
+            key: ValueKey(_streamResult!.url),
             streamUrl: _streamResult!.url,
-            title: ref.read(selectedMediaProvider)?.title ??
+            title:
+                ref.read(selectedMediaProvider)?.title ??
                 ref.read(selectedMediaProvider)?.name ??
                 'Video',
-            onPlayerEvent: _handlePlayerEvent, // Handle VidSrc player events
+            onPlayerEvent: _handlePlayerEvent,
           ),
         ),
       ),
     );
   }
 
+  // ── BetterPlayer widget ─────────────────────────────────────────
   Widget _buildVideoPlayer() {
     return RepaintBoundary(
-      child: Center(
-        child: AspectRatio(
-          aspectRatio: 16 / 9, // Force 16:9 aspect ratio
-          child: Chewie(controller: _chewieController!),
-        ),
-      ),
+      child: BetterPlayer(controller: _betterPlayerController!),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Redesigned Episode Picker with thumbnails and search
+// ─────────────────────────────────────────────────────────────────
+class _EpisodePickerSheet extends ConsumerStatefulWidget {
+  final int mediaId;
+  final int currentSeason;
+  final int currentEpisode;
+  final String? mediaType;
+
+  const _EpisodePickerSheet({
+    required this.mediaId,
+    required this.currentSeason,
+    required this.currentEpisode,
+    this.mediaType,
+  });
+
+  @override
+  ConsumerState<_EpisodePickerSheet> createState() =>
+      _EpisodePickerSheetState();
+}
+
+class _EpisodePickerSheetState extends ConsumerState<_EpisodePickerSheet> {
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<EpisodeData> _filterEpisodes(List<EpisodeData> episodes) {
+    if (_searchQuery.isEmpty) return episodes;
+    final query = _searchQuery.toLowerCase();
+    return episodes.where((ep) {
+      final name = ep.episodeName?.toLowerCase() ?? '';
+      final num = ep.episodeNumber.toString();
+      final overview = ep.overview?.toLowerCase() ?? '';
+      return name.contains(query) ||
+          num.contains(query) ||
+          overview.contains(query);
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) {
+        final seasonDataAsync = ref.watch(
+          seasonDataProvider((
+            showId: widget.mediaId,
+            seasonNumber: widget.currentSeason,
+          )),
+        );
+
+        return Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF141414),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: seasonDataAsync.when(
+            data: (seasonData) {
+              final filtered = _filterEpisodes(seasonData.episodes);
+              return Column(
+                children: [
+                  // Handle
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(top: 12, bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[600],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Season ${widget.currentSeason}',
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            Text(
+                              '${seasonData.episodes.length} Episodes',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey[400],
+                              ),
+                            ),
+                          ],
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Search
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: (val) => setState(() => _searchQuery = val),
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      decoration: InputDecoration(
+                        hintText: 'Search episodes...',
+                        hintStyle: TextStyle(color: Colors.grey[500]),
+                        prefixIcon: Icon(
+                          Icons.search,
+                          color: Colors.grey[500],
+                          size: 20,
+                        ),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: Icon(
+                                  Icons.clear,
+                                  color: Colors.grey[500],
+                                  size: 18,
+                                ),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                              )
+                            : null,
+                        filled: true,
+                        fillColor: const Color(0xFF2A2A2A),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Episode list
+                  Expanded(
+                    child: filtered.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.search_off,
+                                  color: Colors.grey[600],
+                                  size: 48,
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'No episodes match "$_searchQuery"',
+                                  style: TextStyle(
+                                    color: Colors.grey[400],
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: scrollController,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            itemCount: filtered.length,
+                            itemBuilder: (context, index) {
+                              final episode = filtered[index];
+                              final isCurrent =
+                                  episode.episodeNumber ==
+                                  widget.currentEpisode;
+                              final stillUrl = episode.stillPath != null
+                                  ? 'https://image.tmdb.org/t/p/w300${episode.stillPath}'
+                                  : '';
+
+                              return GestureDetector(
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  if (!isCurrent) {
+                                    Navigator.of(context).pushReplacement(
+                                      MaterialPageRoute(
+                                        builder: (context) => PlayerScreen(
+                                          mediaId: widget.mediaId,
+                                          season: widget.currentSeason,
+                                          episode: episode.episodeNumber,
+                                          mediaType: widget.mediaType,
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                                child: Container(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  decoration: BoxDecoration(
+                                    color: isCurrent
+                                        ? NivioTheme.netflixRed.withOpacity(
+                                            0.15,
+                                          )
+                                        : const Color(0xFF1E1E1E),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: isCurrent
+                                        ? Border.all(
+                                            color: NivioTheme.netflixRed,
+                                            width: 1.5,
+                                          )
+                                        : null,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      // Thumbnail
+                                      ClipRRect(
+                                        borderRadius:
+                                            const BorderRadius.horizontal(
+                                              left: Radius.circular(10),
+                                            ),
+                                        child: SizedBox(
+                                          width: 140,
+                                          height: 80,
+                                          child: stillUrl.isNotEmpty
+                                              ? Stack(
+                                                  fit: StackFit.expand,
+                                                  children: [
+                                                    CachedNetworkImage(
+                                                      imageUrl: stillUrl,
+                                                      fit: BoxFit.cover,
+                                                      placeholder: (_, __) =>
+                                                          Container(
+                                                            color: Colors
+                                                                .grey[900],
+                                                          ),
+                                                      errorWidget:
+                                                          (
+                                                            _,
+                                                            __,
+                                                            ___,
+                                                          ) => Container(
+                                                            color: Colors
+                                                                .grey[900],
+                                                            child: const Icon(
+                                                              Icons.movie,
+                                                              color: Colors
+                                                                  .white24,
+                                                              size: 28,
+                                                            ),
+                                                          ),
+                                                    ),
+                                                    Center(
+                                                      child: Container(
+                                                        width: 36,
+                                                        height: 36,
+                                                        decoration:
+                                                            BoxDecoration(
+                                                              color: Colors
+                                                                  .black
+                                                                  .withOpacity(
+                                                                    0.6,
+                                                                  ),
+                                                              shape: BoxShape
+                                                                  .circle,
+                                                            ),
+                                                        child: Icon(
+                                                          isCurrent
+                                                              ? Icons.equalizer
+                                                              : Icons
+                                                                    .play_arrow,
+                                                          color: isCurrent
+                                                              ? NivioTheme
+                                                                    .netflixRed
+                                                              : Colors.white,
+                                                          size: 20,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                )
+                                              : Container(
+                                                  color: Colors.grey[900],
+                                                  child: const Icon(
+                                                    Icons.movie,
+                                                    color: Colors.white24,
+                                                    size: 28,
+                                                  ),
+                                                ),
+                                        ),
+                                      ),
+                                      // Info
+                                      Expanded(
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 8,
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  if (isCurrent)
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 6,
+                                                            vertical: 2,
+                                                          ),
+                                                      margin:
+                                                          const EdgeInsets.only(
+                                                            right: 6,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color: NivioTheme
+                                                            .netflixRed,
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              3,
+                                                            ),
+                                                      ),
+                                                      child: const Text(
+                                                        'NOW',
+                                                        style: TextStyle(
+                                                          fontSize: 9,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color: Colors.white,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  Expanded(
+                                                    child: Text(
+                                                      'E${episode.episodeNumber} · ${episode.episodeName ?? 'Episode ${episode.episodeNumber}'}',
+                                                      style: TextStyle(
+                                                        fontSize: 14,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color: isCurrent
+                                                            ? NivioTheme
+                                                                  .netflixRed
+                                                            : Colors.white,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 4),
+                                              if (episode.runtime != null)
+                                                Text(
+                                                  '${episode.runtime} min',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: Colors.grey[500],
+                                                  ),
+                                                ),
+                                              if (episode.overview != null &&
+                                                  episode.overview!.isNotEmpty)
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        top: 4,
+                                                      ),
+                                                  child: Text(
+                                                    episode.overview!,
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      color: Colors.grey[500],
+                                                      height: 1.3,
+                                                    ),
+                                                    maxLines: 2,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              );
+            },
+            loading: () => const Center(
+              child: CircularProgressIndicator(color: NivioTheme.netflixRed),
+            ),
+            error: (error, stack) => const Center(
+              child: Text(
+                'Error loading episodes',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Helper class for next episode overlay state ──
+class _NextEpState {
+  final bool show;
+  final int? countdown;
+
+  const _NextEpState({required this.show, required this.countdown});
+}
+
+// ── Netflix-style loading spinner ──
+class _NivioLoadingSpinner extends StatefulWidget {
+  @override
+  State<_NivioLoadingSpinner> createState() => _NivioLoadingSpinnerState();
+}
+
+class _NivioLoadingSpinnerState extends State<_NivioLoadingSpinner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return CustomPaint(
+          painter: _SpinnerPainter(_controller.value),
+          size: const Size(56, 56),
+        );
+      },
+    );
+  }
+}
+
+class _SpinnerPainter extends CustomPainter {
+  final double progress;
+
+  _SpinnerPainter(this.progress);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 3;
+
+    // Track circle
+    final trackPaint = Paint()
+      ..color = Colors.white.withOpacity(0.08)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3;
+    canvas.drawCircle(center, radius, trackPaint);
+
+    // Spinning arc
+    final arcPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round
+      ..shader = SweepGradient(
+        startAngle: 0,
+        endAngle: math.pi * 2,
+        colors: [NivioTheme.netflixRed.withOpacity(0), NivioTheme.netflixRed],
+        transform: GradientRotation(progress * math.pi * 2),
+      ).createShader(Rect.fromCircle(center: center, radius: radius));
+
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      progress * math.pi * 2,
+      math.pi * 1.5,
+      false,
+      arcPaint,
+    );
+
+    // Glowing dot at the leading edge
+    final dotAngle = progress * math.pi * 2 + math.pi * 1.5;
+    final dotX = center.dx + radius * math.cos(dotAngle);
+    final dotY = center.dy + radius * math.sin(dotAngle);
+    final dotPaint = Paint()
+      ..color = NivioTheme.netflixRed
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+    canvas.drawCircle(Offset(dotX, dotY), 3, dotPaint);
+    canvas.drawCircle(Offset(dotX, dotY), 2, Paint()..color = Colors.white);
+  }
+
+  @override
+  bool shouldRepaint(_SpinnerPainter oldDelegate) =>
+      oldDelegate.progress != progress;
+}
+
+// ── Separate widget for the OverlayEntry (renders above everything) ──
+class _NextEpisodeOverlayWidget extends StatelessWidget {
+  final ValueNotifier<_NextEpState> notifier;
+  final int episode;
+  final int season;
+  final SeasonData? seasonData;
+  final VoidCallback onPlay;
+  final VoidCallback onDismiss;
+
+  const _NextEpisodeOverlayWidget({
+    required this.notifier,
+    required this.episode,
+    required this.season,
+    required this.seasonData,
+    required this.onPlay,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<_NextEpState>(
+      valueListenable: notifier,
+      builder: (context, state, _) {
+        if (!state.show) return const SizedBox.shrink();
+
+        final nextEpNum = episode + 1;
+        EpisodeData? nextEpisode;
+        if (seasonData != null) {
+          nextEpisode = seasonData!.episodes
+              .where((e) => e.episodeNumber == nextEpNum)
+              .firstOrNull;
+        }
+
+        return Positioned(
+          right: 16,
+          bottom: 80,
+          child: SafeArea(
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                width: 280,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF181818),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white24, width: 0.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.8),
+                      blurRadius: 20,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (nextEpisode?.stillPath != null)
+                      ClipRRect(
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(12),
+                        ),
+                        child: CachedNetworkImage(
+                          imageUrl:
+                              'https://image.tmdb.org/t/p/w300${nextEpisode!.stillPath}',
+                          width: 280,
+                          height: 120,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) =>
+                              Container(height: 60, color: Colors.grey[900]),
+                        ),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'UP NEXT',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            nextEpisode?.episodeName ?? 'Episode $nextEpNum',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            'S$season E$nextEpNum',
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: onPlay,
+                                  icon: const Icon(Icons.play_arrow, size: 18),
+                                  label: Text(
+                                    state.countdown != null
+                                        ? 'Play in ${state.countdown}s'
+                                        : 'Play Now',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: Colors.black,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 8,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                onPressed: onDismiss,
+                                icon: const Icon(
+                                  Icons.close,
+                                  color: Colors.white70,
+                                  size: 20,
+                                ),
+                                style: IconButton.styleFrom(
+                                  backgroundColor: Colors.white.withOpacity(
+                                    0.1,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (state.countdown != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: LinearProgressIndicator(
+                                value: (state.countdown ?? 0) / 15,
+                                backgroundColor: Colors.white12,
+                                valueColor: const AlwaysStoppedAnimation<Color>(
+                                  NivioTheme.netflixRed,
+                                ),
+                                minHeight: 3,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

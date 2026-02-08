@@ -1,7 +1,5 @@
-import 'dart:io';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -25,29 +23,21 @@ import 'package:nivio/screens/settings_screen.dart';
 import 'package:nivio/screens/watchlist_screen.dart';
 import 'package:nivio/screens/profile_screen.dart';
 import 'package:nivio/screens/new_episodes_screen.dart';
-import 'package:window_manager/window_manager.dart';
 
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
-  
-  // Initialize window_manager for desktop platforms
-  if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
-    await windowManager.ensureInitialized();
-  }
-  
+
   // Preserve splash screen while initializing
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
-  
+
   // Parallelize initialization for faster startup
   await Future.wait([
     // Initialize Firebase
-    Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    ),
+    Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
     // Initialize Hive in parallel
     _initHive(),
   ]);
-  
+
   // Initialize cache service
   final cacheService = CacheService();
   await cacheService.init();
@@ -57,13 +47,11 @@ void main() async {
 
   runApp(
     ProviderScope(
-      overrides: [
-        cacheServiceProvider.overrideWithValue(cacheService),
-      ],
+      overrides: [cacheServiceProvider.overrideWithValue(cacheService)],
       child: const NivioApp(),
     ),
   );
-  
+
   // Remove splash screen after app is ready
   FlutterNativeSplash.remove();
 }
@@ -94,33 +82,24 @@ final _router = GoRouter(
   redirect: (context, state) {
     final user = FirebaseAuth.instance.currentUser;
     final isAuthRoute = state.matchedLocation == '/auth';
-    
+
     // If not signed in and not on auth route, redirect to auth
     if (user == null && !isAuthRoute) {
       return '/auth';
     }
-    
+
     // If signed in and on auth route, redirect to home
     if (user != null && isAuthRoute) {
       return '/';
     }
-    
+
     // Otherwise, no redirect needed
     return null;
   },
   routes: [
-    GoRoute(
-      path: '/auth',
-      builder: (context, state) => const AuthScreen(),
-    ),
-    GoRoute(
-      path: '/',
-      builder: (context, state) => const HomeScreen(),
-    ),
-    GoRoute(
-      path: '/search',
-      builder: (context, state) => const SearchScreen(),
-    ),
+    GoRoute(path: '/auth', builder: (context, state) => const AuthScreen()),
+    GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
+    GoRoute(path: '/search', builder: (context, state) => const SearchScreen()),
     GoRoute(
       path: '/settings',
       builder: (context, state) => const SettingsScreen(),
@@ -142,10 +121,7 @@ final _router = GoRouter(
       builder: (context, state) {
         final id = state.pathParameters['id']!;
         final mediaType = state.uri.queryParameters['type'];
-        return MediaDetailScreen(
-          mediaId: int.parse(id),
-          mediaType: mediaType,
-        );
+        return MediaDetailScreen(mediaId: int.parse(id), mediaType: mediaType);
       },
     ),
     GoRoute(

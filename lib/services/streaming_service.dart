@@ -1,84 +1,70 @@
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
-import 'package:nivio/services/anilist_service.dart';
+import 'package:nivio/services/consumet_service.dart';
 
-/// Service for fetching streaming URLs from various providers
-/// Supports: vidsrc.cc, vidsrc.to, vidlink.pro
+/// Service for fetching streaming URLs
+/// Primary: Consumet API (direct M3U8 streams)
+/// Fallback: vidsrc.cc, vidsrc.to, vidlink.pro (embed/WebView)
 class StreamingService {
-  final AniListService _anilistService = AniListService();
-  
+  final ConsumetService _consumetService = ConsumetService();
+
   StreamingService();
 
-  /// Get vidsrc.cc base URL based on platform
-  /// Windows/Linux use v3, mobile uses v2
-  static String get _vidsrcBaseUrl {
-    if (kIsWeb) return 'https://vidsrc.cc/v2/embed';
-    if (Platform.isWindows || Platform.isLinux) {
-      return 'https://vidsrc.cc/v3/embed'; // v3 for desktop
-    }
-    return 'https://vidsrc.cc/v2/embed'; // v2 for mobile
-  }
-
-  /// Base URLs for streaming services (in priority order)
-  List<Map<String, String>> get _providers => [
-    {'name': 'vidsrc.cc', 'url': _vidsrcBaseUrl},
+  /// Embed fallback providers (used only if Consumet fails)
+  static final List<Map<String, String>> _embedProviders = [
+    {'name': 'vidsrc.cc', 'url': 'https://vidsrc.cc/v2/embed'},
     {'name': 'vidsrc.to', 'url': 'https://vidsrc.to/embed'},
     {'name': 'vidlink', 'url': 'https://vidlink.pro'},
   ];
 
-  /// Constructs streaming URLs from available providers
-  /// 
-  /// Tries providers in order: vidsrc.cc → vidsrc.to → vidlink.pro
+  /// Fetch streaming URL - tries Consumet first, then embeds
   Future<StreamResult?> fetchStreamUrl({
     required SearchResult media,
     int season = 1,
     int episode = 1,
     String? preferredQuality,
     int providerIndex = 0,
-    bool autoSkipIntro = true, // Enable auto-skip for anime intros/outros
-    String subDubPreference = 'sub', // 'sub' or 'dub' for anime
+    bool autoSkipIntro = true,
+    String subDubPreference = 'sub',
   }) async {
     try {
-      if (providerIndex >= _providers.length) {
+      print(
+        '🔍 fetchStreamUrl: media=${media.id}, S${season}E$episode, providerIdx=$providerIndex',
+      );
+
+      // Provider 0 = Consumet API (direct M3U8)
+      if (providerIndex == 0) {
+        final consumetResult = await _consumetService.fetchStream(
+          tmdbId: media.id,
+          mediaType: media.mediaType,
+          season: season,
+          episode: episode,
+          title: media.title ?? media.name ?? '',
+          year: _extractYear(media),
+          isAnimeCandidate: _isAnimeCandidate(media),
+          subDubPreference: subDubPreference,
+        );
+
+        if (consumetResult != null) {
+          print('✅ Consumet stream acquired: ${consumetResult.quality}');
+          return consumetResult;
+        }
+        // Return null so player auto-advances to next provider (embed)
+        print('⚠️ Consumet failed, returning null to advance provider');
+        return null;
+      }
+
+      // Fallback to embed providers (index 1=vidsrc.cc, 2=vidsrc.to, 3=vidlink)
+      final embedIdx = providerIndex - 1;
+      if (embedIdx >= _embedProviders.length) {
         print('❌ All providers exhausted');
         return null;
       }
 
-      final provider = _providers[providerIndex];
+      final provider = _embedProviders[embedIdx];
       final String streamUrl;
-      
-      print('🔍 fetchStreamUrl called: media=${media.id}, season=$season, episode=$episode, provider=${provider['name']}');
-      
-      int? anilistId;
-      
-      // For vidsrc.cc TV shows, try to get AniList ID (only succeeds if it's actually anime)
-      if (provider['name'] == 'vidsrc.cc' && media.mediaType == 'tv') {
-        final title = media.name ?? media.title ?? '';
-        final year = media.firstAirDate?.split('-').first ?? 
-                     media.releaseDate?.split('-').first;
-        
-        // AniList will only return a result if it's actually anime in their database
-        anilistId = await _anilistService.getAniListIdFromTMDB(
-          title: title,
-          year: year,
-          tmdbId: media.id,
-        );
-        
-        if (anilistId != null) {
-          print('🎌 Anime detected! Using AniList ID: $anilistId');
-        } else {
-          print('📺 Not anime or not found in AniList, using regular TV format');
-        }
-      }
-      
-      // Construct URL based on media type and provider
+
       if (media.mediaType == 'movie') {
-        // Movie URL formats:
-        // vidsrc.cc: https://vidsrc.cc/v2/embed/movie/{tmdbId}?autoPlay=true
-        // vidsrc.to: https://vidsrc.to/embed/movie/{tmdbId}
-        // vidlink: https://vidlink.pro/movie/{tmdbId}?nextbutton=true
         if (provider['name'] == 'vidlink') {
           streamUrl = '${provider['url']}/movie/${media.id}?nextbutton=true';
         } else if (provider['name'] == 'vidsrc.cc') {
@@ -86,46 +72,58 @@ class StreamingService {
         } else {
           streamUrl = '${provider['url']}/movie/${media.id}';
         }
-        print('🎬 Provider: ${provider['name']} | Movie URL: $streamUrl');
       } else {
-        // TV show URL formats:
-        // vidsrc.cc anime: https://vidsrc.cc/v2/embed/anime/ani{anilistId}/{episode}/sub?autoPlay=true
-        // vidsrc.cc tv: https://vidsrc.cc/v2/embed/tv/{tmdbId}/{season}/{episode}?autoPlay=true
-        // vidsrc.to: https://vidsrc.to/embed/tv/{tmdbId}/{season}/{episode}
-        // vidlink: https://vidlink.pro/tv/{tmdbId}/{season}/{episode}?nextbutton=true
         if (provider['name'] == 'vidsrc.cc') {
-          if (anilistId != null) {
-            // Anime-specific URL with episode and sub/dub preference
-            streamUrl = '${provider['url']}/anime/ani$anilistId/$episode/$subDubPreference?autoPlay=true';
-            print('🎌 Provider: ${provider['name']} | Anime URL: $streamUrl (E$episode $subDubPreference)');
-          } else {
-            // Regular TV - include season and episode
-            streamUrl = '${provider['url']}/tv/${media.id}/$season/$episode?autoPlay=true';
-            print('📺 Provider: ${provider['name']} | TV URL: $streamUrl (S${season}E${episode})');
-          }
+          streamUrl =
+              '${provider['url']}/tv/${media.id}/$season/$episode?autoPlay=true';
         } else if (provider['name'] == 'vidlink') {
-          streamUrl = '${provider['url']}/tv/${media.id}/$season/$episode?nextbutton=true';
-          print('📺 Provider: ${provider['name']} | TV URL: $streamUrl (S${season}E${episode})');
+          streamUrl =
+              '${provider['url']}/tv/${media.id}/$season/$episode?nextbutton=true';
         } else {
           streamUrl = '${provider['url']}/tv/${media.id}/$season/$episode';
-          print('📺 Provider: ${provider['name']} | TV URL: $streamUrl (S${season}E${episode})');
         }
       }
+
+      print('📺 Embed fallback: ${provider['name']} → $streamUrl');
 
       return StreamResult(
         url: streamUrl,
         quality: preferredQuality ?? 'auto',
         provider: provider['name']!,
-        subtitles: [],
-        availableQualities: ['auto'],
       );
     } catch (e) {
-      print('❌ Error constructing stream URL: $e');
+      print('❌ Error in fetchStreamUrl: $e');
       return null;
     }
   }
+
+  /// Get the total number of available providers (Consumet + embeds)
+  static int get totalProviders =>
+      1 + _embedProviders.length; // Consumet + 3 embeds
+
+  /// Get provider name by index
+  static String getProviderName(int index) {
+    if (index == 0) return 'Consumet';
+    final embedIdx = index - 1;
+    if (embedIdx < _embedProviders.length) {
+      return _embedProviders[embedIdx]['name']!;
+    }
+    return 'Unknown';
+  }
+
+  /// Check if a provider index uses direct streaming (vs embed/WebView)
+  static bool isDirectStream(int providerIndex) {
+    return providerIndex == 0; // Consumet provides direct M3U8
+  }
+
+  bool _isAnimeCandidate(SearchResult media) {
+    final language = (media.originalLanguage ?? '').toLowerCase();
+    return media.mediaType == 'tv' && language == 'ja';
+  }
+
+  String? _extractYear(SearchResult media) {
+    final date = media.releaseDate ?? media.firstAirDate;
+    if (date == null || date.length < 4) return null;
+    return date.substring(0, 4);
+  }
 }
-
-// StreamResult model moved to `lib/models/stream_result.dart`
-
-
