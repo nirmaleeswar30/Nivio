@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -13,6 +15,7 @@ import 'package:nivio/models/new_episode.dart';
 import 'package:nivio/services/cache_service.dart';
 import 'package:nivio/services/watchlist_service.dart';
 import 'package:nivio/services/episode_check_service.dart';
+import 'package:nivio/services/shorebird_update_service.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/screens/home_screen.dart';
 import 'package:nivio/screens/search_screen.dart';
@@ -51,6 +54,9 @@ void main() async {
       child: const NivioApp(),
     ),
   );
+
+  // Non-blocking OTA check at startup for Shorebird release builds.
+  unawaited(ShorebirdUpdateService.checkAndUpdateInBackground());
 
   // Remove splash screen after app is ready
   FlutterNativeSplash.remove();

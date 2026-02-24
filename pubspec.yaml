@@ -57,6 +57,7 @@ dependencies:
   connectivity_plus: ^6.1.1
   palette_generator: ^0.3.3+7
   better_player_plus: ^1.1.5
+  shorebird_code_push: ^2.0.5
 
 
 dev_dependencies:
@@ -79,7 +80,8 @@ flutter:
   uses-material-design: true
 
   assets:
-  - assets/images/
+    - assets/images/
+    - shorebird.yaml
 
 # App Icon Configuration
 flutter_launcher_icons:

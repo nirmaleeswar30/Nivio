@@ -8,6 +8,7 @@ import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/services/episode_check_service.dart';
+import 'package:nivio/services/shorebird_update_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 
@@ -40,7 +41,6 @@ class SettingsScreen extends ConsumerWidget {
     final animationsEnabled = ref.watch(animationsEnabledProvider);
     final languagePreferences = ref.watch(languagePreferencesProvider);
     final episodeCheckEnabled = ref.watch(episodeCheckEnabledProvider);
-    final episodeCheckFrequency = ref.watch(episodeCheckFrequencyProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -287,6 +287,29 @@ class SettingsScreen extends ConsumerWidget {
             title: 'App Version',
             subtitle: '1.0.0',
             trailing: null,
+          ),
+          FutureBuilder<int?>(
+            future: ShorebirdUpdateService.currentPatchNumber(),
+            builder: (context, snapshot) {
+              final subtitle = !ShorebirdUpdateService.isAvailable
+                  ? 'Not available in this build'
+                  : snapshot.hasData
+                  ? 'Current patch: ${snapshot.data}'
+                  : 'Current patch: base release';
+
+              return _buildSettingsTile(
+                icon: Icons.system_update_alt_outlined,
+                title: 'Check OTA Update',
+                subtitle: subtitle,
+                trailing: const Icon(
+                  Icons.chevron_right,
+                  color: Colors.white70,
+                ),
+                onTap: () {
+                  _checkForOtaUpdate(context);
+                },
+              );
+            },
           ),
           _buildSettingsTile(
             icon: Icons.policy_outlined,
@@ -563,6 +586,50 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _checkForOtaUpdate(BuildContext context) async {
+    BuildContext? dialogContext;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        dialogContext = ctx;
+        return AlertDialog(
+          backgroundColor: NivioTheme.netflixDarkGrey,
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: NivioTheme.netflixRed),
+              SizedBox(height: 20),
+              Text(
+                'Checking for OTA update...',
+                style: TextStyle(color: Colors.white),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    final result = await ShorebirdUpdateService.checkAndUpdate();
+
+    if (dialogContext != null && dialogContext!.mounted) {
+      Navigator.of(dialogContext!).pop();
+    }
+
+    if (!context.mounted) return;
+
+    final isFailure = result.action == ShorebirdUpdateAction.failed;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.message),
+        backgroundColor: isFailure
+            ? const Color(0xFFB00020)
+            : NivioTheme.netflixRed,
       ),
     );
   }
