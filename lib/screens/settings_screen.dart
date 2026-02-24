@@ -9,6 +9,7 @@ import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/shorebird_update_service.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 
@@ -282,11 +283,16 @@ class SettingsScreen extends ConsumerWidget {
 
           // About
           _buildSectionHeader('About'),
-          _buildSettingsTile(
-            icon: Icons.info_outline,
-            title: 'App Version',
-            subtitle: '1.0.0',
-            trailing: null,
+          FutureBuilder<String>(
+            future: _getAppVersionLabel(),
+            builder: (context, snapshot) {
+              return _buildSettingsTile(
+                icon: Icons.info_outline,
+                title: 'App Version',
+                subtitle: snapshot.data ?? 'Loading...',
+                trailing: null,
+              );
+            },
           ),
           FutureBuilder<int?>(
             future: ShorebirdUpdateService.currentPatchNumber(),
@@ -380,6 +386,18 @@ class SettingsScreen extends ConsumerWidget {
         return 'Email/Password';
       default:
         return provider;
+    }
+  }
+
+  Future<String> _getAppVersionLabel() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (info.buildNumber.isEmpty) {
+        return info.version;
+      }
+      return '${info.version} (${info.buildNumber})';
+    } catch (_) {
+      return 'Unknown';
     }
   }
 
