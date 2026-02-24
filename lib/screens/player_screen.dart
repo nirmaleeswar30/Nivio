@@ -52,6 +52,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Duration? _resumePosition;
   int _currentEpisode = 0;
   bool _isSwappingEpisode = false;
+  Timer? _postSeekNudgeTimer;
+  int _postSeekNudgeAttempt = 0;
+  Duration? _lastSeekTarget;
 
   // Notifier so overlay updates inside BetterPlayer fullscreen
   final ValueNotifier<_NextEpState> _nextEpNotifier = ValueNotifier(
@@ -193,7 +196,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       _streamResult = result;
       _currentProvider = result.provider;
-      _isDirectStream = result.isM3U8;
+      _isDirectStream = StreamingService.isDirectStream(_currentProviderIndex);
 
       // Embed providers use WebView
       if (!_isDirectStream) {
@@ -238,11 +241,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
 
       // ── Headers ──
-      final headers = <String, String>{
-        'User-Agent':
-            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-        ...result.headers,
-      };
+      final headers = _buildPlaybackHeaders(result.headers);
 
       // ── Data source ──
       final dataSource = BetterPlayerDataSource(
@@ -258,10 +257,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         subtitles: subtitleSources.isNotEmpty ? subtitleSources : null,
         resolutions: resolutions,
         bufferingConfiguration: const BetterPlayerBufferingConfiguration(
-          minBufferMs: 30000,
-          maxBufferMs: 120000,
+          minBufferMs: 120000,
+          maxBufferMs: 300000,
           bufferForPlaybackMs: 2500,
-          bufferForPlaybackAfterRebufferMs: 5000,
+          bufferForPlaybackAfterRebufferMs: 10000,
         ),
       );
 
@@ -395,6 +394,47 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   // ── BetterPlayer event listener ─────────────────────────────────
+  Map<String, String> _buildPlaybackHeaders(Map<String, String> incoming) {
+    final headers = <String, String>{
+      'User-Agent':
+          'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+      ...incoming,
+    };
+    bool hasHeader(String name) =>
+        headers.keys.any((k) => k.toLowerCase() == name.toLowerCase());
+    void setIfMissing(String name, String value) {
+      if (!hasHeader(name)) headers[name] = value;
+    }
+
+    String? referer;
+    for (final entry in headers.entries) {
+      if (entry.key.toLowerCase() == 'referer') {
+        referer = entry.value;
+        break;
+      }
+    }
+
+    final hasOrigin = headers.keys.any((k) => k.toLowerCase() == 'origin');
+    if (!hasOrigin && referer != null && referer.isNotEmpty) {
+      final refUri = Uri.tryParse(referer);
+      if (refUri != null &&
+          refUri.scheme.isNotEmpty &&
+          refUri.host.isNotEmpty) {
+        headers['Origin'] = '${refUri.scheme}://${refUri.host}';
+      }
+    }
+
+    final provider = (_streamResult?.provider ?? '').toLowerCase();
+    if (provider.contains('animepahe')) {
+      setIfMissing('Referer', 'https://animepahe.ru/');
+      setIfMissing('Origin', 'https://animepahe.ru');
+    }
+
+    setIfMissing('Accept', '*/*');
+    setIfMissing('Accept-Language', 'en-US,en;q=0.9');
+    return headers;
+  }
+
   void _onBetterPlayerEvent(BetterPlayerEvent event) {
     if (!mounted) return;
 
@@ -423,8 +463,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _resumePosition = null;
         }
         break;
+      case BetterPlayerEventType.seekTo:
+        _onSeekEvent(event);
+        break;
+      case BetterPlayerEventType.bufferingStart:
+        break;
+      case BetterPlayerEventType.bufferingEnd:
+        // Buffering started → ExoPlayer is alive, cancel nudge.
+        _cancelPostSeekNudge();
+        break;
       case BetterPlayerEventType.progress:
+        // Progress ticking → playback healthy, cancel any pending nudge.
+        _cancelPostSeekNudge();
         _checkNextEpisode();
+        break;
+      case BetterPlayerEventType.exception:
         break;
       case BetterPlayerEventType.finished:
         _markAsCompleted();
@@ -456,6 +509,107 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         duration.inSeconds > 0) {
       _markAsCompleted();
     }
+  }
+
+  // ── Post-seek stall recovery ────────────────────────────────────
+  //
+  // Some HLS streams (e.g. Solo Leveling from AnimePahe) cause ExoPlayer's
+  // media source to silently die after a seek – the AudioTrack is destroyed
+  // but no new HLS segments are fetched, so inputFps/renderFps drop to 0.
+  //
+  // Recovery strategy (3 phases):
+  //   Phase 1 (1.5 s): just call play() – works for most streams.
+  //   Phase 2 (3.5 s): call play() again – covers slow segment loads.
+  //   Phase 3 (6.0 s): retryDataSource + seekTo saved target – nuclear
+  //                     option for streams where the media source is dead.
+  //
+  // Any bufferingEnd or progress event cancels the chain immediately.
+
+  void _onSeekEvent(BetterPlayerEvent event) {
+    // Resolve & remember the target so we can re-seek after a data-source
+    // reset in phase 3.
+    final params = event.parameters;
+    final raw =
+        params?['duration'] ?? params?['progress'] ?? params?['position'];
+    Duration? target;
+    if (raw is Duration) {
+      target = raw;
+    } else if (raw is int) {
+      target = Duration(milliseconds: raw);
+    } else if (raw is double) {
+      target = Duration(milliseconds: raw.round());
+    }
+    target ??= _betterPlayerController?.videoPlayerController?.value.position;
+    if (target != null && target > Duration.zero) {
+      _lastSeekTarget = target;
+    }
+    _postSeekNudgeAttempt = 0;
+    _postSeekNudgeTimer?.cancel();
+    _postSeekNudgeTimer = Timer(
+      const Duration(milliseconds: 1500),
+      _runPostSeekNudge,
+    );
+  }
+
+  void _cancelPostSeekNudge() {
+    _postSeekNudgeTimer?.cancel();
+    _postSeekNudgeTimer = null;
+    _postSeekNudgeAttempt = 0;
+  }
+
+  Future<void> _runPostSeekNudge() async {
+    final c = _betterPlayerController;
+    if (!mounted || c == null || c.isVideoInitialized() != true) {
+      _cancelPostSeekNudge();
+      return;
+    }
+    final vpc = c.videoPlayerController;
+    if (vpc == null) {
+      _cancelPostSeekNudge();
+      return;
+    }
+
+    final isPlaying = c.isPlaying() == true;
+    final isBuffering = vpc.value.isBuffering;
+
+    // Already recovered — nothing to do.
+    if (isPlaying || isBuffering) {
+      _cancelPostSeekNudge();
+      return;
+    }
+
+    _postSeekNudgeAttempt++;
+
+    // Phase 1 & 2: just call play().
+    if (_postSeekNudgeAttempt <= 2) {
+      debugPrint(
+        '[PostSeekNudge] phase $_postSeekNudgeAttempt – calling play()',
+      );
+      c.play();
+      final delay = Duration(
+        milliseconds: 1500 + (_postSeekNudgeAttempt * 1000),
+      );
+      _postSeekNudgeTimer = Timer(delay, _runPostSeekNudge);
+      return;
+    }
+
+    // Phase 3: media source is dead → reload + re-seek.
+    debugPrint(
+      '[PostSeekNudge] phase 3 – retryDataSource + seekTo $_lastSeekTarget',
+    );
+    try {
+      await c.retryDataSource();
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (!mounted || _betterPlayerController != c) return;
+      final target = _lastSeekTarget;
+      if (target != null && target > Duration.zero) {
+        await c.seekTo(target);
+      }
+      await c.play();
+    } catch (e) {
+      debugPrint('[PostSeekNudge] phase 3 failed: $e');
+    }
+    _cancelPostSeekNudge();
   }
 
   // ── Season data fetch ───────────────────────────────────────────
@@ -686,6 +840,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   void _disposePlayer() {
     _progressTimer?.cancel();
+    _postSeekNudgeTimer?.cancel();
+    _postSeekNudgeTimer = null;
     if (_betterPlayerController != null) {
       _betterPlayerController!.removeEventsListener(_onBetterPlayerEvent);
       _betterPlayerController!.dispose(forceDispose: true);
@@ -696,6 +852,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void dispose() {
     _progressTimer?.cancel();
+    _postSeekNudgeTimer?.cancel();
+    _postSeekNudgeTimer = null;
     _nextEpisodeTimer?.cancel();
     _removeOverlayEntry();
     _nextEpNotifier.dispose();

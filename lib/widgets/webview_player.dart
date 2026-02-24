@@ -6,7 +6,8 @@ import 'package:nivio/core/theme.dart';
 class WebViewPlayer extends StatefulWidget {
   final String streamUrl;
   final String title;
-  final Function(String event, double currentTime, double duration)? onPlayerEvent;
+  final Function(String event, double currentTime, double duration)?
+  onPlayerEvent;
 
   const WebViewPlayer({
     super.key,
@@ -36,7 +37,8 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
             allowsInlineMediaPlayback: true,
             useOnLoadResource: true,
             useShouldOverrideUrlLoading: true,
-            useShouldInterceptRequest: true, // Enable request interception for ad blocking
+            useShouldInterceptRequest:
+                true, // Enable request interception for ad blocking
             // userAgent: Use device default for proper mobile detection
             transparentBackground: true,
             // Additional settings for better ad blocking
@@ -57,7 +59,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
           onWebViewCreated: (controller) {
             _webViewController = controller;
             print('🌐 WebView created for: ${widget.streamUrl}');
-            
+
             // Add JavaScript handler to receive player events from vidsrc.cc
             controller.addJavaScriptHandler(
               handlerName: 'playerEvent',
@@ -65,12 +67,16 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                 if (args.isNotEmpty) {
                   final data = args[0] as Map<String, dynamic>;
                   final event = data['event'] as String?;
-                  final currentTime = (data['currentTime'] as num?)?.toDouble() ?? 0.0;
-                  final duration = (data['duration'] as num?)?.toDouble() ?? 0.0;
-                  
+                  final currentTime =
+                      (data['currentTime'] as num?)?.toDouble() ?? 0.0;
+                  final duration =
+                      (data['duration'] as num?)?.toDouble() ?? 0.0;
+
                   if (event != null && widget.onPlayerEvent != null) {
                     widget.onPlayerEvent!(event, currentTime, duration);
-                    print('📺 Player event: $event at ${currentTime.toInt()}s / ${duration.toInt()}s');
+                    print(
+                      '📺 Player event: $event at ${currentTime.toInt()}s / ${duration.toInt()}s',
+                    );
                   }
                 }
               },
@@ -87,9 +93,10 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
               _isLoading = false;
             });
             print('✅ Loading completed: $url');
-            
+
             // Inject ultra-aggressive ad-blocking
-            await controller.evaluateJavascript(source: '''
+            await controller.evaluateJavascript(
+              source: '''
               (function() {
                 console.log('🛡️ Ultra ad-blocking activated');
                 
@@ -99,14 +106,26 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                 window.confirm = function() { return true; };
                 window.prompt = function() { return null; };
                 
-                // Prevent location changes (safer approach)
+                // Prevent only known ad/tracker redirects; allow normal player/CDN navigation.
                 try {
+                  const blockedNavPatterns = [
+                    'doubleclick', 'googlesyndication', 'googleadservices',
+                    'adservice', 'adserver', 'adnxs', 'taboola', 'outbrain',
+                    'revcontent', 'mgid', 'exoclick', 'propellerads',
+                    'popcash', 'popads', 'clickadu', 'adsterra',
+                    'facebook.com/tr'
+                  ];
+                  const isBlockedNav = (url) => {
+                    const normalized = String(url || '').toLowerCase();
+                    return blockedNavPatterns.some((p) => normalized.includes(p));
+                  };
+
                   let currentHref = window.location.href;
                   let descriptor = Object.getOwnPropertyDescriptor(window.location, 'href');
                   if (descriptor && descriptor.configurable) {
                     Object.defineProperty(window.location, 'href', {
                       set: function(val) {
-                        if (val !== currentHref && !val.includes('vidsrc')) {
+                        if (val !== currentHref && isBlockedNav(val)) {
                           console.log('🚫 Blocked redirect to:', val);
                           return;
                         }
@@ -119,7 +138,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                   // If redefine fails, just intercept assign
                   Object.defineProperty(window.location, 'assign', {
                     value: function(url) {
-                      if (!url.includes('vidsrc')) {
+                      if (isBlockedNav(url)) {
                         console.log('🚫 Blocked location.assign:', url);
                         return;
                       }
@@ -127,7 +146,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                   });
                   Object.defineProperty(window.location, 'replace', {
                     value: function(url) {
-                      if (!url.includes('vidsrc')) {
+                      if (isBlockedNav(url)) {
                         console.log('🚫 Blocked location.replace:', url);
                         return;
                       }
@@ -251,7 +270,8 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                 
                 console.log('✅ VidSrc player event listener initialized');
               })();
-            ''');
+            ''',
+            );
           },
           onProgressChanged: (controller, progress) {
             setState(() {
@@ -263,11 +283,14 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
           },
           shouldInterceptRequest: (controller, request) async {
             final url = request.url.toString().toLowerCase();
-            
+
             // Comprehensive ad blocking patterns
             final adPatterns = [
               // Google ads
-              'doubleclick', 'googlesyndication', 'googleadservices', 'google-analytics',
+              'doubleclick',
+              'googlesyndication',
+              'googleadservices',
+              'google-analytics',
               'googletagmanager', 'googletagservices', 'pagead',
               // Facebook
               'facebook.com/tr', 'facebook.net', 'connect.facebook',
@@ -290,7 +313,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
               // Specific ad script domains
               'adform', 'advertising.com', 'adnxs.com', 'adsrvr.org',
             ];
-            
+
             // Check if URL contains any ad pattern
             for (final pattern in adPatterns) {
               if (url.contains(pattern)) {
@@ -298,74 +321,90 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                 return null; // Block the request
               }
             }
-            
+
             return null; // Allow
           },
           shouldOverrideUrlLoading: (controller, navigationAction) async {
             final url = navigationAction.request.url;
-            
+
             if (url != null) {
               final urlString = url.toString();
               final urlStringLower = urlString.toLowerCase();
               final scheme = url.scheme.toLowerCase();
               final host = url.host.toLowerCase();
-              
+
               // BLOCK non-HTTP/HTTPS schemes (app deep links, malware redirects)
               if (scheme != 'http' && scheme != 'https') {
                 print('🚫 Blocked non-HTTP scheme: $urlString');
                 return NavigationActionPolicy.CANCEL;
               }
-              
+
               // Block specific ad/malware domains
               final blockedDomains = [
-                'zrlqm.com', 'enalibaba.com', 'taobao.com', 'alibaba.com',
-                'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
-                'exoclick.com', 'propellerads.com', 'popcash.net', 'popads.net',
-                'clickadu.com', 'adsterra.com', 'hilltopads.net', 'adcash.com',
-                'facebook.com', 'facebook.net', 'fbcdn.net',
-                'outbrain.com', 'taboola.com', 'revcontent.com', 'mgid.com',
+                'zrlqm.com',
+                'enalibaba.com',
+                'taobao.com',
+                'alibaba.com',
+                'doubleclick.net',
+                'googlesyndication.com',
+                'googleadservices.com',
+                'exoclick.com',
+                'propellerads.com',
+                'popcash.net',
+                'popads.net',
+                'clickadu.com',
+                'adsterra.com',
+                'hilltopads.net',
+                'adcash.com',
+                'facebook.com',
+                'facebook.net',
+                'fbcdn.net',
+                'outbrain.com',
+                'taboola.com',
+                'revcontent.com',
+                'mgid.com',
               ];
-              
+
               for (final domain in blockedDomains) {
                 if (host.contains(domain)) {
                   print('🚫 Blocked domain: $urlString');
                   return NavigationActionPolicy.CANCEL;
                 }
               }
-              
+
               // Block URLs with ad/tracking patterns
               final blockedPatterns = [
-                '/ad/', '/ads/', '/advert', '/banner', '/popup',
-                '/track/', '/tracker', '/analytics', '/telemetry',
-                '?c=', '&c=', // Tracking campaign parameters seen in logs
-                'click.', 'clk.', 'redirect', 'redir',
+                '/ad/',
+                '/ads/',
+                '/advert',
+                '/banner',
+                '/popup',
+                '/track/',
+                '/tracker',
+                '/analytics',
+                '/telemetry',
+                'click.',
+                'clk.',
+                'redirect',
+                'redir',
               ];
-              
+
               for (final pattern in blockedPatterns) {
-                if (urlStringLower.contains(pattern) && !host.contains('vidsrc')) {
+                if (urlStringLower.contains(pattern) &&
+                    !host.contains('vidsrc')) {
                   print('🚫 Blocked pattern "$pattern": $urlString');
                   return NavigationActionPolicy.CANCEL;
                 }
               }
-              
-              // Only allow trusted streaming domains (prevent cross-domain redirects)
-              final trustedDomains = [
-                'vidsrc.cc', 'vidsrc.to', 'vidsrc.xyz', 'vidsrc.me',
-                'vidlink.pro', 'vidlink.org',
-              ];
-              
-              final isTrustedDomain = trustedDomains.any((trusted) => host.contains(trusted));
-              
-              if (!isTrustedDomain) {
-                print('🚫 Blocked untrusted domain: $urlString');
-                return NavigationActionPolicy.CANCEL;
-              }
+
+              // Do not enforce a strict domain allowlist here:
+              // embed providers often redirect to third-party video/CDN hosts.
             }
-            
+
             return NavigationActionPolicy.ALLOW;
           },
         ),
-        
+
         // Loading indicator
         if (_isLoading)
           Container(
@@ -374,9 +413,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const CircularProgressIndicator(
-                    color: NivioTheme.netflixRed,
-                  ),
+                  const CircularProgressIndicator(color: NivioTheme.netflixRed),
                   const SizedBox(height: 16),
                   Text(
                     'Loading player...',
@@ -387,7 +424,10 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
                         '${(_progress * 100).toInt()}%',
-                        style: const TextStyle(color: Colors.white54, fontSize: 12),
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                 ],

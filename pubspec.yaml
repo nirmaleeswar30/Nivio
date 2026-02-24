@@ -19,6 +19,7 @@ dependencies:
 
   # Networking
   dio: ^5.7.0
+  aimi_lib: ^3.0.0
 
   # Local Storage
   hive: ^2.2.3

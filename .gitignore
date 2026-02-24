@@ -58,3 +58,4 @@ app.*.map.json
 
 # Private API keys (if you create this file)
 lib/core/api_keys.dart
+.tmp/aimi-lib

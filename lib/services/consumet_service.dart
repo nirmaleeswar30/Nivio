@@ -61,6 +61,9 @@ class ConsumetService {
       final response = await _dio.get(
         '/meta/tmdb/watch/$episodeId',
         queryParameters: {'id': showId},
+        options: Options(
+          validateStatus: (status) => status != null && status < 500,
+        ),
       );
 
       if (response.statusCode == 200 && response.data != null) {
@@ -70,6 +73,9 @@ class ConsumetService {
           subDubPreference: subDubPreference,
         );
       }
+      print(
+        '⚠️ Consumet TMDB watch unavailable (status: ${response.statusCode}), trying FlixHQ fallback...',
+      );
     } catch (e) {
       print('❌ Consumet TMDB stream error: $e');
     }
@@ -93,6 +99,9 @@ class ConsumetService {
       final response = await _dio.get(
         '/movies/flixhq/watch',
         queryParameters: {'episodeId': episodeId, 'mediaId': showId},
+        options: Options(
+          validateStatus: (status) => status != null && status < 500,
+        ),
       );
 
       if (response.statusCode == 200 && response.data != null) {
@@ -102,6 +111,7 @@ class ConsumetService {
           subDubPreference: subDubPreference,
         );
       }
+      print('⚠️ Consumet FlixHQ unavailable (status: ${response.statusCode})');
     } catch (e) {
       print('❌ Consumet FlixHQ stream error: $e');
     }
