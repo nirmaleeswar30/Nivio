@@ -41,6 +41,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   static const int _hlsCacheMaxSizeBytes = 512 * 1024 * 1024; // 512 MB
   static const int _hlsCacheMaxFileSizeBytes = 256 * 1024 * 1024; // 256 MB
   static const int _hlsPreCacheBytes = 8 * 1024 * 1024; // 8 MB
+  static const List<String> _displayFitOrder = [
+    'bestFit',
+    'fitScreen',
+    'fill',
+    'none',
+  ];
+  static const Map<String, BoxFit> _displayFitOptions = {
+    'bestFit': BoxFit.contain,
+    'fitScreen': BoxFit.cover,
+    'fill': BoxFit.fill,
+    'none': BoxFit.none,
+  };
+  static const Map<String, String> _displayFitLabels = {
+    'bestFit': 'Best Fit',
+    'fitScreen': 'Fit Screen',
+    'fill': 'Fill',
+    'none': 'None',
+  };
 
   BetterPlayerController? _betterPlayerController;
   StreamResult? _streamResult;
@@ -61,6 +79,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   int _currentEpisode = 0;
   bool _isInFullscreen = false;
   bool _arePlayerControlsVisible = true;
+  bool _autoFullscreenTriggeredForCurrentLoad = false;
+  String? _openTopActionMenuId;
+  String _selectedDisplayFitKey = 'bestFit';
   final ValueNotifier<bool> _fullscreenTopBarVisibleNotifier = ValueNotifier(
     false,
   );
@@ -153,6 +174,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   // â”€â”€ Player initialization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<void> _initializePlayer() async {
+    _autoFullscreenTriggeredForCurrentLoad = false;
     setState(() {
       _isLoading = true;
       _error = null;
@@ -315,7 +337,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           autoPlay: true,
           looping: false,
           fullScreenByDefault: false,
-          fit: BoxFit.contain,
+          fit: _displayFitOptions[_selectedDisplayFitKey] ?? BoxFit.contain,
           autoDispose: false,
           handleLifecycle: true,
           startAt: startAt,
@@ -346,6 +368,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             overflowMenuIconsColor: Colors.white70,
             playerTheme: BetterPlayerTheme.material,
             overflowMenuCustomItems: [
+              if (_isDirectStream)
+                BetterPlayerOverflowMenuItem(
+                  Icons.aspect_ratio,
+                  'Display',
+                  _showDisplaySelectionBottomSheet,
+                ),
               if (media.mediaType == 'tv')
                 BetterPlayerOverflowMenuItem(
                   Icons.list,
@@ -406,6 +434,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       // Register event listener BEFORE setting up data source
       _betterPlayerController!.addEventsListener(_onBetterPlayerEvent);
+      _applyDisplaySettings(refreshUi: false);
 
       // Show the player immediately â€” BetterPlayer handles its own buffering UI
       setState(() {
@@ -506,6 +535,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         // Set playback speed after initialization
         final speed = ref.read(playbackSpeedProvider);
         _betterPlayerController?.setSpeed(speed);
+        _applyDisplaySettings(refreshUi: false);
+        _maybeAutoEnterFullscreenOnce();
         // Refresh action menus after ASMS tracks are parsed.
         setState(() {});
         // Show resume snackbar
@@ -563,6 +594,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       default:
         break;
     }
+  }
+
+  void _maybeAutoEnterFullscreenOnce() {
+    if (_autoFullscreenTriggeredForCurrentLoad) return;
+    if (!_isDirectStream || _betterPlayerController == null) return;
+    if (_betterPlayerController!.isFullScreen) return;
+
+    _autoFullscreenTriggeredForCurrentLoad = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _betterPlayerController == null) return;
+      if (_betterPlayerController!.isFullScreen) return;
+      _betterPlayerController!.enterFullScreen();
+    });
   }
 
   void _checkNextEpisode() {
@@ -847,6 +891,112 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ),
       );
     }).toList();
+  }
+
+  double _resolvedVideoAspectRatio() {
+    final ratio =
+        _betterPlayerController?.videoPlayerController?.value.aspectRatio;
+    if (ratio != null && ratio > 0 && ratio.isFinite && !ratio.isNaN) {
+      return ratio;
+    }
+    return 16 / 9;
+  }
+
+  void _applyDisplaySettings({bool refreshUi = true}) {
+    final controller = _betterPlayerController;
+    if (controller == null) return;
+    // Apply aspect ratio first, then fit (fit emits refresh event in BetterPlayer).
+    controller.setOverriddenAspectRatio(_resolvedVideoAspectRatio());
+    controller.setOverriddenFit(
+      _displayFitOptions[_selectedDisplayFitKey] ?? BoxFit.contain,
+    );
+    if (refreshUi && mounted) {
+      setState(() {});
+    }
+  }
+
+  List<PopupMenuEntry<String>> _buildDisplayMenuItems() {
+    return _displayFitOrder.map((fitKey) {
+      final isSelected = fitKey == _selectedDisplayFitKey;
+      final label = _displayFitLabels[fitKey] ?? fitKey;
+      return PopupMenuItem<String>(
+        value: fitKey,
+        child: Row(
+          children: [
+            Icon(
+              isSelected ? Icons.check_circle : Icons.circle_outlined,
+              color: isSelected ? NivioTheme.netflixRed : Colors.white70,
+              size: 18,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? NivioTheme.netflixRed : Colors.white,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  void _showDisplaySelectionBottomSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: true,
+      backgroundColor: const Color(0xFF1F1F1F),
+      builder: (context) {
+        return SafeArea(
+          top: false,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const ListTile(
+                title: Text(
+                  'Display',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              ..._displayFitOrder.map((fitKey) {
+                final selected = fitKey == _selectedDisplayFitKey;
+                final label = _displayFitLabels[fitKey] ?? fitKey;
+                return ListTile(
+                  leading: Icon(
+                    selected ? Icons.check_circle : Icons.circle_outlined,
+                    color: selected ? NivioTheme.netflixRed : Colors.white70,
+                  ),
+                  title: Text(
+                    label,
+                    style: TextStyle(
+                      color: selected ? NivioTheme.netflixRed : Colors.white,
+                      fontWeight: selected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _switchDisplayMode(fitKey);
+                  },
+                );
+              }),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _switchDisplayMode(String value) {
+    if (!_displayFitOptions.containsKey(value)) return;
+    if (value == _selectedDisplayFitKey) return;
+    _selectedDisplayFitKey = value;
+    _applyDisplaySettings();
   }
 
   Future<void> _switchQuality(String quality) async {
@@ -1501,6 +1651,86 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     context.go('/home');
   }
 
+  Future<void> _toggleTopActionMenu<T>({
+    required BuildContext anchorContext,
+    required String menuId,
+    required List<PopupMenuEntry<T>> Function() itemBuilder,
+    required ValueChanged<T> onSelected,
+  }) async {
+    if (!mounted) return;
+    if (_openTopActionMenuId == menuId) {
+      await Navigator.of(context, rootNavigator: true).maybePop();
+      if (mounted) {
+        setState(() => _openTopActionMenuId = null);
+      }
+      return;
+    }
+    if (_openTopActionMenuId != null) {
+      return;
+    }
+
+    final button = anchorContext.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(context, rootOverlay: true).context.findRenderObject()
+            as RenderBox?;
+    if (button == null || overlay == null) return;
+
+    final buttonTopLeft = button.localToGlobal(Offset.zero, ancestor: overlay);
+    final buttonBottomRight = button.localToGlobal(
+      button.size.bottomRight(Offset.zero),
+      ancestor: overlay,
+    );
+    const verticalGap = 4.0;
+    final menuTop = buttonBottomRight.dy + verticalGap;
+    final position = RelativeRect.fromLTRB(
+      buttonTopLeft.dx,
+      menuTop,
+      overlay.size.width - buttonBottomRight.dx,
+      overlay.size.height - menuTop,
+    );
+
+    setState(() => _openTopActionMenuId = menuId);
+    final selected = await showMenu<T>(
+      context: context,
+      position: position,
+      color: const Color(0xFF1F1F1F),
+      items: itemBuilder(),
+      useRootNavigator: true,
+    );
+    if (!mounted) return;
+    setState(() => _openTopActionMenuId = null);
+    if (selected != null) {
+      onSelected(selected);
+    }
+  }
+
+  Widget _buildTopActionMenuButton<T>({
+    required String menuId,
+    required Widget icon,
+    required String tooltip,
+    required List<PopupMenuEntry<T>> Function() itemBuilder,
+    required ValueChanged<T> onSelected,
+  }) {
+    return Builder(
+      builder: (buttonContext) {
+        final isOtherMenuOpen =
+            _openTopActionMenuId != null && _openTopActionMenuId != menuId;
+        return IconButton(
+          tooltip: tooltip,
+          onPressed: isOtherMenuOpen
+              ? null
+              : () => _toggleTopActionMenu<T>(
+                  anchorContext: buttonContext,
+                  menuId: menuId,
+                  itemBuilder: itemBuilder,
+                  onSelected: onSelected,
+                ),
+          icon: icon,
+        );
+      },
+    );
+  }
+
   // â”€â”€ Build â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   @override
   Widget build(BuildContext context) {
@@ -1597,49 +1827,47 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       ),
                       actions: [
                         if (_isAimiAnimeStream())
-                          PopupMenuButton<String>(
+                          _buildTopActionMenuButton<String>(
+                            menuId: 'top-subdub-menu',
                             icon: const Icon(
                               Icons.record_voice_over,
                               color: Colors.white,
                             ),
                             tooltip: 'Sub/Dub',
-                            color: const Color(0xFF1F1F1F),
+                            itemBuilder: _buildAnimeModeMenuItems,
                             onSelected: _switchAnimeMode,
-                            itemBuilder: (context) =>
-                                _buildAnimeModeMenuItems(),
                           ),
                         if (_isNet22DirectStream())
-                          PopupMenuButton<String>(
+                          _buildTopActionMenuButton<String>(
+                            menuId: 'top-audio-menu',
                             icon: const Icon(
                               Icons.record_voice_over,
                               color: Colors.white,
                             ),
                             tooltip: 'Audio Language',
-                            color: const Color(0xFF1F1F1F),
+                            itemBuilder: _buildNet22AudioMenuItems,
                             onSelected: _switchNet22Audio,
-                            itemBuilder: (context) =>
-                                _buildNet22AudioMenuItems(),
                           ),
                         if (_isDirectStream &&
                             _buildQualityOptions().length > 1)
-                          PopupMenuButton<String>(
+                          _buildTopActionMenuButton<String>(
+                            menuId: 'top-quality-menu',
                             icon: const Icon(Icons.hd, color: Colors.white),
                             tooltip: 'Quality',
-                            color: const Color(0xFF1F1F1F),
+                            itemBuilder: _buildQualityMenuItems,
                             onSelected: _switchQuality,
-                            itemBuilder: (context) => _buildQualityMenuItems(),
                           ),
                         // Switch Server
-                        PopupMenuButton<int>(
+                        _buildTopActionMenuButton<int>(
+                          menuId: 'top-server-menu',
                           icon: const PhosphorIcon(
                             PhosphorIconsRegular.arrowsClockwise,
                             color: Colors.white,
                             size: 21,
                           ),
                           tooltip: 'Switch Server',
-                          color: const Color(0xFF1F1F1F),
+                          itemBuilder: _buildProviderMenuItems,
                           onSelected: _switchToProvider,
-                          itemBuilder: (context) => _buildProviderMenuItems(),
                         ),
                       ],
                     ),
@@ -1662,12 +1890,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Widget _buildDirectStreamLayout(bool isPortrait) {
-    final controller = _betterPlayerController;
-    final aspectRatio = controller?.videoPlayerController?.value.aspectRatio;
-    final safeAspectRatio =
-        (aspectRatio != null && aspectRatio > 0 && !aspectRatio.isNaN)
-        ? aspectRatio
-        : 16 / 9;
+    final safeAspectRatio = _resolvedVideoAspectRatio();
 
     return Column(
       children: [
@@ -1778,45 +2001,45 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       ),
                     ),
                     if (_isAimiAnimeStream())
-                      PopupMenuButton<String>(
+                      _buildTopActionMenuButton<String>(
+                        menuId: 'fs-subdub-menu',
                         icon: const Icon(
                           Icons.record_voice_over,
                           color: Colors.white,
                         ),
                         tooltip: 'Sub/Dub',
-                        color: const Color(0xFF1F1F1F),
+                        itemBuilder: _buildAnimeModeMenuItems,
                         onSelected: _switchAnimeMode,
-                        itemBuilder: (context) => _buildAnimeModeMenuItems(),
                       ),
                     if (_isNet22DirectStream())
-                      PopupMenuButton<String>(
+                      _buildTopActionMenuButton<String>(
+                        menuId: 'fs-audio-menu',
                         icon: const Icon(
                           Icons.record_voice_over,
                           color: Colors.white,
                         ),
                         tooltip: 'Audio Language',
-                        color: const Color(0xFF1F1F1F),
+                        itemBuilder: _buildNet22AudioMenuItems,
                         onSelected: _switchNet22Audio,
-                        itemBuilder: (context) => _buildNet22AudioMenuItems(),
                       ),
                     if (_isDirectStream && _buildQualityOptions().length > 1)
-                      PopupMenuButton<String>(
+                      _buildTopActionMenuButton<String>(
+                        menuId: 'fs-quality-menu',
                         icon: const Icon(Icons.hd, color: Colors.white),
                         tooltip: 'Quality',
-                        color: const Color(0xFF1F1F1F),
+                        itemBuilder: _buildQualityMenuItems,
                         onSelected: _switchQuality,
-                        itemBuilder: (context) => _buildQualityMenuItems(),
                       ),
-                    PopupMenuButton<int>(
+                    _buildTopActionMenuButton<int>(
+                      menuId: 'fs-server-menu',
                       icon: const PhosphorIcon(
                         PhosphorIconsRegular.arrowsClockwise,
                         color: Colors.white,
                         size: 20,
                       ),
                       tooltip: 'Switch Server',
-                      color: const Color(0xFF1F1F1F),
+                      itemBuilder: _buildProviderMenuItems,
                       onSelected: _switchToProvider,
-                      itemBuilder: (context) => _buildProviderMenuItems(),
                     ),
                   ],
                 ),
@@ -1963,6 +2186,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       IconButton(
                         onPressed: _showEpisodesBottomSheet,
                         icon: const Icon(Icons.list, color: Colors.white),
+                      ),
+                    if (_isDirectStream)
+                      PopupMenuButton<String>(
+                        icon: const Icon(
+                          Icons.aspect_ratio,
+                          color: Colors.white,
+                        ),
+                        tooltip: 'Display',
+                        color: const Color(0xFF1F1F1F),
+                        onSelected: _switchDisplayMode,
+                        itemBuilder: (context) => _buildDisplayMenuItems(),
                       ),
                     IconButton(
                       onPressed: () {

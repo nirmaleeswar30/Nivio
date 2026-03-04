@@ -545,12 +545,33 @@ public class BetterPlayer: NSObject, FlutterPlatformView, FlutterStreamHandler, 
     public func setAudioTrack(name: String, index: Int) {
         guard let group = player.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else { return }
         let options = group.options
+        if options.isEmpty { return }
+
+        // First pass: strict name + index match.
         for audioTrackIndex in 0..<options.count {
             let option = options[audioTrackIndex]
             let metas = AVMetadataItem.metadataItems(from: option.commonMetadata, withKey: "title" as (NSCopying & NSObjectProtocol), keySpace: AVMetadataKeySpace(rawValue: "comn"))
-            if let title = metas.first?.stringValue, title == name && audioTrackIndex == index {
+            if let title = metas.first?.stringValue,
+               title.compare(name, options: .caseInsensitive) == .orderedSame,
+               audioTrackIndex == index {
                 player.currentItem?.select(option, in: group)
+                return
             }
+        }
+
+        // Second pass: name-only fallback.
+        for option in options {
+            let metas = AVMetadataItem.metadataItems(from: option.commonMetadata, withKey: "title" as (NSCopying & NSObjectProtocol), keySpace: AVMetadataKeySpace(rawValue: "comn"))
+            if let title = metas.first?.stringValue,
+               title.compare(name, options: .caseInsensitive) == .orderedSame {
+                player.currentItem?.select(option, in: group)
+                return
+            }
+        }
+
+        // Third pass: index-only fallback.
+        if index >= 0 && index < options.count {
+            player.currentItem?.select(options[index], in: group)
         }
     }
 

@@ -668,48 +668,73 @@ internal class BetterPlayer(
                         continue
                     }
                     val trackGroupArray = mappedTrackInfo.getTrackGroups(rendererIndex)
-                    var hasElementWithoutLabel = false
-                    var hasStrangeAudioTrack = false
+                    val requestedName = name.trim()
+                    var fallbackByName: Triple<Int, Int, Int>? = null
                     for (groupIndex in 0 until trackGroupArray.length) {
                         val group = trackGroupArray[groupIndex]
-                        for (groupElementIndex in 0 until group.length) {
-                            val format = group.getFormat(groupElementIndex)
-                            if (format.label == null) {
-                                hasElementWithoutLabel = true
-                            }
-                            if (format.id != null && format.id == "1/15") {
-                                hasStrangeAudioTrack = true
-                            }
+                        if (group.length <= 0) {
+                            continue
                         }
-                    }
-                    for (groupIndex in 0 until trackGroupArray.length) {
-                        val group = trackGroupArray[groupIndex]
                         for (groupElementIndex in 0 until group.length) {
                             val label = group.getFormat(groupElementIndex).label
-                            // Exact match by label and provided group index
-                            if (name == label && index == groupIndex) {
+                            val normalizedLabel = (label ?: "").trim()
+                            val nameMatches = normalizedLabel.equals(requestedName, ignoreCase = true)
+
+                            // Best-case: label match and requested index points to this group.
+                            if (nameMatches && index == groupIndex) {
                                 setAudioTrack(rendererIndex, groupIndex, groupElementIndex)
                                 return
                             }
 
-                            ///Fallback option
-                            if (!hasStrangeAudioTrack && hasElementWithoutLabel && index == groupIndex) {
-                                // When labels are missing, default to the first track within the group
-                                val safeTrackIndex = if (group.length > 0) 0 else groupElementIndex
-                                setAudioTrack(rendererIndex, groupIndex, safeTrackIndex)
-                                return
+                            // Keep best fallback candidates for later.
+                            if (nameMatches && fallbackByName == null) {
+                                fallbackByName = Triple(rendererIndex, groupIndex, groupElementIndex)
                             }
-                            ///Fallback option
-                            if (hasStrangeAudioTrack && name == label) {
-                                setAudioTrack(rendererIndex, groupIndex, groupElementIndex)
+                        }
+                    }
+
+                    // Fallback 1: any matching name.
+                    if (fallbackByName != null) {
+                        setAudioTrack(
+                            fallbackByName.first,
+                            fallbackByName.second,
+                            fallbackByName.third
+                        )
+                        return
+                    }
+
+                    // Fallback 2: group index only (choose first track in that group).
+                    if (index >= 0 && index < trackGroupArray.length) {
+                        val fallbackGroup = trackGroupArray[index]
+                        if (fallbackGroup.length > 0) {
+                            setAudioTrack(rendererIndex, index, 0)
+                            return
+                        }
+                    }
+
+                    // Fallback 3: treat index as track index in the first non-empty group.
+                    if (index >= 0) {
+                        for (groupIndex in 0 until trackGroupArray.length) {
+                            val group = trackGroupArray[groupIndex]
+                            if (group.length <= 0) continue
+                            if (index < group.length) {
+                                setAudioTrack(rendererIndex, groupIndex, index)
                                 return
                             }
                         }
                     }
+
+                    // Final fallback: first available track in first non-empty group.
+                    for (groupIndex in 0 until trackGroupArray.length) {
+                        val group = trackGroupArray[groupIndex]
+                        if (group.length <= 0) continue
+                        setAudioTrack(rendererIndex, groupIndex, 0)
+                        return
+                    }
                 }
             }
         } catch (exception: Exception) {
-            Log.e(TAG, "setAudioTrack failed$exception")
+            Log.e(TAG, "setAudioTrack failed", exception)
         }
     }
 
@@ -719,11 +744,23 @@ internal class BetterPlayer(
             val trackGroups = mappedTrackInfo.getTrackGroups(rendererIndex)
             if (groupIndex >= 0 && groupIndex < trackGroups.length) {
                 val group = trackGroups.get(groupIndex)
+                if (group.length <= 0) {
+                    Log.e(TAG, "setAudioTrack: empty group at index: $groupIndex")
+                    return
+                }
                 val safeTrackIndex = trackIndex.coerceIn(0, group.length - 1)
+                val player = exoPlayer
+                val shouldResumePlayback = player?.playWhenReady == true
+                val currentPosition = player?.currentPosition ?: 0L
+
+                if (shouldResumePlayback) {
+                    player?.pause()
+                }
 
                 val builder = trackSelector.parameters
                     .buildUpon()
                     .setRendererDisabled(rendererIndex, false)
+                    .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
                     .addOverride(
                         TrackSelectionOverride(
                             group,
@@ -732,6 +769,12 @@ internal class BetterPlayer(
                     )
 
                 trackSelector.setParameters(builder)
+
+                if (shouldResumePlayback) {
+                    // Re-seek to current position so audio track replacement takes effect immediately.
+                    player?.seekTo(currentPosition.coerceAtLeast(0L))
+                    player?.play()
+                }
             } else {
                 Log.e(TAG, "setAudioTrack: groupIndex out of bounds: $groupIndex")
             }

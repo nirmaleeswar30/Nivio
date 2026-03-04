@@ -1248,7 +1248,10 @@ class BetterPlayerController {
     }
 
     _betterPlayerAsmsAudioTrack = audioTrack;
-    videoPlayerController!.setAudioTrack(audioTrack.label, audioTrack.id);
+    final trackName = (audioTrack.label?.trim().isNotEmpty ?? false)
+        ? audioTrack.label!.trim()
+        : (audioTrack.language?.trim() ?? '');
+    videoPlayerController!.setAudioTrack(trackName, audioTrack.id);
   }
 
   ///Enable or disable audio mixing with other sound within device.

@@ -15,6 +15,7 @@ import 'package:nivio/models/new_episode.dart';
 import 'package:nivio/services/cache_service.dart';
 import 'package:nivio/services/watchlist_service.dart';
 import 'package:nivio/services/episode_check_service.dart';
+import 'package:nivio/services/github_release_update_service.dart';
 import 'package:nivio/services/shorebird_update_service.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/screens/home_screen.dart';
@@ -22,7 +23,6 @@ import 'package:nivio/screens/search_screen.dart';
 import 'package:nivio/screens/media_detail_screen.dart';
 import 'package:nivio/screens/player_screen.dart';
 import 'package:nivio/screens/auth_screen.dart';
-import 'package:nivio/screens/settings_screen.dart';
 import 'package:nivio/screens/library_screen.dart';
 import 'package:nivio/screens/profile_screen.dart';
 import 'package:nivio/screens/main_shell_screen.dart';
@@ -148,10 +148,6 @@ final _router = GoRouter(
       ],
     ),
     GoRoute(
-      path: '/settings',
-      builder: (context, state) => const SettingsScreen(),
-    ),
-    GoRoute(
       path: '/watchlist',
       redirect: (context, state) => '/library?tab=watchlist',
     ),
@@ -192,7 +188,84 @@ class NivioApp extends StatelessWidget {
       theme: NivioTheme.darkTheme,
       darkTheme: NivioTheme.darkTheme,
       routerConfig: _router,
+      builder: (context, child) {
+        return _GitHubReleasePromptGate(
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       debugShowCheckedModeBanner: false,
     );
+  }
+}
+
+class _GitHubReleasePromptGate extends StatefulWidget {
+  const _GitHubReleasePromptGate({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_GitHubReleasePromptGate> createState() =>
+      _GitHubReleasePromptGateState();
+}
+
+class _GitHubReleasePromptGateState extends State<_GitHubReleasePromptGate> {
+  static bool _dialogShownThisSession = false;
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    _checkForGitHubReleaseUpdate();
+  }
+
+  Future<void> _checkForGitHubReleaseUpdate() async {
+    final result = await GitHubReleaseUpdateService.checkForUpdate(
+      forceRefresh: true,
+    );
+    if (!mounted || !result.hasUpdate || _dialogShownThisSession) return;
+
+    _dialogShownThisSession = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('Update Available'),
+            content: Text(
+              'Current: ${result.installedVersion}\n'
+              'Latest: ${result.latestVersion}\n\n'
+              'A newer app release is available on GitHub.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Later'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  await GitHubReleaseUpdateService.openReleasePage(
+                    result.releaseUrl,
+                  );
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                },
+                child: const Text('Install'),
+              ),
+            ],
+          );
+        },
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.child;
   }
 }

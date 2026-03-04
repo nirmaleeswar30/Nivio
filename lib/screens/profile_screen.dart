@@ -12,6 +12,9 @@ import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/services/episode_check_service.dart';
+import 'package:nivio/services/github_release_update_service.dart';
+import 'package:nivio/services/shorebird_update_service.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -92,8 +95,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final languagePrefs = ref.watch(languagePreferencesProvider);
     final playbackSpeed = ref.watch(playbackSpeedProvider);
     final videoQuality = ref.watch(videoQualityProvider);
-    final subtitlesEnabled = ref.watch(subtitlesEnabledProvider);
-    final animationsEnabled = ref.watch(animationsEnabledProvider);
     final episodeCheckEnabled = ref.watch(episodeCheckEnabledProvider);
     final episodeFrequency = ref.watch(episodeCheckFrequencyProvider);
 
@@ -138,6 +139,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                 ),
               ),
+              if (_query.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                    child: _buildSearchResultsCard(
+                      user: user,
+                      languagePrefs: languagePrefs,
+                      playbackSpeed: playbackSpeed,
+                      videoQuality: videoQuality,
+                      episodeCheckEnabled: episodeCheckEnabled,
+                      episodeFrequency: episodeFrequency,
+                    ),
+                  ),
+                ),
               if (_matches('watchlist my list saved'))
                 SliverToBoxAdapter(
                   child: Padding(
@@ -178,32 +193,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             title: 'Preferred Video Quality',
                             subtitle: _qualityLabel(videoQuality),
                             onTap: _showVideoQualityDialog,
-                          ),
-                        if (_matches('subtitles captions'))
-                          _buildSwitchTile(
-                            icon: Icons.subtitles_outlined,
-                            title: 'Subtitles',
-                            subtitle: subtitlesEnabled ? 'Enabled' : 'Disabled',
-                            value: subtitlesEnabled,
-                            onChanged: (value) {
-                              ref
-                                  .read(subtitlesEnabledProvider.notifier)
-                                  .toggle();
-                            },
-                          ),
-                        if (_matches('animations motion'))
-                          _buildSwitchTile(
-                            icon: Icons.auto_awesome_rounded,
-                            title: 'Animations',
-                            subtitle: animationsEnabled
-                                ? 'Enabled'
-                                : 'Disabled',
-                            value: animationsEnabled,
-                            onChanged: (value) {
-                              ref
-                                  .read(animationsEnabledProvider.notifier)
-                                  .toggle();
-                            },
                           ),
                       ],
                     ),
@@ -334,6 +323,48 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
                   child: _buildSectionCard(
+                    title: 'App & Updates',
+                    child: Column(
+                      children: [
+                        if (_matches('update app version release github'))
+                          FutureBuilder<String>(
+                            future: _getAppVersionLabel(),
+                            builder: (context, snapshot) {
+                              return _buildActionTile(
+                                icon: Icons.info_outline_rounded,
+                                title: 'App Version',
+                                subtitle: snapshot.data ?? 'Loading...',
+                                onTap: _showAppVersionDialog,
+                              );
+                            },
+                          ),
+                        if (_matches('update github release app install apk'))
+                          FutureBuilder<GitHubReleaseUpdateResult>(
+                            future: GitHubReleaseUpdateService.checkForUpdate(),
+                            builder: (context, snapshot) {
+                              final result = snapshot.data;
+                              final subtitle = result == null
+                                  ? 'Checking GitHub releases...'
+                                  : result.hasUpdate
+                                  ? 'Latest ${result.latestVersion} available'
+                                  : result.message;
+                              return _buildActionTile(
+                                icon: Icons.download_for_offline_outlined,
+                                title: 'Check GitHub Release',
+                                subtitle: subtitle,
+                                onTap: _checkForGitHubRelease,
+                              );
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                  child: _buildSectionCard(
                     title: 'Data & Account',
                     child: Column(
                       children: [
@@ -343,6 +374,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             title: 'Clear Watch History',
                             subtitle: 'Remove all watch progress and activity',
                             onTap: _showClearHistoryDialog,
+                          ),
+                        if (_matches('clear cache data storage'))
+                          _buildActionTile(
+                            icon: Icons.cleaning_services_outlined,
+                            title: 'Clear Cache',
+                            subtitle: 'Clear cached API and image metadata',
+                            onTap: _showClearCacheDialog,
                           ),
                         if (_matches('sign out logout'))
                           _buildActionTile(
@@ -559,6 +597,230 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
+  Widget _buildSearchResultsCard({
+    required User user,
+    required LanguagePreferences languagePrefs,
+    required double playbackSpeed,
+    required String videoQuality,
+    required bool episodeCheckEnabled,
+    required int episodeFrequency,
+  }) {
+    final results = <Widget>[];
+
+    if (_matches('playback speed')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.speed_rounded,
+          title: 'Default Playback Speed',
+          subtitle: '${playbackSpeed}x',
+          onTap: _showPlaybackSpeedDialog,
+        ),
+      );
+    }
+    if (_matches('video quality resolution')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.high_quality_rounded,
+          title: 'Preferred Video Quality',
+          subtitle: _qualityLabel(videoQuality),
+          onTap: _showVideoQualityDialog,
+        ),
+      );
+    }
+    if (_matches('anime language')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.animation_rounded,
+          title: 'Anime',
+          subtitle: 'Show anime rows on home',
+          value: languagePrefs.showAnime,
+          onChanged: (value) {
+            ref.read(languagePreferencesProvider.notifier).toggleAnime(value);
+          },
+        ),
+      );
+    }
+    if (_matches('tamil language')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.movie_filter_rounded,
+          title: 'Tamil',
+          subtitle: 'Show Tamil rows on home',
+          value: languagePrefs.showTamil,
+          onChanged: (value) {
+            ref.read(languagePreferencesProvider.notifier).toggleTamil(value);
+          },
+        ),
+      );
+    }
+    if (_matches('telugu language')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.movie_creation_outlined,
+          title: 'Telugu',
+          subtitle: 'Show Telugu rows on home',
+          value: languagePrefs.showTelugu,
+          onChanged: (value) {
+            ref.read(languagePreferencesProvider.notifier).toggleTelugu(value);
+          },
+        ),
+      );
+    }
+    if (_matches('hindi language')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.theaters_rounded,
+          title: 'Hindi',
+          subtitle: 'Show Hindi rows on home',
+          value: languagePrefs.showHindi,
+          onChanged: (value) {
+            ref.read(languagePreferencesProvider.notifier).toggleHindi(value);
+          },
+        ),
+      );
+    }
+    if (_matches('korean language kdrama')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.live_tv_rounded,
+          title: 'Korean',
+          subtitle: 'Show Korean rows on home',
+          value: languagePrefs.showKorean,
+          onChanged: (value) {
+            ref.read(languagePreferencesProvider.notifier).toggleKorean(value);
+          },
+        ),
+      );
+    }
+    if (_matches('alerts notifications')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.notifications_active_outlined,
+          title: 'New Episode Alerts',
+          subtitle: episodeCheckEnabled ? 'Enabled' : 'Disabled',
+          value: episodeCheckEnabled,
+          onChanged: (value) {
+            ref.read(episodeCheckEnabledProvider.notifier).setEnabled(value);
+          },
+        ),
+      );
+    }
+    if (_matches('frequency check schedule') && episodeCheckEnabled) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.schedule_rounded,
+          title: 'Check Frequency',
+          subtitle: _frequencyLabel(episodeFrequency),
+          onTap: _showFrequencyDialog,
+        ),
+      );
+    }
+    if (_matches('check now refresh')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.sync_rounded,
+          title: 'Check Now',
+          subtitle: 'Manually check for newly aired episodes',
+          onTap: _checkNow,
+        ),
+      );
+    }
+    if (_matches('new episodes inbox')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.notifications_none_rounded,
+          title: 'Open New Episodes',
+          subtitle: 'View recently detected episodes',
+          onTap: () => context.go('/library'),
+        ),
+      );
+    }
+    if (_matches('update app version release github')) {
+      results.add(
+        FutureBuilder<String>(
+          future: _getAppVersionLabel(),
+          builder: (context, snapshot) {
+            return _buildActionTile(
+              icon: Icons.info_outline_rounded,
+              title: 'App Version',
+              subtitle: snapshot.data ?? 'Loading...',
+              onTap: _showAppVersionDialog,
+            );
+          },
+        ),
+      );
+    }
+    if (_matches('update github release app install apk')) {
+      results.add(
+        FutureBuilder<GitHubReleaseUpdateResult>(
+          future: GitHubReleaseUpdateService.checkForUpdate(),
+          builder: (context, snapshot) {
+            final result = snapshot.data;
+            final subtitle = result == null
+                ? 'Checking GitHub releases...'
+                : result.hasUpdate
+                ? 'Latest ${result.latestVersion} available'
+                : result.message;
+            return _buildActionTile(
+              icon: Icons.download_for_offline_outlined,
+              title: 'Check GitHub Release',
+              subtitle: subtitle,
+              onTap: _checkForGitHubRelease,
+            );
+          },
+        ),
+      );
+    }
+    if (_matches('clear history data')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.delete_sweep_outlined,
+          title: 'Clear Watch History',
+          subtitle: 'Remove all watch progress and activity',
+          onTap: _showClearHistoryDialog,
+        ),
+      );
+    }
+    if (_matches('clear cache data storage')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.cleaning_services_outlined,
+          title: 'Clear Cache',
+          subtitle: 'Clear cached API and image metadata',
+          onTap: _showClearCacheDialog,
+        ),
+      );
+    }
+    if (_matches('sign out logout')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.logout_rounded,
+          title: user.isAnonymous ? 'Exit Guest Mode' : 'Sign Out',
+          subtitle: user.email ?? 'Current session',
+          titleColor: NivioTheme.netflixRed,
+          onTap: _showSignOutDialog,
+        ),
+      );
+    }
+
+    if (results.isEmpty) {
+      results.add(
+        const Padding(
+          padding: EdgeInsets.fromLTRB(4, 10, 4, 12),
+          child: Text(
+            'No matching settings found.',
+            style: TextStyle(color: NivioTheme.netflixGrey),
+          ),
+        ),
+      );
+    }
+
+    return _buildSectionCard(
+      title: 'Search Results',
+      child: Column(children: results),
+    );
+  }
+
   Widget _buildActionTile({
     required IconData icon,
     required String title,
@@ -602,9 +864,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
-    return ListTile(
+    return SwitchListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-      leading: Icon(icon, color: NivioTheme.netflixWhite, size: 22),
+      secondary: Icon(icon, color: NivioTheme.netflixWhite, size: 22),
       title: Text(
         title,
         style: const TextStyle(
@@ -617,11 +879,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         subtitle,
         style: const TextStyle(color: NivioTheme.netflixGrey, fontSize: 12),
       ),
-      trailing: Switch(
-        value: value,
-        activeThumbColor: NivioTheme.netflixRed,
-        onChanged: onChanged,
-      ),
+      value: value,
+      activeThumbColor: NivioTheme.netflixRed,
+      onChanged: onChanged,
     );
   }
 
@@ -1044,6 +1304,51 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
+  Future<void> _showClearCacheDialog() async {
+    final shouldClear = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: NivioTheme.netflixDarkGrey,
+          title: const Text(
+            'Clear Cache?',
+            style: TextStyle(color: NivioTheme.netflixWhite),
+          ),
+          content: const Text(
+            'This clears temporary cached data. The app may load slower briefly.',
+            style: TextStyle(color: NivioTheme.netflixLightGrey),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text(
+                'Clear',
+                style: TextStyle(color: NivioTheme.netflixRed),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldClear != true) return;
+
+    final cacheService = ref.read(cacheServiceProvider);
+    await cacheService.clearAll();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Cache cleared'),
+        backgroundColor: NivioTheme.netflixRed,
+      ),
+    );
+  }
+
   Future<void> _showSignOutDialog() async {
     final shouldSignOut = await showDialog<bool>(
       context: context,
@@ -1079,5 +1384,155 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
     context.go('/auth');
+  }
+
+  Future<String> _getAppVersionLabel() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      final baseVersion = info.buildNumber.isEmpty
+          ? info.version
+          : '${info.version} (${info.buildNumber})';
+      if (!ShorebirdUpdateService.isAvailable) {
+        return baseVersion;
+      }
+      final patch = await ShorebirdUpdateService.currentPatchNumber();
+      if (patch == null) {
+        return '$baseVersion • patch: base';
+      }
+      return '$baseVersion • patch: $patch';
+    } catch (_) {
+      return 'Unknown';
+    }
+  }
+
+  Future<void> _showAppVersionDialog() async {
+    final details = await _getAppVersionLabel();
+    String patchLine = 'Patch updates are not available in this build.';
+    if (ShorebirdUpdateService.isAvailable) {
+      final patch = await ShorebirdUpdateService.currentPatchNumber();
+      patchLine = patch == null
+          ? 'Current patch: base release'
+          : 'Current patch: $patch';
+    }
+
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: NivioTheme.netflixDarkGrey,
+          title: const Text(
+            'App Version',
+            style: TextStyle(color: NivioTheme.netflixWhite),
+          ),
+          content: Text(
+            'Installed: $details\n$patchLine',
+            style: const TextStyle(color: NivioTheme.netflixLightGrey),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _checkForGitHubRelease() async {
+    if (!mounted) return;
+    BuildContext? dialogContext;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        dialogContext = ctx;
+        return const AlertDialog(
+          backgroundColor: NivioTheme.netflixDarkGrey,
+          content: Row(
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.4,
+                  color: NivioTheme.netflixRed,
+                ),
+              ),
+              SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  'Checking latest GitHub release...',
+                  style: TextStyle(color: NivioTheme.netflixWhite),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    final result = await GitHubReleaseUpdateService.checkForUpdate(
+      forceRefresh: true,
+    );
+
+    if (dialogContext != null && dialogContext!.mounted) {
+      Navigator.of(dialogContext!).pop();
+    }
+    if (!mounted) return;
+
+    if (result.hasUpdate) {
+      showDialog<void>(
+        context: context,
+        builder: (ctx) {
+          return AlertDialog(
+            backgroundColor: NivioTheme.netflixDarkGrey,
+            title: const Text(
+              'Update Available',
+              style: TextStyle(color: NivioTheme.netflixWhite),
+            ),
+            content: Text(
+              'Current: ${result.installedVersion}\n'
+              'Latest: ${result.latestVersion}\n\n'
+              'Open GitHub and install the latest release?',
+              style: const TextStyle(color: NivioTheme.netflixLightGrey),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Later'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  await GitHubReleaseUpdateService.openReleasePage(
+                    result.releaseUrl,
+                  );
+                  if (ctx.mounted) {
+                    Navigator.pop(ctx);
+                  }
+                },
+                child: const Text(
+                  'Install',
+                  style: TextStyle(color: NivioTheme.netflixRed),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.message),
+        backgroundColor: result.status == GitHubReleaseUpdateStatus.failed
+            ? const Color(0xFFB00020)
+            : NivioTheme.netflixRed,
+      ),
+    );
   }
 }

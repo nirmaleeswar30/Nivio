@@ -9,6 +9,7 @@ import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/watchlist_item.dart';
 import 'package:nivio/providers/home_providers.dart';
+import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/services/episode_check_service.dart';
@@ -94,6 +95,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final featuredContent = ref.watch(featuredContentProvider);
+    final languagePreferences = ref.watch(languagePreferencesProvider);
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -256,12 +258,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           _buildRowSection('Top Rated Movies', topRatedMoviesProvider),
           _buildRowSection('Popular TV Shows', popularTVShowsProvider),
           _buildRowSection('Trending TV Shows', trendingTVShowsProvider),
-          _buildRowSection('Popular Anime', animeProvider),
-          _buildRowSection('Trending Anime', trendingAnimeProvider),
-          _buildRowSection('Tamil Picks', tamilMoviesProvider),
-          _buildRowSection('Telugu Picks', teluguMoviesProvider),
-          _buildRowSection('Hindi Picks', hindiMoviesProvider),
-          _buildRowSection('Korean Dramas', koreanDramasProvider),
+          if (languagePreferences.showAnime)
+            _buildRowSection('Popular Anime', animeProvider),
+          if (languagePreferences.showAnime)
+            _buildRowSection('Trending Anime', trendingAnimeProvider),
+          if (languagePreferences.showTamil)
+            _buildRowSection('Tamil Picks', tamilMoviesProvider),
+          if (languagePreferences.showTelugu)
+            _buildRowSection('Telugu Picks', teluguMoviesProvider),
+          if (languagePreferences.showHindi)
+            _buildRowSection('Hindi Picks', hindiMoviesProvider),
+          if (languagePreferences.showKorean)
+            _buildRowSection('Korean Dramas', koreanDramasProvider),
           const SliverToBoxAdapter(child: SizedBox(height: 50)),
         ],
       ),
