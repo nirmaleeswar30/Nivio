@@ -21,9 +21,7 @@ class EpisodeData with _$EpisodeData {
 
 @freezed
 class SeasonData with _$SeasonData {
-  const factory SeasonData({
-    required List<EpisodeData> episodes,
-  }) = _SeasonData;
+  const factory SeasonData({required List<EpisodeData> episodes}) = _SeasonData;
 
   factory SeasonData.fromJson(Map<String, dynamic> json) =>
       _$SeasonDataFromJson(json);

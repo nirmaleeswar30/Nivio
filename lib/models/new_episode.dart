@@ -45,6 +45,7 @@ class NewEpisode extends HiveObject {
   });
 
   /// Unique key for this episode
+  @override
   String get key => '${showId}_${seasonNumber}_$episodeNumber';
 
   /// Copy with modifications

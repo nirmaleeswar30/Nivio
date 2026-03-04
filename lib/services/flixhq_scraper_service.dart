@@ -1,8 +1,11 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:nivio/core/constants.dart';
 import 'package:nivio/models/stream_result.dart';
+
+import 'package:nivio/core/debug_log.dart';
 
 /// Native FlixHQ scraper for movies/TV stream extraction.
 class FlixhqScraperService {
@@ -45,7 +48,7 @@ class FlixhqScraperService {
         year: year,
       );
       if (match == null) {
-        print('FlixHQ scraper: no search match for "$cleanTitle"');
+        appDebugLog('FlixHQ scraper: no search match for "$cleanTitle"');
         return null;
       }
 
@@ -58,12 +61,12 @@ class FlixhqScraperService {
             );
 
       if (serverIds.isEmpty) {
-        print('FlixHQ scraper: no server ids found for ${match.href}');
+        appDebugLog('FlixHQ scraper: no server ids found for ${match.href}');
         return null;
       }
 
       final prioritizedServerIds = _prioritizeServerIds(serverIds);
-      print(
+      appDebugLog(
         'FlixHQ scraper: server order raw=$serverIds prioritized=$prioritizedServerIds',
       );
 
@@ -80,15 +83,15 @@ class FlixhqScraperService {
             return stream;
           }
 
-          print(
+          appDebugLog(
             'FlixHQ scraper: server $serverId returned non-playable source, trying next',
           );
         } catch (e) {
-          print('FlixHQ scraper: server $serverId failed: $e');
+          appDebugLog('FlixHQ scraper: server $serverId failed: $e');
         }
       }
     } catch (e) {
-      print('FlixHQ scraper error: $e');
+      appDebugLog('FlixHQ scraper error: $e');
     }
 
     return null;
@@ -188,7 +191,7 @@ class FlixhqScraperService {
   Future<List<int>> _resolveMovieServerIds(int movieId) async {
     final response = await _dio.get('/ajax/episode/list/$movieId');
     if (response.statusCode != 200) return const [];
-    return _extractServerIds(response.data?.toString() ?? '');
+    return compute(_extractServerIdsCompute, response.data?.toString() ?? '');
   }
 
   Future<List<int>> _resolveTvServerIds({
@@ -200,85 +203,37 @@ class FlixhqScraperService {
     if (seasonResponse.statusCode != 200) return const [];
 
     final seasonHtml = seasonResponse.data?.toString() ?? '';
-    final seasonId = _pickSeasonId(seasonHtml, season);
+    final seasonId = await _pickSeasonId(seasonHtml, season);
     if (seasonId == null) return const [];
 
     final episodesResponse = await _dio.get('/ajax/season/episodes/$seasonId');
     if (episodesResponse.statusCode != 200) return const [];
 
     final episodesHtml = episodesResponse.data?.toString() ?? '';
-    final episodeId = _pickEpisodeId(episodesHtml, episode);
+    final episodeId = await _pickEpisodeId(episodesHtml, episode);
     if (episodeId == null) return const [];
 
     final serversResponse = await _dio.get('/ajax/episode/servers/$episodeId');
     if (serversResponse.statusCode != 200) return const [];
 
-    return _extractServerIds(serversResponse.data?.toString() ?? '');
-  }
-
-  int? _pickSeasonId(String html, int seasonNumber) {
-    final seasonRegex = RegExp(
-      r'data-id="(\d+)"[^>]*>\s*Season\s+(\d+)',
-      caseSensitive: false,
+    return compute(
+      _extractServerIdsCompute,
+      serversResponse.data?.toString() ?? '',
     );
-
-    int? firstSeasonId;
-    for (final m in seasonRegex.allMatches(html)) {
-      final seasonId = int.tryParse(m.group(1) ?? '');
-      final number = int.tryParse(m.group(2) ?? '');
-      if (seasonId == null) continue;
-      firstSeasonId ??= seasonId;
-      if (number == seasonNumber) return seasonId;
-    }
-
-    if (firstSeasonId != null) return firstSeasonId;
-
-    final loose = RegExp(r'data-id="(\d+)"').firstMatch(html);
-    return int.tryParse(loose?.group(1) ?? '');
   }
 
-  int? _pickEpisodeId(String html, int episodeNumber) {
-    final episodeRegex = RegExp(
-      r'data-id="(\d+)"[^>]*>.*?<strong>\s*Eps\s*(\d+):',
-      caseSensitive: false,
-      dotAll: true,
-    );
-
-    int? firstEpisodeId;
-    for (final m in episodeRegex.allMatches(html)) {
-      final episodeId = int.tryParse(m.group(1) ?? '');
-      final number = int.tryParse(m.group(2) ?? '');
-      if (episodeId == null) continue;
-      firstEpisodeId ??= episodeId;
-      if (number == episodeNumber) return episodeId;
-    }
-
-    if (firstEpisodeId != null) return firstEpisodeId;
-
-    final loose = RegExp(r'data-id="(\d+)"').firstMatch(html);
-    return int.tryParse(loose?.group(1) ?? '');
+  Future<int?> _pickSeasonId(String html, int seasonNumber) {
+    return compute(_pickSeasonIdCompute, {
+      'html': html,
+      'seasonNumber': seasonNumber,
+    });
   }
 
-  List<int> _extractServerIds(String html) {
-    final ids = <int>[];
-    final seen = <int>{};
-    final dataIdRegex = RegExp(r'''data-(?:linkid|id)=["'](\d+)["']''');
-    final watchIdRegex = RegExp(r'''id=["']watch-(\d+)["']''');
-
-    for (final m in dataIdRegex.allMatches(html)) {
-      final id = int.tryParse(m.group(1) ?? '');
-      if (id == null || !seen.add(id)) continue;
-      ids.add(id);
-    }
-
-    // Fallback: some templates expose the server id only in id="watch-<id>".
-    for (final m in watchIdRegex.allMatches(html)) {
-      final id = int.tryParse(m.group(1) ?? '');
-      if (id == null || !seen.add(id)) continue;
-      ids.add(id);
-    }
-
-    return ids;
+  Future<int?> _pickEpisodeId(String html, int episodeNumber) {
+    return compute(_pickEpisodeIdCompute, {
+      'html': html,
+      'episodeNumber': episodeNumber,
+    });
   }
 
   List<int> _prioritizeServerIds(List<int> serverIds) {
@@ -332,7 +287,7 @@ class FlixhqScraperService {
 
     final key = _extractClientKey(embedHtml);
     if (key == null || key.isEmpty) {
-      print('FlixHQ scraper: missing client key for embed');
+      appDebugLog('FlixHQ scraper: missing client key for embed');
       return null;
     }
 
@@ -358,36 +313,36 @@ class FlixhqScraperService {
     final payload = sourceResponse.data?.trim() ?? '';
     if (payload.isEmpty) return null;
 
-    Map<String, dynamic>? data;
-    try {
-      data = jsonDecode(payload) as Map<String, dynamic>;
-    } catch (_) {
-      return null;
-    }
+    final parsed = await compute(_decodePayloadCompute, payload);
+    if (parsed == null) return null;
 
-    final rawSourceCandidates = <dynamic>[
-      data['sources'],
-      data['sources_bk'],
-      data['sourcesBackup'],
-      data['backup'],
-      data['source'],
-      data['file'],
-    ];
-    final sources = <StreamSource>[];
-    final seenUrls = <String>{};
-    for (final rawSource in rawSourceCandidates) {
-      for (final source in _parseSources(rawSource)) {
-        if (!seenUrls.add(source.url)) continue;
-        sources.add(source);
-      }
-    }
+    final sources = (parsed['sources'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (source) => StreamSource(
+            url: source['url']?.toString() ?? '',
+            quality: source['quality']?.toString() ?? 'auto',
+            isM3U8: source['isM3U8'] == true,
+          ),
+        )
+        .where((source) => source.url.trim().isNotEmpty)
+        .toList();
 
     if (sources.isEmpty) {
-      print('FlixHQ scraper: getSources returned no playable sources');
+      appDebugLog('FlixHQ scraper: getSources returned no playable sources');
       return null;
     }
 
-    final subtitles = _parseSubtitles(data['tracks'] ?? data['subtitles']);
+    final subtitles = (parsed['subtitles'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (track) => SubtitleTrack(
+            url: track['url']?.toString() ?? '',
+            lang: track['lang']?.toString() ?? 'Unknown',
+          ),
+        )
+        .where((track) => track.url.trim().isNotEmpty)
+        .toList();
     final bestSource = _pickBestSource(sources);
     final availableQualities = sources.map((s) => s.quality).toSet().toList();
 
@@ -480,73 +435,6 @@ class FlixhqScraperService {
     return null;
   }
 
-  List<StreamSource> _parseSources(dynamic raw) {
-    final out = <StreamSource>[];
-
-    if (raw is List) {
-      for (final item in raw) {
-        final source = _sourceFromDynamic(item);
-        if (source != null) out.add(source);
-      }
-      return out;
-    }
-
-    if (raw is Map) {
-      final source = _sourceFromDynamic(raw);
-      if (source != null) out.add(source);
-      return out;
-    }
-
-    if (raw is String) {
-      // Some responses provide sources as encoded string. Decryption path is
-      // intentionally skipped for now; direct URL payloads are still accepted.
-      final trimmed = raw.trim();
-      if (trimmed.startsWith('http')) {
-        out.add(
-          StreamSource(
-            url: trimmed,
-            quality: 'auto',
-            isM3U8: trimmed.contains('.m3u8'),
-          ),
-        );
-      }
-      return out;
-    }
-
-    return out;
-  }
-
-  StreamSource? _sourceFromDynamic(dynamic item) {
-    if (item is! Map) return null;
-    final map = item.map((key, value) => MapEntry(key.toString(), value));
-
-    final url = (map['url'] ?? map['file'] ?? map['src'] ?? '')
-        .toString()
-        .trim();
-    if (url.isEmpty) return null;
-
-    final quality = (map['quality'] ?? map['label'] ?? 'auto').toString();
-    final type = (map['type'] ?? '').toString().toLowerCase();
-    final isM3U8 = url.contains('.m3u8') || type.contains('hls');
-
-    return StreamSource(url: url, quality: quality, isM3U8: isM3U8);
-  }
-
-  List<SubtitleTrack> _parseSubtitles(dynamic raw) {
-    if (raw is! List) return const [];
-
-    final tracks = <SubtitleTrack>[];
-    for (final item in raw) {
-      if (item is! Map) continue;
-      final map = item.map((key, value) => MapEntry(key.toString(), value));
-      final url = (map['file'] ?? map['url'] ?? '').toString().trim();
-      if (url.isEmpty) continue;
-      final lang = (map['label'] ?? map['lang'] ?? 'Unknown').toString();
-      tracks.add(SubtitleTrack(url: url, lang: lang));
-    }
-    return tracks;
-  }
-
   StreamSource _pickBestSource(List<StreamSource> sources) {
     for (final quality in qualityPriority) {
       final match = sources.where((s) => s.quality == quality).firstOrNull;
@@ -608,4 +496,175 @@ class _FlixhqMatch {
     required this.isTv,
     required this.titleGuess,
   });
+}
+
+int? _pickSeasonIdCompute(Map<String, dynamic> input) {
+  final html = input['html']?.toString() ?? '';
+  final seasonNumber = (input['seasonNumber'] as num?)?.toInt() ?? 1;
+  final seasonRegex = RegExp(
+    r'data-id="(\d+)"[^>]*>\s*Season\s+(\d+)',
+    caseSensitive: false,
+  );
+
+  int? firstSeasonId;
+  for (final m in seasonRegex.allMatches(html)) {
+    final seasonId = int.tryParse(m.group(1) ?? '');
+    final number = int.tryParse(m.group(2) ?? '');
+    if (seasonId == null) continue;
+    firstSeasonId ??= seasonId;
+    if (number == seasonNumber) return seasonId;
+  }
+
+  if (firstSeasonId != null) return firstSeasonId;
+  final loose = RegExp(r'data-id="(\d+)"').firstMatch(html);
+  return int.tryParse(loose?.group(1) ?? '');
+}
+
+int? _pickEpisodeIdCompute(Map<String, dynamic> input) {
+  final html = input['html']?.toString() ?? '';
+  final episodeNumber = (input['episodeNumber'] as num?)?.toInt() ?? 1;
+  final episodeRegex = RegExp(
+    r'data-id="(\d+)"[^>]*>.*?<strong>\s*Eps\s*(\d+):',
+    caseSensitive: false,
+    dotAll: true,
+  );
+
+  int? firstEpisodeId;
+  for (final m in episodeRegex.allMatches(html)) {
+    final episodeId = int.tryParse(m.group(1) ?? '');
+    final number = int.tryParse(m.group(2) ?? '');
+    if (episodeId == null) continue;
+    firstEpisodeId ??= episodeId;
+    if (number == episodeNumber) return episodeId;
+  }
+
+  if (firstEpisodeId != null) return firstEpisodeId;
+  final loose = RegExp(r'data-id="(\d+)"').firstMatch(html);
+  return int.tryParse(loose?.group(1) ?? '');
+}
+
+List<int> _extractServerIdsCompute(String html) {
+  final ids = <int>[];
+  final seen = <int>{};
+  final dataIdRegex = RegExp(r'''data-(?:linkid|id)=["'](\d+)["']''');
+  final watchIdRegex = RegExp(r'''id=["']watch-(\d+)["']''');
+
+  for (final m in dataIdRegex.allMatches(html)) {
+    final id = int.tryParse(m.group(1) ?? '');
+    if (id == null || !seen.add(id)) continue;
+    ids.add(id);
+  }
+
+  for (final m in watchIdRegex.allMatches(html)) {
+    final id = int.tryParse(m.group(1) ?? '');
+    if (id == null || !seen.add(id)) continue;
+    ids.add(id);
+  }
+
+  return ids;
+}
+
+Map<String, dynamic>? _decodePayloadCompute(String payload) {
+  final data = _computeAsMap(payload);
+  if (data == null) return null;
+
+  final rawSourceCandidates = <dynamic>[
+    data['sources'],
+    data['sources_bk'],
+    data['sourcesBackup'],
+    data['backup'],
+    data['source'],
+    data['file'],
+  ];
+
+  final sources = <Map<String, dynamic>>[];
+  final seenUrls = <String>{};
+  for (final rawSource in rawSourceCandidates) {
+    for (final source in _computeParseSources(rawSource)) {
+      final url = source['url']?.toString() ?? '';
+      if (url.isEmpty || !seenUrls.add(url)) continue;
+      sources.add(source);
+    }
+  }
+
+  final subtitles = _computeParseSubtitles(data['tracks'] ?? data['subtitles']);
+  return {'sources': sources, 'subtitles': subtitles};
+}
+
+List<Map<String, dynamic>> _computeParseSources(dynamic raw) {
+  final out = <Map<String, dynamic>>[];
+
+  if (raw is List) {
+    for (final item in raw) {
+      final source = _computeSourceFromDynamic(item);
+      if (source != null) out.add(source);
+    }
+    return out;
+  }
+
+  if (raw is Map) {
+    final source = _computeSourceFromDynamic(raw);
+    if (source != null) out.add(source);
+    return out;
+  }
+
+  if (raw is String) {
+    final trimmed = raw.trim();
+    if (trimmed.startsWith('http')) {
+      out.add({
+        'url': trimmed,
+        'quality': 'auto',
+        'isM3U8': trimmed.contains('.m3u8'),
+      });
+    }
+    return out;
+  }
+
+  return out;
+}
+
+Map<String, dynamic>? _computeSourceFromDynamic(dynamic item) {
+  if (item is! Map) return null;
+  final map = item.map((key, value) => MapEntry(key.toString(), value));
+  final url = (map['url'] ?? map['file'] ?? map['src'] ?? '').toString().trim();
+  if (url.isEmpty) return null;
+  final quality = (map['quality'] ?? map['label'] ?? 'auto').toString();
+  final type = (map['type'] ?? '').toString().toLowerCase();
+
+  return {
+    'url': url,
+    'quality': quality,
+    'isM3U8': url.contains('.m3u8') || type.contains('hls'),
+  };
+}
+
+List<Map<String, dynamic>> _computeParseSubtitles(dynamic raw) {
+  if (raw is! List) return const [];
+  final tracks = <Map<String, dynamic>>[];
+  for (final item in raw) {
+    if (item is! Map) continue;
+    final map = item.map((key, value) => MapEntry(key.toString(), value));
+    final url = (map['file'] ?? map['url'] ?? '').toString().trim();
+    if (url.isEmpty) continue;
+    final lang = (map['label'] ?? map['lang'] ?? 'Unknown').toString();
+    tracks.add({'url': url, 'lang': lang});
+  }
+  return tracks;
+}
+
+Map<String, dynamic>? _computeAsMap(dynamic value) {
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) {
+    return value.map((key, val) => MapEntry(key.toString(), val));
+  }
+  if (value is String) {
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) {
+        return decoded.map((k, v) => MapEntry(k.toString(), v));
+      }
+    } catch (_) {}
+  }
+  return null;
 }

@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:palette_generator/palette_generator.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+import 'package:nivio/core/debug_log.dart';
+
 /// Dynamic color scheme generated from poster/backdrop art
 class DynamicColors {
   final Color dominant;
@@ -80,7 +82,7 @@ final dynamicColorsProvider = FutureProvider.family<DynamicColors, String?>((
       onSurface: onSurface,
     );
   } catch (e) {
-    print('⚠️ Failed to extract colors: $e');
+    appDebugLog('⚠️ Failed to extract colors: $e');
     return DynamicColors.fallback;
   }
 });

@@ -109,6 +109,9 @@ class LanguagePreferencesNotifier extends StateNotifier<LanguagePreferences> {
 }
 
 // Language preferences provider
-final languagePreferencesProvider = StateNotifierProvider<LanguagePreferencesNotifier, LanguagePreferences>((ref) {
-  return LanguagePreferencesNotifier();
-});
+final languagePreferencesProvider =
+    StateNotifierProvider<LanguagePreferencesNotifier, LanguagePreferences>((
+      ref,
+    ) {
+      return LanguagePreferencesNotifier();
+    });

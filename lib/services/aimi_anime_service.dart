@@ -2,6 +2,8 @@ import 'package:aimi_lib/aimi_lib.dart' as aimi;
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 
+import 'package:nivio/core/debug_log.dart';
+
 /// Anime streaming via aimi_lib providers (AnimePahe/AllAnime/Anizone).
 class AimiAnimeService {
   static const List<_ProviderConfig> _providerOrder = [
@@ -18,7 +20,7 @@ class AimiAnimeService {
   }) async {
     final queries = _buildQueryCandidates(media);
     if (queries.isEmpty) {
-      print('❌ AIMI: no valid title query for anime stream');
+      appDebugLog('❌ AIMI: no valid title query for anime stream');
       return null;
     }
 
@@ -26,7 +28,7 @@ class AimiAnimeService {
       final provider = _createProvider(config.kind);
       try {
         for (final query in queries) {
-          print('🔎 AIMI(${config.name}): searching "$query"');
+          appDebugLog('🔎 AIMI(${config.name}): searching "$query"');
           final results = await provider.search(query);
           if (results.isEmpty) continue;
 
@@ -37,17 +39,17 @@ class AimiAnimeService {
           );
           if (best == null) continue;
 
-          print('✅ AIMI(${config.name}): selected "${best.title}"');
+          appDebugLog('✅ AIMI(${config.name}): selected "${best.title}"');
 
           final episodes = await best.getEpisodes();
           if (episodes.isEmpty) {
-            print('⚠️ AIMI(${config.name}): no episodes found');
+            appDebugLog('⚠️ AIMI(${config.name}): no episodes found');
             continue;
           }
 
           final pickedEpisode = _pickEpisode(episodes, episode);
           if (pickedEpisode == null) {
-            print('⚠️ AIMI(${config.name}): episode $episode not found');
+            appDebugLog('⚠️ AIMI(${config.name}): episode $episode not found');
             continue;
           }
 
@@ -59,7 +61,7 @@ class AimiAnimeService {
 
           final mapped = _mapSources(sources);
           if (mapped.isEmpty) {
-            print('⚠️ AIMI(${config.name}): no stream sources');
+            appDebugLog('⚠️ AIMI(${config.name}): no stream sources');
             continue;
           }
 
@@ -72,7 +74,7 @@ class AimiAnimeService {
               sources.firstWhere((s) => s.url == bestSource.url).headers ??
               const <String, String>{};
 
-          print(
+          appDebugLog(
             '✅ AIMI(${config.name}): ${mapped.length} sources, best=${bestSource.quality}',
           );
 
@@ -87,7 +89,7 @@ class AimiAnimeService {
           );
         }
       } catch (e) {
-        print('❌ AIMI(${config.name}) error: $e');
+        appDebugLog('❌ AIMI(${config.name}) error: $e');
       } finally {
         _closeProvider(provider);
       }

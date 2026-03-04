@@ -3,6 +3,8 @@ import 'package:hive/hive.dart';
 import '../models/watchlist_item.dart';
 import 'auth_service.dart';
 
+import 'package:nivio/core/debug_log.dart';
+
 /// Service for managing user's watchlist
 class WatchlistService {
   final AuthService _authService;
@@ -33,19 +35,19 @@ class WatchlistService {
   /// Add item to watchlist
   Future<void> addToWatchlist(WatchlistItem item) async {
     try {
-      print('📝 Adding to watchlist: ${item.title}');
-      
+      appDebugLog('📝 Adding to watchlist: ${item.title}');
+
       // Save locally
       await _box.put(item.id, item);
-      
+
       // Sync to cloud if user is signed in
       if (_authService.isSignedIn) {
         await _syncToCloud(item);
       }
-      
-      print('✅ Added to watchlist successfully');
+
+      appDebugLog('✅ Added to watchlist successfully');
     } catch (e) {
-      print('❌ Error adding to watchlist: $e');
+      appDebugLog('❌ Error adding to watchlist: $e');
       rethrow;
     }
   }
@@ -53,19 +55,19 @@ class WatchlistService {
   /// Remove item from watchlist
   Future<void> removeFromWatchlist(int mediaId) async {
     try {
-      print('🗑️ Removing from watchlist: $mediaId');
-      
+      appDebugLog('🗑️ Removing from watchlist: $mediaId');
+
       // Remove locally
       await _box.delete(mediaId);
-      
+
       // Remove from cloud if user is signed in
       if (_authService.isSignedIn) {
         await _removeFromCloud(mediaId);
       }
-      
-      print('✅ Removed from watchlist successfully');
+
+      appDebugLog('✅ Removed from watchlist successfully');
     } catch (e) {
-      print('❌ Error removing from watchlist: $e');
+      appDebugLog('❌ Error removing from watchlist: $e');
       rethrow;
     }
   }
@@ -98,10 +100,10 @@ class WatchlistService {
           .collection('watchlist')
           .doc(item.id.toString())
           .set(item.toJson());
-      
-      print('☁️ Synced to cloud: ${item.title}');
+
+      appDebugLog('☁️ Synced to cloud: ${item.title}');
     } catch (e) {
-      print('❌ Error syncing to cloud: $e');
+      appDebugLog('❌ Error syncing to cloud: $e');
       // Don't rethrow - local save succeeded
     }
   }
@@ -125,10 +127,10 @@ class WatchlistService {
           .collection('watchlist')
           .doc(mediaId.toString())
           .delete();
-      
-      print('☁️ Removed from cloud: $mediaId');
+
+      appDebugLog('☁️ Removed from cloud: $mediaId');
     } catch (e) {
-      print('❌ Error removing from cloud: $e');
+      appDebugLog('❌ Error removing from cloud: $e');
       // Don't rethrow - local delete succeeded
     }
   }
@@ -136,44 +138,44 @@ class WatchlistService {
   /// Sync all local items to cloud
   Future<void> syncAllToCloud() async {
     if (!_authService.isSignedIn) {
-      print('⚠️ Cannot sync: User not signed in');
+      appDebugLog('⚠️ Cannot sync: User not signed in');
       return;
     }
 
     // Check if user is anonymous (guest mode)
     final user = _authService.currentUser;
     if (user?.isAnonymous == true) {
-      print('⚠️ Cannot sync: Guest mode (anonymous user)');
+      appDebugLog('⚠️ Cannot sync: Guest mode (anonymous user)');
       return;
     }
 
-    print('🔄 Syncing all items to cloud...');
-    
+    appDebugLog('🔄 Syncing all items to cloud...');
+
     final items = getAllItems();
     for (final item in items) {
       await _syncToCloud(item);
     }
-    
-    print('✅ Sync complete: ${items.length} items');
+
+    appDebugLog('✅ Sync complete: ${items.length} items');
   }
 
   /// Download watchlist from cloud and merge with local
   Future<void> downloadFromCloud() async {
     if (!_authService.isSignedIn) {
-      print('⚠️ Cannot download: User not signed in');
+      appDebugLog('⚠️ Cannot download: User not signed in');
       return;
     }
 
     // Check if user is anonymous (guest mode)
     final user = _authService.currentUser;
     if (user?.isAnonymous == true) {
-      print('⚠️ Cannot download: Guest mode (anonymous user)');
+      appDebugLog('⚠️ Cannot download: Guest mode (anonymous user)');
       return;
     }
 
     try {
-      print('⬇️ Downloading watchlist from cloud...');
-      
+      appDebugLog('⬇️ Downloading watchlist from cloud...');
+
       final uid = _authService.uid;
       if (uid == null) return;
 
@@ -191,17 +193,17 @@ class WatchlistService {
           merged++;
         }
       }
-      
-      print('✅ Download complete: $merged items merged');
+
+      appDebugLog('✅ Download complete: $merged items merged');
     } catch (e) {
-      print('❌ Failed to pull from cloud: $e');
+      appDebugLog('❌ Failed to pull from cloud: $e');
     }
   }
 
   /// Clear all watchlist items (local only)
   Future<void> clearAll() async {
     await _box.clear();
-    print('🗑️ Watchlist cleared');
+    appDebugLog('🗑️ Watchlist cleared');
   }
 
   /// Get watchlist count

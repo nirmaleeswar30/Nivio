@@ -1,8 +1,11 @@
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nivio/models/watch_history.dart';
+
+import 'package:nivio/core/debug_log.dart';
 
 class WatchHistoryService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -98,7 +101,9 @@ class WatchHistoryService {
         watchedAt: DateTime.now(),
       );
 
-      final updatedEpisodes = Map<String, EpisodeProgress>.from(history.episodes);
+      final updatedEpisodes = Map<String, EpisodeProgress>.from(
+        history.episodes,
+      );
       updatedEpisodes[episodeKey] = episodeProgress;
       history = history.copyWith(episodes: updatedEpisodes);
     }
@@ -114,26 +119,27 @@ class WatchHistoryService {
   Future<List<WatchHistory>> getAllHistory() async {
     if (!_initialized) await init();
 
-    final histories = <WatchHistory>[];
+    final encoded = <String>[];
     for (final key in _historyBox.keys) {
       final json = _historyBox.get(key);
       if (json != null) {
-        histories.add(WatchHistory.fromJson(
-          Map<String, dynamic>.from(_parseJson(json)),
-        ));
+        encoded.add(json);
       }
     }
 
-    // Sort by last watched (newest first)
-    histories.sort((a, b) => b.lastWatchedAt.compareTo(a.lastWatchedAt));
-    return histories;
+    if (encoded.isEmpty) return const [];
+
+    final decodedSorted = await compute(_decodeAndSortHistoryEntries, encoded);
+    return decodedSorted.map(WatchHistory.fromJson).toList();
   }
 
   /// Get continue watching (incomplete items, including newly added with 0% progress)
   Future<List<WatchHistory>> getContinueWatching() async {
     final all = await getAllHistory();
     return all
-        .where((h) => !h.isCompleted) // Show all incomplete items (including 0% progress)
+        .where(
+          (h) => !h.isCompleted,
+        ) // Show all incomplete items (including 0% progress)
         .take(10)
         .toList();
   }
@@ -145,9 +151,7 @@ class WatchHistoryService {
     final id = '${_userId}_$tmdbId';
     final json = _historyBox.get(id);
     if (json != null) {
-      return WatchHistory.fromJson(
-        Map<String, dynamic>.from(_parseJson(json)),
-      );
+      return WatchHistory.fromJson(Map<String, dynamic>.from(_parseJson(json)));
     }
     return null;
   }
@@ -176,7 +180,7 @@ class WatchHistoryService {
 
     // Clear local Hive box
     await _historyBox.clear();
-    print('✅ Cleared local watch history');
+    appDebugLog('✅ Cleared local watch history');
 
     // Clear from Firestore cloud if user is logged in (but not anonymous)
     final user = _auth.currentUser;
@@ -194,9 +198,9 @@ class WatchHistoryService {
           batch.delete(doc.reference);
         }
         await batch.commit();
-        print('✅ Cleared cloud watch history');
+        appDebugLog('✅ Cleared cloud watch history');
       } catch (e) {
-        print('❌ Failed to clear cloud history: $e');
+        appDebugLog('❌ Failed to clear cloud history: $e');
       }
     }
   }
@@ -208,12 +212,14 @@ class WatchHistoryService {
     // Skip cloud sync for anonymous users
     final user = _auth.currentUser;
     if (user?.isAnonymous == true) {
-      print('⚠️ Skipping cloud sync: User is anonymous');
+      appDebugLog('⚠️ Skipping cloud sync: User is anonymous');
       return;
     }
 
-    print('☁️ Syncing watch history to cloud for user: ${user?.email ?? user?.uid}');
-    
+    appDebugLog(
+      '☁️ Syncing watch history to cloud for user: ${user?.email ?? user?.uid}',
+    );
+
     try {
       await _firestore
           .collection('users')
@@ -221,9 +227,9 @@ class WatchHistoryService {
           .collection('watchHistory')
           .doc(history.tmdbId.toString())
           .set(history.toJson(), SetOptions(merge: true));
-      print('✅ Watch history synced to cloud');
+      appDebugLog('✅ Watch history synced to cloud');
     } catch (e) {
-      print('❌ Failed to sync to cloud: $e');
+      appDebugLog('❌ Failed to sync to cloud: $e');
       // Will retry on next sync cycle
     }
   }
@@ -264,7 +270,7 @@ class WatchHistoryService {
         }
       }
     } catch (e) {
-      print('❌ Failed to pull from cloud: $e');
+      appDebugLog('❌ Failed to pull from cloud: $e');
     }
   }
 
@@ -285,4 +291,27 @@ class WatchHistoryService {
   String _toJsonString(Map<String, dynamic> json) {
     return jsonEncode(json);
   }
+}
+
+List<Map<String, dynamic>> _decodeAndSortHistoryEntries(List<String> encoded) {
+  final decoded = <Map<String, dynamic>>[];
+  for (final item in encoded) {
+    try {
+      final parsed = jsonDecode(item);
+      if (parsed is Map) {
+        decoded.add(
+          parsed.map((key, value) => MapEntry(key.toString(), value)),
+        );
+      }
+    } catch (_) {}
+  }
+
+  decoded.sort((a, b) {
+    final aRaw = a['lastWatchedAt'];
+    final bRaw = b['lastWatchedAt'];
+    final aDate = DateTime.tryParse(aRaw?.toString() ?? '') ?? DateTime(1970);
+    final bDate = DateTime.tryParse(bRaw?.toString() ?? '') ?? DateTime(1970);
+    return bDate.compareTo(aDate);
+  });
+  return decoded;
 }

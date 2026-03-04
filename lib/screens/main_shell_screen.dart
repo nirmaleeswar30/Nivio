@@ -26,11 +26,22 @@ class _MainShellScreenState extends State<MainShellScreen> {
   void _handleRootBackPress(BuildContext context) {
     final now = DateTime.now();
 
+    // If not on home tab, navigate to home first
     if (widget.navigationShell.currentIndex != 0) {
       widget.navigationShell.goBranch(0);
+      _lastBackPressAt = null; // Reset exit timer when switching tabs
       return;
     }
 
+    // If GoRouter has navigation history (e.g., after returning from media detail),
+    // clear it by going to home explicitly
+    if (context.canPop()) {
+      context.go('/home');
+      _lastBackPressAt = null;
+      return;
+    }
+
+    // On home tab with no navigation history - handle exit logic
     final shouldExit =
         _lastBackPressAt != null &&
         now.difference(_lastBackPressAt!) <= const Duration(seconds: 2);

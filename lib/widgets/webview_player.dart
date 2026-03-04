@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:nivio/core/theme.dart';
 
+import 'package:nivio/core/debug_log.dart';
+
 /// WebView-based player for embedding vidsrc iframe streams using flutter_inappwebview
 class WebViewPlayer extends StatefulWidget {
   final String streamUrl;
@@ -21,7 +23,6 @@ class WebViewPlayer extends StatefulWidget {
 }
 
 class _WebViewPlayerState extends State<WebViewPlayer> {
-  InAppWebViewController? _webViewController;
   bool _isLoading = true;
   double _progress = 0;
 
@@ -57,8 +58,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
             layoutAlgorithm: LayoutAlgorithm.NORMAL,
           ),
           onWebViewCreated: (controller) {
-            _webViewController = controller;
-            print('🌐 WebView created for: ${widget.streamUrl}');
+            appDebugLog('🌐 WebView created for: ${widget.streamUrl}');
 
             // Add JavaScript handler to receive player events from vidsrc.cc
             controller.addJavaScriptHandler(
@@ -74,7 +74,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
 
                   if (event != null && widget.onPlayerEvent != null) {
                     widget.onPlayerEvent!(event, currentTime, duration);
-                    print(
+                    appDebugLog(
                       '📺 Player event: $event at ${currentTime.toInt()}s / ${duration.toInt()}s',
                     );
                   }
@@ -86,13 +86,13 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
             setState(() {
               _isLoading = true;
             });
-            print('🔄 Loading started: $url');
+            appDebugLog('🔄 Loading started: $url');
           },
           onLoadStop: (controller, url) async {
             setState(() {
               _isLoading = false;
             });
-            print('✅ Loading completed: $url');
+            appDebugLog('✅ Loading completed: $url');
 
             // Inject ultra-aggressive ad-blocking
             await controller.evaluateJavascript(
@@ -279,7 +279,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
             });
           },
           onReceivedError: (controller, request, error) {
-            print('❌ WebView error: ${error.description}');
+            appDebugLog('❌ WebView error: ${error.description}');
           },
           shouldInterceptRequest: (controller, request) async {
             final url = request.url.toString().toLowerCase();
@@ -317,7 +317,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
             // Check if URL contains any ad pattern
             for (final pattern in adPatterns) {
               if (url.contains(pattern)) {
-                print('🚫 Blocked: $url');
+                appDebugLog('🚫 Blocked: $url');
                 return null; // Block the request
               }
             }
@@ -335,7 +335,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
 
               // BLOCK non-HTTP/HTTPS schemes (app deep links, malware redirects)
               if (scheme != 'http' && scheme != 'https') {
-                print('🚫 Blocked non-HTTP scheme: $urlString');
+                appDebugLog('🚫 Blocked non-HTTP scheme: $urlString');
                 return NavigationActionPolicy.CANCEL;
               }
 
@@ -367,7 +367,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
 
               for (final domain in blockedDomains) {
                 if (host.contains(domain)) {
-                  print('🚫 Blocked domain: $urlString');
+                  appDebugLog('🚫 Blocked domain: $urlString');
                   return NavigationActionPolicy.CANCEL;
                 }
               }
@@ -392,7 +392,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
               for (final pattern in blockedPatterns) {
                 if (urlStringLower.contains(pattern) &&
                     !host.contains('vidsrc')) {
-                  print('🚫 Blocked pattern "$pattern": $urlString');
+                  appDebugLog('🚫 Blocked pattern "$pattern": $urlString');
                   return NavigationActionPolicy.CANCEL;
                 }
               }
@@ -436,11 +436,5 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
           ),
       ],
     );
-  }
-
-  @override
-  void dispose() {
-    _webViewController = null;
-    super.dispose();
   }
 }

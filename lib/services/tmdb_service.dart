@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:nivio/core/constants.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/season_info.dart';
@@ -45,15 +46,9 @@ class TmdbService {
     // Try cache first.
     final cached = await _cache.getRaw(cacheKey);
     if (cached != null) {
-      final results = SearchResults.fromJson(cached);
-      return results.copyWith(
-        results: _postProcessSearchResults(
-          results.results,
-          query: normalizedQuery,
-          language: language,
-          sortBy: normalizedSort,
-        ),
-      );
+      // Cache key already includes query + language + sort, so cached payload
+      // is already post-processed for this exact request.
+      return SearchResults.fromJson(cached);
     }
 
     try {
@@ -76,22 +71,23 @@ class TmdbService {
         responses[1].data as Map<String, dynamic>,
       );
 
-      final movieResults = _parseTypedSearchResults(
+      final movieResults = _parseTypedSearchResultMaps(
         movieResponse['results'],
         mediaType: 'movie',
       );
-      final tvResults = _parseTypedSearchResults(
+      final tvResults = _parseTypedSearchResultMaps(
         tvResponse['results'],
         mediaType: 'tv',
       );
-      final combined = <SearchResult>[...movieResults, ...tvResults];
+      final combined = <Map<String, dynamic>>[...movieResults, ...tvResults];
 
-      final processed = _postProcessSearchResults(
+      final processedMaps = await _postProcessSearchResultMaps(
         combined,
         query: normalizedQuery,
         language: language,
         sortBy: normalizedSort,
       );
+      final processed = processedMaps.map(SearchResult.fromJson).toList();
 
       final moviePages = (movieResponse['total_pages'] as num?)?.toInt() ?? 0;
       final tvPages = (tvResponse['total_pages'] as num?)?.toInt() ?? 0;
@@ -116,124 +112,34 @@ class TmdbService {
     }
   }
 
-  List<SearchResult> _parseTypedSearchResults(
+  List<Map<String, dynamic>> _parseTypedSearchResultMaps(
     dynamic rawResults, {
     required String mediaType,
   }) {
     if (rawResults is! List) return const [];
 
-    final parsed = <SearchResult>[];
+    final parsed = <Map<String, dynamic>>[];
     for (final item in rawResults) {
       if (item is! Map) continue;
-      final json = Map<String, dynamic>.from(item);
+      final json = item.map((key, value) => MapEntry(key.toString(), value));
       json['media_type'] = mediaType;
-      parsed.add(SearchResult.fromJson(json));
+      parsed.add(json);
     }
     return parsed;
   }
 
-  List<SearchResult> _postProcessSearchResults(
-    List<SearchResult> results, {
+  Future<List<Map<String, dynamic>>> _postProcessSearchResultMaps(
+    List<Map<String, dynamic>> results, {
     required String query,
     String? language,
     String? sortBy,
   }) {
-    var processed = List<SearchResult>.from(results);
-
-    // Keep searchable media types only.
-    processed = processed
-        .where((item) => item.mediaType == 'movie' || item.mediaType == 'tv')
-        .toList();
-
-    // True language filter based on original language.
-    if (language != null && language.isNotEmpty) {
-      final languageCode = language.toLowerCase();
-      processed = processed
-          .where(
-            (item) =>
-                (item.originalLanguage ?? '').toLowerCase() == languageCode,
-          )
-          .toList();
-    }
-
-    // De-duplicate by content identity.
-    final seen = <String>{};
-    processed = processed
-        .where((item) => seen.add('${item.mediaType}_${item.id}'))
-        .toList();
-
-    switch (sortBy) {
-      case 'popularity':
-      case 'rating':
-        processed.sort((a, b) {
-          final ratingCompare = (b.voteAverage ?? 0).compareTo(
-            a.voteAverage ?? 0,
-          );
-          if (ratingCompare != 0) return ratingCompare;
-          return _compareByYearDesc(a, b);
-        });
-        break;
-      case 'title':
-        processed.sort((a, b) {
-          final titleA = _normalizeSearchText(a.title ?? a.name ?? '');
-          final titleB = _normalizeSearchText(b.title ?? b.name ?? '');
-          return titleA.compareTo(titleB);
-        });
-        break;
-      case 'year':
-        processed.sort(_compareByYearDesc);
-        break;
-      default:
-        processed.sort((a, b) {
-          final scoreA = _relevanceScore(a, query);
-          final scoreB = _relevanceScore(b, query);
-          final relevanceCompare = scoreB.compareTo(scoreA);
-          if (relevanceCompare != 0) return relevanceCompare;
-          return (b.voteAverage ?? 0).compareTo(a.voteAverage ?? 0);
-        });
-    }
-
-    return processed;
-  }
-
-  int _compareByYearDesc(SearchResult a, SearchResult b) {
-    final yearA = _extractYear(a) ?? 0;
-    final yearB = _extractYear(b) ?? 0;
-    final yearCompare = yearB.compareTo(yearA);
-    if (yearCompare != 0) return yearCompare;
-    return (b.voteAverage ?? 0).compareTo(a.voteAverage ?? 0);
-  }
-
-  int _relevanceScore(SearchResult item, String query) {
-    final title = _normalizeSearchText(item.title ?? item.name ?? '');
-    final overview = _normalizeSearchText(item.overview ?? '');
-    if (title.isEmpty) return -1;
-
-    var score = 0;
-    if (title == query) score += 1000;
-    if (title.startsWith(query)) score += 400;
-    if (title.contains(query)) score += 250;
-
-    final tokens = query.split(' ').where((token) => token.isNotEmpty).toList();
-    for (final token in tokens) {
-      if (title.contains(token)) score += 70;
-      if (title.startsWith(token)) score += 20;
-      if (overview.contains(token)) score += 10;
-    }
-
-    score += ((item.voteAverage ?? 0) * 8).round();
-    final year = _extractYear(item);
-    if (year != null) {
-      score += year ~/ 100;
-    }
-
-    return score;
-  }
-
-  int? _extractYear(SearchResult result) {
-    final date = result.releaseDate ?? result.firstAirDate;
-    if (date == null || date.length < 4) return null;
-    return int.tryParse(date.substring(0, 4));
+    return compute(_postProcessSearchResultMapsCompute, {
+      'results': results,
+      'query': query,
+      'language': language,
+      'sortBy': sortBy,
+    });
   }
 
   String _normalizeSearchText(String text) {
@@ -764,4 +670,128 @@ class TmdbService {
       throw Exception('Failed to get TV show details: $e');
     }
   }
+}
+
+List<Map<String, dynamic>> _postProcessSearchResultMapsCompute(
+  Map<String, dynamic> input,
+) {
+  final rawResults = input['results'];
+  final query = (input['query'] ?? '').toString();
+  final language = input['language']?.toString();
+  final sortBy = input['sortBy']?.toString();
+
+  if (rawResults is! List) return const [];
+
+  var processed = rawResults
+      .whereType<Map>()
+      .map((item) => item.map((k, v) => MapEntry(k.toString(), v)))
+      .toList();
+
+  processed = processed.where((item) {
+    final mediaType = (item['media_type'] ?? '').toString();
+    return mediaType == 'movie' || mediaType == 'tv';
+  }).toList();
+
+  if (language != null && language.isNotEmpty) {
+    final languageCode = language.toLowerCase();
+    processed = processed
+        .where(
+          (item) =>
+              ((item['original_language'] ?? '').toString().toLowerCase() ==
+              languageCode),
+        )
+        .toList();
+  }
+
+  final seen = <String>{};
+  processed = processed.where((item) {
+    final mediaType = (item['media_type'] ?? '').toString();
+    final id = (item['id'] ?? '').toString();
+    return seen.add('${mediaType}_$id');
+  }).toList();
+
+  switch (sortBy) {
+    case 'popularity':
+    case 'rating':
+      processed.sort((a, b) {
+        final ratingCompare = _mapVoteAverage(b).compareTo(_mapVoteAverage(a));
+        if (ratingCompare != 0) return ratingCompare;
+        return _compareByYearDescMap(a, b);
+      });
+      break;
+    case 'title':
+      processed.sort((a, b) {
+        final titleA = _normalizeSearchTextMap(_mapTitle(a));
+        final titleB = _normalizeSearchTextMap(_mapTitle(b));
+        return titleA.compareTo(titleB);
+      });
+      break;
+    case 'year':
+      processed.sort(_compareByYearDescMap);
+      break;
+    default:
+      processed.sort((a, b) {
+        final scoreA = _relevanceScoreMap(a, query);
+        final scoreB = _relevanceScoreMap(b, query);
+        final relevanceCompare = scoreB.compareTo(scoreA);
+        if (relevanceCompare != 0) return relevanceCompare;
+        return _mapVoteAverage(b).compareTo(_mapVoteAverage(a));
+      });
+  }
+
+  return processed;
+}
+
+int _compareByYearDescMap(Map<String, dynamic> a, Map<String, dynamic> b) {
+  final yearA = _extractYearMap(a) ?? 0;
+  final yearB = _extractYearMap(b) ?? 0;
+  final yearCompare = yearB.compareTo(yearA);
+  if (yearCompare != 0) return yearCompare;
+  return _mapVoteAverage(b).compareTo(_mapVoteAverage(a));
+}
+
+int _relevanceScoreMap(Map<String, dynamic> item, String query) {
+  final title = _normalizeSearchTextMap(_mapTitle(item));
+  final overview = _normalizeSearchTextMap((item['overview'] ?? '').toString());
+  if (title.isEmpty) return -1;
+
+  var score = 0;
+  if (title == query) score += 1000;
+  if (title.startsWith(query)) score += 400;
+  if (title.contains(query)) score += 250;
+
+  final tokens = query.split(' ').where((token) => token.isNotEmpty).toList();
+  for (final token in tokens) {
+    if (title.contains(token)) score += 70;
+    if (title.startsWith(token)) score += 20;
+    if (overview.contains(token)) score += 10;
+  }
+
+  score += (_mapVoteAverage(item) * 8).round();
+  final year = _extractYearMap(item);
+  if (year != null) {
+    score += year ~/ 100;
+  }
+
+  return score;
+}
+
+int? _extractYearMap(Map<String, dynamic> item) {
+  final date = (item['release_date'] ?? item['first_air_date'])?.toString();
+  if (date == null || date.length < 4) return null;
+  return int.tryParse(date.substring(0, 4));
+}
+
+double _mapVoteAverage(Map<String, dynamic> item) {
+  final vote = item['vote_average'];
+  if (vote is num) return vote.toDouble();
+  return double.tryParse(vote?.toString() ?? '') ?? 0;
+}
+
+String _mapTitle(Map<String, dynamic> item) {
+  return (item['title'] ?? item['name'] ?? '').toString();
+}
+
+String _normalizeSearchTextMap(String text) {
+  return text.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 }

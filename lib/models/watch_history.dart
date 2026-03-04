@@ -18,10 +18,14 @@ class WatchHistory with _$WatchHistory {
     required int lastPositionSeconds,
     required int totalDurationSeconds,
     required double progressPercent,
-    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson) required DateTime lastWatchedAt,
-    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson) required DateTime createdAt,
+    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
+    required DateTime lastWatchedAt,
+    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
+    required DateTime createdAt,
     required bool isCompleted,
-    @JsonKey(fromJson: _episodesFromJson, toJson: _episodesToJson) @Default({}) Map<String, EpisodeProgress> episodes,
+    @JsonKey(fromJson: _episodesFromJson, toJson: _episodesToJson)
+    @Default({})
+    Map<String, EpisodeProgress> episodes,
   }) = _WatchHistory;
 
   factory WatchHistory.fromJson(Map<String, dynamic> json) =>
@@ -36,7 +40,8 @@ class EpisodeProgress with _$EpisodeProgress {
     required int lastPositionSeconds,
     required int totalDurationSeconds,
     required bool isCompleted,
-    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson) required DateTime watchedAt,
+    @JsonKey(fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
+    required DateTime watchedAt,
   }) = _EpisodeProgress;
 
   factory EpisodeProgress.fromJson(Map<String, dynamic> json) =>
@@ -64,9 +69,9 @@ int _dateTimeToJson(DateTime dateTime) {
 // Episodes map converters
 Map<String, EpisodeProgress> _episodesFromJson(dynamic json) {
   if (json == null || json is! Map) return {};
-  
+
   final result = <String, EpisodeProgress>{};
-  (json as Map).forEach((key, value) {
+  json.forEach((key, value) {
     if (value is Map<String, dynamic>) {
       result[key.toString()] = EpisodeProgress.fromJson(value);
     }

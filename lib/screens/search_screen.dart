@@ -557,7 +557,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       loading: () => const Center(
         child: CircularProgressIndicator(color: NivioTheme.netflixRed),
       ),
-      error: (_, __) => const Center(
+      error: (error, stackTrace) => const Center(
         child: Text(
           'Failed to load default results',
           style: TextStyle(color: Colors.white70),

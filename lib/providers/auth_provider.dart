@@ -23,6 +23,6 @@ final isSignedInProvider = Provider<bool>((ref) {
   return authState.when(
     data: (user) => user != null,
     loading: () => false,
-    error: (_, __) => false,
+    error: (error, stackTrace) => false,
   );
 });

@@ -12,7 +12,8 @@ part of 'api_source.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
+  'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models',
+);
 
 SubtitleTrack _$SubtitleTrackFromJson(Map<String, dynamic> json) {
   return _SubtitleTrack.fromJson(json);
@@ -34,8 +35,9 @@ mixin _$SubtitleTrack {
 /// @nodoc
 abstract class $SubtitleTrackCopyWith<$Res> {
   factory $SubtitleTrackCopyWith(
-          SubtitleTrack value, $Res Function(SubtitleTrack) then) =
-      _$SubtitleTrackCopyWithImpl<$Res, SubtitleTrack>;
+    SubtitleTrack value,
+    $Res Function(SubtitleTrack) then,
+  ) = _$SubtitleTrackCopyWithImpl<$Res, SubtitleTrack>;
   @useResult
   $Res call({String? url, String? file, String? lang, String? language});
 }
@@ -58,24 +60,27 @@ class _$SubtitleTrackCopyWithImpl<$Res, $Val extends SubtitleTrack>
     Object? lang = freezed,
     Object? language = freezed,
   }) {
-    return _then(_value.copyWith(
-      url: freezed == url
-          ? _value.url
-          : url // ignore: cast_nullable_to_non_nullable
-              as String?,
-      file: freezed == file
-          ? _value.file
-          : file // ignore: cast_nullable_to_non_nullable
-              as String?,
-      lang: freezed == lang
-          ? _value.lang
-          : lang // ignore: cast_nullable_to_non_nullable
-              as String?,
-      language: freezed == language
-          ? _value.language
-          : language // ignore: cast_nullable_to_non_nullable
-              as String?,
-    ) as $Val);
+    return _then(
+      _value.copyWith(
+            url: freezed == url
+                ? _value.url
+                : url // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            file: freezed == file
+                ? _value.file
+                : file // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            lang: freezed == lang
+                ? _value.lang
+                : lang // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            language: freezed == language
+                ? _value.language
+                : language // ignore: cast_nullable_to_non_nullable
+                      as String?,
+          )
+          as $Val,
+    );
   }
 }
 
@@ -83,8 +88,9 @@ class _$SubtitleTrackCopyWithImpl<$Res, $Val extends SubtitleTrack>
 abstract class _$$SubtitleTrackImplCopyWith<$Res>
     implements $SubtitleTrackCopyWith<$Res> {
   factory _$$SubtitleTrackImplCopyWith(
-          _$SubtitleTrackImpl value, $Res Function(_$SubtitleTrackImpl) then) =
-      __$$SubtitleTrackImplCopyWithImpl<$Res>;
+    _$SubtitleTrackImpl value,
+    $Res Function(_$SubtitleTrackImpl) then,
+  ) = __$$SubtitleTrackImplCopyWithImpl<$Res>;
   @override
   @useResult
   $Res call({String? url, String? file, String? lang, String? language});
@@ -95,8 +101,9 @@ class __$$SubtitleTrackImplCopyWithImpl<$Res>
     extends _$SubtitleTrackCopyWithImpl<$Res, _$SubtitleTrackImpl>
     implements _$$SubtitleTrackImplCopyWith<$Res> {
   __$$SubtitleTrackImplCopyWithImpl(
-      _$SubtitleTrackImpl _value, $Res Function(_$SubtitleTrackImpl) _then)
-      : super(_value, _then);
+    _$SubtitleTrackImpl _value,
+    $Res Function(_$SubtitleTrackImpl) _then,
+  ) : super(_value, _then);
 
   @pragma('vm:prefer-inline')
   @override
@@ -106,24 +113,26 @@ class __$$SubtitleTrackImplCopyWithImpl<$Res>
     Object? lang = freezed,
     Object? language = freezed,
   }) {
-    return _then(_$SubtitleTrackImpl(
-      url: freezed == url
-          ? _value.url
-          : url // ignore: cast_nullable_to_non_nullable
-              as String?,
-      file: freezed == file
-          ? _value.file
-          : file // ignore: cast_nullable_to_non_nullable
-              as String?,
-      lang: freezed == lang
-          ? _value.lang
-          : lang // ignore: cast_nullable_to_non_nullable
-              as String?,
-      language: freezed == language
-          ? _value.language
-          : language // ignore: cast_nullable_to_non_nullable
-              as String?,
-    ));
+    return _then(
+      _$SubtitleTrackImpl(
+        url: freezed == url
+            ? _value.url
+            : url // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        file: freezed == file
+            ? _value.file
+            : file // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        lang: freezed == lang
+            ? _value.lang
+            : lang // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        language: freezed == language
+            ? _value.language
+            : language // ignore: cast_nullable_to_non_nullable
+                  as String?,
+      ),
+    );
   }
 }
 
@@ -173,18 +182,17 @@ class _$SubtitleTrackImpl implements _SubtitleTrack {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$SubtitleTrackImplToJson(
-      this,
-    );
+    return _$$SubtitleTrackImplToJson(this);
   }
 }
 
 abstract class _SubtitleTrack implements SubtitleTrack {
-  const factory _SubtitleTrack(
-      {final String? url,
-      final String? file,
-      final String? lang,
-      final String? language}) = _$SubtitleTrackImpl;
+  const factory _SubtitleTrack({
+    final String? url,
+    final String? file,
+    final String? lang,
+    final String? language,
+  }) = _$SubtitleTrackImpl;
 
   factory _SubtitleTrack.fromJson(Map<String, dynamic> json) =
       _$SubtitleTrackImpl.fromJson;
@@ -238,20 +246,20 @@ class _$APISourceCopyWithImpl<$Res, $Val extends APISource>
 
   @pragma('vm:prefer-inline')
   @override
-  $Res call({
-    Object? url = null,
-    Object? quality = null,
-  }) {
-    return _then(_value.copyWith(
-      url: null == url
-          ? _value.url
-          : url // ignore: cast_nullable_to_non_nullable
-              as String,
-      quality: null == quality
-          ? _value.quality
-          : quality // ignore: cast_nullable_to_non_nullable
-              as String,
-    ) as $Val);
+  $Res call({Object? url = null, Object? quality = null}) {
+    return _then(
+      _value.copyWith(
+            url: null == url
+                ? _value.url
+                : url // ignore: cast_nullable_to_non_nullable
+                      as String,
+            quality: null == quality
+                ? _value.quality
+                : quality // ignore: cast_nullable_to_non_nullable
+                      as String,
+          )
+          as $Val,
+    );
   }
 }
 
@@ -259,8 +267,9 @@ class _$APISourceCopyWithImpl<$Res, $Val extends APISource>
 abstract class _$$APISourceImplCopyWith<$Res>
     implements $APISourceCopyWith<$Res> {
   factory _$$APISourceImplCopyWith(
-          _$APISourceImpl value, $Res Function(_$APISourceImpl) then) =
-      __$$APISourceImplCopyWithImpl<$Res>;
+    _$APISourceImpl value,
+    $Res Function(_$APISourceImpl) then,
+  ) = __$$APISourceImplCopyWithImpl<$Res>;
   @override
   @useResult
   $Res call({String url, String quality});
@@ -271,25 +280,25 @@ class __$$APISourceImplCopyWithImpl<$Res>
     extends _$APISourceCopyWithImpl<$Res, _$APISourceImpl>
     implements _$$APISourceImplCopyWith<$Res> {
   __$$APISourceImplCopyWithImpl(
-      _$APISourceImpl _value, $Res Function(_$APISourceImpl) _then)
-      : super(_value, _then);
+    _$APISourceImpl _value,
+    $Res Function(_$APISourceImpl) _then,
+  ) : super(_value, _then);
 
   @pragma('vm:prefer-inline')
   @override
-  $Res call({
-    Object? url = null,
-    Object? quality = null,
-  }) {
-    return _then(_$APISourceImpl(
-      url: null == url
-          ? _value.url
-          : url // ignore: cast_nullable_to_non_nullable
-              as String,
-      quality: null == quality
-          ? _value.quality
-          : quality // ignore: cast_nullable_to_non_nullable
-              as String,
-    ));
+  $Res call({Object? url = null, Object? quality = null}) {
+    return _then(
+      _$APISourceImpl(
+        url: null == url
+            ? _value.url
+            : url // ignore: cast_nullable_to_non_nullable
+                  as String,
+        quality: null == quality
+            ? _value.quality
+            : quality // ignore: cast_nullable_to_non_nullable
+                  as String,
+      ),
+    );
   }
 }
 
@@ -332,16 +341,15 @@ class _$APISourceImpl implements _APISource {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$APISourceImplToJson(
-      this,
-    );
+    return _$$APISourceImplToJson(this);
   }
 }
 
 abstract class _APISource implements APISource {
-  const factory _APISource(
-      {required final String url,
-      required final String quality}) = _$APISourceImpl;
+  const factory _APISource({
+    required final String url,
+    required final String quality,
+  }) = _$APISourceImpl;
 
   factory _APISource.fromJson(Map<String, dynamic> json) =
       _$APISourceImpl.fromJson;
@@ -374,8 +382,9 @@ mixin _$APISourceResults {
 /// @nodoc
 abstract class $APISourceResultsCopyWith<$Res> {
   factory $APISourceResultsCopyWith(
-          APISourceResults value, $Res Function(APISourceResults) then) =
-      _$APISourceResultsCopyWithImpl<$Res, APISourceResults>;
+    APISourceResults value,
+    $Res Function(APISourceResults) then,
+  ) = _$APISourceResultsCopyWithImpl<$Res, APISourceResults>;
   @useResult
   $Res call({List<APISource>? sources, List<SubtitleTrack>? subtitles});
 }
@@ -392,29 +401,30 @@ class _$APISourceResultsCopyWithImpl<$Res, $Val extends APISourceResults>
 
   @pragma('vm:prefer-inline')
   @override
-  $Res call({
-    Object? sources = freezed,
-    Object? subtitles = freezed,
-  }) {
-    return _then(_value.copyWith(
-      sources: freezed == sources
-          ? _value.sources
-          : sources // ignore: cast_nullable_to_non_nullable
-              as List<APISource>?,
-      subtitles: freezed == subtitles
-          ? _value.subtitles
-          : subtitles // ignore: cast_nullable_to_non_nullable
-              as List<SubtitleTrack>?,
-    ) as $Val);
+  $Res call({Object? sources = freezed, Object? subtitles = freezed}) {
+    return _then(
+      _value.copyWith(
+            sources: freezed == sources
+                ? _value.sources
+                : sources // ignore: cast_nullable_to_non_nullable
+                      as List<APISource>?,
+            subtitles: freezed == subtitles
+                ? _value.subtitles
+                : subtitles // ignore: cast_nullable_to_non_nullable
+                      as List<SubtitleTrack>?,
+          )
+          as $Val,
+    );
   }
 }
 
 /// @nodoc
 abstract class _$$APISourceResultsImplCopyWith<$Res>
     implements $APISourceResultsCopyWith<$Res> {
-  factory _$$APISourceResultsImplCopyWith(_$APISourceResultsImpl value,
-          $Res Function(_$APISourceResultsImpl) then) =
-      __$$APISourceResultsImplCopyWithImpl<$Res>;
+  factory _$$APISourceResultsImplCopyWith(
+    _$APISourceResultsImpl value,
+    $Res Function(_$APISourceResultsImpl) then,
+  ) = __$$APISourceResultsImplCopyWithImpl<$Res>;
   @override
   @useResult
   $Res call({List<APISource>? sources, List<SubtitleTrack>? subtitles});
@@ -424,36 +434,37 @@ abstract class _$$APISourceResultsImplCopyWith<$Res>
 class __$$APISourceResultsImplCopyWithImpl<$Res>
     extends _$APISourceResultsCopyWithImpl<$Res, _$APISourceResultsImpl>
     implements _$$APISourceResultsImplCopyWith<$Res> {
-  __$$APISourceResultsImplCopyWithImpl(_$APISourceResultsImpl _value,
-      $Res Function(_$APISourceResultsImpl) _then)
-      : super(_value, _then);
+  __$$APISourceResultsImplCopyWithImpl(
+    _$APISourceResultsImpl _value,
+    $Res Function(_$APISourceResultsImpl) _then,
+  ) : super(_value, _then);
 
   @pragma('vm:prefer-inline')
   @override
-  $Res call({
-    Object? sources = freezed,
-    Object? subtitles = freezed,
-  }) {
-    return _then(_$APISourceResultsImpl(
-      sources: freezed == sources
-          ? _value._sources
-          : sources // ignore: cast_nullable_to_non_nullable
-              as List<APISource>?,
-      subtitles: freezed == subtitles
-          ? _value._subtitles
-          : subtitles // ignore: cast_nullable_to_non_nullable
-              as List<SubtitleTrack>?,
-    ));
+  $Res call({Object? sources = freezed, Object? subtitles = freezed}) {
+    return _then(
+      _$APISourceResultsImpl(
+        sources: freezed == sources
+            ? _value._sources
+            : sources // ignore: cast_nullable_to_non_nullable
+                  as List<APISource>?,
+        subtitles: freezed == subtitles
+            ? _value._subtitles
+            : subtitles // ignore: cast_nullable_to_non_nullable
+                  as List<SubtitleTrack>?,
+      ),
+    );
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$APISourceResultsImpl implements _APISourceResults {
-  const _$APISourceResultsImpl(
-      {final List<APISource>? sources, final List<SubtitleTrack>? subtitles})
-      : _sources = sources,
-        _subtitles = subtitles;
+  const _$APISourceResultsImpl({
+    final List<APISource>? sources,
+    final List<SubtitleTrack>? subtitles,
+  }) : _sources = sources,
+       _subtitles = subtitles;
 
   factory _$APISourceResultsImpl.fromJson(Map<String, dynamic> json) =>
       _$$APISourceResultsImplFromJson(json);
@@ -489,36 +500,40 @@ class _$APISourceResultsImpl implements _APISourceResults {
         (other.runtimeType == runtimeType &&
             other is _$APISourceResultsImpl &&
             const DeepCollectionEquality().equals(other._sources, _sources) &&
-            const DeepCollectionEquality()
-                .equals(other._subtitles, _subtitles));
+            const DeepCollectionEquality().equals(
+              other._subtitles,
+              _subtitles,
+            ));
   }
 
   @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-      runtimeType,
-      const DeepCollectionEquality().hash(_sources),
-      const DeepCollectionEquality().hash(_subtitles));
+    runtimeType,
+    const DeepCollectionEquality().hash(_sources),
+    const DeepCollectionEquality().hash(_subtitles),
+  );
 
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$APISourceResultsImplCopyWith<_$APISourceResultsImpl> get copyWith =>
       __$$APISourceResultsImplCopyWithImpl<_$APISourceResultsImpl>(
-          this, _$identity);
+        this,
+        _$identity,
+      );
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$APISourceResultsImplToJson(
-      this,
-    );
+    return _$$APISourceResultsImplToJson(this);
   }
 }
 
 abstract class _APISourceResults implements APISourceResults {
-  const factory _APISourceResults(
-      {final List<APISource>? sources,
-      final List<SubtitleTrack>? subtitles}) = _$APISourceResultsImpl;
+  const factory _APISourceResults({
+    final List<APISource>? sources,
+    final List<SubtitleTrack>? subtitles,
+  }) = _$APISourceResultsImpl;
 
   factory _APISourceResults.fromJson(Map<String, dynamic> json) =
       _$APISourceResultsImpl.fromJson;

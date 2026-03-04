@@ -10,6 +10,8 @@ import '../core/constants.dart';
 import '../models/new_episode.dart';
 import '../models/watchlist_item.dart';
 
+import 'package:nivio/core/debug_log.dart';
+
 /// Service for checking new episodes of watchlist TV shows
 /// Uses WorkManager for battery-efficient background tasks (Android/iOS only)
 class EpisodeCheckService {
@@ -60,7 +62,7 @@ class EpisodeCheckService {
       }
     }
 
-    print(
+    appDebugLog(
       '📺 EpisodeCheckService initialized${_supportsBackgroundTasks ? '' : ' (background tasks not supported on this platform)'}',
     );
   }
@@ -85,7 +87,7 @@ class EpisodeCheckService {
           >()
           ?.requestNotificationsPermission();
     } catch (e) {
-      print('⚠️ Failed to initialize notifications: $e');
+      appDebugLog('⚠️ Failed to initialize notifications: $e');
     }
   }
 
@@ -93,7 +95,7 @@ class EpisodeCheckService {
   static void _onNotificationTap(NotificationResponse response) {
     // Navigate to the show's detail page
     // This will be handled by the app when it opens
-    print('🔔 Notification tapped: ${response.payload}');
+    appDebugLog('🔔 Notification tapped: ${response.payload}');
   }
 
   /// Register the periodic background task
@@ -121,7 +123,9 @@ class EpisodeCheckService {
       backoffPolicyDelay: const Duration(minutes: 10),
     );
 
-    print('📅 Registered periodic task with frequency: ${frequencyHours}h');
+    appDebugLog(
+      '📅 Registered periodic task with frequency: ${frequencyHours}h',
+    );
   }
 
   /// Cancel the periodic task
@@ -129,7 +133,7 @@ class EpisodeCheckService {
     if (!_supportsBackgroundTasks) return;
 
     await Workmanager().cancelByUniqueName(_taskName);
-    print('❌ Cancelled periodic episode check task');
+    appDebugLog('❌ Cancelled periodic episode check task');
   }
 
   /// Get check frequency in hours
@@ -223,7 +227,7 @@ class EpisodeCheckService {
 
   /// Manually trigger episode check (for testing or user-initiated refresh)
   static Future<int> checkNow() async {
-    print('🔍 Manual episode check triggered');
+    appDebugLog('🔍 Manual episode check triggered');
     return await _performEpisodeCheck();
   }
 
@@ -243,7 +247,7 @@ class EpisodeCheckService {
       // Check connectivity first
       final connectivity = await Connectivity().checkConnectivity();
       if (connectivity.contains(ConnectivityResult.none)) {
-        print('❌ No network connection, skipping check');
+        appDebugLog('❌ No network connection, skipping check');
         return 0;
       }
 
@@ -257,11 +261,11 @@ class EpisodeCheckService {
           .toList();
 
       if (tvShows.isEmpty) {
-        print('📺 No TV shows in watchlist');
+        appDebugLog('📺 No TV shows in watchlist');
         return 0;
       }
 
-      print('📺 Checking ${tvShows.length} TV shows for new episodes');
+      appDebugLog('📺 Checking ${tvShows.length} TV shows for new episodes');
 
       // Get last check time
       final prefs = await SharedPreferences.getInstance();
@@ -301,7 +305,7 @@ class EpisodeCheckService {
             }
           }
         } catch (e) {
-          print('⚠️ Error checking ${show.title}: $e');
+          appDebugLog('⚠️ Error checking ${show.title}: $e');
           // Continue with other shows
         }
       }
@@ -314,10 +318,10 @@ class EpisodeCheckService {
         await _showNewEpisodeNotification(newEpisodesList);
       }
 
-      print('✅ Episode check complete: $newEpisodesFound new episodes');
+      appDebugLog('✅ Episode check complete: $newEpisodesFound new episodes');
       return newEpisodesFound;
     } catch (e) {
-      print('❌ Episode check failed: $e');
+      appDebugLog('❌ Episode check failed: $e');
       return 0;
     }
   }
@@ -387,11 +391,11 @@ class EpisodeCheckService {
             }
           }
         } catch (e) {
-          print('⚠️ Error checking season $seasonNumber: $e');
+          appDebugLog('⚠️ Error checking season $seasonNumber: $e');
         }
       }
     } catch (e) {
-      print('⚠️ Error fetching show $showId: $e');
+      appDebugLog('⚠️ Error fetching show $showId: $e');
     }
 
     return newEpisodes;
@@ -460,7 +464,7 @@ class EpisodeCheckService {
 void episodeCheckCallbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     try {
-      print('🔔 Background task started: $task');
+      appDebugLog('🔔 Background task started: $task');
 
       // Initialize Hive for background isolate
       await Hive.initFlutter();
@@ -479,10 +483,10 @@ void episodeCheckCallbackDispatcher() {
       // Perform the check
       await EpisodeCheckService.performEpisodeCheckForBackground();
 
-      print('✅ Background task completed');
+      appDebugLog('✅ Background task completed');
       return true;
     } catch (e) {
-      print('❌ Background task failed: $e');
+      appDebugLog('❌ Background task failed: $e');
       return false;
     }
   });

@@ -2,15 +2,21 @@ import 'dart:convert';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nivio/models/cache_entry.dart';
 
+import 'package:nivio/core/debug_log.dart';
+
 class CacheService {
   static const String _boxName = 'tmdb_cache';
   late Box<CacheEntry> _box;
 
   /// Default cache durations
-  static const Duration shortCache = Duration(minutes: 15); // For trending/popular
+  static const Duration shortCache = Duration(
+    minutes: 15,
+  ); // For trending/popular
   static const Duration mediumCache = Duration(hours: 1); // For search results
   static const Duration longCache = Duration(hours: 24); // For detail pages
-  static const Duration extraLongCache = Duration(days: 7); // For static content
+  static const Duration extraLongCache = Duration(
+    days: 7,
+  ); // For static content
 
   /// Initialize the cache service
   Future<void> init() async {
@@ -26,23 +32,23 @@ class CacheService {
   ) async {
     try {
       final entry = _box.get(key);
-      
+
       if (entry == null) {
-        print('❌ Cache MISS: $key');
+        appDebugLog('❌ Cache MISS: $key');
         return null;
       }
 
       if (entry.isExpired) {
-        print('⏰ Cache EXPIRED: $key');
+        appDebugLog('⏰ Cache EXPIRED: $key');
         await _box.delete(key);
         return null;
       }
 
-      print('✅ Cache HIT: $key');
+      appDebugLog('✅ Cache HIT: $key');
       final jsonData = json.decode(entry.data) as Map<String, dynamic>;
       return fromJson(jsonData);
     } catch (e) {
-      print('⚠️  Cache ERROR: $key - $e');
+      appDebugLog('⚠️  Cache ERROR: $key - $e');
       // If there's any error reading cache, delete it and return null
       await _box.delete(key);
       return null;
@@ -56,25 +62,25 @@ class CacheService {
   ) async {
     try {
       final entry = _box.get(key);
-      
+
       if (entry == null) {
-        print('❌ Cache MISS: $key');
+        appDebugLog('❌ Cache MISS: $key');
         return null;
       }
 
       if (entry.isExpired) {
-        print('⏰ Cache EXPIRED: $key');
+        appDebugLog('⏰ Cache EXPIRED: $key');
         await _box.delete(key);
         return null;
       }
 
-      print('✅ Cache HIT: $key');
+      appDebugLog('✅ Cache HIT: $key');
       final jsonList = json.decode(entry.data) as List<dynamic>;
       return jsonList
           .map((item) => fromJson(item as Map<String, dynamic>))
           .toList();
     } catch (e) {
-      print('⚠️  Cache ERROR: $key - $e');
+      appDebugLog('⚠️  Cache ERROR: $key - $e');
       // If there's any error reading cache, delete it and return null
       await _box.delete(key);
       return null;
@@ -85,22 +91,22 @@ class CacheService {
   Future<Map<String, dynamic>?> getRaw(String key) async {
     try {
       final entry = _box.get(key);
-      
+
       if (entry == null) {
-        print('❌ Cache MISS: $key');
+        appDebugLog('❌ Cache MISS: $key');
         return null;
       }
 
       if (entry.isExpired) {
-        print('⏰ Cache EXPIRED: $key');
+        appDebugLog('⏰ Cache EXPIRED: $key');
         await _box.delete(key);
         return null;
       }
 
-      print('✅ Cache HIT: $key');
+      appDebugLog('✅ Cache HIT: $key');
       return json.decode(entry.data) as Map<String, dynamic>;
     } catch (e) {
-      print('⚠️  Cache ERROR: $key - $e');
+      appDebugLog('⚠️  Cache ERROR: $key - $e');
       // If there's any error reading cache, delete it and return null
       await _box.delete(key);
       return null;
@@ -111,21 +117,21 @@ class CacheService {
   Future<Map<String, dynamic>?> getStaleRaw(String key) async {
     try {
       final entry = _box.get(key);
-      
+
       if (entry == null) {
-        print('❌ Cache MISS: $key');
+        appDebugLog('❌ Cache MISS: $key');
         return null;
       }
 
       if (entry.isExpired) {
-        print('🔄 Cache STALE (will revalidate): $key');
+        appDebugLog('🔄 Cache STALE (will revalidate): $key');
       } else {
-        print('✅ Cache HIT: $key');
+        appDebugLog('✅ Cache HIT: $key');
       }
-      
+
       return json.decode(entry.data) as Map<String, dynamic>;
     } catch (e) {
-      print('⚠️  Cache ERROR: $key - $e');
+      appDebugLog('⚠️  Cache ERROR: $key - $e');
       await _box.delete(key);
       return null;
     }
@@ -151,9 +157,9 @@ class CacheService {
         ttlMilliseconds: ttl.inMilliseconds,
       );
       await _box.put(key, entry);
-      print('💾 Cache STORED: $key (TTL: ${ttl.inMinutes}min)');
+      appDebugLog('💾 Cache STORED: $key (TTL: ${ttl.inMinutes}min)');
     } catch (e) {
-      print('⚠️  Cache STORE ERROR: $key - $e');
+      appDebugLog('⚠️  Cache STORE ERROR: $key - $e');
       // Silently fail cache write - app should continue without cache
     }
   }
@@ -166,23 +172,27 @@ class CacheService {
     int maxRetries = 3,
   }) async {
     int retryCount = 0;
-    
+
     while (retryCount < maxRetries) {
       try {
         final data = await fetchFn();
         await set(key, data, ttl: ttl);
-        print('🔄 Background refresh completed: $key');
+        appDebugLog('🔄 Background refresh completed: $key');
         return;
       } catch (e) {
         retryCount++;
         if (retryCount >= maxRetries) {
-          print('⚠️  Background refresh failed after $maxRetries attempts: $key - $e');
+          appDebugLog(
+            '⚠️  Background refresh failed after $maxRetries attempts: $key - $e',
+          );
           return;
         }
-        
+
         // Exponential backoff: wait 1s, 2s, 4s before retrying
         final waitTime = Duration(seconds: (1 << (retryCount - 1)));
-        print('⏳ Retry $retryCount/$maxRetries for $key in ${waitTime.inSeconds}s...');
+        appDebugLog(
+          '⏳ Retry $retryCount/$maxRetries for $key in ${waitTime.inSeconds}s...',
+        );
         await Future.delayed(waitTime);
       }
     }
@@ -203,7 +213,7 @@ class CacheService {
     // Run cleanup in background after a delay to not block app startup
     Future.delayed(const Duration(seconds: 2), () async {
       final expiredKeys = <String>[];
-      
+
       for (final entry in _box.values) {
         if (entry.isExpired) {
           expiredKeys.add(entry.key);
@@ -213,9 +223,9 @@ class CacheService {
       for (final key in expiredKeys) {
         await _box.delete(key);
       }
-      
+
       if (expiredKeys.isNotEmpty) {
-        print('🧹 Cleaned ${expiredKeys.length} expired cache entries');
+        appDebugLog('🧹 Cleaned ${expiredKeys.length} expired cache entries');
       }
     });
   }
@@ -234,11 +244,7 @@ class CacheService {
       }
     }
 
-    return {
-      'total': total,
-      'valid': valid,
-      'expired': expired,
-    };
+    return {'total': total, 'valid': valid, 'expired': expired};
   }
 
   /// Close the cache box

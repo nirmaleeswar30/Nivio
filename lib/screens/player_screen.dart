@@ -37,6 +37,10 @@ class PlayerScreen extends ConsumerStatefulWidget {
 }
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen> {
+  static const int _hlsCacheMaxSizeBytes = 512 * 1024 * 1024; // 512 MB
+  static const int _hlsCacheMaxFileSizeBytes = 256 * 1024 * 1024; // 256 MB
+  static const int _hlsPreCacheBytes = 8 * 1024 * 1024; // 8 MB
+
   BetterPlayerController? _betterPlayerController;
   StreamResult? _streamResult;
   bool _isLoading = true;
@@ -262,6 +266,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         }
       }
       final hasResolutionMap = resolutions != null && resolutions.isNotEmpty;
+      final cacheConfiguration = _buildCacheConfiguration(result);
 
       // â”€â”€ Headers â”€â”€
       final headers = _buildPlaybackHeaders(result.headers);
@@ -279,6 +284,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         useAsmsAudioTracks: result.isM3U8 && !hasResolutionMap,
         subtitles: subtitleSources.isNotEmpty ? subtitleSources : null,
         resolutions: resolutions,
+        cacheConfiguration: cacheConfiguration,
         bufferingConfiguration: const BetterPlayerBufferingConfiguration(
           minBufferMs: 120000,
           maxBufferMs: 300000,
@@ -460,6 +466,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     setIfMissing('Accept', '*/*');
     setIfMissing('Accept-Language', 'en-US,en;q=0.9');
     return headers;
+  }
+
+  BetterPlayerCacheConfiguration? _buildCacheConfiguration(
+    StreamResult result,
+  ) {
+    // Cache HLS segment playback for better seek/replay performance.
+    if (!_isDirectStream || !result.isM3U8) return null;
+
+    return const BetterPlayerCacheConfiguration(
+      useCache: true,
+      maxCacheSize: _hlsCacheMaxSizeBytes,
+      maxCacheFileSize: _hlsCacheMaxFileSizeBytes,
+      preCacheSize: _hlsPreCacheBytes,
+    );
   }
 
   void _onBetterPlayerEvent(BetterPlayerEvent event) {

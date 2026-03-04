@@ -1,6 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import 'package:nivio/core/debug_log.dart';
+
 /// Service for handling Firebase Authentication
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -18,20 +20,21 @@ class AuthService {
   /// Sign in with Google
   Future<UserCredential?> signInWithGoogle() async {
     try {
-      print('🔐 Starting Google Sign-In...');
-      
+      appDebugLog('🔐 Starting Google Sign-In...');
+
       // Trigger the authentication flow
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      
+
       if (googleUser == null) {
-        print('❌ Google Sign-In cancelled by user');
+        appDebugLog('❌ Google Sign-In cancelled by user');
         return null; // User cancelled the sign-in
       }
 
-      print('✅ Google account selected: ${googleUser.email}');
+      appDebugLog('✅ Google account selected: ${googleUser.email}');
 
       // Obtain the auth details from the request
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
 
       // Create a new credential
       final credential = GoogleAuthProvider.credential(
@@ -39,16 +42,18 @@ class AuthService {
         idToken: googleAuth.idToken,
       );
 
-      print('🔑 Signing in to Firebase...');
-      
+      appDebugLog('🔑 Signing in to Firebase...');
+
       // Sign in to Firebase with the Google credential
       final userCredential = await _auth.signInWithCredential(credential);
-      
-      print('✅ Firebase sign-in successful: ${userCredential.user?.email}');
-      
+
+      appDebugLog(
+        '✅ Firebase sign-in successful: ${userCredential.user?.email}',
+      );
+
       return userCredential;
     } catch (e) {
-      print('❌ Error signing in with Google: $e');
+      appDebugLog('❌ Error signing in with Google: $e');
       rethrow;
     }
   }
@@ -56,12 +61,12 @@ class AuthService {
   /// Sign in anonymously
   Future<UserCredential> signInAnonymously() async {
     try {
-      print('🔐 Signing in anonymously...');
+      appDebugLog('🔐 Signing in anonymously...');
       final userCredential = await _auth.signInAnonymously();
-      print('✅ Anonymous sign-in successful');
+      appDebugLog('✅ Anonymous sign-in successful');
       return userCredential;
     } catch (e) {
-      print('❌ Error signing in anonymously: $e');
+      appDebugLog('❌ Error signing in anonymously: $e');
       rethrow;
     }
   }
@@ -69,14 +74,11 @@ class AuthService {
   /// Sign out
   Future<void> signOut() async {
     try {
-      print('🚪 Signing out...');
-      await Future.wait([
-        _auth.signOut(),
-        _googleSignIn.signOut(),
-      ]);
-      print('✅ Sign-out successful');
+      appDebugLog('🚪 Signing out...');
+      await Future.wait([_auth.signOut(), _googleSignIn.signOut()]);
+      appDebugLog('✅ Sign-out successful');
     } catch (e) {
-      print('❌ Error signing out: $e');
+      appDebugLog('❌ Error signing out: $e');
       rethrow;
     }
   }

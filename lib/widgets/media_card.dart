@@ -15,7 +15,8 @@ class MediaCard extends ConsumerStatefulWidget {
   ConsumerState<MediaCard> createState() => _MediaCardState();
 }
 
-class _MediaCardState extends ConsumerState<MediaCard> with SingleTickerProviderStateMixin {
+class _MediaCardState extends ConsumerState<MediaCard>
+    with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
   late Animation<double> _elevationAnimation;
@@ -27,11 +28,11 @@ class _MediaCardState extends ConsumerState<MediaCard> with SingleTickerProvider
       duration: const Duration(milliseconds: 250),
       vsync: this,
     );
-    
+
     _scaleAnimation = Tween<double>(begin: 1.0, end: 1.04).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
     );
-    
+
     _elevationAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
     );
@@ -77,7 +78,9 @@ class _MediaCardState extends ConsumerState<MediaCard> with SingleTickerProvider
                         borderRadius: BorderRadius.circular(4),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.5 * _elevationAnimation.value),
+                            color: Colors.black.withOpacity(
+                              0.5 * _elevationAnimation.value,
+                            ),
                             blurRadius: 15 * _elevationAnimation.value,
                             spreadRadius: 1 * _elevationAnimation.value,
                             offset: Offset(0, 6 * _elevationAnimation.value),
@@ -102,14 +105,15 @@ class _MediaCardState extends ConsumerState<MediaCard> with SingleTickerProvider
                                         ),
                                       ),
                                     ),
-                                    errorWidget: (context, url, error) => Container(
-                                      color: NivioTheme.netflixDarkGrey,
-                                      child: const Icon(
-                                        Icons.movie,
-                                        color: NivioTheme.netflixGrey,
-                                        size: 48,
-                                      ),
-                                    ),
+                                    errorWidget: (context, url, error) =>
+                                        Container(
+                                          color: NivioTheme.netflixDarkGrey,
+                                          child: const Icon(
+                                            Icons.movie,
+                                            color: NivioTheme.netflixGrey,
+                                            size: 48,
+                                          ),
+                                        ),
                                   )
                                 : Container(
                                     height: 180,
@@ -176,8 +180,8 @@ class _MediaCardState extends ConsumerState<MediaCard> with SingleTickerProvider
                       Text(
                         'S${widget.history.currentSeason} E${widget.history.currentEpisode}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: NivioTheme.netflixGrey,
-                            ),
+                          color: NivioTheme.netflixGrey,
+                        ),
                       ),
                   ],
                 ),

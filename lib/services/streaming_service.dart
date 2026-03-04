@@ -4,6 +4,8 @@ import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/services/aimi_anime_service.dart';
 import 'package:nivio/services/flixhq_scraper_service.dart';
 
+import 'package:nivio/core/debug_log.dart';
+
 /// Service for fetching streaming URLs.
 /// Anime primary: aimi_lib direct providers.
 /// Non-anime primary: native FlixHQ scraper.
@@ -38,7 +40,7 @@ class StreamingService {
     String subDubPreference = 'sub',
   }) async {
     try {
-      print(
+      appDebugLog(
         'fetchStreamUrl: media=${media.id}, S${season}E$episode, providerIdx=$providerIndex',
       );
 
@@ -55,11 +57,11 @@ class StreamingService {
           );
 
           if (animeResult != null) {
-            print('AIMI anime stream acquired: ${animeResult.quality}');
+            appDebugLog('AIMI anime stream acquired: ${animeResult.quality}');
             return animeResult;
           }
 
-          print('AIMI anime failed, trying FlixHQ fallback...');
+          appDebugLog('AIMI anime failed, trying FlixHQ fallback...');
         }
 
         final flixhqResult = await _flixhqScraperService.fetchStream(
@@ -87,25 +89,27 @@ class StreamingService {
               !_isAnimeCandidate(media)) {
             final isPlayable = await _probeDirectHls(normalizedResult);
             if (!isPlayable) {
-              print(
+              appDebugLog(
                 'FlixHQ source probe failed, attempting direct playback anyway...',
               );
             }
           }
 
-          print('FlixHQ stream acquired: ${normalizedResult.quality}');
+          appDebugLog('FlixHQ stream acquired: ${normalizedResult.quality}');
           return normalizedResult;
         }
 
         // Return null so player auto-advances to next provider (embed).
-        print('Direct stream chain failed, returning null to advance provider');
+        appDebugLog(
+          'Direct stream chain failed, returning null to advance provider',
+        );
         return null;
       }
 
       // Fallback to embed providers (index 1=vidsrc.cc, 2=vidsrc.to, 3=vidlink)
       final embedIdx = providerIndex - 1;
       if (embedIdx >= _embedProviders.length) {
-        print('All providers exhausted');
+        appDebugLog('All providers exhausted');
         return null;
       }
 
@@ -132,7 +136,7 @@ class StreamingService {
         }
       }
 
-      print('Embed fallback: ${provider['name']} -> $streamUrl');
+      appDebugLog('Embed fallback: ${provider['name']} -> $streamUrl');
 
       return StreamResult(
         url: streamUrl,
@@ -140,7 +144,7 @@ class StreamingService {
         provider: provider['name']!,
       );
     } catch (e) {
-      print('Error in fetchStreamUrl: $e');
+      appDebugLog('Error in fetchStreamUrl: $e');
       return null;
     }
   }
@@ -199,12 +203,12 @@ class StreamingService {
         return true;
       }
 
-      print(
+      appDebugLog(
         'Direct probe status=${response.statusCode}, playlistValid=${response.data?.contains('#EXTM3U') ?? false}',
       );
       return false;
     } catch (e) {
-      print('Direct probe exception: $e');
+      appDebugLog('Direct probe exception: $e');
       return false;
     }
   }

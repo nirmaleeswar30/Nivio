@@ -3,9 +3,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/episode_check_service.dart';
 
 // Playback Speed Provider
-final playbackSpeedProvider = StateNotifierProvider<PlaybackSpeedNotifier, double>((ref) {
-  return PlaybackSpeedNotifier();
-});
+final playbackSpeedProvider =
+    StateNotifierProvider<PlaybackSpeedNotifier, double>((ref) {
+      return PlaybackSpeedNotifier();
+    });
 
 class PlaybackSpeedNotifier extends StateNotifier<double> {
   PlaybackSpeedNotifier() : super(1.0) {
@@ -25,9 +26,10 @@ class PlaybackSpeedNotifier extends StateNotifier<double> {
 }
 
 // Video Quality Provider
-final videoQualityProvider = StateNotifierProvider<VideoQualityNotifier, String>((ref) {
-  return VideoQualityNotifier();
-});
+final videoQualityProvider =
+    StateNotifierProvider<VideoQualityNotifier, String>((ref) {
+      return VideoQualityNotifier();
+    });
 
 class VideoQualityNotifier extends StateNotifier<String> {
   VideoQualityNotifier() : super('auto') {
@@ -64,9 +66,10 @@ class VideoQualityNotifier extends StateNotifier<String> {
 }
 
 // Subtitle Enabled Provider
-final subtitlesEnabledProvider = StateNotifierProvider<SubtitlesEnabledNotifier, bool>((ref) {
-  return SubtitlesEnabledNotifier();
-});
+final subtitlesEnabledProvider =
+    StateNotifierProvider<SubtitlesEnabledNotifier, bool>((ref) {
+      return SubtitlesEnabledNotifier();
+    });
 
 class SubtitlesEnabledNotifier extends StateNotifier<bool> {
   SubtitlesEnabledNotifier() : super(false) {
@@ -86,9 +89,10 @@ class SubtitlesEnabledNotifier extends StateNotifier<bool> {
 }
 
 // Animations Enabled Provider
-final animationsEnabledProvider = StateNotifierProvider<AnimationsEnabledNotifier, bool>((ref) {
-  return AnimationsEnabledNotifier();
-});
+final animationsEnabledProvider =
+    StateNotifierProvider<AnimationsEnabledNotifier, bool>((ref) {
+      return AnimationsEnabledNotifier();
+    });
 
 class AnimationsEnabledNotifier extends StateNotifier<bool> {
   AnimationsEnabledNotifier() : super(true) {
@@ -108,7 +112,9 @@ class AnimationsEnabledNotifier extends StateNotifier<bool> {
 }
 
 // Anime Sub/Dub Preference Provider
-final animeSubDubProvider = StateNotifierProvider<AnimeSubDubNotifier, String>((ref) {
+final animeSubDubProvider = StateNotifierProvider<AnimeSubDubNotifier, String>((
+  ref,
+) {
   return AnimeSubDubNotifier();
 });
 
@@ -135,9 +141,10 @@ class AnimeSubDubNotifier extends StateNotifier<String> {
 }
 
 // Episode Check Enabled Provider
-final episodeCheckEnabledProvider = StateNotifierProvider<EpisodeCheckEnabledNotifier, bool>((ref) {
-  return EpisodeCheckEnabledNotifier();
-});
+final episodeCheckEnabledProvider =
+    StateNotifierProvider<EpisodeCheckEnabledNotifier, bool>((ref) {
+      return EpisodeCheckEnabledNotifier();
+    });
 
 class EpisodeCheckEnabledNotifier extends StateNotifier<bool> {
   EpisodeCheckEnabledNotifier() : super(true) {
@@ -160,9 +167,10 @@ class EpisodeCheckEnabledNotifier extends StateNotifier<bool> {
 }
 
 // Episode Check Frequency Provider
-final episodeCheckFrequencyProvider = StateNotifierProvider<EpisodeCheckFrequencyNotifier, int>((ref) {
-  return EpisodeCheckFrequencyNotifier();
-});
+final episodeCheckFrequencyProvider =
+    StateNotifierProvider<EpisodeCheckFrequencyNotifier, int>((ref) {
+      return EpisodeCheckFrequencyNotifier();
+    });
 
 class EpisodeCheckFrequencyNotifier extends StateNotifier<int> {
   EpisodeCheckFrequencyNotifier() : super(24) {

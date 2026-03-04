@@ -36,9 +36,7 @@ _$SeasonDataImpl _$$SeasonDataImplFromJson(Map<String, dynamic> json) =>
     );
 
 Map<String, dynamic> _$$SeasonDataImplToJson(_$SeasonDataImpl instance) =>
-    <String, dynamic>{
-      'episodes': instance.episodes,
-    };
+    <String, dynamic>{'episodes': instance.episodes};
 
 _$SeasonInfoImpl _$$SeasonInfoImplFromJson(Map<String, dynamic> json) =>
     _$SeasonInfoImpl(

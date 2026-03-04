@@ -16,13 +16,20 @@ final selectedEpisodeProvider = StateProvider<int>((ref) => 1);
 final selectedQualityProvider = StateProvider<String?>((ref) => null);
 
 // Series info provider (for TV shows)
-final seriesInfoProvider = FutureProvider.family<SeriesInfo, int>((ref, showId) async {
+final seriesInfoProvider = FutureProvider.family<SeriesInfo, int>((
+  ref,
+  showId,
+) async {
   final tmdb = ref.watch(tmdbServiceProvider);
   return await tmdb.getSeriesInfo(showId);
 });
 
 // Season data provider (episodes for a specific season)
-final seasonDataProvider = FutureProvider.family<SeasonData, ({int showId, int seasonNumber})>((ref, params) async {
-  final tmdb = ref.watch(tmdbServiceProvider);
-  return await tmdb.getSeasonInfo(params.showId, params.seasonNumber);
-});
+final seasonDataProvider =
+    FutureProvider.family<SeasonData, ({int showId, int seasonNumber})>((
+      ref,
+      params,
+    ) async {
+      final tmdb = ref.watch(tmdbServiceProvider);
+      return await tmdb.getSeasonInfo(params.showId, params.seasonNumber);
+    });

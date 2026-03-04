@@ -12,11 +12,13 @@ final watchlistServiceProvider = Provider<WatchlistService>((ref) {
 /// State notifier for watchlist changes to trigger UI updates
 class WatchlistNotifier extends StateNotifier<int> {
   WatchlistNotifier() : super(0);
-  
+
   void refresh() => state++;
 }
 
-final watchlistRefreshProvider = StateNotifierProvider<WatchlistNotifier, int>((ref) {
+final watchlistRefreshProvider = StateNotifierProvider<WatchlistNotifier, int>((
+  ref,
+) {
   return WatchlistNotifier();
 });
 

@@ -7,11 +7,7 @@ class ContentRow extends StatelessWidget {
   final String title;
   final List<dynamic> items;
 
-  const ContentRow({
-    super.key,
-    required this.title,
-    required this.items,
-  });
+  const ContentRow({super.key, required this.title, required this.items});
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +41,8 @@ class ContentRow extends StatelessWidget {
                 final item = items[index];
                 final posterPath = item['poster_path'];
                 final tmdbId = item['id'];
-                final mediaType = item['media_type'] ?? 
+                final mediaType =
+                    item['media_type'] ??
                     (item['title'] != null ? 'movie' : 'tv');
 
                 return RepaintBoundary(
@@ -82,7 +79,8 @@ class _AnimatedPosterCard extends StatefulWidget {
   State<_AnimatedPosterCard> createState() => _AnimatedPosterCardState();
 }
 
-class _AnimatedPosterCardState extends State<_AnimatedPosterCard> with SingleTickerProviderStateMixin {
+class _AnimatedPosterCardState extends State<_AnimatedPosterCard>
+    with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
   late Animation<double> _elevationAnimation;
@@ -94,11 +92,11 @@ class _AnimatedPosterCardState extends State<_AnimatedPosterCard> with SingleTic
       duration: const Duration(milliseconds: 250),
       vsync: this,
     );
-    
+
     _scaleAnimation = Tween<double>(begin: 1.0, end: 1.05).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
     );
-    
+
     _elevationAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
     );
@@ -120,7 +118,8 @@ class _AnimatedPosterCardState extends State<_AnimatedPosterCard> with SingleTic
         _animationController.reverse();
       },
       child: GestureDetector(
-        onTap: () => context.push('/media/${widget.tmdbId}?type=${widget.mediaType}'),
+        onTap: () =>
+            context.push('/media/${widget.tmdbId}?type=${widget.mediaType}'),
         child: AnimatedBuilder(
           animation: _animationController,
           builder: (context, child) {
@@ -134,7 +133,9 @@ class _AnimatedPosterCardState extends State<_AnimatedPosterCard> with SingleTic
                   color: const Color(0xFF2F2F2F),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.5 * _elevationAnimation.value),
+                      color: Colors.black.withOpacity(
+                        0.5 * _elevationAnimation.value,
+                      ),
                       blurRadius: 15 * _elevationAnimation.value,
                       spreadRadius: 1 * _elevationAnimation.value,
                       offset: Offset(0, 6 * _elevationAnimation.value),
@@ -148,7 +149,8 @@ class _AnimatedPosterCardState extends State<_AnimatedPosterCard> with SingleTic
                       // Poster Image
                       widget.posterPath != null
                           ? CachedNetworkImage(
-                              imageUrl: '$tmdbImageBaseUrl/$posterSize${widget.posterPath}',
+                              imageUrl:
+                                  '$tmdbImageBaseUrl/$posterSize${widget.posterPath}',
                               fit: BoxFit.cover,
                               width: double.infinity,
                               height: double.infinity,

@@ -1,16 +1,21 @@
 import 'package:dio/dio.dart';
 
+import 'package:nivio/core/debug_log.dart';
+
 /// Service for interacting with AniList API
 /// Converts TMDB IDs to AniList IDs for anime content
 class AniListService {
   final Dio _dio;
   static const String _baseUrl = 'https://graphql.anilist.co';
 
-  AniListService() : _dio = Dio(BaseOptions(
-    baseUrl: _baseUrl,
-    connectTimeout: const Duration(seconds: 10),
-    receiveTimeout: const Duration(seconds: 10),
-  ));
+  AniListService()
+    : _dio = Dio(
+        BaseOptions(
+          baseUrl: _baseUrl,
+          connectTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
 
   /// Search for anime by title and year to find AniList ID
   /// Returns null if no match found
@@ -45,29 +50,27 @@ class AniListService {
         if (year != null) 'seasonYear': int.tryParse(year),
       };
 
-      print('🔍 Searching AniList for: $title ${year ?? ''}');
+      appDebugLog('🔍 Searching AniList for: $title ${year ?? ''}');
 
       final response = await _dio.post(
         '',
-        data: {
-          'query': query,
-          'variables': variables,
-        },
+        data: {'query': query, 'variables': variables},
       );
 
-      if (response.statusCode == 200 && response.data['data']['Media'] != null) {
+      if (response.statusCode == 200 &&
+          response.data['data']['Media'] != null) {
         final anilistId = response.data['data']['Media']['id'] as int;
-        print('✅ Found AniList ID: $anilistId for $title');
+        appDebugLog('✅ Found AniList ID: $anilistId for $title');
         return anilistId;
       }
 
-      print('❌ No AniList match found for: $title');
+      appDebugLog('❌ No AniList match found for: $title');
       return null;
     } on DioException catch (e) {
-      print('❌ DioException fetching AniList ID: ${e.message}');
+      appDebugLog('❌ DioException fetching AniList ID: ${e.message}');
       return null;
     } catch (e) {
-      print('❌ Error fetching AniList ID: $e');
+      appDebugLog('❌ Error fetching AniList ID: $e');
       return null;
     }
   }

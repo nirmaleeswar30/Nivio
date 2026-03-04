@@ -18,10 +18,8 @@ class SubtitleTrack with _$SubtitleTrack {
 
 @freezed
 class APISource with _$APISource {
-  const factory APISource({
-    required String url,
-    required String quality,
-  }) = _APISource;
+  const factory APISource({required String url, required String quality}) =
+      _APISource;
 
   factory APISource.fromJson(Map<String, dynamic> json) =>
       _$APISourceFromJson(json);
