@@ -222,7 +222,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _resumePosition = startAt;
       }
 
-      // ── Build subtitle sources from Consumet ──
+      // ── Build subtitle sources from direct stream metadata ──
       final subtitleSources = result.subtitles.map((sub) {
         return BetterPlayerSubtitlesSource(
           type: BetterPlayerSubtitlesSourceType.network,
@@ -404,24 +404,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         headers.keys.any((k) => k.toLowerCase() == name.toLowerCase());
     void setIfMissing(String name, String value) {
       if (!hasHeader(name)) headers[name] = value;
-    }
-
-    String? referer;
-    for (final entry in headers.entries) {
-      if (entry.key.toLowerCase() == 'referer') {
-        referer = entry.value;
-        break;
-      }
-    }
-
-    final hasOrigin = headers.keys.any((k) => k.toLowerCase() == 'origin');
-    if (!hasOrigin && referer != null && referer.isNotEmpty) {
-      final refUri = Uri.tryParse(referer);
-      if (refUri != null &&
-          refUri.scheme.isNotEmpty &&
-          refUri.host.isNotEmpty) {
-        headers['Origin'] = '${refUri.scheme}://${refUri.host}';
-      }
     }
 
     final provider = (_streamResult?.provider ?? '').toLowerCase();

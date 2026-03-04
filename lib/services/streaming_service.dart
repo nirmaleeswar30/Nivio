@@ -2,15 +2,15 @@ import 'package:dio/dio.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/services/aimi_anime_service.dart';
-import 'package:nivio/services/consumet_service.dart';
+import 'package:nivio/services/flixhq_scraper_service.dart';
 
 /// Service for fetching streaming URLs.
 /// Anime primary: aimi_lib direct providers.
-/// Non-anime primary: Consumet API.
+/// Non-anime primary: native FlixHQ scraper.
 /// Fallback: vidsrc.cc, vidsrc.to, vidlink.pro (embed/WebView).
 class StreamingService {
   final AimiAnimeService _aimiAnimeService = AimiAnimeService();
-  final ConsumetService _consumetService = ConsumetService();
+  final FlixhqScraperService _flixhqScraperService = FlixhqScraperService();
   final Dio _probeDio = Dio(
     BaseOptions(
       connectTimeout: const Duration(seconds: 8),
@@ -20,14 +20,14 @@ class StreamingService {
 
   StreamingService();
 
-  /// Embed fallback providers (used only if Consumet fails)
+  /// Embed fallback providers (used only if direct extraction fails)
   static final List<Map<String, String>> _embedProviders = [
     {'name': 'vidsrc.cc', 'url': 'https://vidsrc.cc/v2/embed'},
     {'name': 'vidsrc.to', 'url': 'https://vidsrc.to/embed'},
     {'name': 'vidlink', 'url': 'https://vidlink.pro'},
   ];
 
-  /// Fetch streaming URL - tries Consumet first, then embeds
+  /// Fetch streaming URL - tries direct chain first, then embeds.
   Future<StreamResult?> fetchStreamUrl({
     required SearchResult media,
     int season = 1,
@@ -39,10 +39,10 @@ class StreamingService {
   }) async {
     try {
       print(
-        '🔍 fetchStreamUrl: media=${media.id}, S${season}E$episode, providerIdx=$providerIndex',
+        'fetchStreamUrl: media=${media.id}, S${season}E$episode, providerIdx=$providerIndex',
       );
 
-      // Provider 0 = direct source chain (AIMI for anime, Consumet otherwise)
+      // Provider 0 = direct source chain (AIMI for anime, FlixHQ otherwise)
       if (providerIndex == 0) {
         final isAnime = _isAnimeCandidate(media);
 
@@ -54,59 +54,57 @@ class StreamingService {
           );
 
           if (animeResult != null) {
-            print('✅ AIMI anime stream acquired: ${animeResult.quality}');
+            print('AIMI anime stream acquired: ${animeResult.quality}');
             return animeResult;
           }
 
-          print('⚠️ AIMI anime failed, trying Consumet fallback for anime...');
+          print('AIMI anime failed, trying FlixHQ fallback...');
         }
 
-        final consumetResult = await _consumetService.fetchStream(
-          tmdbId: media.id,
+        final flixhqResult = await _flixhqScraperService.fetchStream(
           mediaType: media.mediaType,
           season: season,
           episode: episode,
           title: media.title ?? media.name ?? '',
           year: _extractYear(media),
-          isAnimeCandidate: _isAnimeCandidate(media),
-          subDubPreference: subDubPreference,
         );
 
-        if (consumetResult != null) {
-          final normalizedHeaders = _buildDirectHeaders(consumetResult.headers);
+        if (flixhqResult != null) {
+          final normalizedHeaders = _buildDirectHeaders(flixhqResult.headers);
           final normalizedResult = StreamResult(
-            url: consumetResult.url,
-            quality: consumetResult.quality,
-            provider: consumetResult.provider,
-            subtitles: consumetResult.subtitles,
-            availableQualities: consumetResult.availableQualities,
-            isM3U8: consumetResult.isM3U8,
+            url: flixhqResult.url,
+            quality: flixhqResult.quality,
+            provider: flixhqResult.provider,
+            subtitles: flixhqResult.subtitles,
+            availableQualities: flixhqResult.availableQualities,
+            isM3U8: flixhqResult.isM3U8,
             headers: normalizedHeaders,
-            sources: consumetResult.sources,
+            sources: flixhqResult.sources,
           );
-          if (consumetResult.provider == 'consumet-flixhq' &&
+
+          if (normalizedResult.provider.toLowerCase().contains('flixhq') &&
               !_isAnimeCandidate(media)) {
             final isPlayable = await _probeDirectHls(normalizedResult);
             if (!isPlayable) {
               print(
-                '⚠️ Consumet FlixHQ source probe failed, attempting direct playback anyway...',
+                'FlixHQ source probe failed, attempting direct playback anyway...',
               );
             }
           }
-          print('✅ Consumet stream acquired: ${normalizedResult.quality}');
+
+          print('FlixHQ stream acquired: ${normalizedResult.quality}');
           return normalizedResult;
         }
+
         // Return null so player auto-advances to next provider (embed).
-        print(
-          '⚠️ Direct stream chain failed, returning null to advance provider',
-        );
+        print('Direct stream chain failed, returning null to advance provider');
         return null;
       }
 
       // Fallback to embed providers (index 1=vidsrc.cc, 2=vidsrc.to, 3=vidlink)
       final embedIdx = providerIndex - 1;
       if (embedIdx >= _embedProviders.length) {
-        print('❌ All providers exhausted');
+        print('All providers exhausted');
         return null;
       }
 
@@ -133,7 +131,7 @@ class StreamingService {
         }
       }
 
-      print('📺 Embed fallback: ${provider['name']} → $streamUrl');
+      print('Embed fallback: ${provider['name']} -> $streamUrl');
 
       return StreamResult(
         url: streamUrl,
@@ -141,16 +139,15 @@ class StreamingService {
         provider: provider['name']!,
       );
     } catch (e) {
-      print('❌ Error in fetchStreamUrl: $e');
+      print('Error in fetchStreamUrl: $e');
       return null;
     }
   }
 
-  /// Get the total number of available providers (Consumet + embeds)
-  static int get totalProviders =>
-      1 + _embedProviders.length; // Consumet + 3 embeds
+  /// Get the total number of available providers (direct + embeds).
+  static int get totalProviders => 1 + _embedProviders.length;
 
-  /// Get provider name by index
+  /// Get provider name by index.
   static String getProviderName(int index) {
     if (index == 0) return 'Direct';
     final embedIdx = index - 1;
@@ -160,7 +157,7 @@ class StreamingService {
     return 'Unknown';
   }
 
-  /// Check if a provider index uses direct streaming (vs embed/WebView)
+  /// Check if a provider index uses direct streaming (vs embed/WebView).
   static bool isDirectStream(int providerIndex) {
     return providerIndex == 0;
   }
@@ -202,11 +199,11 @@ class StreamingService {
       }
 
       print(
-        '⚠️ Direct probe status=${response.statusCode}, playlistValid=${response.data?.contains('#EXTM3U') ?? false}',
+        'Direct probe status=${response.statusCode}, playlistValid=${response.data?.contains('#EXTM3U') ?? false}',
       );
       return false;
     } catch (e) {
-      print('⚠️ Direct probe exception: $e');
+      print('Direct probe exception: $e');
       return false;
     }
   }
@@ -217,20 +214,6 @@ class StreamingService {
           'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
       ...incoming,
     };
-
-    final refererEntry = headers.entries.where(
-      (e) => e.key.toLowerCase() == 'referer',
-    );
-    final hasOrigin = headers.keys.any((k) => k.toLowerCase() == 'origin');
-    if (refererEntry.isNotEmpty && !hasOrigin) {
-      final referer = refererEntry.first.value;
-      final refUri = Uri.tryParse(referer);
-      if (refUri != null &&
-          refUri.scheme.isNotEmpty &&
-          refUri.host.isNotEmpty) {
-        headers['Origin'] = '${refUri.scheme}://${refUri.host}';
-      }
-    }
 
     headers.putIfAbsent('Accept', () => '*/*');
     return headers;

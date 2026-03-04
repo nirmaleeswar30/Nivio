@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/services/tmdb_service.dart';
 import 'package:nivio/services/streaming_service.dart';
-import 'package:nivio/services/consumet_service.dart';
+import 'package:nivio/services/flixhq_scraper_service.dart';
 import 'package:nivio/services/watch_history_service.dart';
 import 'package:nivio/services/cache_service.dart';
 
@@ -18,10 +18,10 @@ final tmdbServiceProvider = Provider((ref) {
   return TmdbService(cache);
 });
 
-// Consumet service provider (direct M3U8 streaming)
-final consumetServiceProvider = Provider((ref) => ConsumetService());
+// FlixHQ scraper service provider (direct M3U8 streaming)
+final flixhqScraperServiceProvider = Provider((ref) => FlixhqScraperService());
 
-// Streaming service provider (Consumet primary, embed fallback)
+// Streaming service provider (direct primary, embed fallback)
 final streamingServiceProvider = Provider((ref) => StreamingService());
 
 final watchHistoryServiceProvider = Provider((ref) => WatchHistoryService());
