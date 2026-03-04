@@ -3,15 +3,18 @@ import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/services/aimi_anime_service.dart';
 import 'package:nivio/services/flixhq_scraper_service.dart';
+import 'package:nivio/services/net22_scraper_service.dart';
 
 import 'package:nivio/core/debug_log.dart';
 
 /// Service for fetching streaming URLs.
 /// Anime primary: aimi_lib direct providers.
-/// Non-anime primary: native FlixHQ scraper.
+/// Non-anime primary: native Net22 scraper.
+/// Next direct fallback: native FlixHQ scraper.
 /// Fallback: vidsrc.cc, vidsrc.to, vidlink.pro (embed/WebView).
 class StreamingService {
   final AimiAnimeService _aimiAnimeService = AimiAnimeService();
+  final Net22ScraperService _net22ScraperService = Net22ScraperService();
   final FlixhqScraperService _flixhqScraperService = FlixhqScraperService();
   final Dio _probeDio = Dio(
     BaseOptions(
@@ -28,6 +31,15 @@ class StreamingService {
     {'name': 'vidsrc.to', 'url': 'https://vidsrc.to/embed'},
     {'name': 'vidlink', 'url': 'https://vidlink.pro'},
   ];
+  static const List<String> _animeDirectProviders = [
+    'animepahe',
+    'net22 (direct)',
+    'flix (direct)',
+  ];
+  static const List<String> _defaultDirectProviders = [
+    'net22 (direct)',
+    'flix (direct)',
+  ];
 
   /// Fetch streaming URL - tries direct chain first, then embeds.
   Future<StreamResult?> fetchStreamUrl({
@@ -35,6 +47,7 @@ class StreamingService {
     int season = 1,
     int episode = 1,
     String? preferredQuality,
+    String? preferredNet22Audio,
     int providerIndex = 0,
     bool autoSkipIntro = true,
     String subDubPreference = 'sub',
@@ -43,12 +56,20 @@ class StreamingService {
       appDebugLog(
         'fetchStreamUrl: media=${media.id}, S${season}E$episode, providerIdx=$providerIndex',
       );
+      final isAnime = _isAnimeCandidate(media);
+      final directProviders = isAnime
+          ? _animeDirectProviders
+          : _defaultDirectProviders;
+      final directCount = directProviders.length;
 
-      // Provider 0 = direct source chain (AIMI for anime, FlixHQ otherwise)
-      if (providerIndex == 0) {
-        final isAnime = _isAnimeCandidate(media);
+      // Direct providers are listed as independent selectable indices.
+      if (providerIndex < directCount) {
+        // Map selected index to canonical direct slot:
+        // anime: 0=animepahe, 1=net22, 2=flix
+        // non-anime: 0=net22, 1=flix
+        final directSlot = isAnime ? providerIndex : providerIndex + 1;
 
-        if (isAnime) {
+        if (directSlot == 0) {
           final animeResult = await _aimiAnimeService.fetchAnimeStream(
             media: media,
             episode: media.mediaType == 'movie' ? 1 : episode,
@@ -61,7 +82,48 @@ class StreamingService {
             return animeResult;
           }
 
-          appDebugLog('AIMI anime failed, trying FlixHQ fallback...');
+          appDebugLog('AIMI anime failed');
+          return null;
+        }
+
+        if (directSlot == 1) {
+          final net22Result = await _net22ScraperService.fetchStream(
+            mediaType: media.mediaType,
+            season: season,
+            episode: episode,
+            title: media.title ?? media.name ?? '',
+            year: _extractYear(media),
+            preferredAudio: preferredNet22Audio,
+          );
+
+          if (net22Result != null) {
+            final normalizedHeaders = _buildDirectHeaders(net22Result.headers);
+            final normalizedResult = StreamResult(
+              url: net22Result.url,
+              quality: net22Result.quality,
+              provider: net22Result.provider,
+              subtitles: net22Result.subtitles,
+              availableQualities: net22Result.availableQualities,
+              availableAudios: net22Result.availableAudios,
+              selectedAudio: net22Result.selectedAudio,
+              isM3U8: net22Result.isM3U8,
+              headers: normalizedHeaders,
+              sources: net22Result.sources,
+            );
+
+            final isPlayable = await _probeDirectHls(normalizedResult);
+            if (!isPlayable) {
+              appDebugLog(
+                'Net22 source probe failed, attempting direct playback anyway...',
+              );
+            }
+
+            appDebugLog('Net22 stream acquired: ${normalizedResult.quality}');
+            return normalizedResult;
+          }
+
+          appDebugLog('Net22 failed');
+          return null;
         }
 
         final flixhqResult = await _flixhqScraperService.fetchStream(
@@ -85,29 +147,23 @@ class StreamingService {
             sources: flixhqResult.sources,
           );
 
-          if (normalizedResult.provider.toLowerCase().contains('flixhq') &&
-              !_isAnimeCandidate(media)) {
-            final isPlayable = await _probeDirectHls(normalizedResult);
-            if (!isPlayable) {
-              appDebugLog(
-                'FlixHQ source probe failed, attempting direct playback anyway...',
-              );
-            }
+          final isPlayable = await _probeDirectHls(normalizedResult);
+          if (!isPlayable) {
+            appDebugLog(
+              'FlixHQ source probe failed, attempting direct playback anyway...',
+            );
           }
 
           appDebugLog('FlixHQ stream acquired: ${normalizedResult.quality}');
           return normalizedResult;
         }
 
-        // Return null so player auto-advances to next provider (embed).
-        appDebugLog(
-          'Direct stream chain failed, returning null to advance provider',
-        );
+        appDebugLog('FlixHQ failed');
         return null;
       }
 
-      // Fallback to embed providers (index 1=vidsrc.cc, 2=vidsrc.to, 3=vidlink)
-      final embedIdx = providerIndex - 1;
+      // Fallback to embed providers after direct providers.
+      final embedIdx = providerIndex - directCount;
       if (embedIdx >= _embedProviders.length) {
         appDebugLog('All providers exhausted');
         return null;
@@ -150,12 +206,23 @@ class StreamingService {
   }
 
   /// Get the total number of available providers (direct + embeds).
-  static int get totalProviders => 1 + _embedProviders.length;
+  static int totalProvidersFor({required bool isAnime}) {
+    final directCount = isAnime
+        ? _animeDirectProviders.length
+        : _defaultDirectProviders.length;
+    return directCount + _embedProviders.length;
+  }
 
   /// Get provider name by index.
-  static String getProviderName(int index) {
-    if (index == 0) return 'Direct';
-    final embedIdx = index - 1;
+  static String getProviderName(int index, {required bool isAnime}) {
+    final directProviders = isAnime
+        ? _animeDirectProviders
+        : _defaultDirectProviders;
+    if (index >= 0 && index < directProviders.length) {
+      return directProviders[index];
+    }
+
+    final embedIdx = index - directProviders.length;
     if (embedIdx < _embedProviders.length) {
       return _embedProviders[embedIdx]['name']!;
     }
@@ -163,8 +230,11 @@ class StreamingService {
   }
 
   /// Check if a provider index uses direct streaming (vs embed/WebView).
-  static bool isDirectStream(int providerIndex) {
-    return providerIndex == 0;
+  static bool isDirectStream(int providerIndex, {required bool isAnime}) {
+    final directCount = isAnime
+        ? _animeDirectProviders.length
+        : _defaultDirectProviders.length;
+    return providerIndex < directCount;
   }
 
   bool _isAnimeCandidate(SearchResult media) {

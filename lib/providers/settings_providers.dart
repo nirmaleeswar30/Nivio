@@ -140,6 +140,30 @@ class AnimeSubDubNotifier extends StateNotifier<String> {
   }
 }
 
+// Net22 Audio Language Preference Provider
+final net22AudioLanguageProvider =
+    StateNotifierProvider<Net22AudioLanguageNotifier, String>((ref) {
+      return Net22AudioLanguageNotifier();
+    });
+
+class Net22AudioLanguageNotifier extends StateNotifier<String> {
+  Net22AudioLanguageNotifier() : super('auto') {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getString('net22_audio_language') ?? 'auto';
+  }
+
+  Future<void> setPreference(String preference) async {
+    final normalized = preference.trim().isEmpty ? 'auto' : preference.trim();
+    state = normalized;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('net22_audio_language', normalized);
+  }
+}
+
 // Episode Check Enabled Provider
 final episodeCheckEnabledProvider =
     StateNotifierProvider<EpisodeCheckEnabledNotifier, bool>((ref) {

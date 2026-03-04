@@ -349,7 +349,7 @@ class FlixhqScraperService {
     return StreamResult(
       url: bestSource.url,
       quality: bestSource.quality,
-      provider: 'flixhq.tw',
+      provider: 'flix (direct)',
       subtitles: subtitles,
       availableQualities: availableQualities,
       isM3U8: bestSource.isM3U8,

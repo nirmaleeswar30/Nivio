@@ -7,9 +7,9 @@ import 'package:nivio/core/debug_log.dart';
 /// Anime streaming via aimi_lib providers (AnimePahe/AllAnime/Anizone).
 class AimiAnimeService {
   static const List<_ProviderConfig> _providerOrder = [
-    _ProviderConfig('aimi-animepahe', _ProviderKind.animePahe),
-    _ProviderConfig('aimi-allanime', _ProviderKind.allAnime),
-    _ProviderConfig('aimi-anizone', _ProviderKind.anizone),
+    _ProviderConfig('animepahe', _ProviderKind.animePahe),
+    _ProviderConfig('allanime', _ProviderKind.allAnime),
+    _ProviderConfig('anizone', _ProviderKind.anizone),
   ];
 
   Future<StreamResult?> fetchAnimeStream({

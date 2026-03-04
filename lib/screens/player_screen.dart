@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/theme.dart';
+import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/media_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
@@ -50,7 +51,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   int _retryCount = 0;
   int _currentProviderIndex = 0;
   static const int _maxRetries = 3;
-  final int _maxProviders = StreamingService.totalProviders;
   final FocusNode _focusNode = FocusNode();
   bool _showNextEpisodeButton = false;
   bool _nextEpisodeDismissed = false;
@@ -73,6 +73,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   OverlayEntry? _nextEpOverlayEntry;
 
   SeasonData? _currentSeasonData;
+
+  bool _isAnimeMedia(SearchResult? media) {
+    if (media == null) return false;
+    final language = (media.originalLanguage ?? '').toLowerCase();
+    return media.mediaType == 'tv' && language == 'ja';
+  }
+
+  int get _maxProviders {
+    final media = ref.read(selectedMediaProvider);
+    return StreamingService.totalProvidersFor(isAnime: _isAnimeMedia(media));
+  }
 
   @override
   void initState() {
@@ -183,12 +194,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final preferredQuality =
           manualQuality ?? (settingsQuality == 'auto' ? null : settingsQuality);
       final subDubPref = ref.read(animeSubDubProvider);
+      final net22AudioPref = ref.read(net22AudioLanguageProvider);
 
       final result = await streamingService.fetchStreamUrl(
         media: media,
         season: widget.season,
         episode: _currentEpisode,
         preferredQuality: preferredQuality,
+        preferredNet22Audio: net22AudioPref,
         providerIndex: _currentProviderIndex,
         subDubPreference: subDubPref,
       );
@@ -206,7 +219,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       _streamResult = result;
       _currentProvider = result.provider;
-      _isDirectStream = StreamingService.isDirectStream(_currentProviderIndex);
+      _isDirectStream = StreamingService.isDirectStream(
+        _currentProviderIndex,
+        isAnime: _isAnimeMedia(media),
+      );
 
       // Embed providers use WebView
       if (!_isDirectStream) {
@@ -281,7 +297,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             : BetterPlayerVideoFormat.other,
         useAsmsTracks: result.isM3U8 && !hasResolutionMap,
         useAsmsSubtitles: result.isM3U8 && !hasResolutionMap,
-        useAsmsAudioTracks: result.isM3U8 && !hasResolutionMap,
+        useAsmsAudioTracks: result.isM3U8,
         subtitles: subtitleSources.isNotEmpty ? subtitleSources : null,
         resolutions: resolutions,
         cacheConfiguration: cacheConfiguration,
@@ -490,6 +506,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         // Set playback speed after initialization
         final speed = ref.read(playbackSpeedProvider);
         _betterPlayerController?.setSpeed(speed);
+        // Refresh action menus after ASMS tracks are parsed.
+        setState(() {});
         // Show resume snackbar
         if (_resumePosition != null && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -725,7 +743,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Switching to ${StreamingService.getProviderName(providerIndex)}...',
+            'Switching to ${_providerSelectorLabel(providerIndex)}...',
           ),
           duration: const Duration(seconds: 2),
           backgroundColor: NivioTheme.netflixRed,
@@ -744,6 +762,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
 
     await _initializePlayer();
+  }
+
+  String _providerSelectorLabel(int index) {
+    final media = ref.read(selectedMediaProvider);
+    return StreamingService.getProviderName(
+      index,
+      isAnime: _isAnimeMedia(media),
+    );
   }
 
   String _normalizeQualityLabel(String value) {
@@ -878,6 +904,168 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         provider.contains('anizone');
   }
 
+  bool _isNet22DirectStream() {
+    final provider = (_streamResult?.provider ?? '').toLowerCase();
+    if (!_isDirectStream || provider.isEmpty) return false;
+    return provider.contains('net22');
+  }
+
+  List<String> _buildNet22AudioOptions() {
+    final audios = <String>[
+      ...(_streamResult?.availableAudios ?? const []),
+      ..._net22AsmsAudioTrackMap().keys,
+    ];
+    final normalized = <String>[];
+    final seen = <String>{};
+    for (final audio in audios) {
+      final value = audio.trim();
+      if (value.isEmpty) continue;
+      final key = value.toLowerCase();
+      if (!seen.add(key)) continue;
+      normalized.add(value);
+    }
+    return normalized;
+  }
+
+  Map<String, BetterPlayerAsmsAudioTrack> _net22AsmsAudioTrackMap() {
+    final tracks = _betterPlayerController?.betterPlayerAsmsAudioTracks;
+    if (tracks == null || tracks.isEmpty) return const {};
+
+    final out = <String, BetterPlayerAsmsAudioTrack>{};
+    for (final track in tracks) {
+      final label = (track.label ?? track.language ?? '').trim();
+      if (label.isEmpty) continue;
+      out.putIfAbsent(label, () => track);
+    }
+    return out;
+  }
+
+  List<PopupMenuEntry<String>> _buildNet22AudioMenuItems() {
+    final options = _buildNet22AudioOptions();
+    if (options.isEmpty) {
+      return const [
+        PopupMenuItem<String>(
+          enabled: false,
+          value: '',
+          child: Text('No audio options found'),
+        ),
+      ];
+    }
+
+    final selectedPref = ref
+        .read(net22AudioLanguageProvider)
+        .trim()
+        .toLowerCase();
+    final selectedCurrent = (_streamResult?.selectedAudio ?? '')
+        .trim()
+        .toLowerCase();
+    final selectedAsms =
+        (_betterPlayerController?.betterPlayerAsmsAudioTrack?.label ??
+                _betterPlayerController?.betterPlayerAsmsAudioTrack?.language ??
+                '')
+            .trim()
+            .toLowerCase();
+    final selected = selectedPref.isNotEmpty && selectedPref != 'auto'
+        ? selectedPref
+        : (selectedAsms.isNotEmpty ? selectedAsms : selectedCurrent);
+
+    return options.map((audio) {
+      final value = audio.trim();
+      final isSelected = value.toLowerCase() == selected;
+      return PopupMenuItem<String>(
+        value: value,
+        child: Row(
+          children: [
+            Icon(
+              isSelected ? Icons.check_circle : Icons.circle_outlined,
+              color: isSelected ? NivioTheme.netflixRed : Colors.white70,
+              size: 18,
+            ),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                value,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: isSelected ? NivioTheme.netflixRed : Colors.white,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  Future<void> _switchNet22Audio(String audio) async {
+    final target = audio.trim();
+    if (target.isEmpty) return;
+
+    final asmsTrack = _net22AsmsAudioTrackMap()[target];
+    if (asmsTrack != null && _betterPlayerController != null) {
+      _betterPlayerController!.setAudioTrack(asmsTrack);
+      await ref.read(net22AudioLanguageProvider.notifier).setPreference(target);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Audio changed to $target'),
+            duration: const Duration(seconds: 2),
+            backgroundColor: NivioTheme.netflixRed,
+          ),
+        );
+      }
+      setState(() {});
+      return;
+    }
+
+    final currentPref = ref
+        .read(net22AudioLanguageProvider)
+        .trim()
+        .toLowerCase();
+    final currentResult = (_streamResult?.selectedAudio ?? '')
+        .trim()
+        .toLowerCase();
+    if (target.toLowerCase() == currentPref ||
+        target.toLowerCase() == currentResult) {
+      return;
+    }
+
+    final currentPosition =
+        _betterPlayerController?.videoPlayerController?.value.position;
+    await _saveProgress();
+    await ref.read(net22AudioLanguageProvider.notifier).setPreference(target);
+    ref.read(selectedQualityProvider.notifier).state = null;
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Switching audio to $target'),
+          duration: const Duration(seconds: 2),
+          backgroundColor: NivioTheme.netflixRed,
+        ),
+      );
+    }
+
+    _disposePlayer();
+    setState(() {
+      _isLoading = true;
+      _error = null;
+      _retryCount = 0;
+      _streamResult = null;
+    });
+
+    await _initializePlayer();
+
+    if (!mounted ||
+        currentPosition == null ||
+        _betterPlayerController?.isVideoInitialized() != true) {
+      return;
+    }
+    await _betterPlayerController!.seekTo(currentPosition);
+    await _betterPlayerController!.play();
+  }
+
   List<PopupMenuEntry<String>> _buildAnimeModeMenuItems() {
     final selected = ref.read(animeSubDubProvider).toLowerCase();
     final modes = const ['sub', 'dub'];
@@ -961,7 +1149,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             ),
             const SizedBox(width: 12),
             Text(
-              StreamingService.getProviderName(index),
+              _providerSelectorLabel(index),
               style: TextStyle(
                 color: isSelected ? NivioTheme.netflixRed : Colors.white,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
@@ -1220,6 +1408,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                             itemBuilder: (context) =>
                                 _buildAnimeModeMenuItems(),
                           ),
+                        if (_isNet22DirectStream())
+                          PopupMenuButton<String>(
+                            icon: const Icon(
+                              Icons.record_voice_over,
+                              color: Colors.white,
+                            ),
+                            tooltip: 'Audio Language',
+                            color: const Color(0xFF1F1F1F),
+                            onSelected: _switchNet22Audio,
+                            itemBuilder: (context) =>
+                                _buildNet22AudioMenuItems(),
+                          ),
                         if (_isDirectStream &&
                             _buildQualityOptions().length > 1)
                           PopupMenuButton<String>(
@@ -1387,6 +1587,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         color: const Color(0xFF1F1F1F),
                         onSelected: _switchAnimeMode,
                         itemBuilder: (context) => _buildAnimeModeMenuItems(),
+                      ),
+                    if (_isNet22DirectStream())
+                      PopupMenuButton<String>(
+                        icon: const Icon(
+                          Icons.record_voice_over,
+                          color: Colors.white,
+                        ),
+                        tooltip: 'Audio Language',
+                        color: const Color(0xFF1F1F1F),
+                        onSelected: _switchNet22Audio,
+                        itemBuilder: (context) => _buildNet22AudioMenuItems(),
                       ),
                     if (_isDirectStream && _buildQualityOptions().length > 1)
                       PopupMenuButton<String>(
@@ -1691,9 +1902,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       Text(
                         _currentProvider.isNotEmpty
                             ? _currentProvider
-                            : StreamingService.getProviderName(
-                                _currentProviderIndex,
-                              ),
+                            : _providerSelectorLabel(_currentProviderIndex),
                         style: const TextStyle(
                           color: Colors.white60,
                           fontSize: 12,

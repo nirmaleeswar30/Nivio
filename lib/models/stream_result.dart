@@ -41,6 +41,8 @@ class StreamResult {
   final String provider;
   final List<SubtitleTrack> subtitles;
   final List<String> availableQualities;
+  final List<String> availableAudios;
+  final String selectedAudio;
   final bool isM3U8;
   final Map<String, String> headers;
   final List<StreamSource> sources;
@@ -51,6 +53,8 @@ class StreamResult {
     required this.provider,
     this.subtitles = const [],
     this.availableQualities = const ['auto'],
+    this.availableAudios = const [],
+    this.selectedAudio = '',
     this.isM3U8 = false,
     this.headers = const {},
     this.sources = const [],
