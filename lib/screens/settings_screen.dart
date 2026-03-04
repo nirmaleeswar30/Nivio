@@ -33,6 +33,14 @@ class SettingsScreen extends ConsumerWidget {
   /// Android supports background tasks
   bool get _supportsBackgroundTasks => true;
 
+  void _handleBackNavigation(BuildContext context) {
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
+    context.go('/home');
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = FirebaseAuth.instance.currentUser;
@@ -43,321 +51,335 @@ class SettingsScreen extends ConsumerWidget {
     final languagePreferences = ref.watch(languagePreferencesProvider);
     final episodeCheckEnabled = ref.watch(episodeCheckEnabledProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: NivioTheme.netflixBlack,
-        title: const Text(
-          'Settings',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => context.pop(),
-        ),
-      ),
-      body: ListView(
-        children: [
-          // Account Section
-          _buildSectionHeader('Account'),
-          _buildSettingsTile(
-            icon: Icons.person_outline,
-            title: 'User ID',
-            subtitle: user?.uid ?? 'Not signed in',
-            trailing: null,
-          ),
-          _buildSettingsTile(
-            icon: Icons.login,
-            title: 'Sign In Method',
-            subtitle: _getSignInMethod(user),
-            trailing: null,
-          ),
-          const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
-
-          // Content Preferences
-          _buildSectionHeader('Content Preferences'),
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 8.0,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          _handleBackNavigation(context);
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          elevation: 0,
+          backgroundColor: NivioTheme.netflixBlack,
+          title: const Text(
+            'Settings',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
             ),
-            child: Text(
-              'Choose which regional content appears on your home screen',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.6),
-                fontSize: 13,
+          ),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () => _handleBackNavigation(context),
+          ),
+        ),
+        body: ListView(
+          children: [
+            // Account Section
+            _buildSectionHeader('Account'),
+            _buildSettingsTile(
+              icon: Icons.person_outline,
+              title: 'User ID',
+              subtitle: user?.uid ?? 'Not signed in',
+              trailing: null,
+            ),
+            _buildSettingsTile(
+              icon: Icons.login,
+              title: 'Sign In Method',
+              subtitle: _getSignInMethod(user),
+              trailing: null,
+            ),
+            const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
+
+            // Content Preferences
+            _buildSectionHeader('Content Preferences'),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 8.0,
+              ),
+              child: Text(
+                'Choose which regional content appears on your home screen',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.6),
+                  fontSize: 13,
+                ),
               ),
             ),
-          ),
-          _buildLanguageToggle(
-            context: context,
-            ref: ref,
-            title: '🎌 Anime',
-            subtitle: 'Japanese Animation',
-            value: languagePreferences.showAnime,
-            onChanged: (value) {
-              ref.read(languagePreferencesProvider.notifier).toggleAnime(value);
-            },
-          ),
-          _buildLanguageToggle(
-            context: context,
-            ref: ref,
-            title: '🎬 Tamil',
-            subtitle: 'Tamil Movies & Shows',
-            value: languagePreferences.showTamil,
-            onChanged: (value) {
-              ref.read(languagePreferencesProvider.notifier).toggleTamil(value);
-            },
-          ),
-          _buildLanguageToggle(
-            context: context,
-            ref: ref,
-            title: '🎥 Telugu',
-            subtitle: 'Telugu Movies & Shows',
-            value: languagePreferences.showTelugu,
-            onChanged: (value) {
-              ref
-                  .read(languagePreferencesProvider.notifier)
-                  .toggleTelugu(value);
-            },
-          ),
-          _buildLanguageToggle(
-            context: context,
-            ref: ref,
-            title: '🎞️ Hindi',
-            subtitle: 'Hindi Movies & Shows',
-            value: languagePreferences.showHindi,
-            onChanged: (value) {
-              ref.read(languagePreferencesProvider.notifier).toggleHindi(value);
-            },
-          ),
-          _buildLanguageToggle(
-            context: context,
-            ref: ref,
-            title: '🇰🇷 Korean',
-            subtitle: 'Korean Dramas',
-            value: languagePreferences.showKorean,
-            onChanged: (value) {
-              ref
-                  .read(languagePreferencesProvider.notifier)
-                  .toggleKorean(value);
-            },
-          ),
-          const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
-
-          // Playback Settings
-          _buildSectionHeader('Playback'),
-          _buildSettingsTile(
-            icon: Icons.speed,
-            title: 'Default Playback Speed',
-            subtitle: '${playbackSpeed}x',
-            trailing: const Icon(Icons.chevron_right, color: Colors.white70),
-            onTap: () {
-              _showPlaybackSpeedDialog(context, ref);
-            },
-          ),
-          _buildSettingsTile(
-            icon: Icons.high_quality,
-            title: 'Preferred Video Quality',
-            subtitle: videoQualityNotifier.displayName,
-            trailing: const Icon(Icons.chevron_right, color: Colors.white70),
-            onTap: () {
-              _showVideoQualityDialog(context, ref);
-            },
-          ),
-          _buildSettingsTile(
-            icon: Icons.subtitles_outlined,
-            title: 'Enable Subtitles',
-            subtitle: subtitlesEnabled ? 'Enabled' : 'Disabled',
-            trailing: Switch(
-              value: subtitlesEnabled,
-              onChanged: (_) {
-                ref.read(subtitlesEnabledProvider.notifier).toggle();
+            _buildLanguageToggle(
+              context: context,
+              ref: ref,
+              title: '🎌 Anime',
+              subtitle: 'Japanese Animation',
+              value: languagePreferences.showAnime,
+              onChanged: (value) {
+                ref
+                    .read(languagePreferencesProvider.notifier)
+                    .toggleAnime(value);
               },
-              activeColor: NivioTheme.netflixRed,
             ),
-          ),
-          const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
+            _buildLanguageToggle(
+              context: context,
+              ref: ref,
+              title: '🎬 Tamil',
+              subtitle: 'Tamil Movies & Shows',
+              value: languagePreferences.showTamil,
+              onChanged: (value) {
+                ref
+                    .read(languagePreferencesProvider.notifier)
+                    .toggleTamil(value);
+              },
+            ),
+            _buildLanguageToggle(
+              context: context,
+              ref: ref,
+              title: '🎥 Telugu',
+              subtitle: 'Telugu Movies & Shows',
+              value: languagePreferences.showTelugu,
+              onChanged: (value) {
+                ref
+                    .read(languagePreferencesProvider.notifier)
+                    .toggleTelugu(value);
+              },
+            ),
+            _buildLanguageToggle(
+              context: context,
+              ref: ref,
+              title: '🎞️ Hindi',
+              subtitle: 'Hindi Movies & Shows',
+              value: languagePreferences.showHindi,
+              onChanged: (value) {
+                ref
+                    .read(languagePreferencesProvider.notifier)
+                    .toggleHindi(value);
+              },
+            ),
+            _buildLanguageToggle(
+              context: context,
+              ref: ref,
+              title: '🇰🇷 Korean',
+              subtitle: 'Korean Dramas',
+              value: languagePreferences.showKorean,
+              onChanged: (value) {
+                ref
+                    .read(languagePreferencesProvider.notifier)
+                    .toggleKorean(value);
+              },
+            ),
+            const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
 
-          // Notifications Section (only show on platforms that support background tasks)
-          if (_supportsBackgroundTasks) ...[
-            _buildSectionHeader('Notifications'),
+            // Playback Settings
+            _buildSectionHeader('Playback'),
             _buildSettingsTile(
-              icon: Icons.notifications_outlined,
-              title: 'New Episode Alerts',
-              subtitle: episodeCheckEnabled ? 'Enabled' : 'Disabled',
+              icon: Icons.speed,
+              title: 'Default Playback Speed',
+              subtitle: '${playbackSpeed}x',
+              trailing: const Icon(Icons.chevron_right, color: Colors.white70),
+              onTap: () {
+                _showPlaybackSpeedDialog(context, ref);
+              },
+            ),
+            _buildSettingsTile(
+              icon: Icons.high_quality,
+              title: 'Preferred Video Quality',
+              subtitle: videoQualityNotifier.displayName,
+              trailing: const Icon(Icons.chevron_right, color: Colors.white70),
+              onTap: () {
+                _showVideoQualityDialog(context, ref);
+              },
+            ),
+            _buildSettingsTile(
+              icon: Icons.subtitles_outlined,
+              title: 'Enable Subtitles',
+              subtitle: subtitlesEnabled ? 'Enabled' : 'Disabled',
               trailing: Switch(
-                value: episodeCheckEnabled,
-                onChanged: (value) {
-                  ref
-                      .read(episodeCheckEnabledProvider.notifier)
-                      .setEnabled(value);
+                value: subtitlesEnabled,
+                onChanged: (_) {
+                  ref.read(subtitlesEnabledProvider.notifier).toggle();
                 },
                 activeColor: NivioTheme.netflixRed,
               ),
             ),
-            if (episodeCheckEnabled) ...[
-              _buildSettingsTile(
-                icon: Icons.schedule_outlined,
-                title: 'Check Frequency',
-                subtitle: ref
-                    .read(episodeCheckFrequencyProvider.notifier)
-                    .displayName,
-                trailing: const Icon(
-                  Icons.chevron_right,
-                  color: Colors.white70,
-                ),
-                onTap: () {
-                  _showFrequencyDialog(context, ref);
-                },
-              ),
-              _buildSettingsTile(
-                icon: Icons.refresh_outlined,
-                title: 'Check Now',
-                subtitle: 'Manually check for new episodes',
-                trailing: const Icon(
-                  Icons.chevron_right,
-                  color: Colors.white70,
-                ),
-                onTap: () async {
-                  _showCheckingDialog(context, ref);
-                },
-              ),
-              FutureBuilder<DateTime?>(
-                future: EpisodeCheckService.getLastCheckTime(),
-                builder: (context, snapshot) {
-                  final lastCheck = snapshot.data;
-                  final subtitle = lastCheck != null
-                      ? 'Last checked: ${DateFormat.yMMMd().add_jm().format(lastCheck)}'
-                      : 'Never checked';
-                  return _buildSettingsTile(
-                    icon: Icons.history_outlined,
-                    title: 'Last Check',
-                    subtitle: subtitle,
-                    trailing: null,
-                  );
-                },
-              ),
-            ],
             const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
-          ],
 
-          // Data & Storage
-          _buildSectionHeader('Data & Storage'),
-          _buildSettingsTile(
-            icon: Icons.storage_outlined,
-            title: 'Clear Watch History',
-            subtitle: 'Remove all watch history data',
-            trailing: const Icon(Icons.chevron_right, color: Colors.white70),
-            onTap: () {
-              _showClearHistoryDialog(context, ref);
-            },
-          ),
-          const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
-
-          // Appearance
-          _buildSectionHeader('Appearance'),
-          _buildSettingsTile(
-            icon: Icons.dark_mode_outlined,
-            title: 'Theme',
-            subtitle: 'Dark (Netflix Style)',
-            trailing: null,
-          ),
-          _buildSettingsTile(
-            icon: Icons.auto_awesome_outlined,
-            title: 'Animations',
-            subtitle: animationsEnabled ? 'Enabled' : 'Disabled',
-            trailing: Switch(
-              value: animationsEnabled,
-              onChanged: (_) {
-                ref.read(animationsEnabledProvider.notifier).toggle();
-              },
-              activeColor: NivioTheme.netflixRed,
-            ),
-          ),
-          const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
-
-          // About
-          _buildSectionHeader('About'),
-          FutureBuilder<String>(
-            future: _getAppVersionLabel(),
-            builder: (context, snapshot) {
-              return _buildSettingsTile(
-                icon: Icons.info_outline,
-                title: 'App Version',
-                subtitle: snapshot.data ?? 'Loading...',
-                trailing: null,
-              );
-            },
-          ),
-          FutureBuilder<int?>(
-            future: ShorebirdUpdateService.currentPatchNumber(),
-            builder: (context, snapshot) {
-              final subtitle = !ShorebirdUpdateService.isAvailable
-                  ? 'Not available in this build'
-                  : snapshot.hasData
-                  ? 'Current patch: ${snapshot.data}'
-                  : 'Current patch: base release';
-
-              return _buildSettingsTile(
-                icon: Icons.system_update_alt_outlined,
-                title: 'Check OTA Update',
-                subtitle: subtitle,
-                trailing: const Icon(
-                  Icons.chevron_right,
-                  color: Colors.white70,
+            // Notifications Section (only show on platforms that support background tasks)
+            if (_supportsBackgroundTasks) ...[
+              _buildSectionHeader('Notifications'),
+              _buildSettingsTile(
+                icon: Icons.notifications_outlined,
+                title: 'New Episode Alerts',
+                subtitle: episodeCheckEnabled ? 'Enabled' : 'Disabled',
+                trailing: Switch(
+                  value: episodeCheckEnabled,
+                  onChanged: (value) {
+                    ref
+                        .read(episodeCheckEnabledProvider.notifier)
+                        .setEnabled(value);
+                  },
+                  activeColor: NivioTheme.netflixRed,
                 ),
-                onTap: () {
-                  _checkForOtaUpdate(context);
+              ),
+              if (episodeCheckEnabled) ...[
+                _buildSettingsTile(
+                  icon: Icons.schedule_outlined,
+                  title: 'Check Frequency',
+                  subtitle: ref
+                      .read(episodeCheckFrequencyProvider.notifier)
+                      .displayName,
+                  trailing: const Icon(
+                    Icons.chevron_right,
+                    color: Colors.white70,
+                  ),
+                  onTap: () {
+                    _showFrequencyDialog(context, ref);
+                  },
+                ),
+                _buildSettingsTile(
+                  icon: Icons.refresh_outlined,
+                  title: 'Check Now',
+                  subtitle: 'Manually check for new episodes',
+                  trailing: const Icon(
+                    Icons.chevron_right,
+                    color: Colors.white70,
+                  ),
+                  onTap: () async {
+                    _showCheckingDialog(context, ref);
+                  },
+                ),
+                FutureBuilder<DateTime?>(
+                  future: EpisodeCheckService.getLastCheckTime(),
+                  builder: (context, snapshot) {
+                    final lastCheck = snapshot.data;
+                    final subtitle = lastCheck != null
+                        ? 'Last checked: ${DateFormat.yMMMd().add_jm().format(lastCheck)}'
+                        : 'Never checked';
+                    return _buildSettingsTile(
+                      icon: Icons.history_outlined,
+                      title: 'Last Check',
+                      subtitle: subtitle,
+                      trailing: null,
+                    );
+                  },
+                ),
+              ],
+              const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
+            ],
+
+            // Data & Storage
+            _buildSectionHeader('Data & Storage'),
+            _buildSettingsTile(
+              icon: Icons.storage_outlined,
+              title: 'Clear Watch History',
+              subtitle: 'Remove all watch history data',
+              trailing: const Icon(Icons.chevron_right, color: Colors.white70),
+              onTap: () {
+                _showClearHistoryDialog(context, ref);
+              },
+            ),
+            const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
+
+            // Appearance
+            _buildSectionHeader('Appearance'),
+            _buildSettingsTile(
+              icon: Icons.dark_mode_outlined,
+              title: 'Theme',
+              subtitle: 'Dark (Netflix Style)',
+              trailing: null,
+            ),
+            _buildSettingsTile(
+              icon: Icons.auto_awesome_outlined,
+              title: 'Animations',
+              subtitle: animationsEnabled ? 'Enabled' : 'Disabled',
+              trailing: Switch(
+                value: animationsEnabled,
+                onChanged: (_) {
+                  ref.read(animationsEnabledProvider.notifier).toggle();
                 },
-              );
-            },
-          ),
-          _buildSettingsTile(
-            icon: Icons.policy_outlined,
-            title: 'Privacy Policy',
-            subtitle: 'View privacy policy',
-            trailing: const Icon(Icons.open_in_new, color: Colors.white70),
-            onTap: () async {
-              final uri = Uri.parse('https://nivio-app.com/privacy');
-              if (await canLaunchUrl(uri)) {
-                await launchUrl(uri);
-              }
-            },
-          ),
-          _buildSettingsTile(
-            icon: Icons.description_outlined,
-            title: 'Terms of Service',
-            subtitle: 'View terms of service',
-            trailing: const Icon(Icons.open_in_new, color: Colors.white70),
-            onTap: () async {
-              final uri = Uri.parse('https://nivio-app.com/terms');
-              if (await canLaunchUrl(uri)) {
-                await launchUrl(uri);
-              }
-            },
-          ),
-          const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
+                activeColor: NivioTheme.netflixRed,
+              ),
+            ),
+            const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
 
-          // Sign Out
-          _buildSectionHeader('Account Actions'),
-          _buildSettingsTile(
-            icon: Icons.logout,
-            title: 'Sign Out',
-            subtitle: 'Sign out of your account',
-            trailing: const Icon(Icons.chevron_right, color: Colors.white70),
-            onTap: () {
-              _showSignOutDialog(context);
-            },
-            textColor: NivioTheme.netflixRed,
-          ),
+            // About
+            _buildSectionHeader('About'),
+            FutureBuilder<String>(
+              future: _getAppVersionLabel(),
+              builder: (context, snapshot) {
+                return _buildSettingsTile(
+                  icon: Icons.info_outline,
+                  title: 'App Version',
+                  subtitle: snapshot.data ?? 'Loading...',
+                  trailing: null,
+                );
+              },
+            ),
+            FutureBuilder<int?>(
+              future: ShorebirdUpdateService.currentPatchNumber(),
+              builder: (context, snapshot) {
+                final subtitle = !ShorebirdUpdateService.isAvailable
+                    ? 'Not available in this build'
+                    : snapshot.hasData
+                    ? 'Current patch: ${snapshot.data}'
+                    : 'Current patch: base release';
 
-          const SizedBox(height: 40),
-        ],
+                return _buildSettingsTile(
+                  icon: Icons.system_update_alt_outlined,
+                  title: 'Check OTA Update',
+                  subtitle: subtitle,
+                  trailing: const Icon(
+                    Icons.chevron_right,
+                    color: Colors.white70,
+                  ),
+                  onTap: () {
+                    _checkForOtaUpdate(context);
+                  },
+                );
+              },
+            ),
+            _buildSettingsTile(
+              icon: Icons.policy_outlined,
+              title: 'Privacy Policy',
+              subtitle: 'View privacy policy',
+              trailing: const Icon(Icons.open_in_new, color: Colors.white70),
+              onTap: () async {
+                final uri = Uri.parse('https://nivio-app.com/privacy');
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri);
+                }
+              },
+            ),
+            _buildSettingsTile(
+              icon: Icons.description_outlined,
+              title: 'Terms of Service',
+              subtitle: 'View terms of service',
+              trailing: const Icon(Icons.open_in_new, color: Colors.white70),
+              onTap: () async {
+                final uri = Uri.parse('https://nivio-app.com/terms');
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri);
+                }
+              },
+            ),
+            const Divider(color: NivioTheme.netflixDarkGrey, height: 1),
+
+            // Sign Out
+            _buildSectionHeader('Account Actions'),
+            _buildSettingsTile(
+              icon: Icons.logout,
+              title: 'Sign Out',
+              subtitle: 'Sign out of your account',
+              trailing: const Icon(Icons.chevron_right, color: Colors.white70),
+              onTap: () {
+                _showSignOutDialog(context);
+              },
+              textColor: NivioTheme.netflixRed,
+            ),
+
+            const SizedBox(height: 40),
+          ],
+        ),
       ),
     );
   }

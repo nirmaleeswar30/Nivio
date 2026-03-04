@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/season_info.dart';
@@ -54,13 +55,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _isDirectStream = false;
   Duration? _resumePosition;
   int _currentEpisode = 0;
-  Timer? _postSeekNudgeTimer;
-  int _postSeekNudgeAttempt = 0;
-  Duration? _lastSeekTarget;
-  Duration? _postSeekBaselinePosition;
-  bool _awaitingPostSeekRecovery = false;
-  bool _isRecoveringPostSeek = false;
-  static const int _maxPostSeekRecoveryAttempts = 2;
   bool _isInFullscreen = false;
   bool _arePlayerControlsVisible = true;
   final ValueNotifier<bool> _fullscreenTopBarVisibleNotifier = ValueNotifier(
@@ -91,7 +85,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
   }
 
-  // ── Keyboard shortcuts ──────────────────────────────────────────
+  // â”€â”€ Keyboard shortcuts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     if (_betterPlayerController?.isVideoInitialized() != true) {
@@ -142,7 +136,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
-  // ── Player initialization ───────────────────────────────────────
+  // â”€â”€ Player initialization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<void> _initializePlayer() async {
     setState(() {
       _isLoading = true;
@@ -219,7 +213,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         return;
       }
 
-      // ── Check watch history for resume ──
+      // â”€â”€ Check watch history for resume â”€â”€
       final historyService = ref.read(watchHistoryServiceProvider);
       await historyService.init();
       final history = await historyService.getHistory(widget.mediaId);
@@ -245,7 +239,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _resumePosition = startAt;
       }
 
-      // ── Build subtitle sources ──
+      // â”€â”€ Build subtitle sources â”€â”€
       final subtitleSources = result.subtitles.map((sub) {
         return BetterPlayerSubtitlesSource(
           type: BetterPlayerSubtitlesSourceType.network,
@@ -254,19 +248,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         );
       }).toList();
 
-      // ── Build resolutions map for non-HLS multi-quality ──
+      // â”€â”€ Build resolutions map for non-HLS multi-quality â”€â”€
       Map<String, String>? resolutions;
-      if (!result.isM3U8 && result.sources.length > 1) {
+      if (result.sources.length > 1) {
         resolutions = {};
-        for (var source in result.sources) {
-          resolutions[source.quality] = source.url;
+        for (final source in result.sources) {
+          final label = _normalizeQualityLabel(source.quality);
+          if (label.isEmpty) continue;
+          resolutions[label] = source.url;
+        }
+        if (resolutions.length < 2) {
+          resolutions = null;
         }
       }
+      final hasResolutionMap = resolutions != null && resolutions.isNotEmpty;
 
-      // ── Headers ──
+      // â”€â”€ Headers â”€â”€
       final headers = _buildPlaybackHeaders(result.headers);
 
-      // ── Data source ──
+      // â”€â”€ Data source â”€â”€
       final dataSource = BetterPlayerDataSource(
         BetterPlayerDataSourceType.network,
         result.url,
@@ -274,9 +274,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         videoFormat: result.isM3U8
             ? BetterPlayerVideoFormat.hls
             : BetterPlayerVideoFormat.other,
-        useAsmsTracks: result.isM3U8,
-        useAsmsSubtitles: result.isM3U8,
-        useAsmsAudioTracks: result.isM3U8,
+        useAsmsTracks: result.isM3U8 && !hasResolutionMap,
+        useAsmsSubtitles: result.isM3U8 && !hasResolutionMap,
+        useAsmsAudioTracks: result.isM3U8 && !hasResolutionMap,
         subtitles: subtitleSources.isNotEmpty ? subtitleSources : null,
         resolutions: resolutions,
         bufferingConfiguration: const BetterPlayerBufferingConfiguration(
@@ -287,7 +287,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ),
       );
 
-      // ── Controller config ──
+      // â”€â”€ Controller config â”€â”€
       _betterPlayerController = BetterPlayerController(
         BetterPlayerConfiguration(
           autoPlay: true,
@@ -385,7 +385,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       // Register event listener BEFORE setting up data source
       _betterPlayerController!.addEventsListener(_onBetterPlayerEvent);
 
-      // Show the player immediately — BetterPlayer handles its own buffering UI
+      // Show the player immediately â€” BetterPlayer handles its own buffering UI
       setState(() {
         _isLoading = false;
         _retryCount = 0;
@@ -420,7 +420,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
-  // ── BetterPlayer event listener ─────────────────────────────────
+  // â”€â”€ BetterPlayer event listener â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Map<String, String> _buildPlaybackHeaders(Map<String, String> incoming) {
     final headers = <String, String>{
       'User-Agent':
@@ -485,7 +485,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         }
         break;
       case BetterPlayerEventType.seekTo:
-        _onSeekEvent(event);
+        // Post-seek nudge disabled: rely on native/player handling.
         break;
       case BetterPlayerEventType.bufferingStart:
         break;
@@ -513,11 +513,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _syncFullscreenTopBarVisibility();
         break;
       case BetterPlayerEventType.progress:
-        _onProgressEvent();
         _checkNextEpisode();
         break;
       case BetterPlayerEventType.exception:
-        _onPlaybackExceptionEvent();
+        // Post-seek nudge disabled: no forced retryDataSource/re-seek.
         break;
       case BetterPlayerEventType.finished:
         _markAsCompleted();
@@ -551,176 +550,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
-  // ── Post-seek stall recovery ────────────────────────────────────
-  //
-  // Some HLS streams (e.g. Solo Leveling from AnimePahe) cause ExoPlayer's
-  // media source to silently die after a seek – the AudioTrack is destroyed
-  // but no new HLS segments are fetched, so inputFps/renderFps drop to 0.
-  //
-  // Recovery strategy (bounded to 2 attempts):
-  //   Attempt 1 (~1.8 s): re-seek target + play.
-  //   Attempt 2 (~3.6 s): retryDataSource + re-seek + play.
-  //
-  // Recovery is cancelled only when playback position advances.
-
-  void _onSeekEvent(BetterPlayerEvent event) {
-    // Resolve & remember the target so we can re-seek after a data-source
-    // reset in phase 3.
-    final params = event.parameters;
-    final raw =
-        params?['duration'] ?? params?['progress'] ?? params?['position'];
-    Duration? target;
-    if (raw is Duration) {
-      target = raw;
-    } else if (raw is int) {
-      target = Duration(milliseconds: raw);
-    } else if (raw is double) {
-      target = Duration(milliseconds: raw.round());
-    }
-    target ??= _betterPlayerController?.videoPlayerController?.value.position;
-    if (target != null && target > Duration.zero) {
-      _lastSeekTarget = target;
-    }
-    _postSeekBaselinePosition =
-        _betterPlayerController?.videoPlayerController?.value.position;
-    _awaitingPostSeekRecovery = true;
-    _postSeekNudgeAttempt = 0;
-    _schedulePostSeekRecovery();
-  }
-
-  void _onPlaybackExceptionEvent() {
-    final vpc = _betterPlayerController?.videoPlayerController;
-    if (vpc == null) return;
-    _awaitingPostSeekRecovery = true;
-    _postSeekBaselinePosition = vpc.value.position;
-    _lastSeekTarget ??= vpc.value.position;
-    _postSeekNudgeAttempt = 0;
-    _schedulePostSeekRecovery(force: true);
-  }
-
-  void _cancelPostSeekNudge() {
-    _postSeekNudgeTimer?.cancel();
-    _postSeekNudgeTimer = null;
-    _postSeekNudgeAttempt = 0;
-    _awaitingPostSeekRecovery = false;
-    _isRecoveringPostSeek = false;
-    _postSeekBaselinePosition = null;
-  }
-
-  void _onProgressEvent() {
-    if (_awaitingPostSeekRecovery && _hasRecoveredAfterSeek()) {
-      _cancelPostSeekNudge();
-    }
-  }
-
-  bool _hasRecoveredAfterSeek() {
-    final vpc = _betterPlayerController?.videoPlayerController;
-    final baseline = _postSeekBaselinePosition;
-    if (vpc == null || baseline == null) return false;
-    final current = vpc.value.position;
-    return current >= baseline + const Duration(milliseconds: 700);
-  }
-
-  void _schedulePostSeekRecovery({bool force = false}) {
-    if (!mounted || _betterPlayerController == null) return;
-    if (!_awaitingPostSeekRecovery && !force) return;
-    _postSeekNudgeTimer?.cancel();
-    _postSeekNudgeTimer = Timer(
-      const Duration(milliseconds: 1800),
-      _runPostSeekNudge,
-    );
-  }
-
-  Future<void> _runPostSeekNudge() async {
-    final c = _betterPlayerController;
-    if (!mounted || c == null || c.isVideoInitialized() != true) {
-      _cancelPostSeekNudge();
-      return;
-    }
-    final vpc = c.videoPlayerController;
-    if (vpc == null) {
-      _cancelPostSeekNudge();
-      return;
-    }
-
-    if (!_awaitingPostSeekRecovery) {
-      _cancelPostSeekNudge();
-      return;
-    }
-
-    if (_hasRecoveredAfterSeek()) {
-      _cancelPostSeekNudge();
-      return;
-    }
-
-    if (_isRecoveringPostSeek) {
-      _schedulePostSeekRecovery();
-      return;
-    }
-
-    _postSeekNudgeAttempt++;
-    _isRecoveringPostSeek = true;
-
-    // Attempt 1: re-seek target + play.
-    if (_postSeekNudgeAttempt == 1) {
-      debugPrint('[PostSeekNudge] attempt 1 – re-seek + play');
-      try {
-        final target = _lastSeekTarget;
-        if (target != null && target > Duration.zero) {
-          await c.seekTo(target);
-        }
-        await c.play();
-      } catch (e) {
-        debugPrint('[PostSeekNudge] attempt 1 failed: $e');
-      } finally {
-        _isRecoveringPostSeek = false;
-      }
-      _schedulePostSeekRecovery();
-      return;
-    }
-
-    // Attempt 2: media source likely dead → reload + re-seek + play.
-    if (_postSeekNudgeAttempt == 2) {
-      debugPrint(
-        '[PostSeekNudge] attempt 2 – retryDataSource + seekTo $_lastSeekTarget',
-      );
-      try {
-        await c.retryDataSource();
-        await Future.delayed(const Duration(milliseconds: 600));
-        if (!mounted || _betterPlayerController != c) return;
-        final target = _lastSeekTarget;
-        if (target != null && target > Duration.zero) {
-          await c.seekTo(target);
-        }
-        await c.play();
-      } catch (e) {
-        debugPrint('[PostSeekNudge] attempt 2 failed: $e');
-      } finally {
-        _isRecoveringPostSeek = false;
-      }
-
-      _schedulePostSeekRecovery();
-      return;
-    }
-
-    // Exhausted recovery attempts.
-    _isRecoveringPostSeek = false;
-    if (_postSeekNudgeAttempt >= _maxPostSeekRecoveryAttempts) {
-      debugPrint('[PostSeekNudge] exhausted automatic recovery attempts');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Playback stalled after seek. Try seeking again.'),
-            duration: Duration(seconds: 2),
-            backgroundColor: NivioTheme.netflixRed,
-          ),
-        );
-      }
-    }
-    _cancelPostSeekNudge();
-  }
-
-  // ── Season data fetch ───────────────────────────────────────────
+  // â”€â”€ Season data fetch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<void> _fetchSeasonData() async {
     try {
       final tmdbService = ref.read(tmdbServiceProvider);
@@ -731,7 +561,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     } catch (_) {}
   }
 
-  // ── Next episode popup ──────────────────────────────────────────
+  // â”€â”€ Next episode popup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _showNextEpisodePopup() {
     if (_showNextEpisodeButton) return;
     setState(() {
@@ -778,7 +608,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  // ── WebView event handler ───────────────────────────────────────
+  // â”€â”€ WebView event handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _handlePlayerEvent(String event, double currentTime, double duration) {
     final media = ref.read(selectedMediaProvider);
     if (media == null) return;
@@ -896,6 +726,207 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await _initializePlayer();
   }
 
+  String _normalizeQualityLabel(String value) {
+    final v = value.toLowerCase().trim();
+    if (v.isEmpty) return '';
+    if (v == 'default' || v == 'auto') return 'auto';
+
+    final pMatch = RegExp(r'(\d{3,4})p').firstMatch(v);
+    if (pMatch != null) return '${pMatch.group(1)}p';
+
+    final rawNumber = RegExp(r'\b(\d{3,4})\b').firstMatch(v);
+    if (rawNumber != null) return '${rawNumber.group(1)}p';
+
+    return value;
+  }
+
+  int _qualityScore(String quality) {
+    final normalized = _normalizeQualityLabel(quality);
+    if (normalized == 'auto') return -1;
+    final match = RegExp(r'(\d{3,4})p').firstMatch(normalized);
+    if (match != null) return int.tryParse(match.group(1)!) ?? 0;
+    return 0;
+  }
+
+  List<String> _buildQualityOptions() {
+    final stream = _streamResult;
+    if (stream == null) return const [];
+
+    final options = <String>{};
+    for (final quality in stream.availableQualities) {
+      final normalized = _normalizeQualityLabel(quality);
+      if (normalized.isNotEmpty) options.add(normalized);
+    }
+    for (final source in stream.sources) {
+      final normalized = _normalizeQualityLabel(source.quality);
+      if (normalized.isNotEmpty) options.add(normalized);
+    }
+    if (options.isEmpty) {
+      final fallback = _normalizeQualityLabel(stream.quality);
+      if (fallback.isNotEmpty) options.add(fallback);
+    }
+
+    options.add('auto');
+
+    final ordered = options.toList()
+      ..sort((a, b) => _qualityScore(b).compareTo(_qualityScore(a)));
+    return ordered;
+  }
+
+  List<PopupMenuEntry<String>> _buildQualityMenuItems() {
+    final selectedRaw =
+        ref.read(selectedQualityProvider) ?? _streamResult?.quality ?? 'auto';
+    final selected = _normalizeQualityLabel(selectedRaw);
+
+    return _buildQualityOptions().map((quality) {
+      final isSelected = quality == selected;
+      return PopupMenuItem<String>(
+        value: quality,
+        child: Row(
+          children: [
+            Icon(
+              isSelected ? Icons.check_circle : Icons.circle_outlined,
+              color: isSelected ? NivioTheme.netflixRed : Colors.white70,
+              size: 18,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              quality.toUpperCase(),
+              style: TextStyle(
+                color: isSelected ? NivioTheme.netflixRed : Colors.white,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  Future<void> _switchQuality(String quality) async {
+    final normalizedTarget = _normalizeQualityLabel(quality);
+    final currentRaw =
+        ref.read(selectedQualityProvider) ?? _streamResult?.quality ?? 'auto';
+    final normalizedCurrent = _normalizeQualityLabel(currentRaw);
+    if (normalizedTarget == normalizedCurrent) return;
+
+    final currentPosition =
+        _betterPlayerController?.videoPlayerController?.value.position;
+    await _saveProgress();
+
+    ref.read(selectedQualityProvider.notifier).state =
+        normalizedTarget == 'auto' ? null : normalizedTarget;
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Switching quality to ${normalizedTarget.toUpperCase()}',
+          ),
+          duration: const Duration(seconds: 2),
+          backgroundColor: NivioTheme.netflixRed,
+        ),
+      );
+    }
+
+    _disposePlayer();
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+      _retryCount = 0;
+      _streamResult = null;
+    });
+
+    await _initializePlayer();
+
+    if (!mounted ||
+        currentPosition == null ||
+        _betterPlayerController?.isVideoInitialized() != true) {
+      return;
+    }
+    await _betterPlayerController!.seekTo(currentPosition);
+    await _betterPlayerController!.play();
+  }
+
+  bool _isAimiAnimeStream() {
+    final provider = (_streamResult?.provider ?? '').toLowerCase();
+    if (!_isDirectStream || provider.isEmpty) return false;
+    return provider.startsWith('aimi-') ||
+        provider.contains('animepahe') ||
+        provider.contains('allanime') ||
+        provider.contains('anizone');
+  }
+
+  List<PopupMenuEntry<String>> _buildAnimeModeMenuItems() {
+    final selected = ref.read(animeSubDubProvider).toLowerCase();
+    final modes = const ['sub', 'dub'];
+
+    return modes.map((mode) {
+      final isSelected = mode == selected;
+      return PopupMenuItem<String>(
+        value: mode,
+        child: Row(
+          children: [
+            Icon(
+              isSelected ? Icons.check_circle : Icons.circle_outlined,
+              color: isSelected ? NivioTheme.netflixRed : Colors.white70,
+              size: 18,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              mode == 'dub' ? 'DUB' : 'SUB',
+              style: TextStyle(
+                color: isSelected ? NivioTheme.netflixRed : Colors.white,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  Future<void> _switchAnimeMode(String mode) async {
+    final target = mode.toLowerCase() == 'dub' ? 'dub' : 'sub';
+    final current = ref.read(animeSubDubProvider).toLowerCase();
+    if (target == current) return;
+
+    final currentPosition =
+        _betterPlayerController?.videoPlayerController?.value.position;
+    await _saveProgress();
+    await ref.read(animeSubDubProvider.notifier).setPreference(target);
+    ref.read(selectedQualityProvider.notifier).state = null;
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Switching to ${target.toUpperCase()}'),
+          duration: const Duration(seconds: 2),
+          backgroundColor: NivioTheme.netflixRed,
+        ),
+      );
+    }
+
+    _disposePlayer();
+    setState(() {
+      _isLoading = true;
+      _error = null;
+      _retryCount = 0;
+      _streamResult = null;
+    });
+
+    await _initializePlayer();
+
+    if (!mounted ||
+        currentPosition == null ||
+        _betterPlayerController?.isVideoInitialized() != true) {
+      return;
+    }
+    await _betterPlayerController!.seekTo(currentPosition);
+    await _betterPlayerController!.play();
+  }
+
   List<PopupMenuEntry<int>> _buildProviderMenuItems() {
     return List.generate(_maxProviders, (index) {
       final isSelected = index == _currentProviderIndex;
@@ -939,7 +970,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
   }
 
-  // ── WebView progress helpers ────────────────────────────────────
+  // â”€â”€ WebView progress helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<void> _saveWebViewProgress(double currentTime, double duration) async {
     final media = ref.read(selectedMediaProvider);
     if (media == null) return;
@@ -976,7 +1007,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  // ── Formatting & progress ───────────────────────────────────────
+  // â”€â”€ Formatting & progress â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
     final h = duration.inHours;
@@ -1020,11 +1051,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   void _disposePlayer() {
     _progressTimer?.cancel();
-    _postSeekNudgeTimer?.cancel();
-    _postSeekNudgeTimer = null;
-    _awaitingPostSeekRecovery = false;
-    _isRecoveringPostSeek = false;
-    _postSeekBaselinePosition = null;
     _removeFullscreenTopBarOverlayEntry();
     if (_betterPlayerController != null) {
       _betterPlayerController!.removeEventsListener(_onBetterPlayerEvent);
@@ -1036,11 +1062,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void dispose() {
     _progressTimer?.cancel();
-    _postSeekNudgeTimer?.cancel();
-    _postSeekNudgeTimer = null;
-    _awaitingPostSeekRecovery = false;
-    _isRecoveringPostSeek = false;
-    _postSeekBaselinePosition = null;
     _nextEpisodeTimer?.cancel();
     _removeOverlayEntry();
     _removeFullscreenTopBarOverlayEntry();
@@ -1064,7 +1085,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     super.dispose();
   }
 
-  // ── Build ───────────────────────────────────────────────────────
+  void _handleBackNavigation() {
+    if (context.canPop()) {
+      Navigator.of(context).pop();
+      return;
+    }
+    context.go('/home');
+  }
+
+  // â”€â”€ Build â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   @override
   Widget build(BuildContext context) {
     final media = ref.watch(selectedMediaProvider);
@@ -1072,103 +1101,132 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final isPortrait =
         MediaQuery.of(context).orientation == Orientation.portrait;
 
-    return GestureDetector(
-      child: Focus(
-        focusNode: _focusNode,
-        onKeyEvent: _handleKeyEvent,
-        child: Scaffold(
-          backgroundColor: Colors.black,
-          extendBodyBehindAppBar: false,
-          appBar: shouldShowAppBar
-              ? PreferredSize(
-                  preferredSize: const Size.fromHeight(kToolbarHeight),
-                  child: AppBar(
-                    backgroundColor: Colors.black.withValues(alpha: 0.7),
-                    elevation: 0,
-                    leading: IconButton(
-                      icon: const PhosphorIcon(
-                        PhosphorIconsRegular.caretLeft,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                    title: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          media?.title ?? media?.name ?? 'Playing',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          _handleBackNavigation();
+        }
+      },
+      child: GestureDetector(
+        child: Focus(
+          focusNode: _focusNode,
+          onKeyEvent: _handleKeyEvent,
+          child: Scaffold(
+            backgroundColor: Colors.black,
+            extendBodyBehindAppBar: false,
+            appBar: shouldShowAppBar
+                ? PreferredSize(
+                    preferredSize: const Size.fromHeight(kToolbarHeight),
+                    child: AppBar(
+                      backgroundColor: Colors.black.withValues(alpha: 0.7),
+                      elevation: 0,
+                      leading: IconButton(
+                        icon: const PhosphorIcon(
+                          PhosphorIconsRegular.caretLeft,
+                          color: Colors.white,
+                          size: 20,
                         ),
-                        Row(
-                          children: [
-                            if (media?.mediaType == 'tv')
+                        onPressed: _handleBackNavigation,
+                      ),
+                      title: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            media?.title ?? media?.name ?? 'Playing',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Row(
+                            children: [
+                              if (media?.mediaType == 'tv')
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: NivioTheme.netflixRed,
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                  child: Text(
+                                    'S${widget.season} E$_currentEpisode',
+                                    style: const TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              const SizedBox(width: 6),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
+                                  horizontal: 5,
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: NivioTheme.netflixRed,
+                                  color: Colors.white.withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(3),
                                 ),
                                 child: Text(
-                                  'S${widget.season} E$_currentEpisode',
+                                  _streamResult!.provider.toUpperCase(),
                                   style: const TextStyle(
                                     fontSize: 9,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.white70,
                                   ),
                                 ),
                               ),
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 5,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(3),
-                              ),
-                              child: Text(
-                                _streamResult!.provider.toUpperCase(),
-                                style: const TextStyle(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.white70,
-                                ),
-                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      actions: [
+                        if (_isAimiAnimeStream())
+                          PopupMenuButton<String>(
+                            icon: const Icon(
+                              Icons.record_voice_over,
+                              color: Colors.white,
                             ),
-                          ],
+                            tooltip: 'Sub/Dub',
+                            color: const Color(0xFF1F1F1F),
+                            onSelected: _switchAnimeMode,
+                            itemBuilder: (context) =>
+                                _buildAnimeModeMenuItems(),
+                          ),
+                        if (_isDirectStream &&
+                            _buildQualityOptions().length > 1)
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.hd, color: Colors.white),
+                            tooltip: 'Quality',
+                            color: const Color(0xFF1F1F1F),
+                            onSelected: _switchQuality,
+                            itemBuilder: (context) => _buildQualityMenuItems(),
+                          ),
+                        // Switch Server
+                        PopupMenuButton<int>(
+                          icon: const PhosphorIcon(
+                            PhosphorIconsRegular.arrowsClockwise,
+                            color: Colors.white,
+                            size: 21,
+                          ),
+                          tooltip: 'Switch Server',
+                          color: const Color(0xFF1F1F1F),
+                          onSelected: _switchToProvider,
+                          itemBuilder: (context) => _buildProviderMenuItems(),
                         ),
                       ],
                     ),
-                    actions: [
-                      // Switch Server
-                      PopupMenuButton<int>(
-                        icon: const PhosphorIcon(
-                          PhosphorIconsRegular.arrowsClockwise,
-                          color: Colors.white,
-                          size: 21,
-                        ),
-                        tooltip: 'Switch Server',
-                        color: const Color(0xFF1F1F1F),
-                        onSelected: _switchToProvider,
-                        itemBuilder: (context) => _buildProviderMenuItems(),
-                      ),
-                    ],
-                  ),
-                )
-              : null,
-          body: _buildPlayerBody(isPortrait),
+                  )
+                : null,
+            body: _buildPlayerBody(isPortrait),
+          ),
         ),
       ),
     );
@@ -1299,6 +1357,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ],
                       ),
                     ),
+                    if (_isAimiAnimeStream())
+                      PopupMenuButton<String>(
+                        icon: const Icon(
+                          Icons.record_voice_over,
+                          color: Colors.white,
+                        ),
+                        tooltip: 'Sub/Dub',
+                        color: const Color(0xFF1F1F1F),
+                        onSelected: _switchAnimeMode,
+                        itemBuilder: (context) => _buildAnimeModeMenuItems(),
+                      ),
+                    if (_isDirectStream && _buildQualityOptions().length > 1)
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.hd, color: Colors.white),
+                        tooltip: 'Quality',
+                        color: const Color(0xFF1F1F1F),
+                        onSelected: _switchQuality,
+                        itemBuilder: (context) => _buildQualityMenuItems(),
+                      ),
                     PopupMenuButton<int>(
                       icon: const PhosphorIcon(
                         PhosphorIconsRegular.arrowsClockwise,
@@ -1338,11 +1415,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _betterPlayerController?.exitFullScreen();
       Future.delayed(const Duration(milliseconds: 220), () {
         if (!mounted) return;
-        Navigator.of(context).maybePop();
+        _handleBackNavigation();
       });
       return;
     }
-    Navigator.of(context).maybePop();
+    _handleBackNavigation();
   }
 
   void _showFullscreenTopBarOverlayEntry() {
@@ -1481,7 +1558,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  // ── OverlayEntry management ─────────────────────────────────────
+  // â”€â”€ OverlayEntry management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _showOverlayEntry() {
     _removeOverlayEntry();
     _nextEpOverlayEntry = OverlayEntry(
@@ -1511,7 +1588,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _nextEpOverlayEntry = null;
   }
 
-  // ── Loading state ───────────────────────────────────────────────
+  // â”€â”€ Loading state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Widget _buildLoadingState() {
     final media = ref.read(selectedMediaProvider);
     final posterPath = media?.posterPath;
@@ -1624,7 +1701,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  // ── Error state ─────────────────────────────────────────────────
+  // â”€â”€ Error state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Widget _buildErrorState() {
     return Container(
       color: Colors.black,
@@ -1717,7 +1794,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 ),
               ),
               OutlinedButton.icon(
-                onPressed: () => Navigator.pop(context),
+                onPressed: _handleBackNavigation,
                 icon: const Icon(Icons.arrow_back, size: 20),
                 label: const Text('GO BACK'),
                 style: OutlinedButton.styleFrom(
@@ -1739,7 +1816,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  // ── WebView player (embed fallback) ─────────────────────────────
+  // â”€â”€ WebView player (embed fallback) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Widget _buildWebViewPlayer() {
     return RepaintBoundary(
       child: Center(
@@ -1759,7 +1836,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  // ── BetterPlayer widget ─────────────────────────────────────────
+  // â”€â”€ BetterPlayer widget â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Widget _buildVideoPlayer() {
     return RepaintBoundary(
       child: BetterPlayer(controller: _betterPlayerController!),
@@ -1767,9 +1844,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Redesigned Episode Picker with thumbnails and search
-// ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _EpisodePickerSheet extends ConsumerStatefulWidget {
   final int mediaId;
   final int currentSeason;
@@ -1971,15 +2048,11 @@ class _EpisodePickerSheetState extends ConsumerState<_EpisodePickerSheet> {
                                 onTap: () {
                                   Navigator.pop(context);
                                   if (!isCurrent) {
-                                    Navigator.of(context).pushReplacement(
-                                      MaterialPageRoute(
-                                        builder: (context) => PlayerScreen(
-                                          mediaId: widget.mediaId,
-                                          season: widget.currentSeason,
-                                          episode: episode.episodeNumber,
-                                          mediaType: widget.mediaType,
-                                        ),
-                                      ),
+                                    final typeParam = widget.mediaType == null
+                                        ? ''
+                                        : '&type=${widget.mediaType}';
+                                    this.context.pushReplacement(
+                                      '/player/${widget.mediaId}?season=${widget.currentSeason}&episode=${episode.episodeNumber}$typeParam',
                                     );
                                   }
                                 },
@@ -2122,7 +2195,7 @@ class _EpisodePickerSheetState extends ConsumerState<_EpisodePickerSheet> {
                                                     ),
                                                   Expanded(
                                                     child: Text(
-                                                      'E${episode.episodeNumber} · ${episode.episodeName ?? 'Episode ${episode.episodeNumber}'}',
+                                                      'E${episode.episodeNumber} Â· ${episode.episodeName ?? 'Episode ${episode.episodeNumber}'}',
                                                       style: TextStyle(
                                                         fontSize: 14,
                                                         fontWeight:
@@ -2197,7 +2270,7 @@ class _EpisodePickerSheetState extends ConsumerState<_EpisodePickerSheet> {
   }
 }
 
-// ── Helper class for next episode overlay state ──
+// â”€â”€ Helper class for next episode overlay state â”€â”€
 class _NextEpState {
   final bool show;
   final int? countdown;
@@ -2205,7 +2278,7 @@ class _NextEpState {
   const _NextEpState({required this.show, required this.countdown});
 }
 
-// ── Netflix-style loading spinner ──
+// â”€â”€ Netflix-style loading spinner â”€â”€
 class _NamizoLoadingSpinner extends StatefulWidget {
   @override
   State<_NamizoLoadingSpinner> createState() => _NamizoLoadingSpinnerState();
@@ -2300,7 +2373,7 @@ class _SpinnerPainter extends CustomPainter {
       oldDelegate.progress != progress;
 }
 
-// ── Separate widget for the OverlayEntry (renders above everything) ──
+// â”€â”€ Separate widget for the OverlayEntry (renders above everything) â”€â”€
 class _NextEpisodeOverlayWidget extends StatelessWidget {
   final ValueNotifier<_NextEpState> notifier;
   final int episode;

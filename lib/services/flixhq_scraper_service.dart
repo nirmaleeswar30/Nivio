@@ -63,6 +63,9 @@ class FlixhqScraperService {
       }
 
       final prioritizedServerIds = _prioritizeServerIds(serverIds);
+      print(
+        'FlixHQ scraper: server order raw=$serverIds prioritized=$prioritizedServerIds',
+      );
 
       for (final serverId in prioritizedServerIds) {
         try {
@@ -259,9 +262,17 @@ class FlixhqScraperService {
   List<int> _extractServerIds(String html) {
     final ids = <int>[];
     final seen = <int>{};
-    final idRegex = RegExp(r'data-(?:linkid|id)="(\d+)"');
+    final dataIdRegex = RegExp(r'''data-(?:linkid|id)=["'](\d+)["']''');
+    final watchIdRegex = RegExp(r'''id=["']watch-(\d+)["']''');
 
-    for (final m in idRegex.allMatches(html)) {
+    for (final m in dataIdRegex.allMatches(html)) {
+      final id = int.tryParse(m.group(1) ?? '');
+      if (id == null || !seen.add(id)) continue;
+      ids.add(id);
+    }
+
+    // Fallback: some templates expose the server id only in id="watch-<id>".
+    for (final m in watchIdRegex.allMatches(html)) {
       final id = int.tryParse(m.group(1) ?? '');
       if (id == null || !seen.add(id)) continue;
       ids.add(id);
@@ -274,13 +285,9 @@ class FlixhqScraperService {
     if (serverIds.length < 3) return serverIds;
 
     // FlixHQ frequently returns dead links in the first two slots.
-    // Try the 3rd server first, then keep original 1st/2nd as fallback.
-    return <int>[
-      serverIds[2],
-      serverIds[0],
-      serverIds[1],
-      ...serverIds.skip(3),
-    ];
+    // Try all servers from the 3rd onward first, then keep original
+    // 1st/2nd as fallback.
+    return <int>[...serverIds.skip(2), ...serverIds.take(2)];
   }
 
   Future<String?> _resolveEmbedUrl(int serverId) async {

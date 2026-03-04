@@ -23,9 +23,8 @@ import 'package:nivio/screens/media_detail_screen.dart';
 import 'package:nivio/screens/player_screen.dart';
 import 'package:nivio/screens/auth_screen.dart';
 import 'package:nivio/screens/settings_screen.dart';
-import 'package:nivio/screens/watchlist_screen.dart';
+import 'package:nivio/screens/library_screen.dart';
 import 'package:nivio/screens/profile_screen.dart';
-import 'package:nivio/screens/new_episodes_screen.dart';
 import 'package:nivio/screens/main_shell_screen.dart';
 
 void main() async {
@@ -105,7 +104,7 @@ final _router = GoRouter(
   },
   routes: [
     GoRoute(path: '/auth', builder: (context, state) => const AuthScreen()),
-    GoRoute(path: '/', redirect: (_, __) => '/home'),
+    GoRoute(path: '/', redirect: (context, state) => '/home'),
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) =>
           MainShellScreen(navigationShell: navigationShell),
@@ -129,8 +128,12 @@ final _router = GoRouter(
         StatefulShellBranch(
           routes: [
             GoRoute(
-              path: '/new-episodes',
-              builder: (context, state) => const NewEpisodesScreen(),
+              path: '/library',
+              builder: (context, state) {
+                final tab = state.uri.queryParameters['tab'];
+                final initialTab = tab == 'watchlist' ? 1 : 0;
+                return LibraryScreen(initialTab: initialTab);
+              },
             ),
           ],
         ),
@@ -150,8 +153,9 @@ final _router = GoRouter(
     ),
     GoRoute(
       path: '/watchlist',
-      builder: (context, state) => const WatchlistScreen(),
+      redirect: (context, state) => '/library?tab=watchlist',
     ),
+    GoRoute(path: '/new-episodes', redirect: (context, state) => '/library'),
     GoRoute(
       path: '/media/:id',
       builder: (context, state) {

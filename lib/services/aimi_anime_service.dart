@@ -14,6 +14,7 @@ class AimiAnimeService {
     required SearchResult media,
     required int episode,
     String subDubPreference = 'sub',
+    String? preferredQuality,
   }) async {
     final queries = _buildQueryCandidates(media);
     if (queries.isEmpty) {
@@ -65,6 +66,7 @@ class AimiAnimeService {
           final bestSource = _pickBestSource(
             mapped,
             preferM3U8: config.kind == _ProviderKind.animePahe,
+            preferredQuality: preferredQuality,
           );
           final headers =
               sources.firstWhere((s) => s.url == bestSource.url).headers ??
@@ -81,7 +83,7 @@ class AimiAnimeService {
             isM3U8: bestSource.isM3U8,
             headers: headers,
             sources: mapped,
-            availableQualities: mapped.map((s) => s.quality).toSet().toList(),
+            availableQualities: _sortedQualities(mapped),
           );
         }
       } catch (e) {
@@ -208,7 +210,22 @@ class AimiAnimeService {
   StreamSource _pickBestSource(
     List<StreamSource> sources, {
     bool preferM3U8 = false,
+    String? preferredQuality,
   }) {
+    final preferred = _normalizeQuality(preferredQuality ?? '');
+    if (preferred.isNotEmpty && preferred != 'auto') {
+      final preferredMatches = sources
+          .where((s) => _normalizeQuality(s.quality) == preferred)
+          .toList();
+      if (preferredMatches.isNotEmpty) {
+        return _pickBestSource(
+          preferredMatches,
+          preferM3U8: preferM3U8,
+          preferredQuality: null,
+        );
+      }
+    }
+
     final sorted = [...sources]
       ..sort((a, b) {
         var aScore = _qualityScore(a.quality);
@@ -220,6 +237,16 @@ class AimiAnimeService {
         return bScore.compareTo(aScore);
       });
     return sorted.first;
+  }
+
+  List<String> _sortedQualities(List<StreamSource> sources) {
+    final qualities = sources
+        .map((s) => _normalizeQuality(s.quality))
+        .where((q) => q.isNotEmpty)
+        .toSet()
+        .toList();
+    qualities.sort((a, b) => _qualityScore(b).compareTo(_qualityScore(a)));
+    return qualities;
   }
 
   int _qualityScore(String quality) {

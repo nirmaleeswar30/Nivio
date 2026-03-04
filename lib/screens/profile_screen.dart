@@ -316,7 +316,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             icon: Icons.notifications_none_rounded,
                             title: 'Open New Episodes',
                             subtitle: 'View recently detected episodes',
-                            onTap: () => context.push('/new-episodes'),
+                            onTap: () => context.go('/library'),
                           ),
                         if (_matches('check now refresh'))
                           _buildActionTile(
@@ -676,7 +676,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
         const SizedBox(height: 8),
         TextButton.icon(
-          onPressed: () => context.push('/watchlist'),
+          onPressed: () => context.go('/library?tab=watchlist'),
           style: TextButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           ),

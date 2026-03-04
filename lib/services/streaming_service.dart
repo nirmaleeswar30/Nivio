@@ -51,6 +51,7 @@ class StreamingService {
             media: media,
             episode: media.mediaType == 'movie' ? 1 : episode,
             subDubPreference: subDubPreference,
+            preferredQuality: preferredQuality,
           );
 
           if (animeResult != null) {

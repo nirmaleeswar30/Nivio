@@ -19,7 +19,9 @@ final unreadEpisodeCountProvider = StateProvider<int>((ref) {
 enum _EpisodeFilter { all, unread, read }
 
 class NewEpisodesScreen extends ConsumerStatefulWidget {
-  const NewEpisodesScreen({super.key});
+  final bool embedded;
+
+  const NewEpisodesScreen({super.key, this.embedded = false});
 
   @override
   ConsumerState<NewEpisodesScreen> createState() => _NewEpisodesScreenState();
@@ -82,67 +84,77 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
     final unreadCount = ref.watch(unreadEpisodeCountProvider);
     final grouped = _buildGroupedEpisodes(episodes);
 
-    return Scaffold(
-      backgroundColor: NivioTheme.netflixBlack,
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF151922), NivioTheme.netflixBlack],
-          ),
+    final content = Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF151922), NivioTheme.netflixBlack],
         ),
-        child: SafeArea(
-          child: CustomScrollView(
-            slivers: [
+      ),
+      child: SafeArea(
+        top: !widget.embedded,
+        child: CustomScrollView(
+          slivers: [
+            if (!widget.embedded)
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                   child: _buildTopBar(),
                 ),
               ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                  child: _buildSummaryCard(
-                    totalCount: episodes.length,
-                    unreadCount: unreadCount,
-                  ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  widget.embedded ? 10 : 14,
+                  16,
+                  0,
+                ),
+                child: _buildSummaryCard(
+                  totalCount: episodes.length,
+                  unreadCount: unreadCount,
                 ),
               ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                  child: _buildSearchAndFilters(),
-                ),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                child: _buildSearchAndFilters(),
               ),
-              if (grouped.isEmpty)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: _buildEmptyState(),
-                )
-              else
-                SliverList.builder(
-                  itemCount: grouped.length,
-                  itemBuilder: (context, index) {
-                    final showId = grouped.keys.elementAt(index);
-                    final showEpisodes = grouped[showId]!;
-                    return Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        index == 0 ? 16 : 10,
-                        16,
-                        index == grouped.length - 1 ? 24 : 0,
-                      ),
-                      child: _buildShowCard(showId, showEpisodes),
-                    );
-                  },
-                ),
-            ],
-          ),
+            ),
+            if (grouped.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: _buildEmptyState(),
+              )
+            else
+              SliverList.builder(
+                itemCount: grouped.length,
+                itemBuilder: (context, index) {
+                  final showId = grouped.keys.elementAt(index);
+                  final showEpisodes = grouped[showId]!;
+                  return Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      index == 0 ? 16 : 10,
+                      16,
+                      index == grouped.length - 1 ? 24 : 0,
+                    ),
+                    child: _buildShowCard(showId, showEpisodes),
+                  );
+                },
+              ),
+          ],
         ),
       ),
     );
+
+    if (widget.embedded) {
+      return content;
+    }
+
+    return Scaffold(backgroundColor: NivioTheme.netflixBlack, body: content);
   }
 
   Widget _buildTopBar() {

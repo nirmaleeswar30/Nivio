@@ -532,7 +532,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   size: 22,
                 ),
           tooltip: 'New Episodes',
-          onPressed: () => context.go('/new-episodes'),
+          onPressed: () => context.go('/library'),
         ),
         if (unreadCount > 0)
           Positioned(
