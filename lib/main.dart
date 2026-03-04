@@ -26,6 +26,7 @@ import 'package:nivio/screens/settings_screen.dart';
 import 'package:nivio/screens/watchlist_screen.dart';
 import 'package:nivio/screens/profile_screen.dart';
 import 'package:nivio/screens/new_episodes_screen.dart';
+import 'package:nivio/screens/main_shell_screen.dart';
 
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -82,7 +83,7 @@ class _AuthStateNotifier extends ChangeNotifier {
 
 // Router configuration
 final _router = GoRouter(
-  initialLocation: '/',
+  initialLocation: '/home',
   // Optimize: Use refreshListenable for auth state instead of checking on every navigation
   refreshListenable: _AuthStateNotifier(),
   redirect: (context, state) {
@@ -96,7 +97,7 @@ final _router = GoRouter(
 
     // If signed in and on auth route, redirect to home
     if (user != null && isAuthRoute) {
-      return '/';
+      return '/home';
     }
 
     // Otherwise, no redirect needed
@@ -104,8 +105,45 @@ final _router = GoRouter(
   },
   routes: [
     GoRoute(path: '/auth', builder: (context, state) => const AuthScreen()),
-    GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
-    GoRoute(path: '/search', builder: (context, state) => const SearchScreen()),
+    GoRoute(path: '/', redirect: (_, __) => '/home'),
+    StatefulShellRoute.indexedStack(
+      builder: (context, state, navigationShell) =>
+          MainShellScreen(navigationShell: navigationShell),
+      branches: [
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/home',
+              builder: (context, state) => const HomeScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/search',
+              builder: (context, state) => const SearchScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/new-episodes',
+              builder: (context, state) => const NewEpisodesScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/profile',
+              builder: (context, state) => const ProfileScreen(),
+            ),
+          ],
+        ),
+      ],
+    ),
     GoRoute(
       path: '/settings',
       builder: (context, state) => const SettingsScreen(),
@@ -113,14 +151,6 @@ final _router = GoRouter(
     GoRoute(
       path: '/watchlist',
       builder: (context, state) => const WatchlistScreen(),
-    ),
-    GoRoute(
-      path: '/profile',
-      builder: (context, state) => const ProfileScreen(),
-    ),
-    GoRoute(
-      path: '/new-episodes',
-      builder: (context, state) => const NewEpisodesScreen(),
     ),
     GoRoute(
       path: '/media/:id',
@@ -156,6 +186,7 @@ class NivioApp extends StatelessWidget {
     return MaterialApp.router(
       title: 'Nivio',
       theme: NivioTheme.darkTheme,
+      darkTheme: NivioTheme.darkTheme,
       routerConfig: _router,
       debugShowCheckedModeBanner: false,
     );

@@ -1,16 +1,20 @@
+import 'dart:ui';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
-import 'package:nivio/models/season_info.dart';
 import 'package:nivio/models/watchlist_item.dart';
+import 'package:nivio/providers/dynamic_colors_provider.dart';
 import 'package:nivio/providers/media_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
-import 'package:nivio/providers/dynamic_colors_provider.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:nivio/widgets/episode_list.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 
 class MediaDetailScreen extends ConsumerStatefulWidget {
@@ -25,12 +29,13 @@ class MediaDetailScreen extends ConsumerStatefulWidget {
 
 class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   SearchResult? _media;
+  List<String> _genres = const [];
+  bool _aboutExpanded = false;
+  bool _aboutOverflow = false;
   bool _isLoading = true;
   String? _error;
   String? _trailerUrl;
-  String _episodeSearchQuery = '';
-  final TextEditingController _episodeSearchController =
-      TextEditingController();
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -40,7 +45,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 
   @override
   void dispose() {
-    _episodeSearchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -90,7 +95,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                 widget.mediaId,
               );
               detailsWithVideos['media_type'] = 'movie';
-            } catch (e) {
+            } catch (_) {
               detailsWithVideos = await tmdbService.getTVShowDetailsWithVideos(
                 widget.mediaId,
               );
@@ -109,10 +114,15 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       ref.read(selectedMediaProvider.notifier).state = mediaDetails;
 
       final trailerUrl = _extractTrailerKey(detailsWithVideos['videos']);
+      final genres = (detailsWithVideos['genres'] as List<dynamic>? ?? [])
+          .map((genre) => (genre as Map<String, dynamic>)['name'] as String?)
+          .whereType<String>()
+          .toList();
 
       setState(() {
         _media = mediaDetails;
         _trailerUrl = trailerUrl;
+        _genres = genres;
         _isLoading = false;
       });
     } catch (e) {
@@ -123,7 +133,6 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     }
   }
 
-  /// Show trailer as a compact overlay dialog (not fullscreen)
   void _showTrailerPlayer(BuildContext context) {
     if (_trailerUrl == null) return;
 
@@ -156,31 +165,31 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         backgroundColor: NivioTheme.netflixBlack,
         appBar: AppBar(backgroundColor: NivioTheme.netflixBlack, elevation: 0),
         body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.error_outline,
-                color: NivioTheme.netflixRed,
-                size: 64,
-              ),
-              const SizedBox(height: 16),
-              const Text('Failed to Load Details'),
-              const SizedBox(height: 8),
-              Text(
-                _error!,
-                style: const TextStyle(color: NivioTheme.netflixGrey),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _fetchMediaDetails,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: NivioTheme.netflixRed,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const PhosphorIcon(
+                  PhosphorIconsRegular.warningCircle,
+                  color: NivioTheme.netflixRed,
+                  size: 56,
                 ),
-                child: const Text('RETRY'),
-              ),
-            ],
+                const SizedBox(height: 14),
+                const Text('Failed to load details'),
+                const SizedBox(height: 8),
+                Text(
+                  _error!,
+                  style: const TextStyle(color: NivioTheme.netflixGrey),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: _fetchMediaDetails,
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -188,167 +197,306 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 
     final media = _media;
     if (media == null) {
-      return Scaffold(
-        appBar: AppBar(),
-        body: const Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     final tmdbService = ref.read(tmdbServiceProvider);
-    final backdropUrl = tmdbService.getBackdropUrl(media.backdropPath);
-    final posterUrl = tmdbService.getPosterUrl(media.posterPath);
-
-    // Dynamic colors from poster
+    final fallbackBackdropUrl = tmdbService.getBackdropUrl(media.backdropPath);
+    final fallbackPosterUrl = tmdbService.getPosterUrl(media.posterPath);
+    final backdropUrl = fallbackBackdropUrl.isNotEmpty
+        ? fallbackBackdropUrl
+        : fallbackPosterUrl;
+    final posterUrl = fallbackPosterUrl;
+    final isInWatchlist = ref.watch(isInWatchlistProvider(media.id));
     final colorsAsync = ref.watch(dynamicColorsProvider(posterUrl));
     final colors = colorsAsync.valueOrNull ?? DynamicColors.fallback;
+    final accentColor = colors.lightVibrant;
+
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final shortestSide = MediaQuery.sizeOf(context).shortestSide;
+    final isTablet = shortestSide >= 600;
+    final heroHeight = (screenHeight * (isTablet ? 0.58 : 0.50))
+        .clamp(360.0, isTablet ? 700.0 : 560.0)
+        .toDouble();
+    const detailsOverlap = 0.0;
+    final year =
+        media.releaseDate?.substring(0, 4) ??
+        media.firstAirDate?.substring(0, 4) ??
+        'Unknown';
+    final mediaName = media.title ?? media.name ?? 'Unknown';
 
     return Scaffold(
       backgroundColor: colors.darkMuted,
       body: CustomScrollView(
+        controller: _scrollController,
         slivers: [
-          // Hero section with backdrop
-          SliverAppBar(
-            expandedHeight: 480,
-            pinned: true,
-            backgroundColor: colors.darkMuted,
-            flexibleSpace: FlexibleSpaceBar(
-              background: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (backdropUrl.isNotEmpty)
-                    CachedNetworkImage(
-                      imageUrl: backdropUrl,
-                      fit: BoxFit.cover,
-                      errorWidget: (context, url, error) =>
-                          Container(color: colors.darkMuted),
-                    )
-                  else
-                    Container(color: colors.darkMuted),
-
-                  // Gradient overlay using dynamic colors
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.black.withOpacity(0.3),
-                          colors.darkMuted.withOpacity(0.7),
-                          colors.darkMuted,
-                        ],
-                        stops: const [0.0, 0.7, 1.0],
+          SliverToBoxAdapter(
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                // ── Radial gradient bloom ──────────────────────────────────
+                // Dominant color "leaks" from the hero image like light
+                // emitting from the artwork. Fades to transparent by ~150px
+                // below the image bottom. Very low opacity, heavily blurred.
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: heroHeight + 220,
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(
+                      sigmaX: 64,
+                      sigmaY: 64,
+                      tileMode: TileMode.decal,
+                    ),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: RadialGradient(
+                          center: Alignment.topCenter,
+                          radius: 1.4,
+                          colors: [
+                            colors.dominant.withValues(alpha: 0.20),
+                            colors.dominant.withValues(alpha: 0.07),
+                            Colors.transparent,
+                          ],
+                          stops: const [0.0, 0.40, 1.0],
+                        ),
                       ),
                     ),
                   ),
+                ),
 
-                  // Title and info at bottom
-                  Positioned(
-                    bottom: 16,
-                    left: 16,
-                    right: 16,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          media.title ?? media.name ?? 'Unknown',
-                          style: Theme.of(context).textTheme.displayLarge
-                              ?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: colors.onSurface,
-                                shadows: const [
-                                  Shadow(blurRadius: 10, color: Colors.black),
+                // ── Main content ───────────────────────────────────────────
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      height: heroHeight,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (backdropUrl.isNotEmpty)
+                            CachedNetworkImage(
+                              imageUrl: backdropUrl,
+                              fit: BoxFit.cover,
+                              errorWidget: (context, url, error) =>
+                                  Container(color: colors.darkMuted),
+                            )
+                          else
+                            Container(color: colors.darkMuted),
+                          Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.transparent,
+                                  Colors.black.withValues(alpha: 0.5),
+                                  colors.darkMuted,
                                 ],
-                              ),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            if (media.voteAverage != null) ...[
-                              const Icon(
-                                Icons.star,
-                                color: Colors.amber,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                media.voteAverage!.toStringAsFixed(1),
-                                style: TextStyle(color: colors.onSurface),
-                              ),
-                              const SizedBox(width: 16),
-                            ],
-                            if (media.releaseDate != null &&
-                                media.releaseDate!.length >= 4)
-                              Text(
-                                media.releaseDate!.substring(0, 4),
-                                style: TextStyle(color: colors.onSurface),
-                              )
-                            else if (media.firstAirDate != null &&
-                                media.firstAirDate!.length >= 4)
-                              Text(
-                                media.firstAirDate!.substring(0, 4),
-                                style: TextStyle(color: colors.onSurface),
-                              ),
-                          ],
-                        ),
-                        // Trailer button
-                        if (_trailerUrl != null) ...[
-                          const SizedBox(height: 16),
-                          OutlinedButton.icon(
-                            onPressed: () => _showTrailerPlayer(context),
-                            icon: const Icon(Icons.play_circle_outline),
-                            label: const Text('Watch Trailer'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: colors.onSurface,
-                              side: BorderSide(
-                                color: colors.onSurface,
-                                width: 2,
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 12,
+                                stops: [0.0, 0.7, 1.0],
                               ),
                             ),
                           ),
+                          Positioned(
+                            left: 14,
+                            right: 14,
+                            top: MediaQuery.paddingOf(context).top + 4,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                _glassIconButton(
+                                  icon: const PhosphorIcon(
+                                    PhosphorIconsRegular.caretLeft,
+                                    color: NivioTheme.netflixWhite,
+                                    size: 20,
+                                  ),
+                                  onTap: () => context.pop(),
+                                ),
+                                Row(
+                                  children: [
+                                    _glassIconButton(
+                                      icon: const PhosphorIcon(
+                                        PhosphorIconsRegular.video,
+                                        color: NivioTheme.netflixWhite,
+                                        size: 19,
+                                      ),
+                                      onTap: () {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Cast coming soon'),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(width: 10),
+                                    _glassIconButton(
+                                      icon: const PhosphorIcon(
+                                        PhosphorIconsRegular.shareNetwork,
+                                        color: NivioTheme.netflixWhite,
+                                        size: 19,
+                                      ),
+                                      onTap: () async {
+                                        final shareUrl =
+                                            media.mediaType == 'movie'
+                                            ? 'https://www.themoviedb.org/movie/${media.id}'
+                                            : 'https://www.themoviedb.org/tv/${media.id}';
+                                        await Clipboard.setData(
+                                          ClipboardData(text: shareUrl),
+                                        );
+                                        if (!context.mounted) return;
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'Link copied to clipboard',
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          Positioned(
+                            left: 16,
+                            bottom: 20,
+                            child: Row(
+                              children: [
+                                if ((media.voteAverage ?? 0) > 0) ...[
+                                  _glassTag(
+                                    '★ ${media.voteAverage!.toStringAsFixed(1)}',
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+                                if (year.isNotEmpty) ...[
+                                  _glassTag(year),
+                                  const SizedBox(width: 8),
+                                ],
+                                _glassTag(media.mediaType.toUpperCase()),
+                              ],
+                            ),
+                          ),
                         ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Content
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Overview
-                  if (media.overview != null && media.overview!.isNotEmpty) ...[
-                    Text(
-                      'Overview',
-                      style: Theme.of(context).textTheme.headlineMedium
-                          ?.copyWith(color: colors.onSurface),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      media.overview!,
-                      style: TextStyle(
-                        color: colors.onSurface.withOpacity(0.8),
                       ),
                     ),
-                    const SizedBox(height: 24),
-                  ],
 
-                  // TV controls or Movie controls
-                  if (media.mediaType == 'tv')
-                    _buildTVControls(context, media, colors)
-                  else
-                    _buildMovieControls(context, media, colors),
-                ],
-              ),
+                    Transform.translate(
+                      offset: Offset(0, -detailsOverlap),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              mediaName,
+                              style: Theme.of(context).textTheme.displaySmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: NivioTheme.netflixWhite,
+                                    height: 1.2,
+                                  ),
+                            ),
+                            const SizedBox(height: 10),
+                            // Genre subtext — wraps to next line on overflow
+                            Text(
+                              _buildGenreMeta(year, media.voteAverage),
+                              style: const TextStyle(
+                                color: NivioTheme.netflixLightGrey,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                height: 1.5,
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _playAllButton(
+                                    accentColor: accentColor,
+                                    label: media.mediaType == 'movie'
+                                        ? 'Play'
+                                        : 'Play all episodes',
+                                    onTap: () {
+                                      final season = media.mediaType == 'tv'
+                                          ? ref.read(selectedSeasonProvider)
+                                          : 1;
+                                      context.push(
+                                        '/player/${media.id}?season=$season&episode=1&type=${media.mediaType}',
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                // Filled heart = in watchlist, outline = not
+                                _plainIconButton(
+                                  icon: Icon(
+                                    isInWatchlist
+                                        ? Icons.favorite
+                                        : Icons.favorite_border,
+                                    color: isInWatchlist
+                                        ? colors.dominant
+                                        : NivioTheme.netflixWhite,
+                                    size: 24,
+                                  ),
+                                  iconColor: isInWatchlist
+                                      ? colors.dominant
+                                      : NivioTheme.netflixWhite,
+                                  onTap: () =>
+                                      _toggleWatchlist(media, isInWatchlist),
+                                ),
+                              ],
+                            ),
+                            if (_trailerUrl != null) ...[
+                              const SizedBox(height: 12),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton.icon(
+                                  onPressed: () => _showTrailerPlayer(context),
+                                  icon: Icon(
+                                    Icons.play_circle_outline,
+                                    size: 17,
+                                    color: accentColor,
+                                  ),
+                                  label: Text(
+                                    'Watch trailer',
+                                    style: TextStyle(color: accentColor),
+                                  ),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 14),
+                            Text(
+                              'About',
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(
+                                    color: NivioTheme.netflixWhite,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                            const SizedBox(height: 8),
+                            _buildAboutSection(
+                              media.overview?.isNotEmpty == true
+                                  ? media.overview!
+                                  : 'No description available for this title yet.',
+                              accentColor: accentColor,
+                            ),
+                            const SizedBox(height: 26),
+                            if (media.mediaType == 'tv')
+                              _buildTVControls(context, media, colors),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
@@ -356,53 +504,131 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     );
   }
 
-  Widget _buildMovieControls(
-    BuildContext context,
-    SearchResult media,
-    DynamicColors colors,
-  ) {
-    final isInWatchlist = ref.watch(isInWatchlistProvider(media.id));
+  Widget _glassIconButton({
+    required Widget icon,
+    required VoidCallback onTap,
+    double size = 44,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(size / 2),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 9, sigmaY: 9),
+        child: Material(
+          color: const Color(0x26FFFFFF),
+          shape: const CircleBorder(
+            side: BorderSide(color: Color(0x33FFFFFF), width: 1),
+          ),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onTap,
+            child: SizedBox(
+              width: size,
+              height: size,
+              child: Center(child: icon),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
-    return Row(
-      children: [
-        Expanded(
-          flex: 2,
-          child: ElevatedButton.icon(
-            onPressed: () {
-              context.push('/player/${media.id}?season=1&episode=1');
-            },
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('PLAY'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-                side: const BorderSide(color: Colors.white, width: 1.5),
+  Widget _glassTag(String label) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: const Color(0x26FFFFFF),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: const Color(0x4DFFFFFF)),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: NivioTheme.netflixWhite,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _buildGenreMeta(String year, double? rating) {
+    final parts = <String>[];
+    if (rating != null && rating > 0) {
+      parts.add('★ ${rating.toStringAsFixed(1)}');
+    }
+    final topGenres = _genres.take(3).toList();
+    if (topGenres.isNotEmpty) {
+      parts.add(topGenres.join(' | '));
+    }
+    if (year.isNotEmpty) {
+      parts.add(year);
+    }
+    return parts.isEmpty ? 'Unknown' : parts.join(' | ');
+  }
+
+  Widget _plainIconButton({
+    required Widget icon,
+    required VoidCallback onTap,
+    Color iconColor = NivioTheme.netflixWhite,
+  }) {
+    return IconButton(
+      onPressed: onTap,
+      icon: icon,
+      splashRadius: 24,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+    );
+  }
+
+  Widget _playAllButton({
+    required Color accentColor,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              decoration: BoxDecoration(
+                color: NivioTheme.glassFill,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: accentColor.withValues(alpha: 0.65)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  PhosphorIcon(
+                    PhosphorIconsFill.play,
+                    color: accentColor,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: accentColor,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: () => _toggleWatchlist(media, isInWatchlist),
-            icon: Icon(isInWatchlist ? Icons.check : Icons.add, size: 20),
-            label: Text(isInWatchlist ? 'SAVED' : 'LIST'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              side: BorderSide(
-                color: isInWatchlist ? colors.dominant : colors.onSurface,
-                width: 2,
-              ),
-              foregroundColor: isInWatchlist
-                  ? colors.dominant
-                  : colors.onSurface,
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -412,14 +638,13 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     if (isInWatchlist) {
       await watchlistService.removeFromWatchlist(media.id);
       ref.read(watchlistRefreshProvider.notifier).refresh();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Removed from watchlist'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Removed from watchlist'),
+          duration: Duration(seconds: 2),
+        ),
+      );
     } else {
       final item = WatchlistItem(
         id: media.id,
@@ -433,14 +658,13 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       );
       await watchlistService.addToWatchlist(item);
       ref.read(watchlistRefreshProvider.notifier).refresh();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Added to watchlist'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Added to watchlist'),
+          duration: Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -450,7 +674,6 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     DynamicColors colors,
   ) {
     final seriesInfoAsync = ref.watch(seriesInfoProvider(media.id));
-    final isInWatchlist = ref.watch(isInWatchlistProvider(media.id));
 
     return seriesInfoAsync.when(
       data: (seriesInfo) {
@@ -459,79 +682,69 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Watchlist button
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => _toggleWatchlist(media, isInWatchlist),
-                icon: Icon(isInWatchlist ? Icons.check : Icons.add, size: 20),
-                label: Text(isInWatchlist ? 'IN MY LIST' : 'ADD TO MY LIST'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  side: BorderSide(
-                    color: isInWatchlist ? colors.dominant : colors.onSurface,
-                    width: 2,
-                  ),
-                  foregroundColor: isInWatchlist
-                      ? colors.dominant
-                      : colors.onSurface,
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Season selector
-            Text(
-              'Select Season',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineMedium?.copyWith(color: colors.onSurface),
-            ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<int>(
-              value: selectedSeason <= seriesInfo.seasons.length
-                  ? selectedSeason
-                  : 1,
-              dropdownColor: colors.darkMuted,
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: colors.darkMuted,
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(
-                    color: colors.onSurface.withOpacity(0.2),
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: colors.dominant, width: 2),
-                ),
-              ),
-              items: seriesInfo.seasons
-                  .where((s) => s.seasonNumber > 0)
-                  .map(
-                    (season) => DropdownMenuItem(
-                      value: season.seasonNumber,
-                      child: Text(
-                        '${season.name} (${season.episodeCount} episodes)',
-                        style: TextStyle(color: colors.onSurface),
-                      ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Episodes',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: NivioTheme.netflixWhite,
+                      fontWeight: FontWeight.w700,
                     ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                if (value != null) {
-                  ref.read(selectedSeasonProvider.notifier).state = value;
-                  ref.read(selectedEpisodeProvider.notifier).state = 1;
-                  setState(() => _episodeSearchQuery = '');
-                  _episodeSearchController.clear();
-                }
-              },
+                  ),
+                ),
+                Container(
+                  width: 154,
+                  height: 36,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0x241F2431),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: const Color(0x36FFFFFF)),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      isDense: true,
+                      value: selectedSeason <= seriesInfo.seasons.length
+                          ? selectedSeason
+                          : 1,
+                      dropdownColor: NivioTheme.netflixDarkGrey,
+                      borderRadius: BorderRadius.circular(14),
+                      icon: const Icon(
+                        Icons.expand_more,
+                        color: NivioTheme.netflixWhite,
+                      ),
+                      style: const TextStyle(
+                        color: NivioTheme.netflixWhite,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                      items: seriesInfo.seasons
+                          .where((s) => s.seasonNumber > 0)
+                          .map(
+                            (season) => DropdownMenuItem(
+                              value: season.seasonNumber,
+                              child: Text('Season ${season.seasonNumber}'),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        ref.read(selectedSeasonProvider.notifier).state = value;
+                        ref.read(selectedEpisodeProvider.notifier).state = 1;
+                      },
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 24),
-
-            // Episode list with search
-            _buildEpisodeList(media, selectedSeason, colors),
+            const SizedBox(height: 14),
+            EpisodeList(
+              media: media,
+              season: selectedSeason,
+              colors: colors,
+              scrollController: _scrollController,
+            ),
           ],
         );
       },
@@ -540,297 +753,72 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       ),
       error: (err, stack) => Text(
         'Error loading seasons: $err',
-        style: TextStyle(color: colors.dominant),
+        style: const TextStyle(color: NivioTheme.netflixLightGrey),
       ),
     );
   }
 
-  Widget _buildEpisodeList(
-    SearchResult media,
-    int season,
-    DynamicColors colors,
-  ) {
-    final seasonDataAsync = ref.watch(
-      seasonDataProvider((showId: media.id, seasonNumber: season)),
+  Widget _buildAboutSection(String aboutText, {required Color accentColor}) {
+    final style = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      color: NivioTheme.netflixLightGrey,
+      height: 1.45,
     );
 
-    return seasonDataAsync.when(
-      data: (seasonData) {
-        // Filter episodes by search
-        final filteredEpisodes = _episodeSearchQuery.isEmpty
-            ? seasonData.episodes
-            : seasonData.episodes.where((ep) {
-                final query = _episodeSearchQuery.toLowerCase();
-                final name = ep.episodeName?.toLowerCase() ?? '';
-                final num = ep.episodeNumber.toString();
-                return name.contains(query) || num.contains(query);
-              }).toList();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final textPainter = TextPainter(
+          text: TextSpan(text: aboutText, style: style),
+          maxLines: 4,
+          textDirection: TextDirection.ltr,
+        )..layout(maxWidth: constraints.maxWidth);
+
+        final hasOverflow = textPainter.didExceedMaxLines;
+        if (_aboutOverflow != hasOverflow) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            setState(() => _aboutOverflow = hasOverflow);
+          });
+        }
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header with episode count
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Episodes',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.headlineMedium?.copyWith(color: colors.onSurface),
-                ),
-                Text(
-                  '${seasonData.episodes.length} total',
-                  style: TextStyle(color: colors.onSurface.withOpacity(0.6)),
-                ),
-              ],
+            Text(
+              aboutText,
+              style: style,
+              maxLines: _aboutExpanded ? null : 4,
+              overflow: _aboutExpanded
+                  ? TextOverflow.visible
+                  : TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 12),
-
-            // Episode search bar
-            TextField(
-              controller: _episodeSearchController,
-              onChanged: (val) => setState(() => _episodeSearchQuery = val),
-              style: TextStyle(color: colors.onSurface, fontSize: 14),
-              decoration: InputDecoration(
-                hintText: 'Search episodes...',
-                hintStyle: TextStyle(color: colors.onSurface.withOpacity(0.5)),
-                prefixIcon: Icon(
-                  Icons.search,
-                  color: colors.onSurface.withOpacity(0.5),
-                  size: 20,
+            if (_aboutOverflow) ...[
+              const SizedBox(height: 4),
+              TextButton(
+                onPressed: () {
+                  setState(() => _aboutExpanded = !_aboutExpanded);
+                },
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(0, 24),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                suffixIcon: _episodeSearchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: Icon(
-                          Icons.clear,
-                          color: colors.onSurface.withOpacity(0.5),
-                          size: 18,
-                        ),
-                        onPressed: () {
-                          _episodeSearchController.clear();
-                          setState(() => _episodeSearchQuery = '');
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: colors.lightMuted,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Episode list
-            if (filteredEpisodes.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(32),
-                child: Center(
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.search_off,
-                        color: colors.onSurface.withOpacity(0.4),
-                        size: 48,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'No episodes match "$_episodeSearchQuery"',
-                        style: TextStyle(
-                          color: colors.onSurface.withOpacity(0.6),
-                        ),
-                      ),
-                    ],
+                child: Text(
+                  _aboutExpanded ? 'Read less' : 'Read more',
+                  style: TextStyle(
+                    color: accentColor,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-              )
-            else
-              ...filteredEpisodes.map((episode) {
-                return _buildNetflixEpisodeCard(media, episode, season, colors);
-              }),
+              ),
+            ],
           ],
         );
       },
-      loading: () => const Center(
-        child: CircularProgressIndicator(color: NivioTheme.netflixRed),
-      ),
-      error: (err, stack) => Text(
-        'Error loading episodes: $err',
-        style: TextStyle(color: colors.dominant),
-      ),
-    );
-  }
-
-  Widget _buildNetflixEpisodeCard(
-    SearchResult media,
-    EpisodeData episode,
-    int season,
-    DynamicColors colors,
-  ) {
-    final stillUrl = episode.stillPath != null
-        ? 'https://image.tmdb.org/t/p/w500${episode.stillPath}'
-        : '';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Episode thumbnail with play button
-          Stack(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: stillUrl.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: stillUrl,
-                        width: double.infinity,
-                        height: 200,
-                        fit: BoxFit.cover,
-                        placeholder: (context, url) => Container(
-                          width: double.infinity,
-                          height: 200,
-                          color: colors.lightMuted,
-                          child: const Center(
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: NivioTheme.netflixRed,
-                            ),
-                          ),
-                        ),
-                        errorWidget: (context, url, error) => Container(
-                          width: double.infinity,
-                          height: 200,
-                          color: colors.lightMuted,
-                          child: Icon(
-                            Icons.movie,
-                            color: colors.onSurface.withOpacity(0.3),
-                            size: 48,
-                          ),
-                        ),
-                      )
-                    : Container(
-                        width: double.infinity,
-                        height: 200,
-                        color: colors.lightMuted,
-                        child: Icon(
-                          Icons.movie,
-                          color: colors.onSurface.withOpacity(0.3),
-                          size: 48,
-                        ),
-                      ),
-              ),
-              // Play button overlay
-              Positioned.fill(
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () {
-                      context.push(
-                        '/player/${media.id}?season=$season&episode=${episode.episodeNumber}',
-                      );
-                    },
-                    child: Center(
-                      child: Container(
-                        width: 56,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.6),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: colors.onSurface, width: 2),
-                        ),
-                        child: Icon(
-                          Icons.play_arrow,
-                          color: colors.onSurface,
-                          size: 32,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // Episode info
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          '${episode.episodeNumber}. ',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: colors.onSurface,
-                          ),
-                        ),
-                        Expanded(
-                          child: Text(
-                            episode.episodeName ??
-                                'Episode ${episode.episodeNumber}',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: colors.onSurface,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (episode.runtime != null && episode.runtime! > 0) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        '${episode.runtime}m',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colors.onSurface.withOpacity(0.6),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    Text(
-                      episode.overview != null && episode.overview!.isNotEmpty
-                          ? episode.overview!
-                          : 'No description available',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: colors.onSurface.withOpacity(0.7),
-                        height: 1.4,
-                      ),
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Divider(color: colors.onSurface.withOpacity(0.2), height: 1),
-          const SizedBox(height: 16),
-        ],
-      ),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────
-// Compact Trailer Overlay — plays raw stream via youtube_explode
-// ─────────────────────────────────────────────────────────────────
 class TrailerOverlay extends StatefulWidget {
   final String youtubeUrl;
 
@@ -863,11 +851,11 @@ class _TrailerOverlayState extends State<TrailerOverlay> {
   Future<void> _fetchStreamUrl() async {
     final videoId = _extractYoutubeVideoId(widget.youtubeUrl);
     if (videoId == null) {
-      if (mounted)
-        setState(() {
-          _error = 'Invalid YouTube URL';
-          _isLoading = false;
-        });
+      if (!mounted) return;
+      setState(() {
+        _error = 'Invalid YouTube URL';
+        _isLoading = false;
+      });
       return;
     }
 
@@ -876,39 +864,37 @@ class _TrailerOverlayState extends State<TrailerOverlay> {
       final manifest = await ytClient.videos.streamsClient.getManifest(videoId);
       ytClient.close();
 
-      // Prefer muxed (video+audio) streams, pick highest quality available
       final muxed = manifest.muxed.sortByVideoQuality();
       if (muxed.isNotEmpty) {
-        if (mounted)
-          setState(() {
-            _streamUrl = muxed.last.url.toString();
-            _isLoading = false;
-          });
+        if (!mounted) return;
+        setState(() {
+          _streamUrl = muxed.last.url.toString();
+          _isLoading = false;
+        });
         return;
       }
 
-      // Fallback: video-only
       final videoOnly = manifest.videoOnly.sortByVideoQuality();
       if (videoOnly.isNotEmpty) {
-        if (mounted)
-          setState(() {
-            _streamUrl = videoOnly.last.url.toString();
-            _isLoading = false;
-          });
+        if (!mounted) return;
+        setState(() {
+          _streamUrl = videoOnly.last.url.toString();
+          _isLoading = false;
+        });
         return;
       }
 
-      if (mounted)
-        setState(() {
-          _error = 'No streams available';
-          _isLoading = false;
-        });
-    } catch (e) {
-      if (mounted)
-        setState(() {
-          _error = 'Failed to load trailer';
-          _isLoading = false;
-        });
+      if (!mounted) return;
+      setState(() {
+        _error = 'No streams available';
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Failed to load trailer';
+        _isLoading = false;
+      });
     }
   }
 
@@ -952,7 +938,6 @@ class _TrailerOverlayState extends State<TrailerOverlay> {
       );
     }
 
-    // Play raw stream URL in HTML5 <video> — no YouTube embed, no restrictions
     final videoHtml =
         '''
 <!DOCTYPE html>
@@ -991,7 +976,6 @@ class _TrailerOverlayState extends State<TrailerOverlay> {
               ),
             ),
           ),
-          // Close button
           Positioned(
             top: 8,
             right: 8,
@@ -1000,7 +984,7 @@ class _TrailerOverlayState extends State<TrailerOverlay> {
               child: Container(
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.6),
+                  color: Colors.black.withValues(alpha: 0.6),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(Icons.close, color: Colors.white, size: 20),

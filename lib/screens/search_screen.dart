@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
+import 'package:nivio/providers/home_providers.dart';
 import 'package:nivio/providers/search_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/widgets/search_result_card.dart';
@@ -339,64 +340,68 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final sortBy = ref.watch(searchSortProvider);
     final hasFilters = languageFilter != null || sortBy != null;
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: NivioTheme.netflixBlack,
-        surfaceTintColor: Colors.transparent,
-        toolbarHeight: 76,
-        titleSpacing: 12,
-        title: _buildSearchField(),
-        actions: [
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.tune_rounded, color: Colors.white),
-                onPressed: _showFilterDialog,
-              ),
-              if (hasFilters)
-                Positioned(
-                  right: 10,
-                  top: 12,
-                  child: Container(
-                    width: 9,
-                    height: 9,
-                    decoration: BoxDecoration(
-                      color: NivioTheme.netflixRed,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.black, width: 1.2),
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: NivioTheme.netflixBlack,
+          surfaceTintColor: Colors.transparent,
+          toolbarHeight: 76,
+          titleSpacing: 12,
+          title: _buildSearchField(),
+          actions: [
+            Stack(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.tune_rounded, color: Colors.white),
+                  onPressed: _showFilterDialog,
+                ),
+                if (hasFilters)
+                  Positioned(
+                    right: 10,
+                    top: 12,
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(
+                        color: NivioTheme.netflixRed,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.black, width: 1.2),
+                      ),
                     ),
                   ),
-                ),
-            ],
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              const Color(0xFF1A1A1A),
-              NivioTheme.netflixBlack,
-              NivioTheme.netflixBlack,
-            ],
-          ),
+              ],
+            ),
+            const SizedBox(width: 4),
+          ],
         ),
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 220),
-          child: query.isEmpty
-              ? _buildStartState()
-              : _isInitialLoading
-              ? const Center(
-                  child: CircularProgressIndicator(
-                    color: NivioTheme.netflixRed,
-                  ),
-                )
-              : _allResults.isEmpty
-              ? _buildNoResultsState(query)
-              : _buildResultsState(query, languageFilter, sortBy),
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                const Color(0xFF1A1A1A),
+                NivioTheme.netflixBlack,
+                NivioTheme.netflixBlack,
+              ],
+            ),
+          ),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            child: query.isEmpty
+                ? _buildDefaultResultsState()
+                : _isInitialLoading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: NivioTheme.netflixRed,
+                    ),
+                  )
+                : _allResults.isEmpty
+                ? _buildNoResultsState(query)
+                : _buildResultsState(query, languageFilter, sortBy),
+          ),
         ),
       ),
     );
@@ -416,16 +421,28 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         textInputAction: TextInputAction.search,
         style: const TextStyle(color: Colors.white, fontSize: 15),
         decoration: InputDecoration(
-          hintText: 'Search movies, shows, actors...',
+          hintText: 'Search titles...',
           hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.45)),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 14,
             vertical: 10,
           ),
-          prefixIcon: Icon(
-            Icons.search_rounded,
-            color: Colors.white.withValues(alpha: 0.7),
+          prefixIcon: IconButton(
+            icon: Icon(
+              Icons.search_rounded,
+              color: Colors.white.withValues(alpha: 0.7),
+            ),
+            onPressed: () {
+              final query = _controller.text.trim();
+              if (query.isEmpty) return;
+              FocusScope.of(context).unfocus();
+              _onSearch(query);
+            },
+          ),
+          prefixIconConstraints: const BoxConstraints(
+            minHeight: 44,
+            minWidth: 40,
           ),
           suffixIcon: _controller.text.isNotEmpty
               ? IconButton(
@@ -453,87 +470,97 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  Widget _buildStartState() {
-    const quickQueries = [
-      'Interstellar',
-      'Breaking Bad',
-      'Money Heist',
-      'Korean drama',
-      'Anime',
-      'Tamil',
-    ];
+  Widget _buildDefaultResultsState() {
+    final trendingAsync = ref.watch(trendingMoviesProvider);
 
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: Column(
-            children: [
-              Container(
-                width: 86,
-                height: 86,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      NivioTheme.netflixRed.withValues(alpha: 0.35),
-                      NivioTheme.netflixRed.withValues(alpha: 0.0),
+    return trendingAsync.when(
+      data: (items) {
+        final defaultResults = items.whereType<Map>().map((item) {
+          final map = Map<String, dynamic>.from(item.cast<String, dynamic>());
+          map['media_type'] = map['media_type'] ?? 'movie';
+          return SearchResult.fromJson(map);
+        }).toList();
+
+        if (defaultResults.isEmpty) {
+          return const Center(
+            child: Text(
+              'No default results available',
+              style: TextStyle(color: Colors.white70),
+            ),
+          );
+        }
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = _getGridColumns(constraints.maxWidth);
+            return Column(
+              children: [
+                Container(
+                  margin: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.1),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Text(
+                        'Trending Now',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '${defaultResults.length} results',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.72),
+                          fontSize: 12,
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                child: const Icon(
-                  Icons.travel_explore_rounded,
-                  color: Colors.white,
-                  size: 36,
+                Expanded(
+                  child: GridView.builder(
+                    key: const PageStorageKey<String>('default_search_grid'),
+                    padding: const EdgeInsets.fromLTRB(14, 6, 14, 20),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      childAspectRatio: _getGridAspectRatio(columns),
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 14,
+                    ),
+                    itemCount: defaultResults.length,
+                    itemBuilder: (context, index) {
+                      final item = defaultResults[index];
+                      return SearchResultCard(
+                        key: ValueKey('default_${item.mediaType}_${item.id}'),
+                        media: item,
+                      );
+                    },
+                  ),
                 ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                'Find Something Worth Watching',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Search globally across movies and series.',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.65),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                alignment: WrapAlignment.center,
-                children: quickQueries
-                    .map(
-                      (item) => ActionChip(
-                        backgroundColor: Colors.white.withValues(alpha: 0.08),
-                        side: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.18),
-                        ),
-                        label: Text(
-                          item,
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                        onPressed: () {
-                          _controller.text = item;
-                          _controller.selection = TextSelection.collapsed(
-                            offset: item.length,
-                          );
-                          _onSearch(item);
-                        },
-                      ),
-                    )
-                    .toList(),
-              ),
-            ],
-          ),
+              ],
+            );
+          },
+        );
+      },
+      loading: () => const Center(
+        child: CircularProgressIndicator(color: NivioTheme.netflixRed),
+      ),
+      error: (_, __) => const Center(
+        child: Text(
+          'Failed to load default results',
+          style: TextStyle(color: Colors.white70),
         ),
       ),
     );

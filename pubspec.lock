@@ -76,10 +76,9 @@ packages:
   better_player_plus:
     dependency: "direct main"
     description:
-      name: better_player_plus
-      sha256: "8670ccf8fead5572bfcd1568c008f72f3202593ef07fc90921e2cbcaac77852b"
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/better_player_plus"
+      relative: true
+    source: path
     version: "1.1.5"
   boolean_selector:
     dependency: transitive
@@ -532,7 +531,7 @@ packages:
     source: sdk
     version: "0.0.0"
   flutter_native_splash:
-    dependency: "direct dev"
+    dependency: "direct main"
     description:
       name: flutter_native_splash
       sha256: "4fb9f4113350d3a80841ce05ebf1976a36de622af7d19aca0ca9a9911c7ff002"
@@ -965,6 +964,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.0.1"
+  phosphor_flutter:
+    dependency: "direct main"
+    description:
+      name: phosphor_flutter
+      sha256: "8a14f238f28a0b54842c5a4dc20676598dd4811fcba284ed828bd5a262c11fde"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.0"
   platform:
     dependency: transitive
     description:

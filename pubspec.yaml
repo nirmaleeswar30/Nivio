@@ -41,6 +41,7 @@ dependencies:
   cached_network_image: ^3.4.1
   shimmer: ^3.0.0
   flutter_svg: ^2.0.10+1
+  phosphor_flutter: ^2.1.0
 
   # Navigation
   go_router: ^14.6.2
@@ -51,13 +52,15 @@ dependencies:
   json_annotation: ^4.9.0
   url_launcher: ^6.3.1
   package_info_plus: ^9.0.0
+  flutter_native_splash: ^2.4.2
 
   # Background Tasks & Notifications
   workmanager: ^0.9.0
   flutter_local_notifications: ^18.0.1
   connectivity_plus: ^6.1.1
   palette_generator: ^0.3.3+7
-  better_player_plus: ^1.1.5
+  better_player_plus:
+    path: packages/better_player_plus
   shorebird_code_push: ^2.0.5
 
 
@@ -74,7 +77,6 @@ dev_dependencies:
   hive_generator: ^2.0.1
 
   # Splash Screen & App Icon
-  flutter_native_splash: ^2.4.2
   flutter_launcher_icons: ^0.14.2
 
 flutter:
@@ -83,6 +85,35 @@ flutter:
   assets:
     - assets/images/
     - shorebird.yaml
+    - assets/fonts/satoshi/
+
+  fonts:
+    - family: Satoshi
+      fonts:
+        - asset: assets/fonts/satoshi/Satoshi-Light.otf
+          weight: 300
+        - asset: assets/fonts/satoshi/Satoshi-LightItalic.otf
+          weight: 300
+          style: italic
+        - asset: assets/fonts/satoshi/Satoshi-Regular.otf
+          weight: 400
+        - asset: assets/fonts/satoshi/Satoshi-Medium.otf
+          weight: 500
+        - asset: assets/fonts/satoshi/Satoshi-MediumItalic.otf
+          weight: 500
+          style: italic
+        - asset: assets/fonts/satoshi/Satoshi-Bold.otf
+          weight: 700
+        - asset: assets/fonts/satoshi/Satoshi-BoldItalic.otf
+          weight: 700
+          style: italic
+        - asset: assets/fonts/satoshi/Satoshi-Black.otf
+          weight: 900
+        - asset: assets/fonts/satoshi/Satoshi-Italic.otf
+          style: italic
+        - asset: assets/fonts/satoshi/Satoshi-BlackItalic.otf
+          weight: 900
+          style: italic
 
 # App Icon Configuration
 flutter_launcher_icons:

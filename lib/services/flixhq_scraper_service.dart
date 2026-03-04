@@ -62,7 +62,9 @@ class FlixhqScraperService {
         return null;
       }
 
-      for (final serverId in serverIds) {
+      final prioritizedServerIds = _prioritizeServerIds(serverIds);
+
+      for (final serverId in prioritizedServerIds) {
         try {
           final embedUrl = await _resolveEmbedUrl(serverId);
           if (embedUrl == null) continue;
@@ -266,6 +268,19 @@ class FlixhqScraperService {
     }
 
     return ids;
+  }
+
+  List<int> _prioritizeServerIds(List<int> serverIds) {
+    if (serverIds.length < 3) return serverIds;
+
+    // FlixHQ frequently returns dead links in the first two slots.
+    // Try the 3rd server first, then keep original 1st/2nd as fallback.
+    return <int>[
+      serverIds[2],
+      serverIds[0],
+      serverIds[1],
+      ...serverIds.skip(3),
+    ];
   }
 
   Future<String?> _resolveEmbedUrl(int serverId) async {
