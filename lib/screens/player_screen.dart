@@ -910,21 +910,204 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return provider.contains('net22');
   }
 
-  List<String> _buildNet22AudioOptions() {
-    final audios = <String>[
-      ...(_streamResult?.availableAudios ?? const []),
-      ..._net22AsmsAudioTrackMap().keys,
-    ];
-    final normalized = <String>[];
-    final seen = <String>{};
-    for (final audio in audios) {
-      final value = audio.trim();
-      if (value.isEmpty) continue;
-      final key = value.toLowerCase();
-      if (!seen.add(key)) continue;
-      normalized.add(value);
+  static const Map<String, String> _net22AudioAliasToCode = {
+    'english': 'eng',
+    'eng': 'eng',
+    'en': 'eng',
+    'hindi': 'hin',
+    'hin': 'hin',
+    'hi': 'hin',
+    'tamil': 'tam',
+    'tam': 'tam',
+    'ta': 'tam',
+    'telugu': 'tel',
+    'tel': 'tel',
+    'te': 'tel',
+    'malayalam': 'mal',
+    'mal': 'mal',
+    'ml': 'mal',
+    'kannada': 'kan',
+    'kan': 'kan',
+    'kn': 'kan',
+    'japanese': 'jpn',
+    'jpn': 'jpn',
+    'ja': 'jpn',
+    'korean': 'kor',
+    'kor': 'kor',
+    'ko': 'kor',
+    'chinese': 'chi',
+    'chi': 'chi',
+    'zho': 'chi',
+    'zh': 'chi',
+    'spanish': 'spa',
+    'spa': 'spa',
+    'es': 'spa',
+    'french': 'fre',
+    'fre': 'fre',
+    'fra': 'fre',
+    'fr': 'fre',
+    'german': 'ger',
+    'ger': 'ger',
+    'deu': 'ger',
+    'de': 'ger',
+    'italian': 'ita',
+    'ita': 'ita',
+    'it': 'ita',
+    'portuguese': 'por',
+    'por': 'por',
+    'pt': 'por',
+    'arabic': 'ara',
+    'ara': 'ara',
+    'ar': 'ara',
+    'russian': 'rus',
+    'rus': 'rus',
+    'ru': 'rus',
+    'bengali': 'ben',
+    'ben': 'ben',
+    'bn': 'ben',
+    'marathi': 'mar',
+    'mar': 'mar',
+    'mr': 'mar',
+    'urdu': 'urd',
+    'urd': 'urd',
+    'ur': 'urd',
+  };
+
+  static const Map<String, String> _net22AudioCodeToName = {
+    'eng': 'English',
+    'hin': 'Hindi',
+    'tam': 'Tamil',
+    'tel': 'Telugu',
+    'mal': 'Malayalam',
+    'kan': 'Kannada',
+    'jpn': 'Japanese',
+    'kor': 'Korean',
+    'chi': 'Chinese',
+    'spa': 'Spanish',
+    'fre': 'French',
+    'ger': 'German',
+    'ita': 'Italian',
+    'por': 'Portuguese',
+    'ara': 'Arabic',
+    'rus': 'Russian',
+    'ben': 'Bengali',
+    'mar': 'Marathi',
+    'urd': 'Urdu',
+  };
+
+  String _normalizeNet22AudioToken(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  String _canonicalNet22AudioValue(String value) {
+    final token = _normalizeNet22AudioToken(value.trim());
+    if (token.isEmpty) return '';
+    final alias = _net22AudioAliasToCode[token];
+    if (alias != null && alias.isNotEmpty) return alias;
+    return token;
+  }
+
+  String _titleCaseNet22Audio(String value) {
+    final cleaned = value.trim().replaceAll(RegExp(r'[_-]+'), ' ');
+    if (cleaned.isEmpty) return '';
+    return cleaned
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .map((part) {
+          final lower = part.toLowerCase();
+          return '${lower[0].toUpperCase()}${lower.substring(1)}';
+        })
+        .join(' ');
+  }
+
+  String _net22AudioDisplayLabel(
+    String canonical, {
+    String? rawValue,
+    BetterPlayerAsmsAudioTrack? track,
+  }) {
+    final code = canonical.trim().toLowerCase();
+    if (code.isEmpty) return 'Unknown';
+
+    final knownName = _net22AudioCodeToName[code];
+    if (knownName != null) {
+      return '$knownName ($code)';
     }
-    return normalized;
+
+    final raw = (rawValue ?? '').trim();
+    if (raw.isNotEmpty) {
+      final rawPretty = _titleCaseNet22Audio(raw);
+      if (rawPretty.isNotEmpty &&
+          _normalizeNet22AudioToken(rawPretty) !=
+              _normalizeNet22AudioToken(code)) {
+        return '$rawPretty ($code)';
+      }
+      if (rawPretty.isNotEmpty) return rawPretty;
+    }
+
+    final trackLanguage = (track?.language ?? '').trim();
+    if (trackLanguage.isNotEmpty) {
+      final pretty = _titleCaseNet22Audio(trackLanguage);
+      if (pretty.isNotEmpty &&
+          _normalizeNet22AudioToken(pretty) !=
+              _normalizeNet22AudioToken(code)) {
+        return '$pretty ($code)';
+      }
+      if (pretty.isNotEmpty) return pretty;
+    }
+
+    final trackLabel = (track?.label ?? '').trim();
+    if (trackLabel.isNotEmpty) {
+      final pretty = _titleCaseNet22Audio(trackLabel);
+      if (pretty.isNotEmpty &&
+          _normalizeNet22AudioToken(pretty) !=
+              _normalizeNet22AudioToken(code)) {
+        return '$pretty ($code)';
+      }
+      if (pretty.isNotEmpty) return pretty;
+    }
+
+    return code.toUpperCase();
+  }
+
+  Map<String, String> _buildNet22AudioOptions() {
+    final options = <String, String>{};
+    final tracks = _net22AsmsAudioTrackMap();
+
+    void addOption(String raw, {BetterPlayerAsmsAudioTrack? track}) {
+      final value = raw.trim();
+      if (value.isEmpty) return;
+      final canonical = _canonicalNet22AudioValue(value);
+      if (canonical.isEmpty) return;
+      options.putIfAbsent(
+        canonical,
+        () => _net22AudioDisplayLabel(
+          canonical,
+          rawValue: value,
+          track: track ?? tracks[canonical],
+        ),
+      );
+    }
+
+    for (final audio in _streamResult?.availableAudios ?? const <String>[]) {
+      addOption(audio);
+    }
+
+    final asmsTracks =
+        _betterPlayerController?.betterPlayerAsmsAudioTracks ??
+        const <BetterPlayerAsmsAudioTrack>[];
+    for (final track in asmsTracks) {
+      addOption(track.label ?? '', track: track);
+      addOption(track.language ?? '', track: track);
+    }
+
+    for (final entry in tracks.entries) {
+      options.putIfAbsent(
+        entry.key,
+        () => _net22AudioDisplayLabel(entry.key, track: entry.value),
+      );
+    }
+
+    return options;
   }
 
   Map<String, BetterPlayerAsmsAudioTrack> _net22AsmsAudioTrackMap() {
@@ -933,9 +1116,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     final out = <String, BetterPlayerAsmsAudioTrack>{};
     for (final track in tracks) {
-      final label = (track.label ?? track.language ?? '').trim();
-      if (label.isEmpty) continue;
-      out.putIfAbsent(label, () => track);
+      final label = (track.label ?? '').trim();
+      final language = (track.language ?? '').trim();
+      if (label.isNotEmpty) {
+        final canonicalLabel = _canonicalNet22AudioValue(label);
+        if (canonicalLabel.isNotEmpty) {
+          out.putIfAbsent(canonicalLabel, () => track);
+        }
+      }
+      if (language.isNotEmpty) {
+        final canonicalLanguage = _canonicalNet22AudioValue(language);
+        if (canonicalLanguage.isNotEmpty) {
+          out.putIfAbsent(canonicalLanguage, () => track);
+        }
+      }
     }
     return out;
   }
@@ -952,26 +1146,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       ];
     }
 
-    final selectedPref = ref
-        .read(net22AudioLanguageProvider)
-        .trim()
-        .toLowerCase();
-    final selectedCurrent = (_streamResult?.selectedAudio ?? '')
-        .trim()
-        .toLowerCase();
+    final selectedPref = ref.read(net22AudioLanguageProvider).trim();
+    final selectedCurrent = (_streamResult?.selectedAudio ?? '').trim();
+    final selectedAsmsTrack =
+        _betterPlayerController?.betterPlayerAsmsAudioTrack;
     final selectedAsms =
-        (_betterPlayerController?.betterPlayerAsmsAudioTrack?.label ??
-                _betterPlayerController?.betterPlayerAsmsAudioTrack?.language ??
-                '')
-            .trim()
-            .toLowerCase();
+        (selectedAsmsTrack?.label ?? selectedAsmsTrack?.language ?? '').trim();
+    final selectedPrefCanonical = _canonicalNet22AudioValue(selectedPref);
+    final selectedCurrentCanonical = _canonicalNet22AudioValue(selectedCurrent);
+    final selectedAsmsCanonical = _canonicalNet22AudioValue(selectedAsms);
     final selected = selectedPref.isNotEmpty && selectedPref != 'auto'
-        ? selectedPref
-        : (selectedAsms.isNotEmpty ? selectedAsms : selectedCurrent);
+        ? selectedPrefCanonical
+        : (selectedAsmsCanonical.isNotEmpty
+              ? selectedAsmsCanonical
+              : selectedCurrentCanonical);
 
-    return options.map((audio) {
-      final value = audio.trim();
-      final isSelected = value.toLowerCase() == selected;
+    return options.entries.map((entry) {
+      final value = entry.key.trim();
+      final isSelected = value.toLowerCase() == selected.toLowerCase();
       return PopupMenuItem<String>(
         value: value,
         child: Row(
@@ -984,7 +1176,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             const SizedBox(width: 12),
             Flexible(
               child: Text(
-                value,
+                entry.value,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: isSelected ? NivioTheme.netflixRed : Colors.white,
@@ -999,17 +1191,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Future<void> _switchNet22Audio(String audio) async {
-    final target = audio.trim();
+    final target = _canonicalNet22AudioValue(audio.trim());
     if (target.isEmpty) return;
 
-    final asmsTrack = _net22AsmsAudioTrackMap()[target];
+    final displayMap = _buildNet22AudioOptions();
+    final targetLabel = displayMap[target] ?? target.toUpperCase();
+
+    final asmsTrackMap = _net22AsmsAudioTrackMap();
+    final asmsTrack = asmsTrackMap[target];
+
     if (asmsTrack != null && _betterPlayerController != null) {
       _betterPlayerController!.setAudioTrack(asmsTrack);
       await ref.read(net22AudioLanguageProvider.notifier).setPreference(target);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Audio changed to $target'),
+            content: Text('Audio changed to $targetLabel'),
             duration: const Duration(seconds: 2),
             backgroundColor: NivioTheme.netflixRed,
           ),
@@ -1019,15 +1216,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return;
     }
 
-    final currentPref = ref
-        .read(net22AudioLanguageProvider)
-        .trim()
-        .toLowerCase();
-    final currentResult = (_streamResult?.selectedAudio ?? '')
-        .trim()
-        .toLowerCase();
-    if (target.toLowerCase() == currentPref ||
-        target.toLowerCase() == currentResult) {
+    final currentPref = ref.read(net22AudioLanguageProvider).trim();
+    final currentResult = (_streamResult?.selectedAudio ?? '').trim();
+    final currentAsmsTrack =
+        _betterPlayerController?.betterPlayerAsmsAudioTrack;
+    final currentAsms =
+        (currentAsmsTrack?.label ?? currentAsmsTrack?.language ?? '').trim();
+    final currentPrefCanonical = _canonicalNet22AudioValue(currentPref);
+    final currentResultCanonical = _canonicalNet22AudioValue(currentResult);
+    final currentAsmsCanonical = _canonicalNet22AudioValue(currentAsms);
+    if (target == currentPrefCanonical ||
+        target == currentResultCanonical ||
+        target == currentAsmsCanonical) {
       return;
     }
 
@@ -1040,7 +1240,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Switching audio to $target'),
+          content: Text('Switching audio to $targetLabel'),
           duration: const Duration(seconds: 2),
           backgroundColor: NivioTheme.netflixRed,
         ),

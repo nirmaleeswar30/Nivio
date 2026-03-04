@@ -17,6 +17,68 @@ class Net22ScraperService {
   static const String _apiUrl = 'https://net52.cc';
   static const String _defaultUserAgent =
       'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+  static const Map<String, String> _audioAliasToCode = {
+    'english': 'eng',
+    'eng': 'eng',
+    'en': 'eng',
+    'hindi': 'hin',
+    'hin': 'hin',
+    'hi': 'hin',
+    'tamil': 'tam',
+    'tam': 'tam',
+    'ta': 'tam',
+    'telugu': 'tel',
+    'tel': 'tel',
+    'te': 'tel',
+    'malayalam': 'mal',
+    'mal': 'mal',
+    'ml': 'mal',
+    'kannada': 'kan',
+    'kan': 'kan',
+    'kn': 'kan',
+    'japanese': 'jpn',
+    'jpn': 'jpn',
+    'ja': 'jpn',
+    'korean': 'kor',
+    'kor': 'kor',
+    'ko': 'kor',
+    'chinese': 'chi',
+    'chi': 'chi',
+    'zho': 'chi',
+    'zh': 'chi',
+    'spanish': 'spa',
+    'spa': 'spa',
+    'es': 'spa',
+    'french': 'fre',
+    'fre': 'fre',
+    'fra': 'fre',
+    'fr': 'fre',
+    'german': 'ger',
+    'ger': 'ger',
+    'deu': 'ger',
+    'de': 'ger',
+    'italian': 'ita',
+    'ita': 'ita',
+    'it': 'ita',
+    'portuguese': 'por',
+    'por': 'por',
+    'pt': 'por',
+    'arabic': 'ara',
+    'ara': 'ara',
+    'ar': 'ara',
+    'russian': 'rus',
+    'rus': 'rus',
+    'ru': 'rus',
+    'bengali': 'ben',
+    'ben': 'ben',
+    'bn': 'ben',
+    'marathi': 'mar',
+    'mar': 'mar',
+    'mr': 'mar',
+    'urdu': 'urd',
+    'urd': 'urd',
+    'ur': 'urd',
+  };
 
   final Dio _dio = Dio(
     BaseOptions(
@@ -580,15 +642,26 @@ class Net22ScraperService {
   }) {
     if (variants.isEmpty) return null;
 
-    final preferred = preferredAudio?.trim().toLowerCase() ?? '';
-    if (preferred.isEmpty || preferred == 'auto') {
+    final preferredRaw = preferredAudio?.trim().toLowerCase() ?? '';
+    if (preferredRaw.isEmpty || preferredRaw == 'auto') {
       return variants.first;
     }
+    final preferredCanonical = _canonicalAudioValue(preferredRaw);
+    final preferredToken = _normalizeAudioToken(preferredRaw);
 
     for (final variant in variants) {
-      final label = _audioLabelFromVariant(variant.title).toLowerCase();
-      if (label.isEmpty) continue;
-      if (label == preferred || label.contains(preferred)) {
+      final labelRaw = _audioLabelFromVariant(variant.title).toLowerCase();
+      if (labelRaw.isEmpty) continue;
+
+      final labelCanonical = _canonicalAudioValue(labelRaw);
+      final labelToken = _normalizeAudioToken(labelRaw);
+      if (preferredCanonical.isNotEmpty &&
+          preferredCanonical == labelCanonical) {
+        return variant;
+      }
+      if (preferredToken.isNotEmpty &&
+          (labelToken.contains(preferredToken) ||
+              preferredToken.contains(labelToken))) {
         return variant;
       }
     }
@@ -634,6 +707,18 @@ class Net22ScraperService {
     return file.contains('.m3u8') ||
         type.contains('mpegurl') ||
         type.contains('hls');
+  }
+
+  String _normalizeAudioToken(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  String _canonicalAudioValue(String value) {
+    final token = _normalizeAudioToken(value.trim());
+    if (token.isEmpty) return '';
+    final alias = _audioAliasToCode[token];
+    if (alias != null && alias.isNotEmpty) return alias;
+    return token;
   }
 
   String _normalizeFileUrl(String raw) {
