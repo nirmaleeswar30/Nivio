@@ -259,7 +259,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     final season = media.mediaType == 'tv'
         ? ref.read(selectedSeasonProvider)
         : 1;
-    context.push(
+    context.go(
       Uri(
         path: '/party',
         queryParameters: {

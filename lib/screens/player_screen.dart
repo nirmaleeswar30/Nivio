@@ -695,7 +695,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     _watchPartyService = service;
     _watchPartyPlaybackSub ??= service.playbackStream.listen((playback) {
-      if ((!_hasWatchPartyContext && !service.isInSession) || service.isHost) {
+      if ((!_hasWatchPartyContext && !service.isInSession)) {
         return;
       }
       unawaited(_applyWatchPartyPlayback(playback));
@@ -769,7 +769,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _updateWatchPartyHostSyncTimer() {
     final shouldSync =
         _watchPartyService?.isInSession == true &&
-        _watchPartyService?.canControlPlayback == true &&
+        _watchPartyService?.isHost == true &&
+        (_watchPartyService?.controllerId == null ||
+            (_watchPartyService?.controllerId ?? '').trim().isEmpty) &&
         _isDirectStream;
     if (!shouldSync) {
       _watchPartyHostSyncTimer?.cancel();
@@ -861,7 +863,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _applyWatchPartyPlayback(
     WatchPartyPlaybackState playback,
   ) async {
-    if (!mounted || _watchPartyService?.canControlPlayback == true) return;
+    final service = _watchPartyService;
+    if (!mounted || service == null) return;
+    if (playback.hostId == service.userId) return;
 
     if (playback.mediaId != widget.mediaId) {
       _syncRouteToWatchPartyPlayback(playback);
@@ -3614,7 +3618,7 @@ class _EpisodePickerSheetState extends ConsumerState<_EpisodePickerSheet> {
                                                     ),
                                                   Expanded(
                                                     child: Text(
-                                                      'E${episode.episodeNumber} Ãƒâ€šÃ‚Â· ${episode.episodeName ?? 'Episode ${episode.episodeNumber}'}',
+                                                      'E${episode.episodeNumber} - ${episode.episodeName ?? 'Episode ${episode.episodeNumber}'}',
                                                       style: TextStyle(
                                                         fontSize: 14,
                                                         fontWeight:

@@ -37,7 +37,8 @@ class WatchPartyServiceSupabase {
 
   WatchPartySession? get currentSession => _session;
   bool get isHost => _isHost;
-  bool get canControlPlayback => _isHost || (_controllerId == userId);
+    bool get canControlPlayback =>
+      _isHost || (_controllerId != null && _controllerId == userId);
   String? get controllerId => _controllerId;
   bool get isInSession => _sessionCode != null;
   String? get sessionCode => _sessionCode;
@@ -539,12 +540,32 @@ class WatchPartyServiceSupabase {
   }
 
   void _handlePresenceLeave(List<Presence> leftPresences) {
+    var delegatedControllerLeft = false;
     for (final presence in leftPresences) {
       final participantId = (presence.payload['user_id'] as String?)?.trim();
       if (participantId != null && participantId.isNotEmpty) {
         _participants.remove(participantId);
+        if (_controllerId == participantId) {
+          _controllerId = null;
+          delegatedControllerLeft = true;
+        }
       }
     }
+
+    if (delegatedControllerLeft && _isHost && _channel != null) {
+      final version = _nextStateVersion();
+      unawaited(
+        _channel!.sendBroadcastMessage(
+          event: 'controller_update',
+          payload: {
+            'controllerId': null,
+            'stateVersion': version,
+            'updatedBy': userId,
+          },
+        ),
+      );
+    }
+
     _emitSessionUpdate();
   }
 

@@ -34,15 +34,49 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
   StreamSubscription<WatchPartyPlaybackState>? _playbackSubscription;
   bool _isLoading = false;
   bool _hasNavigatedToPlayer = false;
+  bool _isControllerUpdating = false;
+  int? _selectedMediaId;
+  String? _selectedMediaType;
+  int _selectedSeason = 1;
+  String? _selectedMediaTitle;
 
   @override
   void initState() {
     super.initState();
+    _selectedMediaId = widget.preselectedMediaId;
+    _selectedMediaType = widget.preselectedMediaType;
+    _selectedSeason = widget.preselectedSeason;
+    _selectedMediaTitle = widget.preselectedMediaTitle;
+
     final service = ref.read(watchPartyServiceProvider);
     if (service != null) {
       _playbackSubscription = service.playbackStream.listen(
         _handlePlaybackSync,
       );
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant WatchPartyScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final hasIncomingSelection =
+        widget.preselectedMediaId != null &&
+        (widget.preselectedMediaType ?? '').isNotEmpty;
+    final incomingChanged =
+        widget.preselectedMediaId != oldWidget.preselectedMediaId ||
+        widget.preselectedMediaType != oldWidget.preselectedMediaType ||
+        widget.preselectedSeason != oldWidget.preselectedSeason ||
+        widget.preselectedMediaTitle != oldWidget.preselectedMediaTitle;
+
+    // Keep local selection in sync when a new title is passed from media detail.
+    if (hasIncomingSelection && incomingChanged) {
+      setState(() {
+        _selectedMediaId = widget.preselectedMediaId;
+        _selectedMediaType = widget.preselectedMediaType;
+        _selectedSeason = widget.preselectedSeason;
+        _selectedMediaTitle = widget.preselectedMediaTitle;
+      });
     }
   }
 
@@ -119,8 +153,7 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
       return;
     }
 
-    if (widget.preselectedMediaId == null ||
-        (widget.preselectedMediaType ?? '').isEmpty) {
+    if (_selectedMediaId == null || (_selectedMediaType ?? '').isEmpty) {
       _showMessage('Party started. Pick a title to begin playback.');
       return;
     }
@@ -128,14 +161,24 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
     _hasNavigatedToPlayer = true;
     context.push(
       _playerRoute(
-        mediaId: widget.preselectedMediaId!,
-        mediaType: widget.preselectedMediaType!,
-        season: widget.preselectedSeason,
+        mediaId: _selectedMediaId!,
+        mediaType: _selectedMediaType!,
+        season: _selectedSeason,
         episode: 1,
         partyCode: code,
         isHost: true,
       ),
     );
+  }
+
+  void _clearSelectedTitle() {
+    setState(() {
+      _selectedMediaId = null;
+      _selectedMediaType = null;
+      _selectedSeason = 1;
+      _selectedMediaTitle = null;
+    });
+    _showMessage('Title unselected');
   }
 
   Future<void> _joinParty() async {
@@ -213,6 +256,29 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
     _showMessage('Code copied');
   }
 
+  Future<void> _setPlaybackController(
+    WatchPartyServiceSupabase service, {
+    required String? participantId,
+    String? participantName,
+  }) async {
+    if (_isControllerUpdating) return;
+
+    setState(() => _isControllerUpdating = true);
+    await service.setPlaybackController(participantId);
+    if (!mounted) return;
+    setState(() => _isControllerUpdating = false);
+
+    if (participantId == null) {
+      _showMessage('Playback control returned to host');
+    } else {
+      _showMessage(
+        participantName == null || participantName.trim().isEmpty
+            ? 'Playback control delegated'
+            : 'Playback control given to ${participantName.trim()}',
+      );
+    }
+  }
+
   String _participantInitials(String name) {
     final parts = name
         .trim()
@@ -258,6 +324,17 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
     WatchPartySession session,
   ) {
     final playback = session.playbackState;
+    WatchPartyParticipant? currentController;
+    final controllerId = session.controllerId;
+    if (controllerId != null && controllerId.isNotEmpty) {
+      for (final participant in session.participants) {
+        if (participant.id == controllerId) {
+          currentController = participant;
+          break;
+        }
+      }
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -298,39 +375,99 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
             runSpacing: 8,
             children: session.participants
                 .map(
-                  (participant) => Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: participant.isHost
-                          ? NivioTheme.accentColorOf(
-                              context,
-                            ).withValues(alpha: 0.2)
-                          : Colors.white.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _buildParticipantAvatar(participant),
-                        const SizedBox(width: 7),
-                        Text(
-                          participant.isHost
-                              ? '${participant.name} (Host)'
-                              : participant.name,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
+                  (participant) {
+                    final isController = participant.id == controllerId;
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isController
+                            ? NivioTheme.accentColorOf(
+                                context,
+                              ).withValues(alpha: 0.3)
+                            : participant.isHost
+                            ? NivioTheme.accentColorOf(
+                                context,
+                              ).withValues(alpha: 0.2)
+                            : Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(999),
+                        border: isController
+                            ? Border.all(
+                                color: NivioTheme.accentColorOf(context),
+                              )
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildParticipantAvatar(participant),
+                          const SizedBox(width: 7),
+                          Text(
+                            participant.isHost
+                                ? '${participant.name} (Host)'
+                                : participant.name,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
+                          if (isController) ...[
+                            const SizedBox(width: 6),
+                            const Icon(
+                              Icons.sports_esports,
+                              size: 14,
+                              color: Colors.white,
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  },
                 )
                 .toList(),
           ),
+          const SizedBox(height: 12),
+          Text(
+            currentController == null
+                ? 'Delegated controller: None (host controls)'
+                : 'Delegated controller: ${currentController.name} (host also controls)',
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+          if (service.isHost) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton(
+                  onPressed: _isControllerUpdating || controllerId == null
+                      ? null
+                      : () => _setPlaybackController(
+                          service,
+                          participantId: null,
+                        ),
+                  child: const Text('Host Controls'),
+                ),
+                ...session.participants
+                    .where((participant) => !participant.isHost)
+                    .map(
+                      (participant) => OutlinedButton(
+                        onPressed:
+                            _isControllerUpdating || controllerId == participant.id
+                            ? null
+                            : () => _setPlaybackController(
+                                service,
+                                participantId: participant.id,
+                                participantName: participant.name,
+                              ),
+                        child: Text('Give ${participant.name} Control'),
+                      ),
+                    ),
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
           if (playback != null)
             FilledButton(
@@ -397,7 +534,7 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
         : ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              if ((widget.preselectedMediaTitle ?? '').trim().isNotEmpty) ...[
+              if ((_selectedMediaTitle ?? '').trim().isNotEmpty) ...[
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -407,12 +544,22 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
                       color: Colors.white.withValues(alpha: 0.1),
                     ),
                   ),
-                  child: Text(
-                    'Selected: ${widget.preselectedMediaTitle}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Selected: ${_selectedMediaTitle}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _clearSelectedTitle,
+                        child: const Text('Unselect'),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 12),

@@ -13,6 +13,9 @@ import 'package:nivio/core/debug_log.dart';
 /// Next direct fallback: native FlixHQ scraper.
 /// Fallback: vidsrc.cc, vidsrc.to, vidlink.pro (embed/WebView).
 class StreamingService {
+  static const Duration _net22PrimaryTimeout = Duration(seconds: 6);
+  static const Duration _net22AnimeFallbackTimeout = Duration(seconds: 4);
+
   final AimiAnimeService _aimiAnimeService = AimiAnimeService();
   final Net22ScraperService _net22ScraperService = Net22ScraperService();
   final FlixhqScraperService _flixhqScraperService = FlixhqScraperService();
@@ -214,13 +217,15 @@ class StreamingService {
     final title = media.title ?? media.name ?? '';
     final year = _extractYear(media);
 
-    final primary = await _net22ScraperService.fetchStream(
+    final primary = await _fetchNet22WithTimeout(
       mediaType: media.mediaType,
       season: season,
       episode: episode,
       title: title,
       year: year,
       preferredAudio: preferredNet22Audio,
+      timeout: _net22PrimaryTimeout,
+      attemptLabel: 'primary',
     );
     if (primary != null) return primary;
 
@@ -230,14 +235,46 @@ class StreamingService {
       'Net22 anime fallback: retrying with season=1 for media=${media.id}, original S${season}E$episode',
     );
 
-    return _net22ScraperService.fetchStream(
+    return _fetchNet22WithTimeout(
       mediaType: media.mediaType,
       season: 1,
       episode: episode,
       title: title,
       year: year,
       preferredAudio: preferredNet22Audio,
+      timeout: _net22AnimeFallbackTimeout,
+      attemptLabel: 'anime-season-fallback',
     );
+  }
+
+  Future<StreamResult?> _fetchNet22WithTimeout({
+    required String mediaType,
+    required int season,
+    required int episode,
+    required String title,
+    required String? year,
+    required String? preferredAudio,
+    required Duration timeout,
+    required String attemptLabel,
+  }) async {
+    final result = await _net22ScraperService
+        .fetchStream(
+          mediaType: mediaType,
+          season: season,
+          episode: episode,
+          title: title,
+          year: year,
+          preferredAudio: preferredAudio,
+        )
+        .timeout(timeout, onTimeout: () => null);
+
+    if (result == null) {
+      appDebugLog(
+        'Net22 $attemptLabel attempt failed or timed out after ${timeout.inSeconds}s',
+      );
+    }
+
+    return result;
   }
 
   /// Get the total number of available providers (direct + embeds).
