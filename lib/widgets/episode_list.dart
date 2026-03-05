@@ -113,13 +113,10 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                 _searchQuery = value;
                 _displayedCount = _pageSize;
               }),
-              style: const TextStyle(
-                color: NivioTheme.netflixWhite,
-                fontSize: 14,
-              ),
+              style: TextStyle(color: NivioTheme.netflixWhite, fontSize: 14),
               decoration: InputDecoration(
                 hintText: 'Search episodes',
-                hintStyle: const TextStyle(color: NivioTheme.netflixGrey),
+                hintStyle: TextStyle(color: NivioTheme.netflixGrey),
                 prefixIcon: Icon(
                   Icons.search,
                   color: NivioTheme.netflixLightGrey.withValues(alpha: 0.7),
@@ -155,11 +152,13 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(999),
-                  borderSide: const BorderSide(color: Color(0x26FFFFFF)),
+                  borderSide: BorderSide(color: Color(0x26FFFFFF)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(999),
-                  borderSide: const BorderSide(color: NivioTheme.netflixRed),
+                  borderSide: BorderSide(
+                    color: NivioTheme.accentColorOf(context),
+                  ),
                 ),
               ),
             ),
@@ -191,7 +190,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                 (entry) => _buildEpisodeCard(entry.key, entry.value),
               ),
               if (_hasMore)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.symmetric(vertical: 20),
                   child: Center(
                     child: SizedBox(
@@ -199,7 +198,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                       height: 22,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: NivioTheme.netflixRed,
+                        color: NivioTheme.accentColorOf(context),
                       ),
                     ),
                   ),
@@ -208,12 +207,14 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
           ],
         );
       },
-      loading: () => const Center(
-        child: CircularProgressIndicator(color: NivioTheme.netflixRed),
+      loading: () => Center(
+        child: CircularProgressIndicator(
+          color: NivioTheme.accentColorOf(context),
+        ),
       ),
       error: (err, stack) => Text(
         'Error loading episodes: $err',
-        style: const TextStyle(color: NivioTheme.netflixLightGrey),
+        style: TextStyle(color: NivioTheme.netflixLightGrey),
       ),
     );
   }
@@ -316,7 +317,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                         children: [
                           Text(
                             '${episode.episodeNumber}. ${episode.episodeName ?? 'Episode ${episode.episodeNumber}'}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
                               color: NivioTheme.netflixWhite,
                               fontWeight: FontWeight.w700,
@@ -342,7 +343,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                             const SizedBox(height: 4),
                             Text(
                               episode.overview ?? '',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 color: NivioTheme.netflixLightGrey,
                                 height: 1.35,
@@ -428,13 +429,13 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
     width: 100,
     height: 75,
     color: const Color(0x33262C3D),
-    child: const Center(
+    child: Center(
       child: SizedBox(
         width: 16,
         height: 16,
         child: CircularProgressIndicator(
           strokeWidth: 2,
-          color: NivioTheme.netflixRed,
+          color: NivioTheme.accentColorOf(context),
         ),
       ),
     ),
@@ -444,10 +445,6 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
     width: 100,
     height: 75,
     color: const Color(0x33262C3D),
-    child: const Icon(
-      Icons.ondemand_video,
-      color: NivioTheme.netflixGrey,
-      size: 24,
-    ),
+    child: Icon(Icons.ondemand_video, color: NivioTheme.netflixGrey, size: 24),
   );
 }

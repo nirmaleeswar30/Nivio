@@ -15,7 +15,47 @@ import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/widgets/episode_list.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
+import 'package:url_launcher/url_launcher.dart';
+
+class _TrailerSource {
+  const _TrailerSource({
+    required this.site,
+    required this.key,
+    this.type,
+    this.official = false,
+  });
+
+  final String site;
+  final String key;
+  final String? type;
+  final bool official;
+
+  String? get embedUrl {
+    switch (site.toLowerCase()) {
+      case 'youtube':
+        return 'https://www.youtube-nocookie.com/embed/$key?autoplay=1&playsinline=1&rel=0&modestbranding=1';
+      case 'vimeo':
+        return 'https://player.vimeo.com/video/$key?autoplay=1';
+      case 'dailymotion':
+        return 'https://www.dailymotion.com/embed/video/$key?autoplay=1';
+      default:
+        return watchUrl;
+    }
+  }
+
+  String? get watchUrl {
+    switch (site.toLowerCase()) {
+      case 'youtube':
+        return 'https://www.youtube.com/watch?v=$key';
+      case 'vimeo':
+        return 'https://vimeo.com/$key';
+      case 'dailymotion':
+        return 'https://www.dailymotion.com/video/$key';
+      default:
+        return null;
+    }
+  }
+}
 
 class MediaDetailScreen extends ConsumerStatefulWidget {
   final int mediaId;
@@ -34,7 +74,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   bool _aboutOverflow = false;
   bool _isLoading = true;
   String? _error;
-  String? _trailerUrl;
+  _TrailerSource? _trailerSource;
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -49,19 +89,59 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     super.dispose();
   }
 
-  String? _extractTrailerKey(dynamic videosData) {
+  _TrailerSource? _extractTrailerSource(dynamic videosData) {
     if (videosData == null) return null;
     final results = videosData['results'] as List<dynamic>?;
     if (results == null || results.isEmpty) return null;
 
-    for (final video in results) {
-      if (video['site'] == 'YouTube' &&
-          video['type'] == 'Trailer' &&
-          video['official'] == true) {
-        return 'https://www.youtube.com/watch?v=${video['key']}';
+    final candidates = <_TrailerSource>[];
+    for (final raw in results) {
+      if (raw is! Map<String, dynamic>) continue;
+      final site = (raw['site'] as String?)?.trim();
+      final key = (raw['key'] as String?)?.trim();
+      if (site == null || site.isEmpty || key == null || key.isEmpty) {
+        continue;
       }
+      candidates.add(
+        _TrailerSource(
+          site: site,
+          key: key,
+          type: raw['type'] as String?,
+          official: raw['official'] == true,
+        ),
+      );
     }
-    return null;
+
+    if (candidates.isEmpty) return null;
+
+    int score(_TrailerSource source) {
+      int value = 0;
+      final type = (source.type ?? '').toLowerCase();
+      final site = source.site.toLowerCase();
+
+      if (type == 'trailer') {
+        value += 50;
+      } else if (type == 'teaser') {
+        value += 35;
+      } else if (type == 'clip') {
+        value += 20;
+      }
+
+      if (source.official) {
+        value += 20;
+      }
+
+      if (site == 'youtube') {
+        value += 10;
+      } else if (site == 'vimeo') {
+        value += 8;
+      }
+
+      return value;
+    }
+
+    candidates.sort((a, b) => score(b).compareTo(score(a)));
+    return candidates.first;
   }
 
   Future<void> _fetchMediaDetails() async {
@@ -113,7 +193,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       final mediaDetails = SearchResult.fromJson(detailsWithVideos!);
       ref.read(selectedMediaProvider.notifier).state = mediaDetails;
 
-      final trailerUrl = _extractTrailerKey(detailsWithVideos['videos']);
+      final trailerSource = _extractTrailerSource(detailsWithVideos['videos']);
       final genres = (detailsWithVideos['genres'] as List<dynamic>? ?? [])
           .map((genre) => (genre as Map<String, dynamic>)['name'] as String?)
           .whereType<String>()
@@ -121,7 +201,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 
       setState(() {
         _media = mediaDetails;
-        _trailerUrl = trailerUrl;
+        _trailerSource = trailerSource;
         _genres = genres;
         _isLoading = false;
       });
@@ -134,16 +214,10 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   }
 
   void _showTrailerPlayer(BuildContext context) {
-    if (_trailerUrl == null) return;
-
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierColor: Colors.black87,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 60),
-        child: TrailerOverlay(youtubeUrl: _trailerUrl!),
+    if (_trailerSource == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TrailerFullscreenScreen(source: _trailerSource!),
       ),
     );
   }
@@ -178,8 +252,10 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
             backgroundColor: NivioTheme.netflixBlack,
             elevation: 0,
           ),
-          body: const Center(
-            child: CircularProgressIndicator(color: NivioTheme.netflixRed),
+          body: Center(
+            child: CircularProgressIndicator(
+              color: NivioTheme.accentColorOf(context),
+            ),
           ),
         ),
       );
@@ -199,9 +275,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const PhosphorIcon(
+                  PhosphorIcon(
                     PhosphorIconsRegular.warningCircle,
-                    color: NivioTheme.netflixRed,
+                    color: NivioTheme.accentColorOf(context),
                     size: 56,
                   ),
                   const SizedBox(height: 14),
@@ -209,7 +285,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                   const SizedBox(height: 8),
                   Text(
                     _error!,
-                    style: const TextStyle(color: NivioTheme.netflixGrey),
+                    style: TextStyle(color: NivioTheme.netflixGrey),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 20),
@@ -267,7 +343,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  // ── Radial gradient bloom ──────────────────────────────────
+                  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Radial gradient bloom ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
                   // Dominant color "leaks" from the hero image like light
                   // emitting from the artwork. Fades to transparent by ~150px
                   // below the image bottom. Very low opacity, heavily blurred.
@@ -299,7 +375,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                     ),
                   ),
 
-                  // ── Main content ───────────────────────────────────────────
+                  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Main content ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -359,7 +435,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                           ScaffoldMessenger.of(
                                             context,
                                           ).showSnackBar(
-                                            const SnackBar(
+                                            SnackBar(
                                               content: Text('Cast coming soon'),
                                             ),
                                           );
@@ -384,7 +460,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                           ScaffoldMessenger.of(
                                             context,
                                           ).showSnackBar(
-                                            const SnackBar(
+                                            SnackBar(
                                               content: Text(
                                                 'Link copied to clipboard',
                                               ),
@@ -438,10 +514,10 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                     ),
                               ),
                               const SizedBox(height: 10),
-                              // Genre subtext — wraps to next line on overflow
+                              // Genre subtext ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â wraps to next line on overflow
                               Text(
                                 _buildGenreMeta(year, media.voteAverage),
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: NivioTheme.netflixLightGrey,
                                   fontSize: 13,
                                   fontWeight: FontWeight.w500,
@@ -487,7 +563,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                   ),
                                 ],
                               ),
-                              if (_trailerUrl != null) ...[
+                              if (_trailerSource != null) ...[
                                 const SizedBox(height: 12),
                                 Align(
                                   alignment: Alignment.centerLeft,
@@ -582,7 +658,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           ),
           child: Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               color: NivioTheme.netflixWhite,
               fontSize: 12,
               fontWeight: FontWeight.w600,
@@ -676,7 +752,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       ref.read(watchlistRefreshProvider.notifier).refresh();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('Removed from watchlist'),
           duration: Duration(seconds: 2),
         ),
@@ -696,7 +772,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       ref.read(watchlistRefreshProvider.notifier).refresh();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('Added to watchlist'),
           duration: Duration(seconds: 2),
         ),
@@ -746,11 +822,11 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                           : 1,
                       dropdownColor: NivioTheme.netflixDarkGrey,
                       borderRadius: BorderRadius.circular(14),
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.expand_more,
                         color: NivioTheme.netflixWhite,
                       ),
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: NivioTheme.netflixWhite,
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
@@ -784,12 +860,14 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           ],
         );
       },
-      loading: () => const Center(
-        child: CircularProgressIndicator(color: NivioTheme.netflixRed),
+      loading: () => Center(
+        child: CircularProgressIndicator(
+          color: NivioTheme.accentColorOf(context),
+        ),
       ),
       error: (err, stack) => Text(
         'Error loading seasons: $err',
-        style: const TextStyle(color: NivioTheme.netflixLightGrey),
+        style: TextStyle(color: NivioTheme.netflixLightGrey),
       ),
     );
   }
@@ -855,166 +933,151 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   }
 }
 
-class TrailerOverlay extends StatefulWidget {
-  final String youtubeUrl;
+class TrailerFullscreenScreen extends StatefulWidget {
+  const TrailerFullscreenScreen({super.key, required this.source});
 
-  const TrailerOverlay({super.key, required this.youtubeUrl});
+  final _TrailerSource source;
 
   @override
-  State<TrailerOverlay> createState() => _TrailerOverlayState();
+  State<TrailerFullscreenScreen> createState() =>
+      _TrailerFullscreenScreenState();
 }
 
-class _TrailerOverlayState extends State<TrailerOverlay> {
+class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
   bool _isLoading = true;
-  String? _streamUrl;
-  String? _error;
-
-  String? _extractYoutubeVideoId(String url) {
-    final regExp = RegExp(
-      r'(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})',
-      caseSensitive: false,
-    );
-    final match = regExp.firstMatch(url);
-    return match?.group(1);
-  }
+  bool _hasError = false;
 
   @override
   void initState() {
     super.initState();
-    _fetchStreamUrl();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
   }
 
-  Future<void> _fetchStreamUrl() async {
-    final videoId = _extractYoutubeVideoId(widget.youtubeUrl);
-    if (videoId == null) {
-      if (!mounted) return;
-      setState(() {
-        _error = 'Invalid YouTube URL';
-        _isLoading = false;
-      });
-      return;
-    }
+  @override
+  void dispose() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+    super.dispose();
+  }
 
-    try {
-      final ytClient = yt.YoutubeExplode();
-      final manifest = await ytClient.videos.streamsClient.getManifest(videoId);
-      ytClient.close();
+  Future<void> _openExternally() async {
+    final url = widget.source.watchUrl ?? widget.source.embedUrl;
+    if (url == null) return;
 
-      final muxed = manifest.muxed.sortByVideoQuality();
-      if (muxed.isNotEmpty) {
-        if (!mounted) return;
-        setState(() {
-          _streamUrl = muxed.last.url.toString();
-          _isLoading = false;
-        });
-        return;
-      }
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
 
-      final videoOnly = manifest.videoOnly.sortByVideoQuality();
-      if (videoOnly.isNotEmpty) {
-        if (!mounted) return;
-        setState(() {
-          _streamUrl = videoOnly.last.url.toString();
-          _isLoading = false;
-        });
-        return;
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _error = 'No streams available';
-        _isLoading = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _error = 'Failed to load trailer';
-        _isLoading = false;
-      });
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open trailer externally')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Container(
-        constraints: const BoxConstraints(maxWidth: 700, maxHeight: 450),
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: const AspectRatio(
-          aspectRatio: 16 / 9,
-          child: Center(
-            child: CircularProgressIndicator(
-              color: NivioTheme.netflixRed,
-              strokeWidth: 3,
-            ),
-          ),
-        ),
-      );
-    }
+    final trailerUrl = widget.source.embedUrl;
 
-    if (_error != null || _streamUrl == null) {
-      return Container(
-        constraints: const BoxConstraints(maxWidth: 700, maxHeight: 450),
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: AspectRatio(
-          aspectRatio: 16 / 9,
-          child: Center(
-            child: Text(
-              _error ?? 'Unable to play trailer',
-              style: const TextStyle(color: Colors.white70),
-            ),
-          ),
-        ),
-      );
-    }
-
-    final videoHtml =
-        '''
-<!DOCTYPE html>
-<html><head>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<style>*{margin:0;padding:0;background:#000}html,body{height:100%;width:100%;overflow:hidden}video{width:100%;height:100%;object-fit:contain}</style>
-</head><body>
-<video src="${_streamUrl!}" autoplay playsinline controls></video>
-</body></html>
-''';
-
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 700, maxHeight: 450),
-      decoration: BoxDecoration(
-        color: Colors.black,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Stack(
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: AspectRatio(
-              aspectRatio: 16 / 9,
-              child: InAppWebView(
-                initialData: InAppWebViewInitialData(
-                  data: videoHtml,
-                  mimeType: 'text/html',
-                  encoding: 'utf-8',
-                ),
-                initialSettings: InAppWebViewSettings(
-                  mediaPlaybackRequiresUserGesture: false,
-                  allowsInlineMediaPlayback: true,
-                  transparentBackground: true,
-                  javaScriptEnabled: true,
+          Positioned.fill(
+            child: trailerUrl == null
+                ? Center(
+                    child: Text(
+                      'Unsupported trailer source: ${widget.source.site}',
+                      style: const TextStyle(color: Colors.white70),
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                : InAppWebView(
+                    initialUrlRequest: URLRequest(url: WebUri(trailerUrl)),
+                    initialSettings: InAppWebViewSettings(
+                      mediaPlaybackRequiresUserGesture: false,
+                      allowsInlineMediaPlayback: true,
+                      transparentBackground: true,
+                      javaScriptEnabled: true,
+                    ),
+                    onLoadStop: (controller, url) {
+                      if (!mounted) return;
+                      setState(() {
+                        _isLoading = false;
+                        _hasError = false;
+                      });
+                    },
+                    onReceivedError: (controller, request, error) {
+                      if (!mounted) return;
+                      setState(() {
+                        _isLoading = false;
+                        _hasError = true;
+                      });
+                    },
+                    onReceivedHttpError: (controller, request, response) {
+                      if (!mounted) return;
+                      setState(() {
+                        _isLoading = false;
+                        _hasError = true;
+                      });
+                    },
+                    onConsoleMessage: (controller, consoleMessage) {
+                      final msg = consoleMessage.message.toLowerCase();
+                      final hasPlaybackRestriction =
+                          msg.contains('error 153') ||
+                          (msg.contains('youtube') &&
+                              msg.contains('playback') &&
+                              msg.contains('website'));
+                      if (!hasPlaybackRestriction || !mounted) return;
+                      setState(() {
+                        _isLoading = false;
+                        _hasError = true;
+                      });
+                    },
+                  ),
+          ),
+          if (_hasError)
+            Positioned.fill(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Unable to play trailer from ${widget.source.site}',
+                      style: const TextStyle(color: Colors.white70),
+                      textAlign: TextAlign.center,
+                    ),
+                    if (widget.source.watchUrl != null) ...[
+                      const SizedBox(height: 10),
+                      FilledButton(
+                        onPressed: _openExternally,
+                        child: const Text('Open Externally'),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
-          ),
+          if (_isLoading && trailerUrl != null && !_hasError)
+            Positioned.fill(
+              child: Center(
+                child: CircularProgressIndicator(
+                  color: NivioTheme.accentColorOf(context),
+                  strokeWidth: 3,
+                ),
+              ),
+            ),
           Positioned(
-            top: 8,
-            right: 8,
+            top: MediaQuery.paddingOf(context).top + 8,
+            right: 12,
             child: GestureDetector(
               onTap: () => Navigator.pop(context),
               child: Container(

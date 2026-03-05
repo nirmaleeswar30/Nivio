@@ -73,7 +73,7 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
               ? 'Found $count new episode${count > 1 ? 's' : ''}'
               : 'No new episodes found',
         ),
-        backgroundColor: NivioTheme.netflixRed,
+        backgroundColor: NivioTheme.accentColorOf(context),
       ),
     );
   }
@@ -85,7 +85,7 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
     final grouped = _buildGroupedEpisodes(episodes);
 
     final content = Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
@@ -168,7 +168,7 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
             }
             context.go('/home');
           },
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20),
         ),
         const SizedBox(width: 4),
         const Text(
@@ -182,7 +182,7 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
         const Spacer(),
         PopupMenuButton<String>(
           color: NivioTheme.netflixDarkGrey,
-          icon: const Icon(Icons.more_horiz, color: NivioTheme.netflixWhite),
+          icon: Icon(Icons.more_horiz, color: NivioTheme.netflixWhite),
           onSelected: (value) async {
             if (value == 'mark_read') {
               await _markAllAsRead();
@@ -253,7 +253,7 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: _markAllAsRead,
-                  icon: const Icon(Icons.done_all_rounded, size: 18),
+                  icon: Icon(Icons.done_all_rounded, size: 18),
                   label: const Text('Mark Read'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white,
@@ -267,10 +267,10 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: _checkNow,
-                  icon: const Icon(Icons.sync_rounded, size: 18),
+                  icon: Icon(Icons.sync_rounded, size: 18),
                   label: const Text('Check Now'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: NivioTheme.netflixRed,
+                    backgroundColor: NivioTheme.accentColorOf(context),
                     foregroundColor: Colors.white,
                   ),
                 ),
@@ -295,7 +295,7 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
           children: [
             Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: NivioTheme.netflixLightGrey,
                 fontSize: 12,
               ),
@@ -303,7 +303,7 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
             const SizedBox(height: 2),
             Text(
               value,
-              style: const TextStyle(
+              style: TextStyle(
                 color: NivioTheme.netflixWhite,
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
@@ -321,7 +321,7 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
         TextField(
           controller: _searchController,
           onChanged: (value) => setState(() => _query = value.trim()),
-          style: const TextStyle(color: NivioTheme.netflixWhite, fontSize: 14),
+          style: TextStyle(color: NivioTheme.netflixWhite, fontSize: 14),
           decoration: InputDecoration(
             hintText: 'Search shows or episode names...',
             prefixIcon: Icon(
@@ -356,7 +356,7 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: NivioTheme.netflixRed),
+              borderSide: BorderSide(color: NivioTheme.accentColorOf(context)),
             ),
           ),
         ),
@@ -383,12 +383,12 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: isActive
-              ? NivioTheme.netflixRed.withValues(alpha: 0.22)
+              ? NivioTheme.accentColorOf(context).withValues(alpha: 0.22)
               : Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: isActive
-                ? NivioTheme.netflixRed.withValues(alpha: 0.65)
+                ? NivioTheme.accentColorOf(context).withValues(alpha: 0.65)
                 : Colors.white.withValues(alpha: 0.12),
           ),
         ),
@@ -430,7 +430,7 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: hasUnread
-                  ? NivioTheme.netflixRed.withValues(alpha: 0.35)
+                  ? NivioTheme.accentColorOf(context).withValues(alpha: 0.35)
                   : Colors.white.withValues(alpha: 0.1),
             ),
           ),
@@ -464,7 +464,7 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
                             first.showName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: NivioTheme.netflixWhite,
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
@@ -476,8 +476,8 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
                             width: 8,
                             height: 8,
                             margin: const EdgeInsets.only(left: 8),
-                            decoration: const BoxDecoration(
-                              color: NivioTheme.netflixRed,
+                            decoration: BoxDecoration(
+                              color: NivioTheme.accentColorOf(context),
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -510,7 +510,7 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
                                 (episodes.length > 3 ? '...' : ''),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: NivioTheme.netflixLightGrey,
                         fontSize: 13,
                         height: 1.35,
@@ -550,7 +550,7 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
       width: 72,
       height: 108,
       color: NivioTheme.netflixDarkGrey,
-      child: const Icon(Icons.tv_rounded, color: NivioTheme.netflixGrey),
+      child: Icon(Icons.tv_rounded, color: NivioTheme.netflixGrey),
     );
   }
 
@@ -564,7 +564,7 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
       ),
       child: Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           color: NivioTheme.netflixWhite,
           fontSize: 11,
           fontWeight: FontWeight.w600,
@@ -594,7 +594,7 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
             const SizedBox(height: 14),
             Text(
               message,
-              style: const TextStyle(
+              style: TextStyle(
                 color: NivioTheme.netflixWhite,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
@@ -609,7 +609,7 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
             const SizedBox(height: 18),
             ElevatedButton.icon(
               onPressed: _checkNow,
-              icon: const Icon(Icons.sync_rounded),
+              icon: Icon(Icons.sync_rounded),
               label: const Text('Check Now'),
             ),
           ],

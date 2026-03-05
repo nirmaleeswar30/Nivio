@@ -51,10 +51,12 @@ class ContinueWatchingRow extends ConsumerWidget {
           ),
         );
       },
-      loading: () => const SizedBox(
+      loading: () => SizedBox(
         height: 200,
         child: Center(
-          child: CircularProgressIndicator(color: NivioTheme.netflixRed),
+          child: CircularProgressIndicator(
+            color: NivioTheme.accentColorOf(context),
+          ),
         ),
       ),
       error: (err, stack) => SizedBox(
@@ -63,7 +65,11 @@ class ContinueWatchingRow extends ConsumerWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.error_outline, size: 48, color: NivioTheme.netflixRed),
+              Icon(
+                Icons.error_outline,
+                size: 48,
+                color: NivioTheme.accentColorOf(context),
+              ),
               const SizedBox(height: 16),
               Text(
                 'Error loading continue watching',

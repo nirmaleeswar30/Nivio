@@ -100,7 +100,9 @@ class _LibraryScreenState extends State<LibraryScreen>
                         indicatorSize: TabBarIndicatorSize.tab,
                         indicatorPadding: indicatorPadding,
                         indicator: BoxDecoration(
-                          color: NivioTheme.netflixRed.withValues(alpha: 0.9),
+                          color: NivioTheme.accentColorOf(
+                            context,
+                          ).withValues(alpha: 0.9),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         dividerColor: Colors.transparent,

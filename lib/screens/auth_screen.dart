@@ -49,7 +49,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Text('Signed in successfully!'),
               duration: Duration(seconds: 2),
             ),
@@ -81,7 +81,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       await authService.signInAnonymously();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text('Continuing as guest'),
             duration: Duration(seconds: 2),
           ),
@@ -105,7 +105,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -146,7 +146,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
               // Sign In Buttons
               if (_isLoading)
-                const CircularProgressIndicator(color: NivioTheme.netflixRed)
+                CircularProgressIndicator(
+                  color: NivioTheme.accentColorOf(context),
+                )
               else ...[
                 // Google Sign In Button (only show on supported platforms)
                 if (_supportsGoogleSignIn) ...[
@@ -160,7 +162,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       backgroundColor: Colors.white,
                       foregroundColor: Colors.black87,
                     ),
-                    icon: const Icon(Icons.login, size: 24),
+                    icon: Icon(Icons.login, size: 24),
                     label: const Text(
                       'SIGN IN WITH GOOGLE',
                       style: TextStyle(
@@ -182,7 +184,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         horizontal: 32,
                         vertical: 16,
                       ),
-                      side: const BorderSide(color: Colors.white70, width: 2),
+                      side: BorderSide(color: Colors.white70, width: 2),
                       foregroundColor: Colors.white,
                     ),
                     child: const Text(
@@ -203,10 +205,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         horizontal: 32,
                         vertical: 16,
                       ),
-                      backgroundColor: NivioTheme.netflixRed,
+                      backgroundColor: NivioTheme.accentColorOf(context),
                       foregroundColor: Colors.white,
                     ),
-                    icon: const Icon(Icons.play_arrow, size: 24),
+                    icon: Icon(Icons.play_arrow, size: 24),
                     label: const Text(
                       'GET STARTED',
                       style: TextStyle(

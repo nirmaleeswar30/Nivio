@@ -25,16 +25,25 @@ class NivioTheme {
     fontWeight: FontWeight.w500,
   );
 
-  static ThemeData buildDarkTheme({String fontFamily = 'Satoshi'}) {
+  static Color accentColorOf(BuildContext context) {
+    return Theme.of(context).colorScheme.primary;
+  }
+
+  static ThemeData buildDarkTheme({
+    String fontFamily = 'Satoshi',
+    Color accentColor = netflixRed,
+  }) {
+    final secondaryColor = Color.lerp(accentColor, Colors.white, 0.22)!;
+
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
       fontFamily: fontFamily,
       scaffoldBackgroundColor: netflixBlack,
-      primaryColor: netflixRed,
-      colorScheme: const ColorScheme.dark(
-        primary: netflixRed,
-        secondary: Color(0xFFFF4D57),
+      primaryColor: accentColor,
+      colorScheme: ColorScheme.dark(
+        primary: accentColor,
+        secondary: secondaryColor,
         surface: netflixDarkGrey,
         surfaceContainer: netflixDarkGrey,
       ),
@@ -107,7 +116,7 @@ class NivioTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: netflixRed,
+          backgroundColor: accentColor,
           foregroundColor: netflixWhite,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           shape: RoundedRectangleBorder(
@@ -123,9 +132,7 @@ class NivioTheme {
           borderRadius: BorderRadius.all(Radius.circular(14)),
         ),
       ),
-      progressIndicatorTheme: const ProgressIndicatorThemeData(
-        color: netflixRed,
-      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: accentColor),
     );
   }
 

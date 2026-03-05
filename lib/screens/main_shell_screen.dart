@@ -64,6 +64,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final accentColor = Theme.of(context).colorScheme.primary;
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
@@ -84,7 +86,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
             backgroundColor: NivioTheme.netflixBlack,
             elevation: 0,
             type: BottomNavigationBarType.fixed,
-            selectedItemColor: NivioTheme.netflixRed,
+            selectedItemColor: accentColor,
             unselectedItemColor: NivioTheme.netflixGrey,
             showUnselectedLabels: true,
             selectedLabelStyle: const TextStyle(
@@ -92,7 +94,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
               fontWeight: FontWeight.w600,
             ),
             unselectedLabelStyle: const TextStyle(fontSize: 11),
-            items: const [
+            items: [
               BottomNavigationBarItem(
                 icon: PhosphorIcon(
                   PhosphorIconsRegular.house,
@@ -101,7 +103,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 ),
                 activeIcon: PhosphorIcon(
                   PhosphorIconsFill.house,
-                  color: NivioTheme.netflixRed,
+                  color: accentColor,
                   size: 22,
                 ),
                 label: 'Home',
@@ -114,7 +116,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 ),
                 activeIcon: PhosphorIcon(
                   PhosphorIconsFill.magnifyingGlass,
-                  color: NivioTheme.netflixRed,
+                  color: accentColor,
                   size: 22,
                 ),
                 label: 'Discover',
@@ -127,7 +129,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 ),
                 activeIcon: PhosphorIcon(
                   PhosphorIconsFill.calendarCheck,
-                  color: NivioTheme.netflixRed,
+                  color: accentColor,
                   size: 22,
                 ),
                 label: 'Library',
@@ -140,7 +142,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 ),
                 activeIcon: PhosphorIcon(
                   PhosphorIconsFill.userCircle,
-                  color: NivioTheme.netflixRed,
+                  color: accentColor,
                   size: 22,
                 ),
                 label: 'Profile',

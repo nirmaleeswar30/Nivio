@@ -293,9 +293,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       _onSearch(_controller.text);
                     }
                   },
-                  child: const Text(
+                  child: Text(
                     'Apply',
-                    style: TextStyle(color: NivioTheme.netflixRed),
+                    style: TextStyle(color: NivioTheme.accentColorOf(context)),
                   ),
                 ),
               ],
@@ -313,12 +313,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected
-              ? NivioTheme.netflixRed
+              ? NivioTheme.accentColorOf(context)
               : Colors.white.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: isSelected
-                ? NivioTheme.netflixRed
+                ? NivioTheme.accentColorOf(context)
                 : Colors.white.withValues(alpha: 0.3),
           ),
         ),
@@ -354,7 +354,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             Stack(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.tune_rounded, color: Colors.white),
+                  icon: Icon(Icons.tune_rounded, color: Colors.white),
                   onPressed: _showFilterDialog,
                 ),
                 if (hasFilters)
@@ -365,7 +365,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       width: 9,
                       height: 9,
                       decoration: BoxDecoration(
-                        color: NivioTheme.netflixRed,
+                        color: NivioTheme.accentColorOf(context),
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.black, width: 1.2),
                       ),
@@ -393,9 +393,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             child: query.isEmpty
                 ? _buildDefaultResultsState()
                 : _isInitialLoading
-                ? const Center(
+                ? Center(
                     child: CircularProgressIndicator(
-                      color: NivioTheme.netflixRed,
+                      color: NivioTheme.accentColorOf(context),
                     ),
                   )
                 : _allResults.isEmpty
@@ -419,7 +419,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         controller: _controller,
         autofocus: true,
         textInputAction: TextInputAction.search,
-        style: const TextStyle(color: Colors.white, fontSize: 15),
+        style: TextStyle(color: Colors.white, fontSize: 15),
         decoration: InputDecoration(
           hintText: 'Search titles...',
           hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.45)),
@@ -482,7 +482,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         }).toList();
 
         if (defaultResults.isEmpty) {
-          return const Center(
+          return Center(
             child: Text(
               'No default results available',
               style: TextStyle(color: Colors.white70),
@@ -554,10 +554,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           },
         );
       },
-      loading: () => const Center(
-        child: CircularProgressIndicator(color: NivioTheme.netflixRed),
+      loading: () => Center(
+        child: CircularProgressIndicator(
+          color: NivioTheme.accentColorOf(context),
+        ),
       ),
-      error: (error, stackTrace) => const Center(
+      error: (error, stackTrace) => Center(
         child: Text(
           'Failed to load default results',
           style: TextStyle(color: Colors.white70),
@@ -620,7 +622,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 children: [
                   Text(
                     '${_allResults.length} results',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Colors.white,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -678,12 +680,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           color: Colors.white.withValues(alpha: 0.08),
                         ),
                       ),
-                      child: const Center(
+                      child: Center(
                         child: SizedBox(
                           width: 22,
                           height: 22,
                           child: CircularProgressIndicator(
-                            color: NivioTheme.netflixRed,
+                            color: NivioTheme.accentColorOf(context),
                             strokeWidth: 2,
                           ),
                         ),
@@ -709,15 +711,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: NivioTheme.netflixRed.withValues(alpha: 0.18),
+        color: NivioTheme.accentColorOf(context).withValues(alpha: 0.18),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: NivioTheme.netflixRed.withValues(alpha: 0.55),
+          color: NivioTheme.accentColorOf(context).withValues(alpha: 0.55),
         ),
       ),
       child: Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           color: Colors.white,
           fontSize: 11,
           fontWeight: FontWeight.w600,

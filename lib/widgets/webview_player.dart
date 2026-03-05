@@ -58,7 +58,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
             layoutAlgorithm: LayoutAlgorithm.NORMAL,
           ),
           onWebViewCreated: (controller) {
-            appDebugLog('🌐 WebView created for: ${widget.streamUrl}');
+            appDebugLog('Ã°Å¸Å’Â WebView created for: ${widget.streamUrl}');
 
             // Add JavaScript handler to receive player events from vidsrc.cc
             controller.addJavaScriptHandler(
@@ -75,7 +75,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                   if (event != null && widget.onPlayerEvent != null) {
                     widget.onPlayerEvent!(event, currentTime, duration);
                     appDebugLog(
-                      '📺 Player event: $event at ${currentTime.toInt()}s / ${duration.toInt()}s',
+                      'Ã°Å¸â€œÂº Player event: $event at ${currentTime.toInt()}s / ${duration.toInt()}s',
                     );
                   }
                 }
@@ -86,22 +86,22 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
             setState(() {
               _isLoading = true;
             });
-            appDebugLog('🔄 Loading started: $url');
+            appDebugLog('Ã°Å¸â€â€ž Loading started: $url');
           },
           onLoadStop: (controller, url) async {
             setState(() {
               _isLoading = false;
             });
-            appDebugLog('✅ Loading completed: $url');
+            appDebugLog('Ã¢Å“â€¦ Loading completed: $url');
 
             // Inject ultra-aggressive ad-blocking
             await controller.evaluateJavascript(
               source: '''
               (function() {
-                console.log('🛡️ Ultra ad-blocking activated');
+                console.log('Ã°Å¸â€ºÂ¡Ã¯Â¸Â Ultra ad-blocking activated');
                 
                 // Block ALL popups and redirects
-                window.open = function() { console.log('🚫 Blocked popup'); return null; };
+                window.open = function() { console.log('Ã°Å¸Å¡Â« Blocked popup'); return null; };
                 window.alert = function() { return true; };
                 window.confirm = function() { return true; };
                 window.prompt = function() { return null; };
@@ -126,7 +126,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                     Object.defineProperty(window.location, 'href', {
                       set: function(val) {
                         if (val !== currentHref && isBlockedNav(val)) {
-                          console.log('🚫 Blocked redirect to:', val);
+                          console.log('Ã°Å¸Å¡Â« Blocked redirect to:', val);
                           return;
                         }
                         currentHref = val;
@@ -139,7 +139,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                   Object.defineProperty(window.location, 'assign', {
                     value: function(url) {
                       if (isBlockedNav(url)) {
-                        console.log('🚫 Blocked location.assign:', url);
+                        console.log('Ã°Å¸Å¡Â« Blocked location.assign:', url);
                         return;
                       }
                     }
@@ -147,7 +147,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                   Object.defineProperty(window.location, 'replace', {
                     value: function(url) {
                       if (isBlockedNav(url)) {
-                        console.log('🚫 Blocked location.replace:', url);
+                        console.log('Ã°Å¸Å¡Â« Blocked location.replace:', url);
                         return;
                       }
                     }
@@ -179,7 +179,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                                         el.id === 'vidsrc-player';
                         if (!isPlayer) {
                           el.remove();
-                          console.log('🗑️ Removed ad element:', sel);
+                          console.log('Ã°Å¸â€”â€˜Ã¯Â¸Â Removed ad element:', sel);
                         }
                       });
                     });
@@ -197,7 +197,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                                         el.querySelector('[class*="episode"]');
                         if (!isPlayer && el.offsetHeight > 100 && el.offsetWidth > 100) {
                           el.remove();
-                          console.log('🗑️ Removed suspicious overlay');
+                          console.log('Ã°Å¸â€”â€˜Ã¯Â¸Â Removed suspicious overlay');
                         }
                       }
                     });
@@ -226,7 +226,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                   const blockPatterns = ['doubleclick', 'googlesyndication', 'google-analytics', 
                                         'googletagmanager', 'adservice', 'adsystem', 'facebook.com/tr'];
                   if (blockPatterns.some(p => url.toLowerCase().includes(p))) {
-                    console.log('🚫 Blocked fetch:', url);
+                    console.log('Ã°Å¸Å¡Â« Blocked fetch:', url);
                     return Promise.reject(new Error('Blocked'));
                   }
                   return originalFetch.apply(this, arguments);
@@ -237,13 +237,13 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                   const url = String(arguments[1]);
                   const blockPatterns = ['doubleclick', 'googlesyndication', 'adservice'];
                   if (blockPatterns.some(p => url.toLowerCase().includes(p))) {
-                    console.log('🚫 Blocked XHR:', url);
+                    console.log('Ã°Å¸Å¡Â« Blocked XHR:', url);
                     throw new Error('Blocked');
                   }
                   return originalXHR.apply(this, arguments);
                 };
                 
-                console.log('✅ Ultra ad-blocking initialized');
+                console.log('Ã¢Å“â€¦ Ultra ad-blocking initialized');
                 
                 // Listen for VidSrc player events via postMessage
                 window.addEventListener('message', function(event) {
@@ -251,7 +251,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                   
                   if (event.data && event.data.type === 'PLAYER_EVENT') {
                     const eventData = event.data.data;
-                    console.log('📺 VidSrc event:', eventData.event, 'at', eventData.currentTime, '/', eventData.duration);
+                    console.log('Ã°Å¸â€œÂº VidSrc event:', eventData.event, 'at', eventData.currentTime, '/', eventData.duration);
                     
                     // Send to Flutter via JavaScript handler
                     if (window.flutter_inappwebview) {
@@ -268,7 +268,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                   }
                 });
                 
-                console.log('✅ VidSrc player event listener initialized');
+                console.log('Ã¢Å“â€¦ VidSrc player event listener initialized');
               })();
             ''',
             );
@@ -279,7 +279,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
             });
           },
           onReceivedError: (controller, request, error) {
-            appDebugLog('❌ WebView error: ${error.description}');
+            appDebugLog('Ã¢ÂÅ’ WebView error: ${error.description}');
           },
           shouldInterceptRequest: (controller, request) async {
             final url = request.url.toString().toLowerCase();
@@ -317,7 +317,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
             // Check if URL contains any ad pattern
             for (final pattern in adPatterns) {
               if (url.contains(pattern)) {
-                appDebugLog('🚫 Blocked: $url');
+                appDebugLog('Ã°Å¸Å¡Â« Blocked: $url');
                 return null; // Block the request
               }
             }
@@ -335,7 +335,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
 
               // BLOCK non-HTTP/HTTPS schemes (app deep links, malware redirects)
               if (scheme != 'http' && scheme != 'https') {
-                appDebugLog('🚫 Blocked non-HTTP scheme: $urlString');
+                appDebugLog('Ã°Å¸Å¡Â« Blocked non-HTTP scheme: $urlString');
                 return NavigationActionPolicy.CANCEL;
               }
 
@@ -367,7 +367,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
 
               for (final domain in blockedDomains) {
                 if (host.contains(domain)) {
-                  appDebugLog('🚫 Blocked domain: $urlString');
+                  appDebugLog('Ã°Å¸Å¡Â« Blocked domain: $urlString');
                   return NavigationActionPolicy.CANCEL;
                 }
               }
@@ -392,7 +392,9 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
               for (final pattern in blockedPatterns) {
                 if (urlStringLower.contains(pattern) &&
                     !host.contains('vidsrc')) {
-                  appDebugLog('🚫 Blocked pattern "$pattern": $urlString');
+                  appDebugLog(
+                    'Ã°Å¸Å¡Â« Blocked pattern "$pattern": $urlString',
+                  );
                   return NavigationActionPolicy.CANCEL;
                 }
               }
@@ -413,21 +415,20 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const CircularProgressIndicator(color: NivioTheme.netflixRed),
+                  CircularProgressIndicator(
+                    color: NivioTheme.accentColorOf(context),
+                  ),
                   const SizedBox(height: 16),
                   Text(
                     'Loading player...',
-                    style: const TextStyle(color: Colors.white70),
+                    style: TextStyle(color: Colors.white70),
                   ),
                   if (_progress > 0 && _progress < 1)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
                         '${(_progress * 100).toInt()}%',
-                        style: const TextStyle(
-                          color: Colors.white54,
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: Colors.white54, fontSize: 12),
                       ),
                     ),
                 ],

@@ -49,12 +49,12 @@ class SearchResultCard extends ConsumerWidget {
                         width: double.infinity,
                         placeholder: (context, url) => Container(
                           color: NivioTheme.netflixDarkGrey,
-                          child: const Center(
+                          child: Center(
                             child: SizedBox(
                               width: 22,
                               height: 22,
                               child: CircularProgressIndicator(
-                                color: NivioTheme.netflixRed,
+                                color: NivioTheme.accentColorOf(context),
                                 strokeWidth: 2,
                               ),
                             ),
@@ -62,7 +62,7 @@ class SearchResultCard extends ConsumerWidget {
                         ),
                         errorWidget: (context, url, error) => Container(
                           color: NivioTheme.netflixDarkGrey,
-                          child: const Icon(
+                          child: Icon(
                             Icons.movie_creation_outlined,
                             color: NivioTheme.netflixGrey,
                             size: 42,
@@ -72,7 +72,7 @@ class SearchResultCard extends ConsumerWidget {
                     else
                       Container(
                         color: NivioTheme.netflixDarkGrey,
-                        child: const Icon(
+                        child: Icon(
                           Icons.movie_creation_outlined,
                           color: NivioTheme.netflixGrey,
                           size: 42,
@@ -95,9 +95,9 @@ class SearchResultCard extends ConsumerWidget {
                       left: 8,
                       child: _TagPill(
                         label: media.mediaType.toUpperCase(),
-                        background: NivioTheme.netflixRed.withValues(
-                          alpha: 0.92,
-                        ),
+                        background: NivioTheme.accentColorOf(
+                          context,
+                        ).withValues(alpha: 0.92),
                         foreground: Colors.white,
                       ),
                     ),

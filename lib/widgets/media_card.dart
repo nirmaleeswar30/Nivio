@@ -99,16 +99,18 @@ class _MediaCardState extends ConsumerState<MediaCard>
                                     fit: BoxFit.cover,
                                     placeholder: (context, url) => Container(
                                       color: NivioTheme.netflixDarkGrey,
-                                      child: const Center(
+                                      child: Center(
                                         child: CircularProgressIndicator(
-                                          color: NivioTheme.netflixRed,
+                                          color: NivioTheme.accentColorOf(
+                                            context,
+                                          ),
                                         ),
                                       ),
                                     ),
                                     errorWidget: (context, url, error) =>
                                         Container(
                                           color: NivioTheme.netflixDarkGrey,
-                                          child: const Icon(
+                                          child: Icon(
                                             Icons.movie,
                                             color: NivioTheme.netflixGrey,
                                             size: 48,
@@ -119,7 +121,7 @@ class _MediaCardState extends ConsumerState<MediaCard>
                                     height: 180,
                                     width: 130,
                                     color: NivioTheme.netflixDarkGrey,
-                                    child: const Icon(
+                                    child: Icon(
                                       Icons.movie,
                                       color: NivioTheme.netflixGrey,
                                       size: 48,
@@ -134,8 +136,8 @@ class _MediaCardState extends ConsumerState<MediaCard>
                             child: LinearProgressIndicator(
                               value: widget.history.progressPercent,
                               backgroundColor: Colors.grey.withOpacity(0.3),
-                              valueColor: const AlwaysStoppedAnimation<Color>(
-                                NivioTheme.netflixRed,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                NivioTheme.accentColorOf(context),
                               ),
                             ),
                           ),

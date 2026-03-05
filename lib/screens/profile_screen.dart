@@ -45,10 +45,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final authAsync = ref.watch(authStateProvider);
 
     return authAsync.when(
-      loading: () => const Scaffold(
+      loading: () => Scaffold(
         backgroundColor: NivioTheme.netflixBlack,
         body: Center(
-          child: CircularProgressIndicator(color: NivioTheme.netflixRed),
+          child: CircularProgressIndicator(
+            color: NivioTheme.accentColorOf(context),
+          ),
         ),
       ),
       error: (error, stackTrace) => _buildLoggedOutView(context),
@@ -97,11 +99,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final videoQuality = ref.watch(videoQualityProvider);
     final episodeCheckEnabled = ref.watch(episodeCheckEnabledProvider);
     final episodeFrequency = ref.watch(episodeCheckFrequencyProvider);
+    final appAccentKey = ref.watch(appAccentColorProvider);
 
     return Scaffold(
       backgroundColor: NivioTheme.netflixBlack,
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -150,6 +153,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       videoQuality: videoQuality,
                       episodeCheckEnabled: episodeCheckEnabled,
                       episodeFrequency: episodeFrequency,
+                      appAccentKey: appAccentKey,
                     ),
                   ),
                 ),
@@ -326,6 +330,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     title: 'App & Updates',
                     child: Column(
                       children: [
+                        if (_matches('theme color accent main app'))
+                          _buildActionTile(
+                            icon: Icons.palette_outlined,
+                            title: 'Theme Color',
+                            subtitle: appAccentLabelFromKey(appAccentKey),
+                            onTap: _showThemeColorDialog,
+                          ),
                         if (_matches('update app version release github'))
                           FutureBuilder<String>(
                             future: _getAppVersionLabel(),
@@ -389,7 +400,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 ? 'Exit Guest Mode'
                                 : 'Sign Out',
                             subtitle: user.email ?? 'Current session',
-                            titleColor: NivioTheme.netflixRed,
+                            titleColor: NivioTheme.accentColorOf(context),
                             onTap: _showSignOutDialog,
                           ),
                       ],
@@ -446,7 +457,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: NivioTheme.netflixWhite,
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
@@ -457,7 +468,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: NivioTheme.netflixLightGrey,
                     fontSize: 13,
                   ),
@@ -474,7 +485,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return TextField(
       controller: _searchController,
       onChanged: (value) => setState(() => _query = value.trim()),
-      style: const TextStyle(color: NivioTheme.netflixWhite, fontSize: 14),
+      style: TextStyle(color: NivioTheme.netflixWhite, fontSize: 14),
       decoration: InputDecoration(
         hintText: 'Search profile settings...',
         prefixIcon: Icon(
@@ -505,7 +516,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: NivioTheme.netflixRed),
+          borderSide: BorderSide(color: NivioTheme.accentColorOf(context)),
         ),
       ),
     );
@@ -552,15 +563,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         children: [
           Text(
             label,
-            style: const TextStyle(
-              color: NivioTheme.netflixLightGrey,
-              fontSize: 11,
-            ),
+            style: TextStyle(color: NivioTheme.netflixLightGrey, fontSize: 11),
           ),
           const SizedBox(height: 4),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               color: NivioTheme.netflixWhite,
               fontWeight: FontWeight.w700,
               fontSize: 19,
@@ -584,7 +592,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               color: NivioTheme.netflixWhite,
               fontSize: 16,
               fontWeight: FontWeight.w700,
@@ -604,6 +612,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     required String videoQuality,
     required bool episodeCheckEnabled,
     required int episodeFrequency,
+    required String appAccentKey,
   }) {
     final results = <Widget>[];
 
@@ -735,6 +744,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
       );
     }
+    if (_matches('theme color accent main app')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.palette_outlined,
+          title: 'Theme Color',
+          subtitle: appAccentLabelFromKey(appAccentKey),
+          onTap: _showThemeColorDialog,
+        ),
+      );
+    }
     if (_matches('update app version release github')) {
       results.add(
         FutureBuilder<String>(
@@ -797,7 +816,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           icon: Icons.logout_rounded,
           title: user.isAnonymous ? 'Exit Guest Mode' : 'Sign Out',
           subtitle: user.email ?? 'Current session',
-          titleColor: NivioTheme.netflixRed,
+          titleColor: NivioTheme.accentColorOf(context),
           onTap: _showSignOutDialog,
         ),
       );
@@ -847,9 +866,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         subtitle,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: NivioTheme.netflixGrey, fontSize: 12),
+        style: TextStyle(color: NivioTheme.netflixGrey, fontSize: 12),
       ),
-      trailing: const Icon(
+      trailing: Icon(
         Icons.chevron_right_rounded,
         color: NivioTheme.netflixGrey,
       ),
@@ -864,12 +883,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
+    final accentColor = Theme.of(context).colorScheme.primary;
+
     return SwitchListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
       secondary: Icon(icon, color: NivioTheme.netflixWhite, size: 22),
       title: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           color: NivioTheme.netflixWhite,
           fontSize: 14,
           fontWeight: FontWeight.w600,
@@ -877,10 +898,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
       subtitle: Text(
         subtitle,
-        style: const TextStyle(color: NivioTheme.netflixGrey, fontSize: 12),
+        style: TextStyle(color: NivioTheme.netflixGrey, fontSize: 12),
       ),
       value: value,
-      activeThumbColor: NivioTheme.netflixRed,
+      activeThumbColor: accentColor,
       onChanged: onChanged,
     );
   }
@@ -919,7 +940,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ? Container(
                           width: 78,
                           color: NivioTheme.netflixDarkGrey,
-                          child: const Icon(
+                          child: Icon(
                             Icons.movie_outlined,
                             color: NivioTheme.netflixGrey,
                           ),
@@ -940,7 +961,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           style: TextButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           ),
-          icon: const Icon(Icons.bookmark_rounded, size: 18),
+          icon: Icon(Icons.bookmark_rounded, size: 18),
           label: const Text('Open full watchlist'),
         ),
       ],
@@ -949,11 +970,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   Widget _buildRecentActivity(AsyncValue<List<dynamic>> historyAsync) {
     return historyAsync.when(
-      loading: () => const Padding(
+      loading: () => Padding(
         padding: EdgeInsets.all(14),
         child: Center(
           child: CircularProgressIndicator(
-            color: NivioTheme.netflixRed,
+            color: NivioTheme.accentColorOf(context),
             strokeWidth: 2,
           ),
         ),
@@ -1009,7 +1030,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 entry.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   color: NivioTheme.netflixWhite,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -1019,10 +1040,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 subtitle,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: NivioTheme.netflixGrey,
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: NivioTheme.netflixGrey, fontSize: 12),
               ),
               onTap: () => context.push(
                 '/media/${entry.tmdbId}?type=${entry.mediaType}',
@@ -1091,12 +1109,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ? Icons.check_circle_rounded
                         : Icons.radio_button_unchecked_rounded,
                     color: isSelected
-                        ? NivioTheme.netflixRed
+                        ? NivioTheme.accentColorOf(context)
                         : NivioTheme.netflixGrey,
                   ),
                   title: Text(
                     '${speed}x',
-                    style: const TextStyle(color: NivioTheme.netflixWhite),
+                    style: TextStyle(color: NivioTheme.netflixWhite),
                   ),
                   onTap: () {
                     ref.read(playbackSpeedProvider.notifier).setSpeed(speed);
@@ -1140,12 +1158,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ? Icons.check_circle_rounded
                         : Icons.radio_button_unchecked_rounded,
                     color: isSelected
-                        ? NivioTheme.netflixRed
+                        ? NivioTheme.accentColorOf(context)
                         : NivioTheme.netflixGrey,
                   ),
                   title: Text(
                     _qualityLabel(option),
-                    style: const TextStyle(color: NivioTheme.netflixWhite),
+                    style: TextStyle(color: NivioTheme.netflixWhite),
                   ),
                   onTap: () {
                     ref.read(videoQualityProvider.notifier).setQuality(option);
@@ -1189,12 +1207,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ? Icons.check_circle_rounded
                         : Icons.radio_button_unchecked_rounded,
                     color: isSelected
-                        ? NivioTheme.netflixRed
+                        ? NivioTheme.accentColorOf(context)
                         : NivioTheme.netflixGrey,
                   ),
                   title: Text(
                     _frequencyLabel(value),
-                    style: const TextStyle(color: NivioTheme.netflixWhite),
+                    style: TextStyle(color: NivioTheme.netflixWhite),
                   ),
                   onTap: () {
                     ref
@@ -1211,13 +1229,77 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
+  Future<void> _showThemeColorDialog() async {
+    final current = ref.read(appAccentColorProvider);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: NivioTheme.netflixDarkGrey,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const ListTile(
+                title: Text(
+                  'Theme Color',
+                  style: TextStyle(
+                    color: NivioTheme.netflixWhite,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              ...appAccentOptions.map((option) {
+                final isSelected = option.key == current;
+                return ListTile(
+                  leading: Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: option.color,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isSelected
+                            ? NivioTheme.netflixWhite
+                            : Colors.white24,
+                        width: isSelected ? 2 : 1,
+                      ),
+                    ),
+                  ),
+                  title: Text(
+                    option.label,
+                    style: TextStyle(color: NivioTheme.netflixWhite),
+                  ),
+                  trailing: isSelected
+                      ? Icon(
+                          Icons.check_circle_rounded,
+                          color: NivioTheme.accentColorOf(context),
+                        )
+                      : null,
+                  onTap: () async {
+                    await ref
+                        .read(appAccentColorProvider.notifier)
+                        .setAccentColor(option.key);
+                    if (sheetContext.mounted) {
+                      Navigator.pop(sheetContext);
+                    }
+                  },
+                );
+              }),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _checkNow() async {
     if (!mounted) return;
     showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
-        return const AlertDialog(
+        return AlertDialog(
           backgroundColor: NivioTheme.netflixDarkGrey,
           content: Row(
             children: [
@@ -1226,7 +1308,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 height: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.4,
-                  color: NivioTheme.netflixRed,
+                  color: NivioTheme.accentColorOf(context),
                 ),
               ),
               SizedBox(width: 14),
@@ -1252,7 +1334,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ? 'Found $count new episode${count > 1 ? 's' : ''}'
               : 'No new episodes found',
         ),
-        backgroundColor: NivioTheme.netflixRed,
+        backgroundColor: NivioTheme.accentColorOf(context),
       ),
     );
   }
@@ -1278,9 +1360,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text(
+              child: Text(
                 'Clear',
-                style: TextStyle(color: NivioTheme.netflixRed),
+                style: TextStyle(color: NivioTheme.accentColorOf(context)),
               ),
             ),
           ],
@@ -1297,9 +1379,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         content: Text('Watch history cleared'),
-        backgroundColor: NivioTheme.netflixRed,
+        backgroundColor: NivioTheme.accentColorOf(context),
       ),
     );
   }
@@ -1325,9 +1407,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text(
+              child: Text(
                 'Clear',
-                style: TextStyle(color: NivioTheme.netflixRed),
+                style: TextStyle(color: NivioTheme.accentColorOf(context)),
               ),
             ),
           ],
@@ -1342,9 +1424,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         content: Text('Cache cleared'),
-        backgroundColor: NivioTheme.netflixRed,
+        backgroundColor: NivioTheme.accentColorOf(context),
       ),
     );
   }
@@ -1370,9 +1452,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text(
+              child: Text(
                 'Sign Out',
-                style: TextStyle(color: NivioTheme.netflixRed),
+                style: TextStyle(color: NivioTheme.accentColorOf(context)),
               ),
             ),
           ],
@@ -1397,9 +1479,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       }
       final patch = await ShorebirdUpdateService.currentPatchNumber();
       if (patch == null) {
-        return '$baseVersion • patch: base';
+        return '$baseVersion Ã¢â‚¬Â¢ patch: base';
       }
-      return '$baseVersion • patch: $patch';
+      return '$baseVersion Ã¢â‚¬Â¢ patch: $patch';
     } catch (_) {
       return 'Unknown';
     }
@@ -1428,7 +1510,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ),
           content: Text(
             'Installed: $details\n$patchLine',
-            style: const TextStyle(color: NivioTheme.netflixLightGrey),
+            style: TextStyle(color: NivioTheme.netflixLightGrey),
           ),
           actions: [
             TextButton(
@@ -1450,7 +1532,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       barrierDismissible: false,
       builder: (ctx) {
         dialogContext = ctx;
-        return const AlertDialog(
+        return AlertDialog(
           backgroundColor: NivioTheme.netflixDarkGrey,
           content: Row(
             children: [
@@ -1459,7 +1541,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 height: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.4,
-                  color: NivioTheme.netflixRed,
+                  color: NivioTheme.accentColorOf(context),
                 ),
               ),
               SizedBox(width: 14),
@@ -1498,7 +1580,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               'Current: ${result.installedVersion}\n'
               'Latest: ${result.latestVersion}\n\n'
               'Open GitHub and install the latest release?',
-              style: const TextStyle(color: NivioTheme.netflixLightGrey),
+              style: TextStyle(color: NivioTheme.netflixLightGrey),
             ),
             actions: [
               TextButton(
@@ -1514,9 +1596,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     Navigator.pop(ctx);
                   }
                 },
-                child: const Text(
+                child: Text(
                   'Install',
-                  style: TextStyle(color: NivioTheme.netflixRed),
+                  style: TextStyle(color: NivioTheme.accentColorOf(context)),
                 ),
               ),
             ],
@@ -1531,7 +1613,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         content: Text(result.message),
         backgroundColor: result.status == GitHubReleaseUpdateStatus.failed
             ? const Color(0xFFB00020)
-            : NivioTheme.netflixRed,
+            : NivioTheme.accentColorOf(context),
       ),
     );
   }

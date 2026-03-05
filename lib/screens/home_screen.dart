@@ -184,7 +184,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           SliverToBoxAdapter(
             child: Container(
               height: 40,
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
@@ -403,7 +403,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       child: Text(
                         title,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: Colors.white,
                           fontSize: 24,
                           fontWeight: FontWeight.w700,
@@ -485,7 +485,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       height: _currentBannerIndex == dotIndex ? 7 : 5,
                       decoration: BoxDecoration(
                         color: _currentBannerIndex == dotIndex
-                            ? NivioTheme.netflixRed
+                            ? NivioTheme.accentColorOf(context)
                             : Colors.white38,
                         shape: BoxShape.circle,
                       ),
@@ -504,8 +504,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Container(
       height: 600,
       color: const Color(0xFF2F2F2F),
-      child: const Center(
-        child: CircularProgressIndicator(color: NivioTheme.netflixRed),
+      child: Center(
+        child: CircularProgressIndicator(
+          color: NivioTheme.accentColorOf(context),
+        ),
       ),
     );
   }
@@ -548,14 +550,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             top: 6,
             child: Container(
               padding: const EdgeInsets.all(4),
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 color: Color(0xFFE50914),
                 shape: BoxShape.circle,
               ),
               constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
               child: Text(
                 unreadCount > 9 ? '9+' : unreadCount.toString(),
-                style: const TextStyle(
+                style: TextStyle(
                   color: Colors.white,
                   fontSize: 10,
                   fontWeight: FontWeight.bold,
@@ -574,7 +576,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       widgets.add(
         Text(
           meta[index],
-          style: const TextStyle(
+          style: TextStyle(
             color: Color(0xFFD4D8E3),
             fontSize: 12,
             fontWeight: FontWeight.w500,
@@ -587,7 +589,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             width: 4,
             height: 4,
             margin: const EdgeInsets.symmetric(horizontal: 2),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: Color(0xFFD4D8E3),
               shape: BoxShape.circle,
             ),
@@ -638,7 +640,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Added to watchlist')));
+    ).showSnackBar(SnackBar(content: Text('Added to watchlist')));
   }
 
   String? _tmdbImageUrl(String? path, String size) {

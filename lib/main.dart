@@ -18,6 +18,7 @@ import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/github_release_update_service.dart';
 import 'package:nivio/services/shorebird_update_service.dart';
 import 'package:nivio/providers/service_providers.dart';
+import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/screens/home_screen.dart';
 import 'package:nivio/screens/search_screen.dart';
 import 'package:nivio/screens/media_detail_screen.dart';
@@ -178,15 +179,19 @@ final _router = GoRouter(
   ],
 );
 
-class NivioApp extends StatelessWidget {
+class NivioApp extends ConsumerWidget {
   const NivioApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final accentKey = ref.watch(appAccentColorProvider);
+    final accentColor = appAccentColorFromKey(accentKey);
+    final appTheme = NivioTheme.buildDarkTheme(accentColor: accentColor);
+
     return MaterialApp.router(
       title: 'Nivio',
-      theme: NivioTheme.darkTheme,
-      darkTheme: NivioTheme.darkTheme,
+      theme: appTheme,
+      darkTheme: appTheme,
       routerConfig: _router,
       builder: (context, child) {
         return _GitHubReleasePromptGate(

@@ -1,6 +1,81 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/episode_check_service.dart';
+import '../core/theme.dart';
+
+class AppAccentOption {
+  const AppAccentOption({
+    required this.key,
+    required this.label,
+    required this.color,
+  });
+
+  final String key;
+  final String label;
+  final Color color;
+}
+
+const List<AppAccentOption> appAccentOptions = [
+  AppAccentOption(key: 'red', label: 'Red', color: NivioTheme.netflixRed),
+  AppAccentOption(key: 'blue', label: 'Blue', color: Color(0xFF3B82F6)),
+  AppAccentOption(key: 'green', label: 'Green', color: Color(0xFF22C55E)),
+  AppAccentOption(key: 'orange', label: 'Orange', color: Color(0xFFF97316)),
+  AppAccentOption(key: 'pink', label: 'Pink', color: Color(0xFFEC4899)),
+];
+
+String appAccentLabelFromKey(String key) {
+  for (final option in appAccentOptions) {
+    if (option.key == key) {
+      return option.label;
+    }
+  }
+  return appAccentOptions.first.label;
+}
+
+Color appAccentColorFromKey(String key) {
+  for (final option in appAccentOptions) {
+    if (option.key == key) {
+      return option.color;
+    }
+  }
+  return appAccentOptions.first.color;
+}
+
+// App Accent Color Provider
+final appAccentColorProvider =
+    StateNotifierProvider<AppAccentColorNotifier, String>((ref) {
+      return AppAccentColorNotifier();
+    });
+
+class AppAccentColorNotifier extends StateNotifier<String> {
+  AppAccentColorNotifier() : super(appAccentOptions.first.key) {
+    _loadAccentColor();
+  }
+
+  Future<void> _loadAccentColor() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedKey =
+        prefs.getString('app_accent_color') ?? appAccentOptions.first.key;
+    state = _normalize(savedKey);
+  }
+
+  Future<void> setAccentColor(String key) async {
+    final normalized = _normalize(key);
+    state = normalized;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('app_accent_color', normalized);
+  }
+
+  String _normalize(String key) {
+    for (final option in appAccentOptions) {
+      if (option.key == key) {
+        return key;
+      }
+    }
+    return appAccentOptions.first.key;
+  }
+}
 
 // Playback Speed Provider
 final playbackSpeedProvider =
