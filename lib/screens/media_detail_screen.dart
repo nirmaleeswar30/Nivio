@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -33,7 +34,7 @@ class _TrailerSource {
   String? get embedUrl {
     switch (site.toLowerCase()) {
       case 'youtube':
-        return 'https://www.youtube-nocookie.com/embed/$key?autoplay=1&playsinline=1&rel=0&modestbranding=1';
+        return 'https://www.youtube.com/embed/$key?autoplay=1&playsinline=1&rel=0&modestbranding=1&enablejsapi=1&origin=https://www.youtube.com';
       case 'vimeo':
         return 'https://player.vimeo.com/video/$key?autoplay=1';
       case 'dailymotion':
@@ -946,6 +947,8 @@ class TrailerFullscreenScreen extends StatefulWidget {
 class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
   bool _isLoading = true;
   bool _hasError = false;
+  String? _errorMessage;
+  YoutubePlayerController? _youtubeController;
 
   @override
   void initState() {
@@ -955,10 +958,61 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
+    _initPlayer();
+  }
+
+  void _initPlayer() {
+    if (widget.source.site.toLowerCase() == 'youtube') {
+      _initYoutubePlayer();
+    } else {
+      // For non-YouTube sources, mark as loaded (WebView will handle)
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _initYoutubePlayer() {
+    try {
+      final videoId = widget.source.key;
+
+      _youtubeController = YoutubePlayerController(
+        initialVideoId: videoId,
+        flags: const YoutubePlayerFlags(
+          autoPlay: true,
+          mute: false,
+          enableCaption: false,
+          hideControls: false,
+          forceHD: false,
+          useHybridComposition: true,
+        ),
+      );
+
+      _youtubeController!.addListener(() {
+        if (!mounted) return;
+        if (_youtubeController!.value.isReady && _isLoading) {
+          setState(() => _isLoading = false);
+        }
+        if (_youtubeController!.value.hasError && !_hasError) {
+          setState(() {
+            _hasError = true;
+            _errorMessage = 'Failed to load YouTube video';
+          });
+        }
+      });
+
+      setState(() {});
+    } catch (e) {
+      debugPrint('YouTube player error: $e');
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+        _errorMessage = 'Failed to load YouTube video';
+      });
+    }
   }
 
   @override
   void dispose() {
+    _youtubeController?.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -983,66 +1037,70 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
     }
   }
 
+  Widget _buildYoutubePlayer() {
+    if (_youtubeController == null) {
+      return const SizedBox.shrink();
+    }
+    return YoutubePlayerBuilder(
+      player: YoutubePlayer(
+        controller: _youtubeController!,
+        showVideoProgressIndicator: true,
+        progressIndicatorColor: Colors.red,
+        progressColors: const ProgressBarColors(
+          playedColor: Colors.red,
+          handleColor: Colors.redAccent,
+        ),
+      ),
+      builder: (context, player) => player,
+    );
+  }
+
+  Widget _buildWebViewPlayer() {
+    final trailerUrl = widget.source.embedUrl;
+    if (trailerUrl == null) {
+      return Center(
+        child: Text(
+          'Unsupported trailer source: ${widget.source.site}',
+          style: const TextStyle(color: Colors.white70),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+    return InAppWebView(
+      initialUrlRequest: URLRequest(url: WebUri(trailerUrl)),
+      initialSettings: InAppWebViewSettings(
+        mediaPlaybackRequiresUserGesture: false,
+        allowsInlineMediaPlayback: true,
+        transparentBackground: true,
+        javaScriptEnabled: true,
+      ),
+      onLoadStop: (controller, url) {
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+          _hasError = false;
+        });
+      },
+      onReceivedError: (controller, request, error) {
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+        });
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final trailerUrl = widget.source.embedUrl;
+    final isYoutube = widget.source.site.toLowerCase() == 'youtube';
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
           Positioned.fill(
-            child: trailerUrl == null
-                ? Center(
-                    child: Text(
-                      'Unsupported trailer source: ${widget.source.site}',
-                      style: const TextStyle(color: Colors.white70),
-                      textAlign: TextAlign.center,
-                    ),
-                  )
-                : InAppWebView(
-                    initialUrlRequest: URLRequest(url: WebUri(trailerUrl)),
-                    initialSettings: InAppWebViewSettings(
-                      mediaPlaybackRequiresUserGesture: false,
-                      allowsInlineMediaPlayback: true,
-                      transparentBackground: true,
-                      javaScriptEnabled: true,
-                    ),
-                    onLoadStop: (controller, url) {
-                      if (!mounted) return;
-                      setState(() {
-                        _isLoading = false;
-                        _hasError = false;
-                      });
-                    },
-                    onReceivedError: (controller, request, error) {
-                      if (!mounted) return;
-                      setState(() {
-                        _isLoading = false;
-                        _hasError = true;
-                      });
-                    },
-                    onReceivedHttpError: (controller, request, response) {
-                      if (!mounted) return;
-                      setState(() {
-                        _isLoading = false;
-                        _hasError = true;
-                      });
-                    },
-                    onConsoleMessage: (controller, consoleMessage) {
-                      final msg = consoleMessage.message.toLowerCase();
-                      final hasPlaybackRestriction =
-                          msg.contains('error 153') ||
-                          (msg.contains('youtube') &&
-                              msg.contains('playback') &&
-                              msg.contains('website'));
-                      if (!hasPlaybackRestriction || !mounted) return;
-                      setState(() {
-                        _isLoading = false;
-                        _hasError = true;
-                      });
-                    },
-                  ),
+            child: isYoutube ? _buildYoutubePlayer() : _buildWebViewPlayer(),
           ),
           if (_hasError)
             Positioned.fill(
@@ -1051,7 +1109,8 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Unable to play trailer from ${widget.source.site}',
+                      _errorMessage ??
+                          'Unable to play trailer from ${widget.source.site}',
                       style: const TextStyle(color: Colors.white70),
                       textAlign: TextAlign.center,
                     ),
@@ -1066,7 +1125,7 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
                 ),
               ),
             ),
-          if (_isLoading && trailerUrl != null && !_hasError)
+          if (_isLoading && !_hasError)
             Positioned.fill(
               child: Center(
                 child: CircularProgressIndicator(
