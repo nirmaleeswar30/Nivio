@@ -28,6 +28,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
 
+  void _handleBackNavigation() {
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
+    context.go('/home');
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -117,7 +125,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: _buildProfileHeader(user),
+                  child: Column(
+                    children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: IconButton(
+                          tooltip: 'Back',
+                          onPressed: _handleBackNavigation,
+                          icon: const PhosphorIcon(
+                            PhosphorIconsRegular.caretLeft,
+                            color: NivioTheme.netflixWhite,
+                            size: 22,
+                          ),
+                        ),
+                      ),
+                      _buildProfileHeader(user),
+                    ],
+                  ),
                 ),
               ),
               SliverToBoxAdapter(

@@ -56,6 +56,7 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
   String _playerRoute({
     required int mediaId,
     required String mediaType,
+    int? providerIndex,
     required int season,
     required int episode,
     required String partyCode,
@@ -67,6 +68,7 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
         'season': '$season',
         'episode': '$episode',
         'type': mediaType,
+        if (providerIndex != null) 'provider': '$providerIndex',
         'partyCode': partyCode.toUpperCase(),
         'partyRole': isHost ? 'host' : 'participant',
       },
@@ -91,6 +93,7 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
       _playerRoute(
         mediaId: playback.mediaId,
         mediaType: playback.mediaType.isEmpty ? 'movie' : playback.mediaType,
+        providerIndex: playback.providerIndex,
         season: playback.season,
         episode: playback.episode,
         partyCode: service.sessionCode!,
@@ -165,6 +168,7 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
         _playerRoute(
           mediaId: playback.mediaId,
           mediaType: playback.mediaType.isEmpty ? 'movie' : playback.mediaType,
+          providerIndex: playback.providerIndex,
           season: playback.season,
           episode: playback.episode,
           partyCode: code,
@@ -173,6 +177,19 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
       );
       return;
     }
+
+    await service.requestStateSync(reason: 'participant_joined_waiting');
+    Future.delayed(const Duration(milliseconds: 1200), () {
+      if (!mounted) return;
+      final currentService = ref.read(watchPartyServiceProvider);
+      if (currentService == null ||
+          !currentService.isInSession ||
+          currentService.isHost ||
+          _hasNavigatedToPlayer) {
+        return;
+      }
+      unawaited(currentService.requestStateSync(reason: 'participant_retry'));
+    });
 
     _showMessage('Joined. Waiting for host to start playback...');
   }
@@ -194,6 +211,46 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
   Future<void> _copyCode(String code) async {
     await Clipboard.setData(ClipboardData(text: code.toUpperCase()));
     _showMessage('Code copied');
+  }
+
+  String _participantInitials(String name) {
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts.first[0].toUpperCase();
+    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+  }
+
+  Widget _buildParticipantAvatar(
+    WatchPartyParticipant participant, {
+    double radius = 12,
+  }) {
+    final photoUrl = (participant.photoUrl ?? '').trim();
+    if (photoUrl.isNotEmpty) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: Colors.white12,
+        backgroundImage: NetworkImage(photoUrl),
+      );
+    }
+
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: participant.isHost
+          ? NivioTheme.accentColorOf(context).withValues(alpha: 0.35)
+          : Colors.white12,
+      child: Text(
+        _participantInitials(participant.name),
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: radius * 0.75,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
   }
 
   Widget _buildSessionCard(
@@ -244,7 +301,7 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
                   (participant) => Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
-                      vertical: 6,
+                      vertical: 5,
                     ),
                     decoration: BoxDecoration(
                       color: participant.isHost
@@ -254,11 +311,21 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
                           : Colors.white.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(999),
                     ),
-                    child: Text(
-                      participant.isHost
-                          ? '${participant.name} (Host)'
-                          : participant.name,
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildParticipantAvatar(participant),
+                        const SizedBox(width: 7),
+                        Text(
+                          participant.isHost
+                              ? '${participant.name} (Host)'
+                              : participant.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 )
@@ -275,6 +342,7 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
                     mediaType: playback.mediaType.isEmpty
                         ? 'movie'
                         : playback.mediaType,
+                    providerIndex: playback.providerIndex,
                     season: playback.season,
                     episode: playback.episode,
                     partyCode: session.sessionCode,

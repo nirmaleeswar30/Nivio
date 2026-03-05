@@ -520,7 +520,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         size: 24,
       ),
       tooltip: 'Profile',
-      onPressed: () => context.go('/profile'),
+      onPressed: () => context.push('/profile'),
     );
   }
 

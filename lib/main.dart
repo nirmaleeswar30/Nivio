@@ -206,6 +206,9 @@ final _router = GoRouter(
         final season = int.parse(state.uri.queryParameters['season'] ?? '1');
         final episode = int.parse(state.uri.queryParameters['episode'] ?? '1');
         final mediaType = state.uri.queryParameters['type'];
+        final providerIndex = int.tryParse(
+          state.uri.queryParameters['provider'] ?? '',
+        );
         final partyCode = state.uri.queryParameters['partyCode'];
         final partyRole = WatchPartyRoleX.fromQuery(
           state.uri.queryParameters['partyRole'],
@@ -215,6 +218,7 @@ final _router = GoRouter(
           season: season,
           episode: episode,
           mediaType: mediaType,
+          providerIndex: providerIndex,
           watchPartyCode: partyCode,
           watchPartyRole: partyRole,
         );

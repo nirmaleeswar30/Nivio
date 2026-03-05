@@ -207,6 +207,7 @@ class WatchPartyServiceSupabase {
   Future<void> syncPlayback({
     required int mediaId,
     required String mediaType,
+    int? providerIndex,
     required int season,
     required int episode,
     required int positionMs,
@@ -218,6 +219,7 @@ class WatchPartyServiceSupabase {
     final state = WatchPartyPlaybackState(
       mediaId: mediaId,
       mediaType: mediaType,
+      providerIndex: providerIndex,
       season: season,
       episode: episode,
       positionMs: positionMs,
@@ -309,13 +311,25 @@ class WatchPartyServiceSupabase {
 
   void _handlePlaybackBroadcast(Map<String, dynamic> payload) {
     final incomingVersion = (payload['stateVersion'] as num?)?.toInt() ?? 0;
-    if (_isStaleStateVersion(incomingVersion)) return;
+    if (_isStaleStateVersion(incomingVersion)) {
+      if (kDebugMode) {
+        debugPrint(
+          'WatchParty playback ignored as stale: incoming=$incomingVersion local=$_lastAppliedStateVersion',
+        );
+      }
+      return;
+    }
     _markAppliedStateVersion(incomingVersion);
 
     try {
       final playback = WatchPartyPlaybackState.fromJson(payload);
       _playbackState = playback;
       _playbackController.add(playback);
+      if (kDebugMode) {
+        debugPrint(
+          'WatchParty playback applied: v=${playback.stateVersion} media=${playback.mediaId} type=${playback.mediaType} provider=${playback.providerIndex} pos=${playback.positionMs} playing=${playback.isPlaying}',
+        );
+      }
       _emitSessionUpdate();
     } catch (e) {
       _emitError('Failed to parse party playback state: $e');
@@ -336,29 +350,44 @@ class WatchPartyServiceSupabase {
     if (targetRequesterId != null && targetRequesterId != userId) return;
 
     final incomingVersion = (payload['stateVersion'] as num?)?.toInt() ?? 0;
-    if (_isStaleStateVersion(incomingVersion)) return;
+    if (_isStaleStateVersion(incomingVersion)) {
+      if (kDebugMode) {
+        debugPrint(
+          'WatchParty snapshot ignored as stale: incoming=$incomingVersion local=$_lastAppliedStateVersion',
+        );
+      }
+      return;
+    }
     _markAppliedStateVersion(incomingVersion);
 
     try {
       final playbackRaw = payload['playback'];
-      if (playbackRaw is Map<String, dynamic>) {
-        final playback = WatchPartyPlaybackState.fromJson(playbackRaw);
+      if (playbackRaw is Map) {
+        final playback = WatchPartyPlaybackState.fromJson(
+          Map<String, dynamic>.from(playbackRaw),
+        );
         _playbackState = playback;
         _playbackController.add(playback);
+        if (kDebugMode) {
+          debugPrint(
+            'WatchParty snapshot playback applied: v=${playback.stateVersion} media=${playback.mediaId} provider=${playback.providerIndex}',
+          );
+        }
       }
 
       final participantsRaw = payload['participants'];
       if (participantsRaw is List) {
         _participants.clear();
         for (final raw in participantsRaw) {
-          if (raw is! Map<String, dynamic>) continue;
+          if (raw is! Map) continue;
+          final map = Map<String, dynamic>.from(raw);
           final participant = WatchPartyParticipant(
-            id: (raw['id'] as String? ?? '').trim(),
-            name: (raw['name'] as String? ?? 'Guest').trim(),
-            photoUrl: raw['photoUrl'] as String?,
-            isHost: raw['isHost'] == true,
+            id: (map['id'] as String? ?? '').trim(),
+            name: (map['name'] as String? ?? 'Guest').trim(),
+            photoUrl: map['photoUrl'] as String?,
+            isHost: map['isHost'] == true,
             joinedAt:
-                DateTime.tryParse(raw['joinedAt'] as String? ?? '') ??
+                DateTime.tryParse(map['joinedAt'] as String? ?? '') ??
                 DateTime.now(),
           );
           if (participant.id.isNotEmpty) {

@@ -40,6 +40,7 @@ class WatchPartyPlaybackState {
   const WatchPartyPlaybackState({
     required this.mediaId,
     required this.mediaType,
+    this.providerIndex,
     required this.season,
     required this.episode,
     required this.positionMs,
@@ -51,6 +52,7 @@ class WatchPartyPlaybackState {
 
   final int mediaId;
   final String mediaType;
+  final int? providerIndex;
   final int season;
   final int episode;
   final int positionMs;
@@ -68,6 +70,7 @@ class WatchPartyPlaybackState {
   Map<String, dynamic> toJson() => {
     'mediaId': mediaId,
     'mediaType': mediaType,
+    'providerIndex': providerIndex,
     'season': season,
     'episode': episode,
     'positionMs': positionMs,
@@ -81,6 +84,7 @@ class WatchPartyPlaybackState {
     return WatchPartyPlaybackState(
       mediaId: (json['mediaId'] as num?)?.toInt() ?? 0,
       mediaType: (json['mediaType'] as String? ?? '').trim(),
+      providerIndex: (json['providerIndex'] as num?)?.toInt(),
       season: (json['season'] as num?)?.toInt() ?? 1,
       episode: (json['episode'] as num?)?.toInt() ?? 1,
       positionMs: (json['positionMs'] as num?)?.toInt() ?? 0,

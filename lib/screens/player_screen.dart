@@ -27,6 +27,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final int season;
   final int episode;
   final String? mediaType;
+  final int? providerIndex;
   final String? watchPartyCode;
   final WatchPartyRole? watchPartyRole;
 
@@ -36,6 +37,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
     required this.season,
     required this.episode,
     this.mediaType,
+    this.providerIndex,
     this.watchPartyCode,
     this.watchPartyRole,
   });
@@ -135,6 +137,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void initState() {
     super.initState();
     _currentEpisode = widget.episode;
+    _currentProviderIndex = math.max(0, widget.providerIndex ?? 0);
     _initializeWatchParty();
     _initializePlayer();
     SystemChrome.setPreferredOrientations([
@@ -476,6 +479,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       // Start progress tracking timer
       _startProgressTracking();
       _updateWatchPartyHostSyncTimer();
+      _scheduleWatchPartyBootstrapSyncs();
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -641,12 +645,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   bool get _hasWatchPartyContext {
-    return (widget.watchPartyCode ?? '').trim().isNotEmpty &&
-        widget.watchPartyRole != null;
+    return _resolvedWatchPartyCode != null && _resolvedWatchPartyRole != null;
+  }
+
+  bool get _hasActiveWatchPartySession {
+    final service = _watchPartyService ?? ref.read(watchPartyServiceProvider);
+    return service?.isInSession == true;
+  }
+
+  String? get _resolvedWatchPartyCode {
+    final fromRoute = (widget.watchPartyCode ?? '').trim();
+    if (fromRoute.isNotEmpty) return fromRoute.toUpperCase();
+
+    final service = _watchPartyService ?? ref.read(watchPartyServiceProvider);
+    final fromService = (service?.sessionCode ?? '').trim();
+    if (service?.isInSession == true && fromService.isNotEmpty) {
+      return fromService.toUpperCase();
+    }
+    return null;
+  }
+
+  WatchPartyRole? get _resolvedWatchPartyRole {
+    final fromRoute = widget.watchPartyRole;
+    if (fromRoute != null) return fromRoute;
+
+    final service = _watchPartyService ?? ref.read(watchPartyServiceProvider);
+    if (service?.isInSession != true) return null;
+    return service!.isHost ? WatchPartyRole.host : WatchPartyRole.participant;
   }
 
   void _initializeWatchParty() {
-    if (!_hasWatchPartyContext) return;
+    if (!_hasWatchPartyContext && !_hasActiveWatchPartySession) return;
     unawaited(_initializeWatchPartyInternal());
   }
 
@@ -666,7 +695,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     _watchPartyService = service;
     _watchPartyPlaybackSub ??= service.playbackStream.listen((playback) {
-      if (!_hasWatchPartyContext || service.isHost) return;
+      if ((!_hasWatchPartyContext && !service.isInSession) || service.isHost) {
+        return;
+      }
       unawaited(_applyWatchPartyPlayback(playback));
     });
     _watchPartySessionSub ??= service.sessionStream.listen((session) {
@@ -683,12 +714,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       ).showSnackBar(SnackBar(content: Text(message.trim())));
     });
 
-    final targetCode = widget.watchPartyCode!.trim().toUpperCase();
+    final targetCode = _resolvedWatchPartyCode;
+    final targetRole = _resolvedWatchPartyRole;
+    if (targetCode == null || targetRole == null) return;
+
     final existingCode = service.currentSession?.sessionCode.toUpperCase();
 
     bool ok = true;
     if (existingCode != targetCode) {
-      if (widget.watchPartyRole == WatchPartyRole.host) {
+      if (targetRole == WatchPartyRole.host) {
         final created = await service.createSession(preferredCode: targetCode);
         ok = created != null;
       } else {
@@ -708,15 +742,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _watchPartySession = service.currentSession;
     });
     _updateWatchPartyHostSyncTimer();
+    _scheduleWatchPartyBootstrapSyncs();
 
     if (!service.isHost) {
       unawaited(service.requestStateSync(reason: 'player_opened'));
     }
   }
 
+  void _scheduleWatchPartyBootstrapSyncs() {
+    if (_watchPartyService?.isInSession != true ||
+        _watchPartyService?.isHost != true) {
+      return;
+    }
+
+    unawaited(_broadcastWatchPartyPlayback(force: true));
+    Future.delayed(const Duration(milliseconds: 1200), () {
+      if (!mounted) return;
+      unawaited(_broadcastWatchPartyPlayback(force: true));
+    });
+    Future.delayed(const Duration(milliseconds: 2600), () {
+      if (!mounted) return;
+      unawaited(_broadcastWatchPartyPlayback(force: true));
+    });
+  }
+
   void _updateWatchPartyHostSyncTimer() {
     final shouldSync =
-        _hasWatchPartyContext &&
+        _watchPartyService?.isInSession == true &&
         _watchPartyService?.isHost == true &&
         _isDirectStream;
     if (!shouldSync) {
@@ -751,20 +803,57 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     final controller = _betterPlayerController!;
     final vpc = controller.videoPlayerController!;
-    final mediaType =
-        widget.mediaType ??
-        ref.read(selectedMediaProvider)?.mediaType ??
-        'movie';
+    final mediaType = _resolvedWatchPartyMediaType();
 
     await service.syncPlayback(
       mediaId: widget.mediaId,
       mediaType: mediaType,
+      providerIndex: _currentProviderIndex,
       season: widget.season,
       episode: _currentEpisode,
       positionMs: vpc.value.position.inMilliseconds,
       isPlaying: controller.isPlaying() == true,
     );
     _lastWatchPartyBroadcastAt = now;
+  }
+
+  Future<void> _broadcastWatchPartyPlaybackFromWebView({
+    required int positionMs,
+    required bool isPlaying,
+    required bool force,
+  }) async {
+    final service = _watchPartyService;
+    if (service == null || !service.isHost || _isApplyingWatchPartyState) {
+      return;
+    }
+
+    final now = DateTime.now();
+    if (!force &&
+        _lastWatchPartyBroadcastAt != null &&
+        now.difference(_lastWatchPartyBroadcastAt!) <
+            _watchPartyHostProgressInterval) {
+      return;
+    }
+
+    await service.syncPlayback(
+      mediaId: widget.mediaId,
+      mediaType: _resolvedWatchPartyMediaType(),
+      providerIndex: _currentProviderIndex,
+      season: widget.season,
+      episode: _currentEpisode,
+      positionMs: math.max(0, positionMs),
+      isPlaying: isPlaying,
+    );
+    _lastWatchPartyBroadcastAt = now;
+  }
+
+  String _resolvedWatchPartyMediaType() {
+    final fromWidget = (widget.mediaType ?? '').trim();
+    if (fromWidget.isNotEmpty) return fromWidget;
+    final fromSelected = (ref.read(selectedMediaProvider)?.mediaType ?? '')
+        .trim();
+    if (fromSelected.isNotEmpty) return fromSelected;
+    return 'movie';
   }
 
   Future<void> _applyWatchPartyPlayback(
@@ -830,14 +919,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       'season': '${playback.season}',
       'episode': '${playback.episode}',
       if (playbackType.isNotEmpty) 'type': playbackType,
-      if ((widget.watchPartyCode ?? '').trim().isNotEmpty)
-        'partyCode': widget.watchPartyCode!.trim().toUpperCase(),
-      if (widget.watchPartyRole != null)
-        'partyRole': widget.watchPartyRole!.queryValue,
+      if (playback.providerIndex != null)
+        'provider': '${math.max(0, playback.providerIndex!)}',
+      if (_resolvedWatchPartyCode != null)
+        'partyCode': _resolvedWatchPartyCode!,
+      if (_resolvedWatchPartyRole != null)
+        'partyRole': _resolvedWatchPartyRole!.queryValue,
     };
 
     context.pushReplacement(
-      Uri(path: '/player/${playback.mediaId}', queryParameters: query).toString(),
+      Uri(
+        path: '/player/${playback.mediaId}',
+        queryParameters: query,
+      ).toString(),
     );
   }
 
@@ -848,58 +942,128 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     final shouldLeave = await showModalBottomSheet<bool>(
       context: context,
-      backgroundColor: const Color(0xFF141414),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      useRootNavigator: true,
+      clipBehavior: Clip.antiAlias,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (sheetContext) {
+        final maxHeight = MediaQuery.sizeOf(sheetContext).height * 0.8;
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Text(
-                  'Watch Party ${session.sessionCode}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: ColoredBox(
+              color: const Color(0xFF141414),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  '${session.participantCount} participants',
-                  style: const TextStyle(color: Colors.white70),
-                ),
-              ),
-              const SizedBox(height: 8),
-              ...session.participants.map(
-                (participant) => ListTile(
-                  dense: true,
-                  title: Text(
-                    participant.name,
-                    style: const TextStyle(color: Colors.white),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 10, 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Watch Party ${session.sessionCode}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Close',
+                          onPressed: () => Navigator.pop(sheetContext),
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  subtitle: participant.isHost
-                      ? const Text(
-                          'Host',
-                          style: TextStyle(color: Colors.white70),
-                        )
-                      : null,
-                ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      '${session.participantCount} participants',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      itemCount: session.participants.length + 1,
+                      separatorBuilder: (_, __) => const SizedBox(height: 6),
+                      itemBuilder: (context, index) {
+                        if (index == session.participants.length) {
+                          return ListTile(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            tileColor: Colors.red.withValues(alpha: 0.12),
+                            leading: const Icon(
+                              Icons.logout_rounded,
+                              color: Colors.white,
+                            ),
+                            title: Text(
+                              service.isHost
+                                  ? 'End Watch Party'
+                                  : 'Leave Watch Party',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            onTap: () => Navigator.pop(sheetContext, true),
+                          );
+                        }
+
+                        final participant = session.participants[index];
+                        return ListTile(
+                          dense: true,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          tileColor: Colors.white.withValues(alpha: 0.05),
+                          leading: _buildWatchPartyAvatar(participant),
+                          title: Text(
+                            participant.name,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: participant.isHost
+                              ? const Text(
+                                  'Host',
+                                  style: TextStyle(color: Colors.white70),
+                                )
+                              : null,
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              ListTile(
-                leading: const Icon(Icons.logout, color: Colors.white),
-                title: Text(
-                  service.isHost ? 'End Watch Party' : 'Leave Watch Party',
-                  style: const TextStyle(color: Colors.white),
-                ),
-                onTap: () => Navigator.pop(sheetContext, true),
-              ),
-              const SizedBox(height: 12),
-            ],
+            ),
           ),
         );
       },
@@ -917,6 +1081,44 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
     _watchPartyHostSyncTimer?.cancel();
     _watchPartyHostSyncTimer = null;
+  }
+
+  Widget _buildWatchPartyAvatar(WatchPartyParticipant participant) {
+    final initials = _participantInitials(participant.name);
+    final photoUrl = (participant.photoUrl ?? '').trim();
+    if (photoUrl.isNotEmpty) {
+      return CircleAvatar(
+        radius: 18,
+        backgroundColor: Colors.white12,
+        backgroundImage: NetworkImage(photoUrl),
+      );
+    }
+
+    return CircleAvatar(
+      radius: 18,
+      backgroundColor: participant.isHost
+          ? NivioTheme.accentColorOf(context).withValues(alpha: 0.35)
+          : Colors.white12,
+      child: Text(
+        initials,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  String _participantInitials(String name) {
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts.first[0].toUpperCase();
+    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }
 
   void _maybeAutoEnterFullscreenOnce() {
@@ -1020,6 +1222,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     switch (event) {
       case 'time':
         _saveWebViewProgress(currentTime, duration);
+        unawaited(
+          _broadcastWatchPartyPlaybackFromWebView(
+            positionMs: (currentTime * 1000).round(),
+            isPlaying: true,
+            force: false,
+          ),
+        );
         final progress = duration > 0 ? currentTime / duration : 0.0;
         if (progress >= 0.90 &&
             !_showNextEpisodeButton &&
@@ -1030,6 +1239,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         break;
       case 'complete':
         _markWebViewAsCompleted(duration);
+        unawaited(
+          _broadcastWatchPartyPlaybackFromWebView(
+            positionMs: ((duration > 0 ? duration : currentTime) * 1000)
+                .round(),
+            isPlaying: false,
+            force: true,
+          ),
+        );
         if (_hasNextEpisode()) _showNextEpisodePopup();
         break;
     }
@@ -1279,50 +1496,93 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
-      backgroundColor: const Color(0xFF1F1F1F),
+      backgroundColor: Colors.transparent,
+      clipBehavior: Clip.antiAlias,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) {
         return SafeArea(
           top: false,
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              const ListTile(
-                title: Text(
-                  'Display',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              ..._displayFitOrder.map((fitKey) {
-                final selected = fitKey == _selectedDisplayFitKey;
-                final label = _displayFitLabels[fitKey] ?? fitKey;
-                return ListTile(
-                  leading: Icon(
-                    selected ? Icons.check_circle : Icons.circle_outlined,
-                    color: selected
-                        ? NivioTheme.accentColorOf(context)
-                        : Colors.white70,
-                  ),
-                  title: Text(
-                    label,
-                    style: TextStyle(
-                      color: selected
-                          ? NivioTheme.accentColorOf(context)
-                          : Colors.white,
-                      fontWeight: selected
-                          ? FontWeight.bold
-                          : FontWeight.normal,
+          child: ColoredBox(
+            color: const Color(0xFF1F1F1F),
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(999),
                     ),
                   ),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _switchDisplayMode(fitKey);
-                  },
-                );
-              }),
-            ],
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 6, 10),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Display',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ..._displayFitOrder.map((fitKey) {
+                  final selected = fitKey == _selectedDisplayFitKey;
+                  final label = _displayFitLabels[fitKey] ?? fitKey;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: ListTile(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      tileColor: selected
+                          ? NivioTheme.accentColorOf(
+                              context,
+                            ).withValues(alpha: 0.16)
+                          : Colors.white.withValues(alpha: 0.05),
+                      leading: Icon(
+                        selected ? Icons.check_circle : Icons.circle_outlined,
+                        color: selected
+                            ? NivioTheme.accentColorOf(context)
+                            : Colors.white70,
+                      ),
+                      title: Text(
+                        label,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: selected
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                        ),
+                      ),
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        _switchDisplayMode(fitKey);
+                      },
+                    ),
+                  );
+                }),
+              ],
+            ),
           ),
         );
       },
@@ -2134,47 +2394,52 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          Row(
-                            children: [
-                              if (media?.mediaType == 'tv')
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: NivioTheme.accentColorOf(context),
-                                    borderRadius: BorderRadius.circular(3),
-                                  ),
-                                  child: Text(
-                                    'S${widget.season} E$_currentEpisode',
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                if (media?.mediaType == 'tv')
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: NivioTheme.accentColorOf(context),
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                    child: Text(
+                                      'S${widget.season} E$_currentEpisode',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 5,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(3),
-                                ),
-                                child: Text(
-                                  _streamResult!.provider.toUpperCase(),
-                                  style: TextStyle(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.white70,
+                                if (_watchPartySession != null) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 5,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.12,
+                                      ),
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                    child: Text(
+                                      '${_watchPartySession!.sessionCode} • ${_watchPartySession!.participantCount}',
+                                      style: const TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.white70,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ),
-                              if (_watchPartySession != null) ...[
+                                ],
                                 const SizedBox(width: 6),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
@@ -2182,12 +2447,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                     vertical: 2,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.12),
+                                    color: Colors.white.withValues(alpha: 0.2),
                                     borderRadius: BorderRadius.circular(3),
                                   ),
                                   child: Text(
-                                    '${_watchPartySession!.sessionCode} • ${_watchPartySession!.participantCount}',
-                                    style: const TextStyle(
+                                    _streamResult!.provider.toUpperCase(),
+                                    style: TextStyle(
                                       fontSize: 9,
                                       fontWeight: FontWeight.w500,
                                       color: Colors.white70,
@@ -2195,7 +2460,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                   ),
                                 ),
                               ],
-                            ],
+                            ),
                           ),
                         ],
                       ),
@@ -2307,6 +2572,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Widget _buildFullscreenFloatingTopBar() {
     final appTheme = Theme.of(context);
+    final watchPartySession = _watchPartySession;
     final titleStyle =
         appTheme.textTheme.titleMedium?.copyWith(
           color: Colors.white,
@@ -2367,14 +2633,39 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            ref.read(selectedMediaProvider)?.title ??
-                                ref.read(selectedMediaProvider)?.name ??
-                                'Playing',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: titleStyle,
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  ref.read(selectedMediaProvider)?.title ??
+                                      ref.read(selectedMediaProvider)?.name ??
+                                      'Playing',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: titleStyle,
+                                ),
+                              ),
+                              if (watchPartySession != null) ...[
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Transform.translate(
+                                    offset: const Offset(0, 8),
+                                    child: Text(
+                                      '${watchPartySession.sessionCode} • ${watchPartySession.participantCount}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: titleStyle.copyWith(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        decoration: TextDecoration.none,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
+                          const SizedBox(height: 2),
                           Text(
                             _buildFullscreenSubtitle(),
                             maxLines: 1,
@@ -2384,46 +2675,67 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ],
                       ),
                     ),
-                    if (_isAimiAnimeStream())
-                      _buildTopActionMenuButton<String>(
-                        menuId: 'fs-subdub-menu',
-                        icon: Icon(
-                          Icons.record_voice_over,
-                          color: Colors.white,
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 220),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            if (watchPartySession != null)
+                              IconButton(
+                                tooltip: 'Watch Party',
+                                onPressed: _showWatchPartyDetailsSheet,
+                                icon: const PhosphorIcon(
+                                  PhosphorIconsRegular.users,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              ),
+                            if (_isAimiAnimeStream())
+                              _buildTopActionMenuButton<String>(
+                                menuId: 'fs-subdub-menu',
+                                icon: Icon(
+                                  Icons.record_voice_over,
+                                  color: Colors.white,
+                                ),
+                                tooltip: 'Sub/Dub',
+                                itemBuilder: _buildAnimeModeMenuItems,
+                                onSelected: _switchAnimeMode,
+                              ),
+                            if (_isNet22DirectStream())
+                              _buildTopActionMenuButton<String>(
+                                menuId: 'fs-audio-menu',
+                                icon: Icon(
+                                  Icons.record_voice_over,
+                                  color: Colors.white,
+                                ),
+                                tooltip: 'Audio Language',
+                                itemBuilder: _buildNet22AudioMenuItems,
+                                onSelected: _switchNet22Audio,
+                              ),
+                            if (_isDirectStream &&
+                                _buildQualityOptions().length > 1)
+                              _buildTopActionMenuButton<String>(
+                                menuId: 'fs-quality-menu',
+                                icon: Icon(Icons.hd, color: Colors.white),
+                                tooltip: 'Quality',
+                                itemBuilder: _buildQualityMenuItems,
+                                onSelected: _switchQuality,
+                              ),
+                            _buildTopActionMenuButton<int>(
+                              menuId: 'fs-server-menu',
+                              icon: const PhosphorIcon(
+                                PhosphorIconsRegular.arrowsClockwise,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                              tooltip: 'Switch Server',
+                              itemBuilder: _buildProviderMenuItems,
+                              onSelected: _switchToProvider,
+                            ),
+                          ],
                         ),
-                        tooltip: 'Sub/Dub',
-                        itemBuilder: _buildAnimeModeMenuItems,
-                        onSelected: _switchAnimeMode,
                       ),
-                    if (_isNet22DirectStream())
-                      _buildTopActionMenuButton<String>(
-                        menuId: 'fs-audio-menu',
-                        icon: Icon(
-                          Icons.record_voice_over,
-                          color: Colors.white,
-                        ),
-                        tooltip: 'Audio Language',
-                        itemBuilder: _buildNet22AudioMenuItems,
-                        onSelected: _switchNet22Audio,
-                      ),
-                    if (_isDirectStream && _buildQualityOptions().length > 1)
-                      _buildTopActionMenuButton<String>(
-                        menuId: 'fs-quality-menu',
-                        icon: Icon(Icons.hd, color: Colors.white),
-                        tooltip: 'Quality',
-                        itemBuilder: _buildQualityMenuItems,
-                        onSelected: _switchQuality,
-                      ),
-                    _buildTopActionMenuButton<int>(
-                      menuId: 'fs-server-menu',
-                      icon: const PhosphorIcon(
-                        PhosphorIconsRegular.arrowsClockwise,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                      tooltip: 'Switch Server',
-                      itemBuilder: _buildProviderMenuItems,
-                      onSelected: _switchToProvider,
                     ),
                   ],
                 ),
