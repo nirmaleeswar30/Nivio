@@ -769,7 +769,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _updateWatchPartyHostSyncTimer() {
     final shouldSync =
         _watchPartyService?.isInSession == true &&
-        _watchPartyService?.isHost == true &&
+        _watchPartyService?.canControlPlayback == true &&
         _isDirectStream;
     if (!shouldSync) {
       _watchPartyHostSyncTimer?.cancel();
@@ -786,7 +786,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _broadcastWatchPartyPlayback({required bool force}) async {
     final service = _watchPartyService;
     if (service == null ||
-        !service.isHost ||
+        !service.canControlPlayback ||
         _isApplyingWatchPartyState ||
         !_isDirectStream ||
         _betterPlayerController?.isVideoInitialized() != true) {
@@ -823,7 +823,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     required bool force,
   }) async {
     final service = _watchPartyService;
-    if (service == null || !service.isHost || _isApplyingWatchPartyState) {
+    if (service == null ||
+        !service.canControlPlayback ||
+        _isApplyingWatchPartyState) {
       return;
     }
 
@@ -859,7 +861,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _applyWatchPartyPlayback(
     WatchPartyPlaybackState playback,
   ) async {
-    if (!mounted || _watchPartyService?.isHost == true) return;
+    if (!mounted || _watchPartyService?.canControlPlayback == true) return;
 
     if (playback.mediaId != widget.mediaId) {
       _syncRouteToWatchPartyPlayback(playback);
@@ -1037,6 +1039,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         }
 
                         final participant = session.participants[index];
+                        final canManageControl =
+                            service.isHost &&
+                            !participant.isHost &&
+                            participant.id != service.userId;
+                        final hasControl =
+                            session.controllerId == participant.id;
                         return ListTile(
                           dense: true,
                           shape: RoundedRectangleBorder(
@@ -1055,6 +1063,42 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                               ? const Text(
                                   'Host',
                                   style: TextStyle(color: Colors.white70),
+                                )
+                              : (hasControl
+                                    ? const Text(
+                                        'Can control playback',
+                                        style: TextStyle(color: Colors.white70),
+                                      )
+                                    : null),
+                          trailing: canManageControl
+                              ? TextButton(
+                                  onPressed: () async {
+                                    if (hasControl) {
+                                      await service.setPlaybackController(null);
+                                    } else {
+                                      await service.setPlaybackController(
+                                        participant.id,
+                                      );
+                                    }
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          hasControl
+                                              ? '${participant.name} no longer has control'
+                                              : '${participant.name} can now control playback',
+                                        ),
+                                        duration: const Duration(seconds: 2),
+                                      ),
+                                    );
+                                  },
+                                  child: Text(
+                                    hasControl ? 'Revoke' : 'Give control',
+                                    style: TextStyle(
+                                      color: NivioTheme.accentColorOf(context),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
                                 )
                               : null,
                         );

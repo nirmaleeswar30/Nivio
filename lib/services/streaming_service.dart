@@ -87,13 +87,12 @@ class StreamingService {
         }
 
         if (directSlot == 1) {
-          final net22Result = await _net22ScraperService.fetchStream(
-            mediaType: media.mediaType,
+          final net22Result = await _fetchNet22WithAnimeFallback(
+            media: media,
             season: season,
             episode: episode,
-            title: media.title ?? media.name ?? '',
-            year: _extractYear(media),
-            preferredAudio: preferredNet22Audio,
+            preferredNet22Audio: preferredNet22Audio,
+            isAnime: isAnime,
           );
 
           if (net22Result != null) {
@@ -203,6 +202,42 @@ class StreamingService {
       appDebugLog('Error in fetchStreamUrl: $e');
       return null;
     }
+  }
+
+  Future<StreamResult?> _fetchNet22WithAnimeFallback({
+    required SearchResult media,
+    required int season,
+    required int episode,
+    required String? preferredNet22Audio,
+    required bool isAnime,
+  }) async {
+    final title = media.title ?? media.name ?? '';
+    final year = _extractYear(media);
+
+    final primary = await _net22ScraperService.fetchStream(
+      mediaType: media.mediaType,
+      season: season,
+      episode: episode,
+      title: title,
+      year: year,
+      preferredAudio: preferredNet22Audio,
+    );
+    if (primary != null) return primary;
+
+    if (!isAnime || season <= 1) return null;
+
+    appDebugLog(
+      'Net22 anime fallback: retrying with season=1 for media=${media.id}, original S${season}E$episode',
+    );
+
+    return _net22ScraperService.fetchStream(
+      mediaType: media.mediaType,
+      season: 1,
+      episode: episode,
+      title: title,
+      year: year,
+      preferredAudio: preferredNet22Audio,
+    );
   }
 
   /// Get the total number of available providers (direct + embeds).

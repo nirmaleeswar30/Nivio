@@ -23,6 +23,7 @@ class WatchPartyServiceSupabase {
   bool _isHost = false;
   int _stateVersion = 0;
   int _lastAppliedStateVersion = 0;
+  String? _controllerId;
   final Map<String, WatchPartyParticipant> _participants = {};
   WatchPartyPlaybackState? _playbackState;
   WatchPartySession? _session;
@@ -36,6 +37,8 @@ class WatchPartyServiceSupabase {
 
   WatchPartySession? get currentSession => _session;
   bool get isHost => _isHost;
+  bool get canControlPlayback => _isHost || (_controllerId == userId);
+  String? get controllerId => _controllerId;
   bool get isInSession => _sessionCode != null;
   String? get sessionCode => _sessionCode;
 
@@ -65,6 +68,7 @@ class WatchPartyServiceSupabase {
             .toUpperCase();
     _stateVersion = 0;
     _lastAppliedStateVersion = 0;
+    _controllerId = null;
     _participants.clear();
     _playbackState = null;
 
@@ -90,6 +94,7 @@ class WatchPartyServiceSupabase {
     _sessionCode = code.trim().toUpperCase();
     _stateVersion = 0;
     _lastAppliedStateVersion = 0;
+    _controllerId = null;
     _participants.clear();
     _playbackState = null;
 
@@ -150,6 +155,10 @@ class WatchPartyServiceSupabase {
     _channel!.onBroadcast(
       event: 'state_snapshot',
       callback: _handleStateSnapshot,
+    );
+    _channel!.onBroadcast(
+      event: 'controller_update',
+      callback: _handleControllerUpdate,
     );
     _channel!.onBroadcast(event: 'session_end', callback: _handleSessionEnd);
 
@@ -213,7 +222,9 @@ class WatchPartyServiceSupabase {
     required int positionMs,
     required bool isPlaying,
   }) async {
-    if (!_isHost || _channel == null || _sessionCode == null) return;
+    if (!canControlPlayback || _channel == null || _sessionCode == null) {
+      return;
+    }
 
     final version = _nextStateVersion();
     final state = WatchPartyPlaybackState(
@@ -251,6 +262,30 @@ class WatchPartyServiceSupabase {
     );
   }
 
+  Future<void> setPlaybackController(String? participantId) async {
+    if (!_isHost || _channel == null || _sessionCode == null) return;
+
+    String? normalized;
+    final raw = (participantId ?? '').trim();
+    if (raw.isNotEmpty && raw != userId && _participants.containsKey(raw)) {
+      normalized = raw;
+    }
+
+    if (_controllerId == normalized) return;
+    _controllerId = normalized;
+    final version = _nextStateVersion();
+    _emitSessionUpdate();
+
+    await _channel!.sendBroadcastMessage(
+      event: 'controller_update',
+      payload: {
+        'controllerId': _controllerId,
+        'stateVersion': version,
+        'updatedBy': userId,
+      },
+    );
+  }
+
   Future<void> endSession({
     String reason = 'Host ended the watch party.',
   }) async {
@@ -282,6 +317,7 @@ class WatchPartyServiceSupabase {
     _isHost = false;
     _stateVersion = 0;
     _lastAppliedStateVersion = 0;
+    _controllerId = null;
     _participants.clear();
     _playbackState = null;
     _session = null;
@@ -336,6 +372,20 @@ class WatchPartyServiceSupabase {
     }
   }
 
+  void _handleControllerUpdate(Map<String, dynamic> payload) {
+    final incomingVersion = (payload['stateVersion'] as num?)?.toInt() ?? 0;
+    if (_isStaleStateVersion(incomingVersion)) return;
+    _markAppliedStateVersion(incomingVersion);
+
+    final nextController =
+        (payload['controllerId'] as String?)?.trim().isNotEmpty == true
+        ? (payload['controllerId'] as String).trim()
+        : null;
+
+    _controllerId = nextController;
+    _emitSessionUpdate();
+  }
+
   void _handleStateRequest(Map<String, dynamic> payload) {
     if (!_isHost || _channel == null || _sessionCode == null) return;
     final requesterId = (payload['requesterId'] as String?)?.trim();
@@ -374,6 +424,12 @@ class WatchPartyServiceSupabase {
           );
         }
       }
+
+      final snapshotControllerId =
+          (payload['controllerId'] as String?)?.trim().isNotEmpty == true
+          ? (payload['controllerId'] as String).trim()
+          : null;
+      _controllerId = snapshotControllerId;
 
       final participantsRaw = payload['participants'];
       if (participantsRaw is List) {
@@ -433,6 +489,7 @@ class WatchPartyServiceSupabase {
         'stateVersion': version,
         'senderId': userId,
         'targetRequesterId': targetRequesterId,
+        'controllerId': _controllerId,
         'playback': _playbackState?.toJson(),
         'participants': participantsJson,
       },
@@ -527,6 +584,7 @@ class WatchPartyServiceSupabase {
       hostId: hostId,
       hostName: hostName,
       participants: participants,
+      controllerId: _controllerId,
       playbackState: _playbackState,
     );
     _sessionController.add(_session);

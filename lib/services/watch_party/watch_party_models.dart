@@ -104,6 +104,7 @@ class WatchPartySession {
     required this.hostId,
     required this.hostName,
     required this.participants,
+    this.controllerId,
     this.playbackState,
   });
 
@@ -111,6 +112,7 @@ class WatchPartySession {
   final String hostId;
   final String hostName;
   final List<WatchPartyParticipant> participants;
+  final String? controllerId;
   final WatchPartyPlaybackState? playbackState;
 
   int get participantCount => participants.length;
