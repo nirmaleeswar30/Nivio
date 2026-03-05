@@ -11,8 +11,11 @@ import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/media_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
+import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/services/streaming_service.dart';
+import 'package:nivio/services/watch_party/watch_party_models.dart';
+import 'package:nivio/services/watch_party/watch_party_service_supabase.dart';
 import 'package:nivio/widgets/webview_player.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
@@ -24,6 +27,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final int season;
   final int episode;
   final String? mediaType;
+  final String? watchPartyCode;
+  final WatchPartyRole? watchPartyRole;
 
   const PlayerScreen({
     super.key,
@@ -31,6 +36,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
     required this.season,
     required this.episode,
     this.mediaType,
+    this.watchPartyCode,
+    this.watchPartyRole,
   });
 
   @override
@@ -94,6 +101,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   OverlayEntry? _nextEpOverlayEntry;
 
   SeasonData? _currentSeasonData;
+  WatchPartyServiceSupabase? _watchPartyService;
+  WatchPartySession? _watchPartySession;
+  StreamSubscription<WatchPartyPlaybackState>? _watchPartyPlaybackSub;
+  StreamSubscription<WatchPartySession?>? _watchPartySessionSub;
+  StreamSubscription<String>? _watchPartyErrorSub;
+  Timer? _watchPartyHostSyncTimer;
+  WatchPartyPlaybackState? _pendingWatchPartyPlayback;
+  bool _isApplyingWatchPartyState = false;
+  DateTime? _lastWatchPartyBroadcastAt;
+  bool _isPartyRouteSyncInFlight = false;
+
+  static const Duration _watchPartyHostProgressInterval = Duration(
+    milliseconds: 1800,
+  );
+  static const Duration _watchPartyHostPeriodicSyncInterval = Duration(
+    seconds: 3,
+  );
+  static const int _watchPartyDriftThresholdMs = 1200;
 
   bool _isAnimeMedia(SearchResult? media) {
     if (media == null) return false;
@@ -110,6 +135,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void initState() {
     super.initState();
     _currentEpisode = widget.episode;
+    _initializeWatchParty();
     _initializePlayer();
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
@@ -252,6 +278,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _isLoading = false;
           _retryCount = 0;
         });
+        _updateWatchPartyHostSyncTimer();
         return;
       }
 
@@ -448,6 +475,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       // Start progress tracking timer
       _startProgressTracking();
+      _updateWatchPartyHostSyncTimer();
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -554,9 +582,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           );
           _resumePosition = null;
         }
+        if (_pendingWatchPartyPlayback != null) {
+          final pending = _pendingWatchPartyPlayback!;
+          _pendingWatchPartyPlayback = null;
+          unawaited(_applyWatchPartyPlayback(pending));
+        }
+        unawaited(_broadcastWatchPartyPlayback(force: true));
+        break;
+      case BetterPlayerEventType.play:
+        unawaited(_broadcastWatchPartyPlayback(force: true));
+        break;
+      case BetterPlayerEventType.pause:
+        unawaited(_broadcastWatchPartyPlayback(force: true));
         break;
       case BetterPlayerEventType.seekTo:
         // Post-seek nudge disabled: rely on native/player handling.
+        unawaited(_broadcastWatchPartyPlayback(force: true));
         break;
       case BetterPlayerEventType.bufferingStart:
         break;
@@ -585,6 +626,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         break;
       case BetterPlayerEventType.progress:
         _checkNextEpisode();
+        unawaited(_broadcastWatchPartyPlayback(force: false));
         break;
       case BetterPlayerEventType.exception:
         // Post-seek nudge disabled: no forced retryDataSource/re-seek.
@@ -596,6 +638,285 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       default:
         break;
     }
+  }
+
+  bool get _hasWatchPartyContext {
+    return (widget.watchPartyCode ?? '').trim().isNotEmpty &&
+        widget.watchPartyRole != null;
+  }
+
+  void _initializeWatchParty() {
+    if (!_hasWatchPartyContext) return;
+    unawaited(_initializeWatchPartyInternal());
+  }
+
+  Future<void> _initializeWatchPartyInternal() async {
+    final service = ref.read(watchPartyServiceProvider);
+    if (service == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Watch Party unavailable. Configure SUPABASE_URL and SUPABASE_ANON_KEY.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    _watchPartyService = service;
+    _watchPartyPlaybackSub ??= service.playbackStream.listen((playback) {
+      if (!_hasWatchPartyContext || service.isHost) return;
+      unawaited(_applyWatchPartyPlayback(playback));
+    });
+    _watchPartySessionSub ??= service.sessionStream.listen((session) {
+      if (!mounted) return;
+      setState(() {
+        _watchPartySession = session;
+      });
+      _updateWatchPartyHostSyncTimer();
+    });
+    _watchPartyErrorSub ??= service.errorStream.listen((message) {
+      if (!mounted || message.trim().isEmpty) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message.trim())));
+    });
+
+    final targetCode = widget.watchPartyCode!.trim().toUpperCase();
+    final existingCode = service.currentSession?.sessionCode.toUpperCase();
+
+    bool ok = true;
+    if (existingCode != targetCode) {
+      if (widget.watchPartyRole == WatchPartyRole.host) {
+        final created = await service.createSession(preferredCode: targetCode);
+        ok = created != null;
+      } else {
+        ok = await service.joinSession(targetCode);
+      }
+    }
+    if (!mounted) return;
+
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to connect to watch party')),
+      );
+      return;
+    }
+
+    setState(() {
+      _watchPartySession = service.currentSession;
+    });
+    _updateWatchPartyHostSyncTimer();
+
+    if (!service.isHost) {
+      unawaited(service.requestStateSync(reason: 'player_opened'));
+    }
+  }
+
+  void _updateWatchPartyHostSyncTimer() {
+    final shouldSync =
+        _hasWatchPartyContext &&
+        _watchPartyService?.isHost == true &&
+        _isDirectStream;
+    if (!shouldSync) {
+      _watchPartyHostSyncTimer?.cancel();
+      _watchPartyHostSyncTimer = null;
+      return;
+    }
+    if (_watchPartyHostSyncTimer != null) return;
+    _watchPartyHostSyncTimer = Timer.periodic(
+      _watchPartyHostPeriodicSyncInterval,
+      (_) => unawaited(_broadcastWatchPartyPlayback(force: true)),
+    );
+  }
+
+  Future<void> _broadcastWatchPartyPlayback({required bool force}) async {
+    final service = _watchPartyService;
+    if (service == null ||
+        !service.isHost ||
+        _isApplyingWatchPartyState ||
+        !_isDirectStream ||
+        _betterPlayerController?.isVideoInitialized() != true) {
+      return;
+    }
+
+    final now = DateTime.now();
+    if (!force &&
+        _lastWatchPartyBroadcastAt != null &&
+        now.difference(_lastWatchPartyBroadcastAt!) <
+            _watchPartyHostProgressInterval) {
+      return;
+    }
+
+    final controller = _betterPlayerController!;
+    final vpc = controller.videoPlayerController!;
+    final mediaType =
+        widget.mediaType ??
+        ref.read(selectedMediaProvider)?.mediaType ??
+        'movie';
+
+    await service.syncPlayback(
+      mediaId: widget.mediaId,
+      mediaType: mediaType,
+      season: widget.season,
+      episode: _currentEpisode,
+      positionMs: vpc.value.position.inMilliseconds,
+      isPlaying: controller.isPlaying() == true,
+    );
+    _lastWatchPartyBroadcastAt = now;
+  }
+
+  Future<void> _applyWatchPartyPlayback(
+    WatchPartyPlaybackState playback,
+  ) async {
+    if (!mounted || _watchPartyService?.isHost == true) return;
+
+    if (playback.mediaId != widget.mediaId) {
+      _syncRouteToWatchPartyPlayback(playback);
+      return;
+    }
+
+    if (playback.season != widget.season ||
+        playback.episode != _currentEpisode) {
+      _syncRouteToWatchPartyPlayback(playback);
+      return;
+    }
+
+    if (!_isDirectStream) return;
+
+    if (_betterPlayerController?.isVideoInitialized() != true) {
+      _pendingWatchPartyPlayback = playback;
+      return;
+    }
+    if (_isApplyingWatchPartyState) return;
+
+    _isApplyingWatchPartyState = true;
+    try {
+      final controller = _betterPlayerController!;
+      final vpc = controller.videoPlayerController!;
+      final expectedMs = playback.expectedPositionMs;
+      final currentMs = vpc.value.position.inMilliseconds;
+      final driftMs = (currentMs - expectedMs).abs();
+
+      if (driftMs > _watchPartyDriftThresholdMs) {
+        await controller.seekTo(
+          Duration(milliseconds: math.max(0, expectedMs)),
+        );
+      }
+
+      final localIsPlaying = controller.isPlaying() == true;
+      if (playback.isPlaying && !localIsPlaying) {
+        await controller.play();
+      } else if (!playback.isPlaying && localIsPlaying) {
+        await controller.pause();
+      }
+    } finally {
+      Future.delayed(const Duration(milliseconds: 350), () {
+        _isApplyingWatchPartyState = false;
+      });
+    }
+  }
+
+  void _syncRouteToWatchPartyPlayback(WatchPartyPlaybackState playback) {
+    if (_isPartyRouteSyncInFlight || !mounted) return;
+    _isPartyRouteSyncInFlight = true;
+
+    final playbackType = playback.mediaType.trim().isNotEmpty
+        ? playback.mediaType.trim()
+        : (widget.mediaType ?? 'movie');
+
+    final query = <String, String>{
+      'season': '${playback.season}',
+      'episode': '${playback.episode}',
+      if (playbackType.isNotEmpty) 'type': playbackType,
+      if ((widget.watchPartyCode ?? '').trim().isNotEmpty)
+        'partyCode': widget.watchPartyCode!.trim().toUpperCase(),
+      if (widget.watchPartyRole != null)
+        'partyRole': widget.watchPartyRole!.queryValue,
+    };
+
+    context.pushReplacement(
+      Uri(path: '/player/${playback.mediaId}', queryParameters: query).toString(),
+    );
+  }
+
+  Future<void> _showWatchPartyDetailsSheet() async {
+    final service = _watchPartyService;
+    final session = _watchPartySession;
+    if (service == null || session == null || !mounted) return;
+
+    final shouldLeave = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: const Color(0xFF141414),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Text(
+                  'Watch Party ${session.sessionCode}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  '${session.participantCount} participants',
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...session.participants.map(
+                (participant) => ListTile(
+                  dense: true,
+                  title: Text(
+                    participant.name,
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  subtitle: participant.isHost
+                      ? const Text(
+                          'Host',
+                          style: TextStyle(color: Colors.white70),
+                        )
+                      : null,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                leading: const Icon(Icons.logout, color: Colors.white),
+                title: Text(
+                  service.isHost ? 'End Watch Party' : 'Leave Watch Party',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                onTap: () => Navigator.pop(sheetContext, true),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (shouldLeave != true || !mounted) return;
+    if (service.isHost) {
+      await service.endSession();
+    } else {
+      await service.leaveSession();
+    }
+    if (!mounted) return;
+    setState(() {
+      _watchPartySession = null;
+    });
+    _watchPartyHostSyncTimer?.cancel();
+    _watchPartyHostSyncTimer = null;
   }
 
   void _maybeAutoEnterFullscreenOnce() {
@@ -776,6 +1097,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         currentSeason: widget.season,
         currentEpisode: _currentEpisode,
         mediaType: media.mediaType,
+        watchPartyCode: widget.watchPartyCode,
+        watchPartyRole: widget.watchPartyRole,
       ),
     );
   }
@@ -1646,6 +1969,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void dispose() {
     _progressTimer?.cancel();
+    _watchPartyHostSyncTimer?.cancel();
+    _watchPartyPlaybackSub?.cancel();
+    _watchPartySessionSub?.cancel();
+    _watchPartyErrorSub?.cancel();
     _nextEpisodeTimer?.cancel();
     _removeOverlayEntry();
     _removeFullscreenTopBarOverlayEntry();
@@ -1847,11 +2174,42 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                   ),
                                 ),
                               ),
+                              if (_watchPartySession != null) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                  child: Text(
+                                    '${_watchPartySession!.sessionCode} • ${_watchPartySession!.participantCount}',
+                                    style: const TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.white70,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ],
                       ),
                       actions: [
+                        if (_watchPartySession != null)
+                          IconButton(
+                            tooltip: 'Watch Party',
+                            onPressed: _showWatchPartyDetailsSheet,
+                            icon: const PhosphorIcon(
+                              PhosphorIconsRegular.users,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
                         if (_isAimiAnimeStream())
                           _buildTopActionMenuButton<String>(
                             menuId: 'top-subdub-menu',
@@ -2536,12 +2894,16 @@ class _EpisodePickerSheet extends ConsumerStatefulWidget {
   final int currentSeason;
   final int currentEpisode;
   final String? mediaType;
+  final String? watchPartyCode;
+  final WatchPartyRole? watchPartyRole;
 
   const _EpisodePickerSheet({
     required this.mediaId,
     required this.currentSeason,
     required this.currentEpisode,
     this.mediaType,
+    this.watchPartyCode,
+    this.watchPartyRole,
   });
 
   @override
@@ -2732,11 +3094,26 @@ class _EpisodePickerSheetState extends ConsumerState<_EpisodePickerSheet> {
                                 onTap: () {
                                   Navigator.pop(context);
                                   if (!isCurrent) {
-                                    final typeParam = widget.mediaType == null
-                                        ? ''
-                                        : '&type=${widget.mediaType}';
+                                    final query = <String, String>{
+                                      'season': '${widget.currentSeason}',
+                                      'episode': '${episode.episodeNumber}',
+                                      if ((widget.mediaType ?? '').isNotEmpty)
+                                        'type': widget.mediaType!,
+                                      if ((widget.watchPartyCode ?? '')
+                                          .trim()
+                                          .isNotEmpty)
+                                        'partyCode': widget.watchPartyCode!
+                                            .trim()
+                                            .toUpperCase(),
+                                      if (widget.watchPartyRole != null)
+                                        'partyRole':
+                                            widget.watchPartyRole!.queryValue,
+                                    };
                                     this.context.pushReplacement(
-                                      '/player/${widget.mediaId}?season=${widget.currentSeason}&episode=${episode.episodeNumber}$typeParam',
+                                      Uri(
+                                        path: '/player/${widget.mediaId}',
+                                        queryParameters: query,
+                                      ).toString(),
                                     );
                                   }
                                 },

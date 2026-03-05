@@ -13,6 +13,7 @@ import 'package:nivio/models/watchlist_item.dart';
 import 'package:nivio/providers/dynamic_colors_provider.dart';
 import 'package:nivio/providers/media_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
+import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/widgets/episode_list.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -231,6 +232,46 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     context.go('/home');
   }
 
+  String _buildPlayerRoute({
+    required SearchResult media,
+    required int season,
+    required int episode,
+  }) {
+    final watchPartyService = ref.read(watchPartyServiceProvider);
+    final sessionCode = watchPartyService?.sessionCode;
+    final hasPartyContext =
+        watchPartyService?.isInSession == true &&
+        sessionCode != null &&
+        sessionCode.trim().isNotEmpty;
+
+    final query = <String, String>{
+      'season': '$season',
+      'episode': '$episode',
+      if (media.mediaType.isNotEmpty) 'type': media.mediaType,
+      if (hasPartyContext) 'partyCode': sessionCode.trim().toUpperCase(),
+      if (hasPartyContext)
+        'partyRole': watchPartyService!.isHost ? 'host' : 'participant',
+    };
+    return Uri(path: '/player/${media.id}', queryParameters: query).toString();
+  }
+
+  void _openWatchPartyHub(SearchResult media) {
+    final season = media.mediaType == 'tv'
+        ? ref.read(selectedSeasonProvider)
+        : 1;
+    context.push(
+      Uri(
+        path: '/party',
+        queryParameters: {
+          'mediaId': '${media.id}',
+          'type': media.mediaType,
+          'season': '$season',
+          'title': media.title ?? media.name ?? 'Untitled',
+        },
+      ).toString(),
+    );
+  }
+
   Widget _withBackGuard(Widget child) {
     return PopScope(
       canPop: false,
@@ -428,19 +469,11 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                     children: [
                                       _glassIconButton(
                                         icon: const PhosphorIcon(
-                                          PhosphorIconsRegular.video,
+                                          PhosphorIconsRegular.users,
                                           color: NivioTheme.netflixWhite,
                                           size: 19,
                                         ),
-                                        onTap: () {
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text('Cast coming soon'),
-                                            ),
-                                          );
-                                        },
+                                        onTap: () => _openWatchPartyHub(media),
                                       ),
                                       const SizedBox(width: 10),
                                       _glassIconButton(
@@ -539,7 +572,11 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                             ? ref.read(selectedSeasonProvider)
                                             : 1;
                                         context.push(
-                                          '/player/${media.id}?season=$season&episode=1&type=${media.mediaType}',
+                                          _buildPlayerRoute(
+                                            media: media,
+                                            season: season,
+                                            episode: 1,
+                                          ),
                                         );
                                       },
                                     ),

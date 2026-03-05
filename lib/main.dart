@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/firebase_options.dart';
@@ -27,6 +28,9 @@ import 'package:nivio/screens/auth_screen.dart';
 import 'package:nivio/screens/library_screen.dart';
 import 'package:nivio/screens/profile_screen.dart';
 import 'package:nivio/screens/main_shell_screen.dart';
+import 'package:nivio/screens/watch_party_screen.dart';
+import 'package:nivio/services/watch_party/watch_party_models.dart';
+import 'package:nivio/services/watch_party/watch_party_supabase_config.dart';
 
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -34,12 +38,22 @@ void main() async {
   // Preserve splash screen while initializing
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
 
+  // Load .env first so downstream services (e.g. watch party Supabase)
+  // can read credentials during initialization.
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (_) {
+    // Keep app booting even when .env is missing.
+  }
+
   // Parallelize initialization for faster startup
   await Future.wait([
     // Initialize Firebase
     Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
     // Initialize Hive in parallel
     _initHive(),
+    // Optional: initialize Supabase for watch party if configured
+    WatchPartySupabaseConfig.initializeIfConfigured(),
   ]);
 
   // Initialize cache service
@@ -141,18 +155,42 @@ final _router = GoRouter(
         StatefulShellBranch(
           routes: [
             GoRoute(
-              path: '/profile',
-              builder: (context, state) => const ProfileScreen(),
+              path: '/party',
+              builder: (context, state) {
+                final preselectedMediaId = int.tryParse(
+                  state.uri.queryParameters['mediaId'] ?? '',
+                );
+                final preselectedSeason =
+                    int.tryParse(state.uri.queryParameters['season'] ?? '') ??
+                    1;
+                return WatchPartyScreen(
+                  preselectedMediaId: preselectedMediaId,
+                  preselectedMediaType: state.uri.queryParameters['type'],
+                  preselectedSeason: preselectedSeason,
+                  preselectedMediaTitle: state.uri.queryParameters['title'],
+                );
+              },
             ),
           ],
         ),
       ],
     ),
     GoRoute(
+      path: '/profile',
+      builder: (context, state) => const ProfileScreen(),
+    ),
+    GoRoute(
       path: '/watchlist',
       redirect: (context, state) => '/library?tab=watchlist',
     ),
     GoRoute(path: '/new-episodes', redirect: (context, state) => '/library'),
+    GoRoute(
+      path: '/watch-party',
+      redirect: (context, state) {
+        final query = state.uri.query;
+        return query.isEmpty ? '/party' : '/party?$query';
+      },
+    ),
     GoRoute(
       path: '/media/:id',
       builder: (context, state) {
@@ -168,11 +206,17 @@ final _router = GoRouter(
         final season = int.parse(state.uri.queryParameters['season'] ?? '1');
         final episode = int.parse(state.uri.queryParameters['episode'] ?? '1');
         final mediaType = state.uri.queryParameters['type'];
+        final partyCode = state.uri.queryParameters['partyCode'];
+        final partyRole = WatchPartyRoleX.fromQuery(
+          state.uri.queryParameters['partyRole'],
+        );
         return PlayerScreen(
           mediaId: int.parse(id),
           season: season,
           episode: episode,
           mediaType: mediaType,
+          watchPartyCode: partyCode,
+          watchPartyRole: partyRole,
         );
       },
     ),

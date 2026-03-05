@@ -1,7 +1,7 @@
 name: nivio
 description: "Netflix-style streaming app"
 publish_to: 'none'
-version: 1.0.0
+version: 1.1.0
 
 platforms:
   android:
@@ -62,6 +62,8 @@ dependencies:
   better_player_plus:
     path: packages/better_player_plus
   shorebird_code_push: ^2.0.5
+  supabase_flutter: ^2.8.0
+  flutter_dotenv: ^6.0.0
 
 
 dev_dependencies:
@@ -86,6 +88,7 @@ flutter:
     - assets/images/
     - shorebird.yaml
     - assets/fonts/satoshi/
+    - .env
 
   fonts:
     - family: Satoshi

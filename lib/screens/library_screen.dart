@@ -125,9 +125,9 @@ class _LibraryScreenState extends State<LibraryScreen>
               Expanded(
                 child: TabBarView(
                   controller: _tabController,
-                  children: const [
-                    NewEpisodesScreen(embedded: true),
-                    WatchlistScreen(embedded: true),
+                  children: [
+                    const NewEpisodesScreen(embedded: true),
+                    const WatchlistScreen(embedded: true),
                   ],
                 ),
               ),

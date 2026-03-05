@@ -136,16 +136,16 @@ class _MainShellScreenState extends State<MainShellScreen> {
               ),
               BottomNavigationBarItem(
                 icon: PhosphorIcon(
-                  PhosphorIconsRegular.userCircle,
+                  PhosphorIconsRegular.users,
                   color: NivioTheme.netflixGrey,
                   size: 22,
                 ),
                 activeIcon: PhosphorIcon(
-                  PhosphorIconsFill.userCircle,
+                  PhosphorIconsFill.users,
                   color: accentColor,
                   size: 22,
                 ),
-                label: 'Profile',
+                label: 'Party',
               ),
             ],
           ),
