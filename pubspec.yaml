@@ -1,7 +1,7 @@
 name: nivio
-description: "Netflix-style streaming app"
+description: "Content streaming app"
 publish_to: 'none'
-version: 1.1.0
+version: 1.1.2
 
 platforms:
   android:
