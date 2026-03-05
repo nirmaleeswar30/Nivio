@@ -945,10 +945,18 @@ class TrailerFullscreenScreen extends StatefulWidget {
 }
 
 class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
+  static const Map<String, String> _youtubeQualityLabels = {
+    'auto': 'Auto',
+    'hd1080': '1080p',
+    'hd720': '720p',
+    'large': '480p',
+  };
+
   bool _isLoading = true;
   bool _hasError = false;
   String? _errorMessage;
   YoutubePlayerController? _youtubeController;
+  String _selectedYoutubeQuality = 'auto';
 
   @override
   void initState() {
@@ -990,6 +998,7 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
         if (!mounted) return;
         if (_youtubeController!.value.isReady && _isLoading) {
           setState(() => _isLoading = false);
+          _applyYoutubeQuality(_selectedYoutubeQuality);
         }
         if (_youtubeController!.value.hasError && !_hasError) {
           setState(() {
@@ -1035,6 +1044,96 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
         const SnackBar(content: Text('Unable to open trailer externally')),
       );
     }
+  }
+
+  Future<void> _applyYoutubeQuality(String quality) async {
+    if (widget.source.site.toLowerCase() != 'youtube') return;
+
+    final controller = _youtubeController;
+    if (controller == null || !controller.value.isReady) return;
+    final web = controller.value.webViewController;
+    if (web == null) return;
+
+    final target = quality == 'auto' ? 'default' : quality;
+    await web.evaluateJavascript(
+      source:
+          '''
+      (function() {
+        try {
+          if (typeof player === 'undefined' || !player) return;
+          if (player.setPlaybackQualityRange) {
+            player.setPlaybackQualityRange('$target');
+          }
+          if (player.setPlaybackQuality) {
+            player.setPlaybackQuality('$target');
+          }
+        } catch (_) {}
+      })();
+      ''',
+    );
+  }
+
+  Future<void> _showTrailerQualityDialog() async {
+    if (widget.source.site.toLowerCase() != 'youtube') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Quality control is available for YouTube trailers only',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final current = _selectedYoutubeQuality;
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: NivioTheme.netflixDarkGrey,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const ListTile(
+                title: Text(
+                  'Trailer Quality',
+                  style: TextStyle(
+                    color: NivioTheme.netflixWhite,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              ..._youtubeQualityLabels.entries.map((entry) {
+                final key = entry.key;
+                final label = entry.value;
+                final isSelected = key == current;
+                return ListTile(
+                  leading: Icon(
+                    isSelected
+                        ? Icons.check_circle_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                    color: isSelected
+                        ? NivioTheme.accentColorOf(context)
+                        : NivioTheme.netflixGrey,
+                  ),
+                  title: Text(
+                    label,
+                    style: const TextStyle(color: NivioTheme.netflixWhite),
+                  ),
+                  onTap: () => Navigator.pop(sheetContext, key),
+                );
+              }),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selected == null || selected == _selectedYoutubeQuality) return;
+    setState(() {
+      _selectedYoutubeQuality = selected;
+    });
+    await _applyYoutubeQuality(selected);
   }
 
   Widget _buildYoutubePlayer() {
@@ -1137,16 +1236,59 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
           Positioned(
             top: MediaQuery.paddingOf(context).top + 8,
             right: 12,
-            child: GestureDetector(
-              onTap: () => Navigator.pop(context),
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  shape: BoxShape.circle,
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: _showTrailerQualityDialog,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.hd_rounded,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          isYoutube
+                              ? (_youtubeQualityLabels[_selectedYoutubeQuality] ??
+                                    'Auto')
+                              : 'Quality',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                child: const Icon(Icons.close, color: Colors.white, size: 20),
-              ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.close,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
