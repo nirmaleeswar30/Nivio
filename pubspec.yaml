@@ -15,7 +15,6 @@ dependencies:
 
   # State Management
   flutter_riverpod: ^2.6.1
-  riverpod_annotation: ^2.6.1
 
   # Networking
   dio: ^5.7.0
@@ -34,13 +33,10 @@ dependencies:
 
   # Video Player
   youtube_player_flutter: ^9.0.3
-  youtube_explode_dart: ^2.2.4
   flutter_inappwebview: ^6.1.5
 
   # UI & Images
   cached_network_image: ^3.4.1
-  shimmer: ^3.0.0
-  flutter_svg: ^2.0.10+1
   phosphor_flutter: ^2.1.0
 
   # Navigation
