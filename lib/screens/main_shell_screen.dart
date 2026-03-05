@@ -15,6 +15,7 @@ class MainShellScreen extends StatefulWidget {
 
 class _MainShellScreenState extends State<MainShellScreen> {
   DateTime? _lastBackPressAt;
+  DateTime? _lastBackHandledAt;
 
   void _onTap(int index) {
     widget.navigationShell.goBranch(
@@ -23,14 +24,23 @@ class _MainShellScreenState extends State<MainShellScreen> {
     );
   }
 
-  void _handleRootBackPress(BuildContext context) {
+  Future<bool> _onWillPop() async {
     final now = DateTime.now();
+
+    // Some devices/OS versions may dispatch back callbacks twice for one press.
+    // Ignore duplicate callbacks arriving too close together.
+    if (_lastBackHandledAt != null &&
+        now.difference(_lastBackHandledAt!) <=
+            const Duration(milliseconds: 350)) {
+      return false;
+    }
+    _lastBackHandledAt = now;
 
     // If not on home tab, navigate to home first
     if (widget.navigationShell.currentIndex != 0) {
       widget.navigationShell.goBranch(0);
       _lastBackPressAt = null; // Reset exit timer when switching tabs
-      return;
+      return false;
     }
 
     // If GoRouter has navigation history (e.g., after returning from media detail),
@@ -38,17 +48,21 @@ class _MainShellScreenState extends State<MainShellScreen> {
     if (context.canPop()) {
       context.go('/home');
       _lastBackPressAt = null;
-      return;
+      return false;
     }
 
     // On home tab with no navigation history - handle exit logic
+    final backGap = _lastBackPressAt == null
+        ? null
+        : now.difference(_lastBackPressAt!);
     final shouldExit =
-        _lastBackPressAt != null &&
-        now.difference(_lastBackPressAt!) <= const Duration(seconds: 2);
+        backGap != null &&
+        backGap >= const Duration(milliseconds: 500) &&
+        backGap <= const Duration(seconds: 2);
 
     if (shouldExit) {
       SystemNavigator.pop();
-      return;
+      return false;
     }
 
     _lastBackPressAt = now;
@@ -60,19 +74,16 @@ class _MainShellScreenState extends State<MainShellScreen> {
         duration: Duration(seconds: 2),
       ),
     );
+
+    return false;
   }
 
   @override
   Widget build(BuildContext context) {
     final accentColor = Theme.of(context).colorScheme.primary;
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) {
-          _handleRootBackPress(context);
-        }
-      },
+    return WillPopScope(
+      onWillPop: _onWillPop,
       child: Scaffold(
         body: widget.navigationShell,
         bottomNavigationBar: Container(

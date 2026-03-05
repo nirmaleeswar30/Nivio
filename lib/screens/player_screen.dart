@@ -3028,7 +3028,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 // Animated Netflix-style loading ring
-                SizedBox(width: 56, height: 56, child: _NamizoLoadingSpinner()),
+                SizedBox(width: 56, height: 56, child: _NivioLoadingSpinner()),
                 const SizedBox(height: 24),
                 if (title.isNotEmpty)
                   Padding(
@@ -3704,12 +3704,12 @@ class _NextEpState {
 }
 
 // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Netflix-style loading spinner ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
-class _NamizoLoadingSpinner extends StatefulWidget {
+class _NivioLoadingSpinner extends StatefulWidget {
   @override
-  State<_NamizoLoadingSpinner> createState() => _NamizoLoadingSpinnerState();
+  State<_NivioLoadingSpinner> createState() => _NivioLoadingSpinnerState();
 }
 
-class _NamizoLoadingSpinnerState extends State<_NamizoLoadingSpinner>
+class _NivioLoadingSpinnerState extends State<_NivioLoadingSpinner>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
 

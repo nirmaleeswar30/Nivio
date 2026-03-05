@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class NivioTheme {
   const NivioTheme._();
 
-  // Namizo palette
+  // Nivio palette
   static const Color netflixRed = Color(0xFFE50914);
   static const Color netflixBlack = Color(0xFF0D0F14);
   static const Color netflixDarkGrey = Color(0xFF151922);

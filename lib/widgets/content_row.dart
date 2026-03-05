@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:nivio/core/constants.dart';
+import 'package:nivio/core/theme.dart';
+import 'package:nivio/providers/watchlist_provider.dart';
 
 class ContentRow extends StatelessWidget {
   final String title;
@@ -64,7 +67,7 @@ class ContentRow extends StatelessWidget {
   }
 }
 
-class _AnimatedPosterCard extends StatefulWidget {
+class _AnimatedPosterCard extends ConsumerStatefulWidget {
   final String? posterPath;
   final int tmdbId;
   final String mediaType;
@@ -76,10 +79,11 @@ class _AnimatedPosterCard extends StatefulWidget {
   });
 
   @override
-  State<_AnimatedPosterCard> createState() => _AnimatedPosterCardState();
+  ConsumerState<_AnimatedPosterCard> createState() =>
+      _AnimatedPosterCardState();
 }
 
-class _AnimatedPosterCardState extends State<_AnimatedPosterCard>
+class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
     with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
@@ -110,6 +114,8 @@ class _AnimatedPosterCardState extends State<_AnimatedPosterCard>
 
   @override
   Widget build(BuildContext context) {
+    final isInWatchlist = ref.watch(isInWatchlistProvider(widget.tmdbId));
+
     return MouseRegion(
       onEnter: (_) {
         _animationController.forward();
@@ -201,6 +207,25 @@ class _AnimatedPosterCardState extends State<_AnimatedPosterCard>
                           ),
                         ),
                       ),
+                      if (isInWatchlist)
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: NivioTheme.accentColorOf(
+                                context,
+                              ).withValues(alpha: 0.95),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.check,
+                              color: Colors.white,
+                              size: 14,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),

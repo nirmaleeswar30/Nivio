@@ -45,6 +45,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _currentBannerIndex = 0;
   int _currentBannerPage = 0;
   Timer? _bannerTimer;
+  final Map<int, bool> _pendingWatchlistState = <int, bool>{};
 
   @override
   void initState() {
@@ -296,6 +297,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Widget _buildHeroBannerCarousel(BuildContext context, List<dynamic> items) {
     if (items.isEmpty) return const SizedBox(height: 500);
+    final watchlistIds = ref
+        .watch(watchlistProvider)
+        .map((item) => item.id)
+        .toSet();
     final itemCount = items.length + 1;
 
     return SizedBox(
@@ -326,7 +331,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         },
         itemBuilder: (context, index) {
           final content = items[index == items.length ? 0 : index];
-          final tmdbId = content['id'];
+          final tmdbId = _parseMediaId(content['id']);
+          final isInWatchlist = tmdbId != null
+              ? (_pendingWatchlistState[tmdbId] ??
+                    watchlistIds.contains(tmdbId))
+              : false;
           final mediaType =
               (content['media_type'] ??
                       (content['title'] != null ? 'movie' : 'tv'))
@@ -426,12 +435,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         _smallSquareButton(
-                          icon: const PhosphorIcon(
-                            PhosphorIconsRegular.plus,
-                            color: Colors.white,
+                          icon: PhosphorIcon(
+                            isInWatchlist
+                                ? PhosphorIconsFill.checkCircle
+                                : PhosphorIconsRegular.plus,
+                            color: isInWatchlist
+                                ? NivioTheme.accentColorOf(context)
+                                : Colors.white,
                             size: 18,
                           ),
-                          onTap: () => _addFeaturedToWatchlist(content),
+                          onTap: () => _toggleFeaturedWatchlist(content),
                         ),
                         const SizedBox(width: 10),
                         ElevatedButton.icon(
@@ -615,10 +628,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Future<void> _addFeaturedToWatchlist(Map<String, dynamic> content) async {
+  Future<void> _toggleFeaturedWatchlist(Map<String, dynamic> content) async {
     final watchlistService = ref.read(watchlistServiceProvider);
-    final mediaId = content['id'] as int?;
+    final mediaId = _parseMediaId(content['id']);
     if (mediaId == null) return;
+
+    final currentlyInWatchlist =
+        _pendingWatchlistState[mediaId] ??
+        watchlistService.isInWatchlist(mediaId);
+    final nextInWatchlist = !currentlyInWatchlist;
+    setState(() {
+      _pendingWatchlistState[mediaId] = nextInWatchlist;
+    });
 
     final mediaType =
         (content['media_type'] ?? (content['title'] != null ? 'movie' : 'tv'))
@@ -635,17 +656,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       overview: content['overview']?.toString(),
     );
 
-    await watchlistService.addToWatchlist(item);
-    ref.read(watchlistRefreshProvider.notifier).refresh();
+    try {
+      if (nextInWatchlist) {
+        await watchlistService.addToWatchlist(item);
+      } else {
+        await watchlistService.removeFromWatchlist(mediaId);
+      }
+      ref.read(watchlistRefreshProvider.notifier).refresh();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _pendingWatchlistState.remove(mediaId);
+        });
+      }
+    }
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Added to watchlist')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          nextInWatchlist ? 'Added to watchlist' : 'Removed from watchlist',
+        ),
+      ),
+    );
   }
 
   String? _tmdbImageUrl(String? path, String size) {
     if (path == null || path.isEmpty) return null;
     if (path.startsWith('http://') || path.startsWith('https://')) return path;
     return '$tmdbImageBaseUrl/$size$path';
+  }
+
+  int? _parseMediaId(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
   }
 }

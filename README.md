@@ -1,325 +1,174 @@
-<div align="center">
+# Nivio
 
-<img src="assets/images/nivio-dark.png" alt="Nivio Logo" width="200"/>
+Nivio is a Flutter streaming app with a Netflix-style UI, TMDB-powered discovery, direct and embed playback providers, cloud-synced watch progress, and optional real-time watch parties.
 
+## Current Implementation
 
-### *Your Gateway to Global Entertainment*
+### Discovery and Browsing
+- Home feed with language-focused sections (Anime, Tamil, Telugu, Hindi, Korean).
+- TMDB-backed search with filters/sorting and paginated results.
+- Media detail pages with trailer support and quick jump into playback.
 
-A modern, Netflix-inspired streaming platform built with Flutter. Discover movies and TV shows across multiple languages with intelligent search, personalized recommendations, and seamless playback.
+### Playback
+- Direct stream pipeline first, then embed fallback.
+- Provider switching inside player.
+- Season/episode picker for TV content.
+- Continue watching and resume progress.
+- Preferred playback speed and preferred quality settings.
 
-[![Flutter](https://img.shields.io/badge/Flutter-3.10+-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
-[![Firebase](https://img.shields.io/badge/Firebase-Integrated-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com)
-[![TMDB](https://img.shields.io/badge/TMDB-API-01D277?logo=themoviedatabase&logoColor=white)](https://www.themoviedb.org)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+### Provider Chain (Implemented)
+- Anime direct: `animepahe` (via `aimi_lib`) -> `net22 (direct)` -> `flix (direct)`.
+- Non-anime direct: `net22 (direct)` -> `flix (direct)`.
+- Embed fallback: `vidsrc.cc` -> `vidsrc.to` -> `vidlink`.
 
-[Features](#-features) • [Screenshots](#-screenshots) • [Installation](#-installation) • [Tech Stack](#-tech-stack) • [Contributing](#-contributing)
+### Watch Party (Supabase, Optional)
+- Create or join a room using a 6-character code.
+- Presence list with host and participants.
+- Host can delegate playback control from Watch Party screen.
+- Shared control model: host keeps control even when delegating.
+- Last-action-wins sync behavior for party playback state.
 
-</div>
+### Library and Alerts
+- Library tabs: New Episodes + Watchlist.
+- Episode check background flow with configurable frequency.
+- Manual "Check now" and in-app episode alert controls.
 
----
+### Account and Sync
+- Firebase authentication (Google + anonymous flows in codebase).
+- Watch history/watch progress syncing through Firestore.
+- Local-first persistence with Hive and SharedPreferences.
 
-## 🌟 Features
+### App Updates
+- Shorebird OTA background check path is integrated.
+- GitHub release update prompt is integrated.
 
-### 🌍 **Multi-Language Content Discovery**
-- **5 Language Hubs**: Tamil, Telugu, Hindi, Korean, and Japanese (Anime)
-- **Customizable Preferences**: Toggle languages on/off in settings
-- **Latest OTT Releases**: Dedicated Tamil OTT section with 6-month filter
-- **Trending & Popular**: Curated content for each language
+## Tech Stack
 
-### 🔍 **Advanced Search**
-- **Universal Search**: Find content across all languages
-- **Smart Filters**: Filter by language (Tamil, Telugu, Hindi, Korean, Japanese)
-- **Sort Options**: By popularity, title, or release year
-- **Infinite Scroll Pagination**: Instagram-style smooth loading
-- **Auto-Load Optimization**: Automatically loads more pages when results are sparse
+- Flutter (Dart SDK `^3.10.0`)
+- State management: Riverpod
+- Navigation: GoRouter (with `StatefulShellRoute` tabs)
+- Backend: Firebase Auth + Cloud Firestore
+- Realtime watch party: Supabase Realtime
+- Local storage: Hive + SharedPreferences
+- Networking/scraping: Dio + custom scraper services
+- Playback: `better_player_plus` (local package) + `flutter_inappwebview`
+- Background/notifications: Workmanager + Flutter Local Notifications
 
-### 📺 **Seamless Viewing Experience**
-- **Continue Watching**: Pick up exactly where you left off with automatic resume
-- **Progress Tracking**: Automatic playback position sync across devices
-- **Multiple Streaming Providers**: Intelligent fallback across vidsrc.cc, vidsrc.to, and vidlink
-- **Manual Server Switch**: Change streaming provider on-the-fly
-- **Ultra Ad-Blocking**: Aggressive ad and popup blocking for clean playback
-- **16:9 Aspect Ratio**: Consistent cinematic viewing experience
-- **Cross-Platform WebView**: Works on Android, iOS, Windows, and Web
-- **Season/Episode Picker**: Easy TV show navigation with episode grids
-- **Official Trailers**: High-quality YouTube trailer playback in fullscreen modal
+## Project Structure
 
-### 🎨 **Beautiful UI/UX**
-- **Netflix-Inspired Design**: Familiar dark theme with red accents
-- **Hero Slider**: Mixed regional and trending content with smooth animations
-- **Custom Branding**: Professional logo integration in header and splash
-- **Native Splash Screen**: Branded app launch experience
-- **Adaptive Icons**: Platform-specific app icons for all platforms
-- **Smooth Animations**: Hover effects, transitions, and loading states
-- **Responsive Layout**: Optimized for mobile, tablet, and desktop
-- **Fullscreen Trailer Modal**: Cinematic trailer viewing experience
+```text
+lib/
+  main.dart
+  core/
+  models/
+  providers/
+  screens/
+  services/
+    watch_party/
+  widgets/
+packages/
+  better_player_plus/
+```
 
-### ☁️ **Cloud-Powered Features**
-- **Firebase Authentication**: Secure anonymous login
-- **Cloud Firestore Sync**: Watch history across devices
-- **Local-First Architecture**: Instant UI updates with Hive
-- **Offline Support**: Background sync when online
+Key screens:
+- `lib/screens/home_screen.dart`
+- `lib/screens/search_screen.dart`
+- `lib/screens/media_detail_screen.dart`
+- `lib/screens/player_screen.dart`
+- `lib/screens/library_screen.dart`
+- `lib/screens/watch_party_screen.dart`
+- `lib/screens/profile_screen.dart`
 
----
+## Setup
 
-## 📸 Screenshots
+### 1. Prerequisites
+- Flutter SDK with Dart `^3.10.0`
+- Firebase project (required)
+- Supabase project (optional, only for Watch Party)
 
-> *Coming soon - Add your app screenshots here!*
-
----
-
-## 🚀 Installation
-
-### Prerequisites
-
-- Flutter SDK (^3.10.0)
-- Android Studio / Xcode (for mobile development)
-- Visual Studio 2022 (for Windows development) - optional
-- NuGet (for Windows builds) - optional
-- Firebase account
-- TMDB API key ([Get one here](https://www.themoviedb.org/settings/api))
-
-### Quick Start
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/nirmaleeswar30/Nivio.git
-   cd Nivio
-   ```
-
-2. **Install dependencies**
-   ```bash
-   flutter pub get
-   ```
-
-3. **Generate code**
-   ```bash
-   dart run build_runner build --delete-conflicting-outputs
-   ```
-
-4. **Configure Firebase** (See [FIREBASE_SETUP.md](FIREBASE_SETUP.md))
-   - Add `google-services.json` to `android/app/`
-   - Add `GoogleService-Info.plist` to `ios/Runner/`
-   - Enable Anonymous Auth in Firebase Console
-   - Create Firestore database
-
-5. **Update TMDB API Key**
-   - Edit `lib/core/constants.dart`
-   - Replace with your API key
-
-6. **Run the app**
-   ```bash
-   flutter run
-   ```
-
-### Build for Production
+### 2. Install dependencies
 
 ```bash
-# Android APK
+flutter pub get
+```
+
+### 3. Firebase setup (required)
+
+Follow `FIREBASE_SETUP.md`.
+
+At minimum:
+- Configure Firebase for your target platform.
+- Ensure `lib/firebase_options.dart` matches your Firebase project.
+- Add platform config files where needed (for example `android/app/google-services.json`).
+- Enable auth providers you plan to use.
+
+### 4. TMDB API key (required)
+
+TMDB key is currently read from `lib/core/constants.dart` (`tmdbApiKey`).
+Replace it with your own key.
+
+### 5. Supabase env (optional, Watch Party only)
+
+Create `.env` at repo root:
+
+```env
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+If these are missing, the app still runs and Watch Party is shown as unavailable.
+
+### 6. Run
+
+```bash
+flutter run
+```
+
+## Build
+
+```bash
 flutter build apk --release
-
-# Android App Bundle (Play Store)
 flutter build appbundle --release
-
-# iOS
-flutter build ios --release
-
-# Windows (requires NuGet)
-flutter build windows --release
-
-# Web
-flutter build web --release
 ```
 
-See [BUILD_GUIDE.md](BUILD_GUIDE.md) for detailed instructions.
+For additional release/update workflows, see:
+- `SHOREBIRD_SETUP.md`
+- `build_universal_apk.ps1`
 
----
+## Routing Overview
 
-## 🏗️ Architecture
+Main shell tabs:
+- `/home`
+- `/search`
+- `/library`
+- `/party`
 
-### **State Management**
-- **Riverpod**: Reactive, compile-safe state management
-- **Freezed**: Immutable data models with unions
-- **Code Generation**: Type-safe JSON serialization
+Additional routes:
+- `/auth`
+- `/profile`
+- `/media/:id?type=movie|tv`
+- `/player/:id?...`
 
-### **Data Layer**
-```
-┌─────────────┐
-│   UI Layer  │ ← Riverpod Providers
-└──────┬──────┘
-       │
-┌──────▼──────┐
-│  Services   │ ← TMDB API, Streaming Providers, Firebase
-└──────┬──────┘
-       │
-┌──────▼──────┐
-│Local Storage│ ← Hive (Watch History)
-└─────────────┘
-```
+Compatibility redirects exist for `/watchlist`, `/new-episodes`, and `/watch-party`.
 
-### **Key Features Implementation**
+## Notes for Contributors
 
-#### 🔍 Search Pagination
-- Local state management for smooth scrolling
-- Fetches next page at 500px from bottom
-- Auto-loads additional pages when results < 10
-- Filters out 'person' type results
-- Preserves scroll position with `PageStorageKey`
+- Run analyzer before PR:
 
-#### 🌐 Language Filtering
-- SharedPreferences for user preferences
-- Conditional rendering based on toggles
-- Separate providers per language
-- Popular + Trending sections for each
-
-#### ⏯️ Watch History Sync
-- Hive for local caching (instant updates)
-- Firestore for cloud backup
-- Conflict resolution by timestamp
-- Progress tracked every 5 seconds
-- Auto-resume from last position
-- Automatic media details fetching when navigating from continue watching
-
----
-
-## 🛠️ Tech Stack
-
-| Category | Technologies |
-|----------|-------------|
-| **Framework** | Flutter 3.10+ |
-| **State Management** | Riverpod 2.6+, Freezed 2.5+ |
-| **Backend** | Firebase (Auth, Firestore) |
-| **APIs** | TMDB v3, Streaming Providers (vidsrc.cc, vidsrc.to, vidlink) |
-| **Storage** | Hive (local), SharedPreferences |
-| **Video** | video_player, Chewie, youtube_player_flutter, flutter_inappwebview |
-| **Network** | Dio 5.7+, cached_network_image |
-| **Navigation** | GoRouter 14.6+ |
-| **UI Components** | Shimmer, flutter_svg, flutter_native_splash |
-
----
-
-## 📂 Project Structure
-
-```
-lib/
-├── core/
-│   ├── constants.dart          # API keys, endpoints
-│   └── theme.dart              # App theme (Netflix-style)
-├── models/                     # Freezed data models
-│   ├── search_result.dart
-│   ├── season_info.dart
-│   └── watch_history.dart
-├── providers/                  # Riverpod providers
-│   ├── home_providers.dart
-│   ├── search_provider.dart
-│   ├── language_preferences_provider.dart
-│   └── watch_history_provider.dart
-├── screens/                    # UI screens
-│   ├── auth_screen.dart
-│   ├── home_screen.dart
-│   ├── search_screen.dart
-│   ├── media_detail_screen.dart
-│   ├── player_screen.dart
-│   └── settings_screen.dart
-├── services/                   # Business logic
-│   ├── tmdb_service.dart
-│   ├── streaming_service.dart
-│   └── watch_history_service.dart
-└── widgets/                    # Reusable components
-    ├── content_row.dart
-    ├── continue_watching_row.dart
-    ├── featured_content_slider.dart
-    ├── media_card.dart
-    ├── search_result_card.dart
-    └── webview_player.dart        # Ultra ad-blocked WebView player
-
-assets/
-└── images/
-    ├── nivio-dark.png         # App logo
-    └── app-icon.png           # Launcher icon
-
-android/
-└── app/
-    └── src/main/
-        ├── AndroidManifest.xml
-        └── res/                # Generated icons & splash
-
-ios/
-└── Runner/
-    ├── Info.plist
-    └── Assets.xcassets/       # Generated icons
+```bash
+flutter analyze
 ```
 
----
+- If you modify generated model/provider code patterns, run:
 
-## 🎯 Roadmap
+```bash
+dart run build_runner build --delete-conflicting-outputs
+```
 
-- [x] **Multi-Platform Support**: Android, iOS, Windows, Web
-- [x] **Provider Switching**: Manual and automatic fallback
-- [x] **Ultra Ad-Blocking**: Clean viewing experience
-- [x] **Trailer Playback**: Official trailers with YouTube integration
-- [x] **16:9 Aspect Ratio**: Consistent cinematic experience
-- [ ] **Watchlist Feature**: Save shows for later
-- [ ] **User Profiles**: Multiple profiles per account
-- [ ] **Download Support**: Offline viewing
-- [ ] **Chromecast**: Cast to TV
-- [ ] **Recommendations**: AI-powered suggestions
-- [ ] **Social Features**: Share & discuss with friends
-- [ ] **Multi-Audio Support**: Select audio tracks
-- [ ] **Subtitle Options**: Multiple languages
+## License
 
----
+MIT. See `LICENSE`.
 
-## 🤝 Contributing
+## Disclaimer
 
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-Please ensure your code follows the project's style guidelines and includes appropriate tests.
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## ⚠️ Disclaimer
-
-**Nivio is for educational purposes only.** This project demonstrates Flutter development best practices and API integration. Users are responsible for ensuring their usage complies with TMDB's Terms of Service and applicable copyright laws. The developers do not host or distribute any copyrighted content.
-
----
-
-## 🙏 Acknowledgments
-
-- **[The Movie Database (TMDB)](https://www.themoviedb.org/)** - Movie and TV show metadata
-- **[Firebase](https://firebase.google.com)** - Backend infrastructure
-- **[Flutter](https://flutter.dev)** - Amazing cross-platform framework
-- **Netflix** - UI/UX inspiration
-- **Open Source Community** - For incredible packages and tools
-
----
-
-## 📞 Support & Contact
-
-- **Issues**: [GitHub Issues](https://github.com/nirmaleeswar30/Nivio/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/nirmaleeswar30/Nivio/discussions)
-- **Email**: [Your Email]
-
----
-
-<div align="center">
-
-### ⭐ Star this repo if you find it useful!
-
-**Made with ❤️ and Flutter**
-
-[Report Bug](https://github.com/nirmaleeswar30/Nivio/issues) • [Request Feature](https://github.com/nirmaleeswar30/Nivio/issues)
-
-</div>
+Nivio does not host media content. It aggregates metadata and streaming links from third-party sources. You are responsible for complying with local laws, platform terms, and content rights policies.
