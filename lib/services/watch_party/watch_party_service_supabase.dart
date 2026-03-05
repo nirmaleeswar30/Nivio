@@ -37,7 +37,7 @@ class WatchPartyServiceSupabase {
 
   WatchPartySession? get currentSession => _session;
   bool get isHost => _isHost;
-    bool get canControlPlayback =>
+  bool get canControlPlayback =>
       _isHost || (_controllerId != null && _controllerId == userId);
   String? get controllerId => _controllerId;
   bool get isInSession => _sessionCode != null;

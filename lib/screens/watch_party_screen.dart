@@ -373,60 +373,47 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: session.participants
-                .map(
-                  (participant) {
-                    final isController = participant.id == controllerId;
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
+            children: session.participants.map((participant) {
+              final isController = participant.id == controllerId;
+              return Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: isController
+                      ? NivioTheme.accentColorOf(context).withValues(alpha: 0.3)
+                      : participant.isHost
+                      ? NivioTheme.accentColorOf(context).withValues(alpha: 0.2)
+                      : Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(999),
+                  border: isController
+                      ? Border.all(color: NivioTheme.accentColorOf(context))
+                      : null,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildParticipantAvatar(participant),
+                    const SizedBox(width: 7),
+                    Text(
+                      participant.isHost
+                          ? '${participant.name} (Host)'
+                          : participant.name,
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                    if (isController) ...[
+                      const SizedBox(width: 6),
+                      const Icon(
+                        Icons.sports_esports,
+                        size: 14,
+                        color: Colors.white,
                       ),
-                      decoration: BoxDecoration(
-                        color: isController
-                            ? NivioTheme.accentColorOf(
-                                context,
-                              ).withValues(alpha: 0.3)
-                            : participant.isHost
-                            ? NivioTheme.accentColorOf(
-                                context,
-                              ).withValues(alpha: 0.2)
-                            : Colors.white.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(999),
-                        border: isController
-                            ? Border.all(
-                                color: NivioTheme.accentColorOf(context),
-                              )
-                            : null,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _buildParticipantAvatar(participant),
-                          const SizedBox(width: 7),
-                          Text(
-                            participant.isHost
-                                ? '${participant.name} (Host)'
-                                : participant.name,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                            ),
-                          ),
-                          if (isController) ...[
-                            const SizedBox(width: 6),
-                            const Icon(
-                              Icons.sports_esports,
-                              size: 14,
-                              color: Colors.white,
-                            ),
-                          ],
-                        ],
-                      ),
-                    );
-                  },
-                )
-                .toList(),
+                    ],
+                  ],
+                ),
+              );
+            }).toList(),
           ),
           const SizedBox(height: 12),
           Text(
@@ -455,7 +442,8 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
                     .map(
                       (participant) => OutlinedButton(
                         onPressed:
-                            _isControllerUpdating || controllerId == participant.id
+                            _isControllerUpdating ||
+                                controllerId == participant.id
                             ? null
                             : () => _setPlaybackController(
                                 service,
