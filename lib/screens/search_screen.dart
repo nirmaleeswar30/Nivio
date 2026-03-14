@@ -107,7 +107,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (query.isEmpty) return;
 
     _searchDebounce?.cancel();
-    FocusScope.of(context).unfocus();
     ref.read(searchQueryProvider.notifier).state = query;
     setState(() {
       _allResults = [];
