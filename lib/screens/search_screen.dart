@@ -102,7 +102,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
   }
 
-  void _onSearch(String value) {
+  void _performSearch(String value) {
     final query = value.trim();
     if (query.isEmpty) return;
 
@@ -115,6 +115,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       _isInitialLoading = true;
     });
     _performInitialSearch();
+  }
+
+  void _onSearch(String value) {
+    FocusScope.of(context).unfocus();
+    _performSearch(value);
   }
 
   void _onQueryChanged(String value) {
@@ -135,7 +140,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     _searchDebounce = Timer(const Duration(milliseconds: 450), () {
       if (!mounted) return;
-      _onSearch(query);
+      _performSearch(query);
     });
   }
 
