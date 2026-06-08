@@ -229,7 +229,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 final continueWatching = ref.watch(continueWatchingProvider);
                 return continueWatching.when(
                   data: (items) {
-                    if (items.length <= 1) return const SizedBox.shrink();
+                    if (items.isEmpty) return const SizedBox.shrink();
                     return const Padding(
                       padding: EdgeInsets.only(top: 0, left: 16, right: 16),
                       child: Column(
