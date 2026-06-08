@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -23,35 +24,148 @@ class ProviderContentScreen extends ConsumerStatefulWidget {
 
 class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
   bool _isLoading = true;
+  bool _isFetchingMore = false;
+  bool _isSearching = false;
+  
   List<SearchResult> _items = [];
+  List<SearchResult> _searchResults = [];
+  
   String _mediaType = 'movie'; // 'movie' or 'tv'
+  String _searchQuery = '';
+  
+  int _currentPage = 1;
+  final ScrollController _scrollController = ScrollController();
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
     _fetchContent();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_searchQuery.isNotEmpty) return; // Disable infinite scroll during deep search
+    
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      if (!_isLoading && !_isFetchingMore) {
+        _loadMore();
+      }
+    }
+  }
+
+  Future<void> _loadMore() async {
+    setState(() {
+      _isFetchingMore = true;
+    });
+
+    _currentPage++;
+    final tmdbService = ref.read(tmdbServiceProvider);
+    
+    try {
+      final results = await tmdbService.getByProvider(widget.providerId, mediaType: _mediaType, page: _currentPage);
+      if (mounted) {
+        setState(() {
+          final newItems = results.map((item) {
+            final map = Map<String, dynamic>.from(item as Map);
+            map['media_type'] = _mediaType;
+            return SearchResult.fromJson(map);
+          }).toList();
+          
+          _items.addAll(newItems);
+          
+          // Remove duplicates
+          final seen = <int>{};
+          _items.retainWhere((item) => seen.add(item.id));
+          
+          _isFetchingMore = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isFetchingMore = false;
+          _currentPage--; // Revert page count on error
+        });
+      }
+    }
+  }
+
+  void _onSearchChanged(String query) {
+    setState(() {
+      _searchQuery = query;
+    });
+
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    
+    if (query.isEmpty) {
+      setState(() {
+        _isSearching = false;
+        _searchResults.clear();
+      });
+      return;
+    }
+
+    _debounce = Timer(const Duration(milliseconds: 700), () {
+      _performDeepSearch(query);
+    });
+  }
+
+  Future<void> _performDeepSearch(String query) async {
+    setState(() {
+      _isSearching = true;
+      _isLoading = true;
+    });
+
+    final tmdbService = ref.read(tmdbServiceProvider);
+    final results = await tmdbService.searchByProvider(query, widget.providerId, _mediaType);
+
+    if (mounted) {
+      setState(() {
+        _searchResults = results;
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _fetchContent() async {
     setState(() {
       _isLoading = true;
+      _searchQuery = '';
+      _currentPage = 1;
+      _items.clear();
     });
 
     final tmdbService = ref.read(tmdbServiceProvider);
-    final results = await tmdbService.getByProvider(widget.providerId, mediaType: _mediaType);
-
-    if (mounted) {
-      setState(() {
-        _items = results.map((item) {
-          // Normalize media_type if it's missing from TMDB discover
-          final map = Map<String, dynamic>.from(item as Map);
-          map['media_type'] = _mediaType;
-          return SearchResult.fromJson(map);
-        }).toList();
-        _isLoading = false;
-      });
+    
+    try {
+      final results = await tmdbService.getByProvider(widget.providerId, mediaType: _mediaType, page: _currentPage);
+      if (mounted) {
+        setState(() {
+          _items = results.map((item) {
+            final map = Map<String, dynamic>.from(item as Map);
+            map['media_type'] = _mediaType;
+            return SearchResult.fromJson(map);
+          }).toList();
+          
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -77,6 +191,28 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                 _buildTab('Movies', 'movie'),
                 const SizedBox(width: 12),
                 _buildTab('TV Shows', 'tv'),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Container(
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF22252A),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: TextField(
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      decoration: const InputDecoration(
+                        hintText: 'Search...',
+                        hintStyle: TextStyle(color: Colors.white38, fontSize: 14),
+                        prefixIcon: Icon(Icons.search, color: Colors.white38, size: 18),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                      ),
+                      onChanged: _onSearchChanged,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -86,27 +222,47 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
           ? Center(
               child: CircularProgressIndicator(color: NivioTheme.accentColorOf(context)),
             )
-          : _items.isEmpty
-              ? const Center(
-                  child: Text(
-                    'No content found.',
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                )
-              : GridView.builder(
-                  padding: const EdgeInsets.all(16),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    childAspectRatio: 0.65,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                  ),
-                  itemCount: _items.length,
-                  itemBuilder: (context, index) {
-                    final item = _items[index];
-                    return SearchResultCard(media: item);
-                  },
-                ),
+          : Builder(
+              builder: (context) {
+                final displayItems = _isSearching ? _searchResults : _items;
+                    
+                if (displayItems.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No content found.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  );
+                }
+                
+                return Column(
+                  children: [
+                    Expanded(
+                      child: GridView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(16),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          childAspectRatio: 0.68,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                        ),
+                        itemCount: displayItems.length,
+                        itemBuilder: (context, index) {
+                          final item = displayItems[index];
+                          return SearchResultCard(media: item);
+                        },
+                      ),
+                    ),
+                    if (_isFetchingMore && !_isSearching)
+                      const Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: CircularProgressIndicator(),
+                      ),
+                  ],
+                );
+              }
+            ),
     );
   }
 

@@ -146,6 +146,110 @@ class TmdbService {
     return text.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
   }
 
+  Future<bool> checkWatchProviders(int id, String mediaType, int targetProviderId) async {
+    final cacheKey = 'watch_providers_${mediaType}_$id';
+    
+    Map<String, dynamic>? data;
+    final cached = await _cache.getRaw(cacheKey);
+    if (cached != null) {
+      data = cached;
+    } else {
+      try {
+        final response = await _dio.get('/3/$mediaType/$id/watch/providers');
+        data = response.data['results'] as Map<String, dynamic>?;
+        await _cache.set(cacheKey, data ?? {}, ttl: CacheService.longCache);
+      } catch (e) {
+        return false;
+      }
+    }
+
+    if (data == null) return false;
+
+    // Check globally across all countries
+    for (final countryData in data.values) {
+      if (countryData is Map) {
+        final flatrate = countryData['flatrate'] as List?;
+        final free = countryData['free'] as List?;
+        final ads = countryData['ads'] as List?;
+        final rent = countryData['rent'] as List?;
+        final buy = countryData['buy'] as List?;
+        
+        final allProviders = [
+          ...?flatrate,
+          ...?free,
+          ...?ads,
+          ...?rent,
+          ...?buy,
+        ];
+        
+        for (final provider in allProviders) {
+          if (provider is Map && provider['provider_id'] == targetProviderId) {
+            return true;
+          }
+        }
+      }
+    }
+    
+    return false;
+  }
+
+  Future<List<SearchResult>> searchByProvider(
+    String query,
+    int providerId,
+    String mediaType,
+  ) async {
+    final normalizedQuery = _normalizeSearchText(query);
+    if (normalizedQuery.isEmpty) return [];
+
+    try {
+      final queryParams = <String, dynamic>{
+        'query': normalizedQuery,
+        'include_adult': false,
+      };
+
+      // Fetch first 3 pages of search (up to 60 items)
+      final responses = await Future.wait([
+        _dio.get('/3/search/$mediaType', queryParameters: {...queryParams, 'page': 1}),
+        _dio.get('/3/search/$mediaType', queryParameters: {...queryParams, 'page': 2}),
+        _dio.get('/3/search/$mediaType', queryParameters: {...queryParams, 'page': 3}),
+      ]);
+
+      final allResults = <Map<String, dynamic>>[];
+      for (final response in responses) {
+        final data = response.data['results'] as List?;
+        if (data != null) {
+          for (var item in data) {
+            if (item is Map<String, dynamic>) {
+              allResults.add(item);
+            }
+          }
+        }
+      }
+
+      // Remove duplicates
+      final seen = <int>{};
+      allResults.retainWhere((item) => seen.add(item['id'] as int));
+
+      // Check providers concurrently
+      final validResults = <SearchResult>[];
+      await Future.wait(allResults.map((item) async {
+        final id = item['id'] as int;
+        final hasProvider = await checkWatchProviders(id, mediaType, providerId);
+        if (hasProvider) {
+          item['media_type'] = mediaType;
+          validResults.add(SearchResult.fromJson(item));
+        }
+      }));
+
+      // Sort valid results by voteAverage
+      validResults.sort((a, b) => (b.voteAverage ?? 0).compareTo(a.voteAverage ?? 0));
+
+      return validResults;
+    } catch (e) {
+      return [];
+    }
+  }
+
   /// Get series information (seasons, etc.)
   Future<SeriesInfo> getSeriesInfo(int showId) async {
     final cacheKey = 'series_info_$showId';

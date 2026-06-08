@@ -23,6 +23,7 @@ import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/screens/home_screen.dart';
 import 'package:nivio/screens/search_screen.dart';
 import 'package:nivio/screens/media_detail_screen.dart';
+import 'package:nivio/screens/all_providers_screen.dart';
 import 'package:nivio/screens/player_screen.dart';
 import 'package:nivio/screens/auth_screen.dart';
 import 'package:nivio/screens/library_screen.dart';
@@ -120,6 +121,7 @@ final _router = GoRouter(
   },
   routes: [
     GoRoute(path: '/auth', builder: (context, state) => const AuthScreen()),
+    GoRoute(path: '/all-providers', builder: (context, state) => const AllProvidersScreen()),
     GoRoute(path: '/', redirect: (context, state) => '/home'),
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) =>

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/constants.dart';
+import 'package:nivio/core/providers_data.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/watchlist_item.dart';
 import 'package:nivio/providers/home_providers.dart';
@@ -298,34 +299,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
 
   Widget _buildProviderSelectionRow() {
-    final providers = [
-      {'id': 8, 'name': 'Netflix', 'asset': 'assets/images/netflix.png', 'color': Color(0xFFE50914)},
-      {'id': 9, 'name': 'Prime', 'asset': 'assets/images/prime.png', 'color': Color(0xFF00A8E1)},
-      {'id': 337, 'name': 'Disney+', 'asset': 'assets/images/disney.png', 'color': Color(0xFF113CCF)},
-      {'id': 350, 'name': 'Apple TV+', 'asset': 'assets/images/appletv.png', 'color': Color(0xFF000000)},
-      {'id': 15, 'name': 'Hulu', 'asset': 'assets/images/hulu.png', 'color': Color(0xFF1CE783)},
-      {'id': 384, 'name': 'Max', 'asset': 'assets/images/max.png', 'color': Color(0xFF002BE7)},
-      {'id': 531, 'name': 'Paramount+', 'asset': 'assets/images/paramount.png', 'color': Color(0xFF0064FF)},
-      {'id': 283, 'name': 'Crunchyroll', 'asset': 'assets/images/crunchyroll.png', 'color': Color(0xFFF47521)},
-    ];
+    final providers = allProviders.take(20).toList();
 
     return SliverToBoxAdapter(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: Text(
-              'Explore by Provider',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Explore by Provider',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    context.push('/all-providers');
+                  },
+                  child: const Text(
+                    'View All',
+                    style: TextStyle(
+                      color: Color(0xFF00B4D8),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           SizedBox(
-            height: 90,
+            height: 140,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -337,44 +347,50 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     context.push('/provider/${provider['id']}?name=${Uri.encodeComponent(provider['name'] as String)}');
                   },
                   child: Container(
-                    width: 70,
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    width: 105,
+                    margin: const EdgeInsets.symmetric(horizontal: 6),
                     decoration: BoxDecoration(
                       color: const Color(0xFF22252A),
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: Colors.white10),
                     ),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Container(
-                          width: 40,
-                          height: 40,
+                          width: 75,
+                          height: 75,
                           decoration: BoxDecoration(
-                            color: provider['color'] as Color,
                             shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              )
+                            ],
                           ),
-                          child: Center(
-                            child: Text(
-                              (provider['name'] as String).substring(0, 1),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 20,
-                              ),
-                            ),
+                          clipBehavior: Clip.antiAlias,
+                          child: CachedNetworkImage(
+                            imageUrl: '$tmdbImageBaseUrl/w200${provider['logo_path']}',
+                            fit: BoxFit.cover,
+                            errorWidget: (context, url, error) => const Icon(Icons.error, color: Colors.white),
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          provider['name'] as String,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
+                        const SizedBox(height: 12),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Text(
+                            provider['name'] as String,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            textAlign: TextAlign.center,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
