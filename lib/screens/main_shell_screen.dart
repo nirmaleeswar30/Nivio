@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_widget.dart';
 
 class MainShellScreen extends StatefulWidget {
   final StatefulNavigationShell navigationShell;
@@ -85,7 +86,16 @@ class _MainShellScreenState extends State<MainShellScreen> {
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Scaffold(
-        body: widget.navigationShell,
+        body: Stack(
+          children: [
+            // Foreground UI
+            widget.navigationShell,
+            // Background physical WebView for Cloudflare Turnstile bypass (drawn on top when needed)
+            const Positioned.fill(
+              child: CloudflareBypassWidget(),
+            ),
+          ],
+        ),
         bottomNavigationBar: Container(
           decoration: const BoxDecoration(
             color: NivioTheme.netflixBlack,

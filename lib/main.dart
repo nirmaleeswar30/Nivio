@@ -33,6 +33,7 @@ import 'package:nivio/screens/main_shell_screen.dart';
 import 'package:nivio/screens/watch_party_screen.dart';
 import 'package:nivio/services/watch_party/watch_party_models.dart';
 import 'package:nivio/services/watch_party/watch_party_supabase_config.dart';
+import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_service.dart';
 
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -239,11 +240,23 @@ final _router = GoRouter(
   ],
 );
 
-class NivioApp extends ConsumerWidget {
+class NivioApp extends ConsumerStatefulWidget {
   const NivioApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NivioApp> createState() => _NivioAppState();
+}
+
+class _NivioAppState extends ConsumerState<NivioApp> {
+  @override
+  void initState() {
+    super.initState();
+    // Initialize the background Cloudflare bypass service silently
+    ref.read(cloudflareBypassProvider).init();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final accentKey = ref.watch(appAccentColorProvider);
     final accentColor = appAccentColorFromKey(accentKey);
     final appTheme = NivioTheme.buildDarkTheme(accentColor: accentColor);

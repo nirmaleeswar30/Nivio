@@ -1,9 +1,12 @@
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/core/debug_log.dart';
+import 'package:nivio/services/scrapers/animepahe/animepahe_scraper.dart';
 
 class StreamingService {
-  StreamingService();
+  final AnimepaheScraperService animepaheScraper;
+
+  StreamingService(this.animepaheScraper);
 
   static const List<String> _premiumProviders = [
     'VidUp (FAST)',
@@ -13,6 +16,12 @@ class StreamingService {
   ];
 
   static const List<String> _standardProviders = [];
+
+  // For anime, Animepahe is the primary (index 0) provider
+  static const List<String> _animeProviders = [
+    'Animepahe (NATIVE)',
+    ..._premiumProviders,
+  ];
 
   static List<String> get _allProviders => [..._premiumProviders, ..._standardProviders];
 
@@ -30,12 +39,42 @@ class StreamingService {
         'fetchStreamUrl: media=${media.id}, S${season}E$episode, providerIdx=$providerIndex',
       );
 
-      if (providerIndex < 0 || providerIndex >= _allProviders.length) {
+      final isAnime = _isAnimeMedia(media);
+      final providersList = isAnime ? _animeProviders : _allProviders;
+
+      if (providerIndex < 0 || providerIndex >= providersList.length) {
         appDebugLog('All providers exhausted or removed');
         return null;
       }
 
-      final providerName = _allProviders[providerIndex];
+      final providerName = providersList[providerIndex];
+      
+      // Handle Native Animepahe
+      if (providerName == 'Animepahe (NATIVE)') {
+        final streamUrl = await animepaheScraper.fetchStreamUrl(
+          media.title ?? media.name ?? '', 
+          season, 
+          episode,
+          subDub: subDubPreference,
+        );
+        
+        if (streamUrl != null) {
+          return StreamResult(
+            url: streamUrl,
+            quality: 'Auto',
+            provider: providerName,
+            isM3U8: streamUrl.contains('.m3u8'),
+            headers: {
+              'Referer': 'https://kwik.cx/',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            },
+          );
+        } else {
+          return null; // Fallback to next provider handled by PlayerScreen
+        }
+      }
+
+      // Handle standard 7reels providers
       final isTv = media.mediaType.toLowerCase() == 'tv' || 
                    media.firstAirDate != null || 
                    (media.name != null && media.name!.isNotEmpty && (media.title == null || media.title!.isEmpty));
@@ -101,20 +140,25 @@ class StreamingService {
       return null;
     }
   }
+  
+  static bool _isAnimeMedia(SearchResult media) {
+    if (media.originalLanguage == 'ja') return true;
+    return false;
+  }
 
   static int totalProvidersFor({required bool isAnime}) {
-    // Currently relying only on the TMDB/IMDB iframe providers.
-    return _allProviders.length;
+    return isAnime ? _animeProviders.length : _allProviders.length;
   }
 
   static String getProviderName(int index, {required bool isAnime}) {
-    if (index >= 0 && index < _allProviders.length) {
-      return _allProviders[index];
+    final list = isAnime ? _animeProviders : _allProviders;
+    if (index >= 0 && index < list.length) {
+      return list[index];
     }
     return 'Unknown';
   }
 
   static bool isDirectStream(int providerIndex, {required bool isAnime}) {
-    return false; // All 7reels providers are iframe based
+    return false; // All providers, including Animepahe, now use WebView fallback for stability
   }
 }

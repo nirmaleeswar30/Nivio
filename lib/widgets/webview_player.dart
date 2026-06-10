@@ -51,10 +51,58 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
           initialUserScripts: UnmodifiableListView([
             UserScript(
               source: """
-                // 1. Completely neuter popups
-                window.open = function() { console.log('BLOCKED POPUP'); return null; };
+                // 1. Clever popup mocking to bypass anti-adblock crash loops
+                var fakeWindow = {
+                  close: function(){}, 
+                  focus: function(){}, 
+                  blur: function(){}, 
+                  postMessage: function(){}, 
+                  document: document, 
+                  location: { href: '', reload: function(){} } 
+                };
+                window.open = function() { 
+                  console.log('BLOCKED POPUP'); 
+                  return fakeWindow; 
+                };
+
+                // 2. Play/Pause Promise Synchronizer to prevent AbortError console flood & crashes
+                var originalPlay = HTMLMediaElement.prototype.play;
+                var originalPause = HTMLMediaElement.prototype.pause;
+
+                HTMLMediaElement.prototype.play = function() {
+                    var self = this;
+                    if (self._isPlayPending) return Promise.resolve();
+                    self._isPlayPending = true;
+                    
+                    var p = originalPlay.apply(this, arguments);
+                    if (p && p.then) {
+                        p.then(function() { 
+                            self._isPlayPending = false; 
+                            if (self._wantsPause) {
+                                self._wantsPause = false;
+                                originalPause.apply(self);
+                            }
+                        }).catch(function(e) { 
+                            self._isPlayPending = false; 
+                            self._wantsPause = false;
+                        });
+                    } else {
+                        self._isPlayPending = false;
+                    }
+                    return p || Promise.resolve();
+                };
+
+                HTMLMediaElement.prototype.pause = function() {
+                    var self = this;
+                    if (self._isPlayPending) {
+                        // Delay the pause until play() resolves to prevent AbortError
+                        self._wantsPause = true;
+                        return;
+                    }
+                    originalPause.apply(this, arguments);
+                };
                 
-                // 2. Mock document.referrer for anti-hotlinking bypass
+                // 3. Mock document.referrer for anti-hotlinking bypass
                 Object.defineProperty(document, 'referrer', {get : function(){ return "https://7reels.cc/"; }});
                 
                 // 3. Intercept ad clicks that redirect the main window
@@ -69,8 +117,22 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                     }
                   }
                 }, true);
+                
+                // 4. TimeUpdate Sync Hook
+                setInterval(function() {
+                    var vids = document.getElementsByTagName('video');
+                    if (vids && vids.length > 0) {
+                        var video = vids[0];
+                        var duration = video.duration || 0;
+                        var currentTime = video.currentTime || 0;
+                        if (!isNaN(duration) && duration > 0) {
+                            window.flutter_inappwebview.callHandler('TimeUpdate', currentTime, duration);
+                        }
+                    }
+                }, 1000);
               """,
               injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+              forMainFrameOnly: false,
             ),
             UserScript(
               source: """
@@ -104,9 +166,9 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                            btn.style.pointerEvents = 'auto';
                            btn.style.transition = 'opacity 0.3s ease-in-out';
                            btn.onclick = function(e) {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              window.flutter_inappwebview.callHandler('ShowEpisodes', 'click');
+                               e.preventDefault();
+                               e.stopPropagation();
+                               window.flutter_inappwebview.callHandler('ShowEpisodes', 'click');
                            };
                            
                            // Auto-hide logic
@@ -145,6 +207,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
           ]),
           initialSettings: InAppWebViewSettings(
             javaScriptEnabled: true,
+            hardwareAcceleration: true,
             mediaPlaybackRequiresUserGesture: false,
             allowsInlineMediaPlayback: true,
             useOnLoadResource: true,
@@ -262,6 +325,17 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                 debugPrint("Ã°Å¸Å¡Â¨ Requesting episodes from Fullscreen!");
                 await controller.evaluateJavascript(source: "if(document.exitFullscreen) document.exitFullscreen(); else if(document.webkitExitFullscreen) document.webkitExitFullscreen();");
                 widget.onShowEpisodesRequested?.call();
+              },
+            );
+            controller.addJavaScriptHandler(
+              handlerName: 'TimeUpdate',
+              callback: (args) {
+                if (!mounted) return;
+                if (args.length >= 2) {
+                  final currentTime = (args[0] as num).toDouble();
+                  final duration = (args[1] as num).toDouble();
+                  widget.onPlayerEvent?.call('timeupdate', currentTime, duration);
+                }
               },
             );
           },
@@ -424,4 +498,5 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
       ],
     );
   }
+
 }

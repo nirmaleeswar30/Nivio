@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/services/tmdb_service.dart';
+import 'package:nivio/services/scrapers/animepahe/animepahe_scraper.dart';
 import 'package:nivio/services/streaming_service.dart';
 import 'package:nivio/services/watch_history_service.dart';
 import 'package:nivio/services/cache_service.dart';
@@ -19,6 +20,6 @@ final tmdbServiceProvider = Provider((ref) {
 
 
 // Streaming service provider (direct primary, embed fallback)
-final streamingServiceProvider = Provider((ref) => StreamingService());
+final streamingServiceProvider = Provider((ref) => StreamingService(ref.read(animepaheScraperProvider)));
 
 final watchHistoryServiceProvider = Provider((ref) => WatchHistoryService());

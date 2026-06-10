@@ -47,6 +47,14 @@ class WatchHistoryService {
     final id = '${_userId}_$tmdbId';
     final progressPercent = lastPosition.inSeconds / totalDuration.inSeconds;
 
+    final isMediaCompleted = mediaType == 'tv'
+        ? (progressPercent >= 0.95 &&
+            totalSeasons > 0 &&
+            currentSeason >= totalSeasons &&
+            totalEpisodes != null &&
+            currentEpisode >= totalEpisodes)
+        : progressPercent >= 0.95;
+
     // Get existing history or create new
     WatchHistory history;
     final existingJson = _historyBox.get(id);
@@ -66,7 +74,7 @@ class WatchHistoryService {
         totalDurationSeconds: totalDuration.inSeconds,
         progressPercent: progressPercent,
         lastWatchedAt: DateTime.now(),
-        isCompleted: progressPercent >= 0.95,
+        isCompleted: isMediaCompleted,
       );
     } else {
       history = WatchHistory(
@@ -84,7 +92,8 @@ class WatchHistoryService {
         progressPercent: progressPercent,
         lastWatchedAt: DateTime.now(),
         createdAt: DateTime.now(),
-        isCompleted: false,
+        isCompleted: isMediaCompleted,
+
         episodes: {},
       );
     }

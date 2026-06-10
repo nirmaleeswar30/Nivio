@@ -46,9 +46,6 @@ class PlayerScreen extends ConsumerStatefulWidget {
 }
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen> {
-  static const int _hlsCacheMaxSizeBytes = 512 * 1024 * 1024; // 512 MB
-  static const int _hlsCacheMaxFileSizeBytes = 256 * 1024 * 1024; // 256 MB
-  static const int _hlsPreCacheBytes = 8 * 1024 * 1024; // 8 MB
   static const List<String> _displayFitOrder = [
     'bestFit',
     'fitScreen',
@@ -119,6 +116,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   static const Duration _watchPartyHostPeriodicSyncInterval = Duration(
     seconds: 3,
   );
+
+  Duration _webViewPosition = Duration.zero;
+  Duration _webViewDuration = Duration.zero;
+
   static const int _watchPartyDriftThresholdMs = 1200;
 
   bool _isAnimeMedia(SearchResult? media) {
@@ -362,7 +363,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           resolutions = null;
         }
       }
-      final hasResolutionMap = resolutions != null && resolutions.isNotEmpty;
       final cacheConfiguration = _buildCacheConfiguration(result);
 
       // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Headers ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
@@ -376,18 +376,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         videoFormat: result.isM3U8
             ? BetterPlayerVideoFormat.hls
             : BetterPlayerVideoFormat.other,
-        useAsmsTracks: result.isM3U8 && !hasResolutionMap,
-        useAsmsSubtitles: result.isM3U8 && !hasResolutionMap,
-        useAsmsAudioTracks: result.isM3U8,
+        useAsmsTracks: false,
+        useAsmsSubtitles: false,
+        useAsmsAudioTracks: false,
         subtitles: subtitleSources.isNotEmpty ? subtitleSources : null,
         resolutions: resolutions,
         cacheConfiguration: cacheConfiguration,
-        bufferingConfiguration: const BetterPlayerBufferingConfiguration(
-          minBufferMs: 120000,
-          maxBufferMs: 300000,
-          bufferForPlaybackMs: 2500,
-          bufferForPlaybackAfterRebufferMs: 10000,
-        ),
       );
 
       // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Controller config ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
@@ -565,12 +559,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
     }
 
-    final provider = (_streamResult?.provider ?? '').toLowerCase();
-    if (provider.contains('animepahe')) {
-      setIfMissing('Referer', 'https://animepahe.ru/');
-      setIfMissing('Origin', 'https://animepahe.ru');
-    }
-
     setIfMissing('Accept', '*/*');
     setIfMissing('Accept-Language', 'en-US,en;q=0.9');
     return headers;
@@ -579,15 +567,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   BetterPlayerCacheConfiguration? _buildCacheConfiguration(
     StreamResult result,
   ) {
-    // Cache HLS segment playback for better seek/replay performance.
-    if (!_isDirectStream || !result.isM3U8) return null;
-
-    return const BetterPlayerCacheConfiguration(
-      useCache: true,
-      maxCacheSize: _hlsCacheMaxSizeBytes,
-      maxCacheFileSize: _hlsCacheMaxFileSizeBytes,
-      preCacheSize: _hlsPreCacheBytes,
-    );
+    // BetterPlayer's experimental cache proxy is known to cause severe hangs and pipeline
+    // failures in ExoPlayer when seeking unbuffered HLS segments. We disable it entirely
+    // and rely on ExoPlayer's robust native DefaultLoadControl buffering instead.
+    return null;
   }
 
   void _onBetterPlayerEvent(BetterPlayerEvent event) {
@@ -629,6 +612,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         unawaited(_broadcastWatchPartyPlayback(force: true));
         break;
       case BetterPlayerEventType.seekTo:
+        final seekTarget = event.parameters?['duration'] as Duration?;
+        if (seekTarget != null) {
+          final buffered = _betterPlayerController?.videoPlayerController?.value.buffered ?? [];
+          bool isOutsideBuffer = true;
+          for (final range in buffered) {
+            if (seekTarget >= range.start && seekTarget <= range.end) {
+              isOutsideBuffer = false;
+              break;
+            }
+          }
+          if (isOutsideBuffer) {
+            debugPrint('🔍 DEBUG: Seeking OUTSIDE buffer to $seekTarget! (Current buffered: $buffered)');
+          } else {
+            debugPrint('🔍 DEBUG: Seeking INSIDE buffer to $seekTarget.');
+          }
+        }
         // Post-seek nudge disabled: rely on native/player handling.
         unawaited(_broadcastWatchPartyPlayback(force: true));
         break;
@@ -818,9 +817,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final service = _watchPartyService;
     if (service == null ||
         !service.canControlPlayback ||
-        _isApplyingWatchPartyState ||
-        !_isDirectStream ||
-        _betterPlayerController?.isVideoInitialized() != true) {
+        _isApplyingWatchPartyState) {
+      return;
+    }
+
+    if (_isDirectStream && _betterPlayerController?.isVideoInitialized() != true) {
       return;
     }
 
@@ -832,8 +833,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return;
     }
 
-    final controller = _betterPlayerController!;
-    final vpc = controller.videoPlayerController!;
+    Duration position;
+    bool isPlaying;
+    
+    if (_isDirectStream) {
+      final controller = _betterPlayerController!;
+      final vpc = controller.videoPlayerController!;
+      position = vpc.value.position;
+      isPlaying = controller.isPlaying() == true;
+    } else {
+      position = _webViewPosition;
+      isPlaying = true;
+    }
+
     final mediaType = _resolvedWatchPartyMediaType();
 
     await service.syncPlayback(
@@ -842,8 +854,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       providerIndex: _currentProviderIndex,
       season: widget.season,
       episode: _currentEpisode,
-      positionMs: vpc.value.position.inMilliseconds,
-      isPlaying: controller.isPlaying() == true,
+      positionMs: position.inMilliseconds,
+      isPlaying: isPlaying,
     );
     _lastWatchPartyBroadcastAt = now;
   }
@@ -1817,12 +1829,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Future<void> _saveProgress() async {
-    if (_betterPlayerController?.isVideoInitialized() != true) return;
-    final vpc = _betterPlayerController!.videoPlayerController!;
+    Duration position;
+    Duration duration;
+    
+    if (_isDirectStream) {
+      if (_betterPlayerController?.isVideoInitialized() != true) return;
+      final vpc = _betterPlayerController!.videoPlayerController!;
+      position = vpc.value.position;
+      duration = vpc.value.duration ?? Duration.zero;
+    } else {
+      position = _webViewPosition;
+      duration = _webViewDuration;
+      if (duration == Duration.zero) return;
+    }
 
     final media = ref.read(selectedMediaProvider);
     if (media == null) return;
     final historyService = ref.read(watchHistoryServiceProvider);
+    
+    // Attempt to get total seasons if available
+    int totalSeasons = 1;
+    // We don't have numberOfSeasons on SearchResult, but we can default to 1 
+    // WatchHistoryService will now keep it in Continue Watching properly.
+    
     await historyService.updateProgress(
       tmdbId: widget.mediaId,
       mediaType: media.mediaType,
@@ -1830,10 +1859,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       posterPath: media.posterPath,
       currentSeason: widget.season,
       currentEpisode: _currentEpisode,
-      totalSeasons: 1,
-      totalEpisodes: null,
-      lastPosition: vpc.value.position,
-      totalDuration: vpc.value.duration ?? Duration.zero,
+      totalSeasons: totalSeasons,
+      totalEpisodes: _currentSeasonData?.episodes.length,
+      lastPosition: position,
+      totalDuration: duration,
     );
   }
 
@@ -2246,9 +2275,14 @@ if (_isDirectStream &&
     if (!mounted) return;
     
     if (event == 'timeupdate') {
-      // Handle progress update from webview if needed
+      _webViewPosition = Duration(milliseconds: (currentTime * 1000).toInt());
+      _webViewDuration = Duration(milliseconds: (duration * 1000).toInt());
+      
+      // Also broadcast watch party progress if we are the host
+      // Since _broadcastWatchPartyPlayback handles interval throttling, we can call it safely
+      _broadcastWatchPartyPlayback(force: false);
     } else if (event == 'ended') {
-      // Handle video end
+      _markAsCompleted();
     }
   }
 
