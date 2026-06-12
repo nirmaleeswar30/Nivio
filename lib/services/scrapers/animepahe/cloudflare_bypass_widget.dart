@@ -16,6 +16,7 @@ class _CloudflareBypassWidgetState extends ConsumerState<CloudflareBypassWidget>
   bool _isDisposed = false;
 
   bool _showChallengeUI = false;
+  bool _mountWebView = false;
 
   @override
   void initState() {
@@ -26,6 +27,13 @@ class _CloudflareBypassWidgetState extends ConsumerState<CloudflareBypassWidget>
         ref.read(cloudflareBypassProvider).registerWebViewController(
           controllerGetter: () => _controller,
         );
+      }
+    });
+
+    // Delay mounting the PlatformView to avoid dropping frames during initial app launch animations
+    Future.delayed(const Duration(seconds: 4), () {
+      if (mounted) {
+        setState(() => _mountWebView = true);
       }
     });
   }
@@ -44,22 +52,23 @@ class _CloudflareBypassWidgetState extends ConsumerState<CloudflareBypassWidget>
 
     return Stack(
       children: [
-        SizedBox(
-          width: _showChallengeUI ? MediaQuery.of(context).size.width : 1,
-          height: _showChallengeUI ? MediaQuery.of(context).size.height : 1,
-          child: IgnorePointer(
-            ignoring: !_showChallengeUI,
-            child: InAppWebView(
-              initialUrlRequest: URLRequest(url: WebUri('https://animepahe.pw/')),
-              initialSettings: InAppWebViewSettings(
-                userAgent: bypassState.userAgent,
-                javaScriptEnabled: true,
-                domStorageEnabled: true,
-                thirdPartyCookiesEnabled: true,
-                transparentBackground: true,
-                useWideViewPort: true,
-                loadWithOverviewMode: true,
-              ),
+        if (_mountWebView)
+          SizedBox(
+            width: _showChallengeUI ? MediaQuery.of(context).size.width : 1,
+            height: _showChallengeUI ? MediaQuery.of(context).size.height : 1,
+            child: IgnorePointer(
+              ignoring: !_showChallengeUI,
+              child: InAppWebView(
+                initialUrlRequest: URLRequest(url: WebUri('https://animepahe.pw/')),
+                initialSettings: InAppWebViewSettings(
+                  userAgent: bypassState.userAgent,
+                  javaScriptEnabled: true,
+                  domStorageEnabled: true,
+                  thirdPartyCookiesEnabled: true,
+                  transparentBackground: true,
+                  useWideViewPort: true,
+                  loadWithOverviewMode: true,
+                ),
               onWebViewCreated: (controller) {
                 _controller = controller;
                 bypassState.registerWebViewController(controllerGetter: () => _controller);

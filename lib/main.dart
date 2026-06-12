@@ -252,7 +252,13 @@ class _NivioAppState extends ConsumerState<NivioApp> {
   void initState() {
     super.initState();
     // Initialize the background Cloudflare bypass service silently
-    ref.read(cloudflareBypassProvider).init();
+    // Delay initialization by a few seconds to prevent the Android WebView 
+    // PlatformView from freezing the UI thread during the initial Home Screen load.
+    Future.delayed(const Duration(seconds: 4), () {
+      if (mounted) {
+        ref.read(cloudflareBypassProvider).init();
+      }
+    });
   }
 
   @override

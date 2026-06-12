@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nivio/models/cache_entry.dart';
 
@@ -45,7 +46,7 @@ class CacheService {
       }
 
       appDebugLog('✅ Cache HIT: $key');
-      final jsonData = json.decode(entry.data) as Map<String, dynamic>;
+      final jsonData = await compute(_decodeMap, entry.data);
       return fromJson(jsonData);
     } catch (e) {
       appDebugLog('⚠️  Cache ERROR: $key - $e');
@@ -75,7 +76,7 @@ class CacheService {
       }
 
       appDebugLog('✅ Cache HIT: $key');
-      final jsonList = json.decode(entry.data) as List<dynamic>;
+      final jsonList = await compute(_decodeList, entry.data);
       return jsonList
           .map((item) => fromJson(item as Map<String, dynamic>))
           .toList();
@@ -104,7 +105,7 @@ class CacheService {
       }
 
       appDebugLog('✅ Cache HIT: $key');
-      return json.decode(entry.data) as Map<String, dynamic>;
+      return await compute(_decodeMap, entry.data);
     } catch (e) {
       appDebugLog('⚠️  Cache ERROR: $key - $e');
       // If there's any error reading cache, delete it and return null
@@ -129,7 +130,7 @@ class CacheService {
         appDebugLog('✅ Cache HIT: $key');
       }
 
-      return json.decode(entry.data) as Map<String, dynamic>;
+      return await compute(_decodeMap, entry.data);
     } catch (e) {
       appDebugLog('⚠️  Cache ERROR: $key - $e');
       await _box.delete(key);
@@ -150,9 +151,10 @@ class CacheService {
     Duration ttl = mediumCache,
   }) async {
     try {
+      final encodedData = await compute(_encodeData, data);
       final entry = CacheEntry(
         key: key,
-        data: json.encode(data),
+        data: encodedData,
         timestamp: DateTime.now(),
         ttlMilliseconds: ttl.inMilliseconds,
       );
@@ -251,4 +253,17 @@ class CacheService {
   Future<void> close() async {
     await _box.close();
   }
+}
+
+// Top-level isolate functions
+Map<String, dynamic> _decodeMap(String data) {
+  return json.decode(data) as Map<String, dynamic>;
+}
+
+List<dynamic> _decodeList(String data) {
+  return json.decode(data) as List<dynamic>;
+}
+
+String _encodeData(dynamic data) {
+  return json.encode(data);
 }

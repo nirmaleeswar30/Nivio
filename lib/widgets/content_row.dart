@@ -39,7 +39,7 @@ class ContentRow extends StatelessWidget {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 12),
               itemCount: items.length,
-              cacheExtent: 500, // Pre-render items for smoother scrolling
+              cacheExtent: 200,
               itemBuilder: (context, index) {
                 final item = items[index];
                 final posterPath = item['poster_path'];
@@ -116,6 +116,37 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
   Widget build(BuildContext context) {
     final isInWatchlist = ref.watch(isInWatchlistProvider(widget.tmdbId));
 
+    final staticImageContent = widget.posterPath != null
+        ? CachedNetworkImage(
+            imageUrl: '$tmdbImageBaseUrl/$posterSize${widget.posterPath}',
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+            memCacheWidth: 360,
+            placeholder: (context, url) => Container(
+              color: const Color(0xFF2F2F2F),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  color: Color(0xFFE50914),
+                  strokeWidth: 2,
+                ),
+              ),
+            ),
+            errorWidget: (context, url, error) => Container(
+              color: const Color(0xFF2F2F2F),
+              child: const Icon(
+                Icons.movie,
+                color: Colors.white30,
+                size: 40,
+              ),
+            ),
+          )
+        : const Icon(
+            Icons.movie,
+            color: Colors.white30,
+            size: 40,
+          );
+
     return MouseRegion(
       onEnter: (_) {
         _animationController.forward();
@@ -137,76 +168,50 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(4),
                   color: const Color(0xFF2F2F2F),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(
-                        0.5 * _elevationAnimation.value,
-                      ),
-                      blurRadius: 15 * _elevationAnimation.value,
-                      spreadRadius: 1 * _elevationAnimation.value,
-                      offset: Offset(0, 6 * _elevationAnimation.value),
-                    ),
-                  ],
+                  boxShadow: _elevationAnimation.value > 0
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withValues(
+                              alpha: 0.5 * _elevationAnimation.value,
+                            ),
+                            blurRadius: 15 * _elevationAnimation.value,
+                            spreadRadius: 1 * _elevationAnimation.value,
+                            offset: Offset(0, 6 * _elevationAnimation.value),
+                          ),
+                        ]
+                      : null,
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: Stack(
                     children: [
-                      // Poster Image
-                      widget.posterPath != null
-                          ? CachedNetworkImage(
-                              imageUrl:
-                                  '$tmdbImageBaseUrl/$posterSize${widget.posterPath}',
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                              height: double.infinity,
-                              placeholder: (context, url) => Container(
-                                color: const Color(0xFF2F2F2F),
-                                child: const Center(
-                                  child: CircularProgressIndicator(
-                                    color: Color(0xFFE50914),
-                                    strokeWidth: 2,
-                                  ),
-                                ),
-                              ),
-                              errorWidget: (context, url, error) => Container(
-                                color: const Color(0xFF2F2F2F),
-                                child: const Icon(
-                                  Icons.movie,
-                                  color: Colors.white30,
-                                  size: 40,
-                                ),
-                              ),
-                            )
-                          : const Icon(
-                              Icons.movie,
-                              color: Colors.white30,
-                              size: 40,
-                            ),
+                      // Poster Image (cached statically)
+                      Positioned.fill(child: child!),
+                      
                       // Hover Overlay with Play Icon
-                      AnimatedOpacity(
-                        opacity: _elevationAnimation.value,
-                        duration: const Duration(milliseconds: 200),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.transparent,
-                                Colors.black.withOpacity(0.7),
-                              ],
+                      if (_elevationAnimation.value > 0)
+                        Opacity(
+                          opacity: _elevationAnimation.value,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.transparent,
+                                  Colors.black.withOpacity(0.7),
+                                ],
+                              ),
                             ),
-                          ),
-                          child: const Center(
-                            child: Icon(
-                              Icons.play_circle_fill,
-                              color: Colors.white,
-                              size: 48,
+                            child: const Center(
+                              child: Icon(
+                                Icons.play_circle_fill,
+                                color: Colors.white,
+                                size: 48,
+                              ),
                             ),
                           ),
                         ),
-                      ),
                       if (isInWatchlist)
                         Positioned(
                           top: 8,
@@ -232,6 +237,7 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
               ),
             );
           },
+          child: staticImageContent,
         ),
       ),
     );

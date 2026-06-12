@@ -49,6 +49,41 @@ class _MediaCardState extends ConsumerState<MediaCard>
     final tmdbService = ref.watch(tmdbServiceProvider);
     final posterUrl = tmdbService.getPosterUrl(widget.history.posterPath);
 
+    final staticImageContent = posterUrl.isNotEmpty
+        ? CachedNetworkImage(
+            imageUrl: posterUrl,
+            height: 180,
+            width: 130,
+            fit: BoxFit.cover,
+            memCacheWidth: 390,
+            placeholder: (context, url) => Container(
+              color: NivioTheme.netflixDarkGrey,
+              child: Center(
+                child: CircularProgressIndicator(
+                  color: NivioTheme.accentColorOf(context),
+                ),
+              ),
+            ),
+            errorWidget: (context, url, error) => Container(
+              color: NivioTheme.netflixDarkGrey,
+              child: Icon(
+                Icons.movie,
+                color: NivioTheme.netflixGrey,
+                size: 48,
+              ),
+            ),
+          )
+        : Container(
+            height: 180,
+            width: 130,
+            color: NivioTheme.netflixDarkGrey,
+            child: Icon(
+              Icons.movie,
+              color: NivioTheme.netflixGrey,
+              size: 48,
+            ),
+          );
+
     return MouseRegion(
       onEnter: (_) => _animationController.forward(),
       onExit: (_) => _animationController.reverse(),
@@ -76,57 +111,24 @@ class _MediaCardState extends ConsumerState<MediaCard>
                     Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(4),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(
-                              0.5 * _elevationAnimation.value,
-                            ),
-                            blurRadius: 15 * _elevationAnimation.value,
-                            spreadRadius: 1 * _elevationAnimation.value,
-                            offset: Offset(0, 6 * _elevationAnimation.value),
-                          ),
-                        ],
+                        boxShadow: _elevationAnimation.value > 0
+                            ? [
+                                BoxShadow(
+                                  color: Colors.black.withValues(
+                                    alpha: 0.5 * _elevationAnimation.value,
+                                  ),
+                                  blurRadius: 15 * _elevationAnimation.value,
+                                  spreadRadius: 1 * _elevationAnimation.value,
+                                  offset: Offset(0, 6 * _elevationAnimation.value),
+                                ),
+                              ]
+                            : null,
                       ),
                       child: Stack(
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(4),
-                            child: posterUrl.isNotEmpty
-                                ? CachedNetworkImage(
-                                    imageUrl: posterUrl,
-                                    height: 180,
-                                    width: 130,
-                                    fit: BoxFit.cover,
-                                    placeholder: (context, url) => Container(
-                                      color: NivioTheme.netflixDarkGrey,
-                                      child: Center(
-                                        child: CircularProgressIndicator(
-                                          color: NivioTheme.accentColorOf(
-                                            context,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    errorWidget: (context, url, error) =>
-                                        Container(
-                                          color: NivioTheme.netflixDarkGrey,
-                                          child: Icon(
-                                            Icons.movie,
-                                            color: NivioTheme.netflixGrey,
-                                            size: 48,
-                                          ),
-                                        ),
-                                  )
-                                : Container(
-                                    height: 180,
-                                    width: 130,
-                                    color: NivioTheme.netflixDarkGrey,
-                                    child: Icon(
-                                      Icons.movie,
-                                      color: NivioTheme.netflixGrey,
-                                      size: 48,
-                                    ),
-                                  ),
+                            child: child!,
                           ),
                           // Progress bar at bottom
                           Positioned(
@@ -142,30 +144,30 @@ class _MediaCardState extends ConsumerState<MediaCard>
                             ),
                           ),
                           // Play icon overlay with animation
-                          Positioned.fill(
-                            child: AnimatedOpacity(
-                              opacity: 0.6 + (0.4 * _elevationAnimation.value),
-                              duration: const Duration(milliseconds: 200),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Colors.transparent,
-                                      Colors.black.withOpacity(0.7),
-                                    ],
+                          if (_elevationAnimation.value > 0)
+                            Positioned.fill(
+                              child: Opacity(
+                                opacity: 0.6 + (0.4 * _elevationAnimation.value),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Colors.transparent,
+                                        Colors.black.withOpacity(0.7),
+                                      ],
+                                    ),
+                                    borderRadius: BorderRadius.circular(4),
                                   ),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Icon(
-                                  Icons.play_circle_fill,
-                                  color: Colors.white,
-                                  size: 48 + (8 * _elevationAnimation.value),
+                                  child: Icon(
+                                    Icons.play_circle_fill,
+                                    color: Colors.white,
+                                    size: 48 + (8 * _elevationAnimation.value),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
                         ],
                       ),
                     ),
@@ -190,6 +192,7 @@ class _MediaCardState extends ConsumerState<MediaCard>
               ),
             );
           },
+          child: staticImageContent,
         ),
       ),
     );

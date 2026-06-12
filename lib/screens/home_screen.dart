@@ -3,9 +3,11 @@ import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/constants.dart';
+import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/core/providers_data.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/watchlist_item.dart';
@@ -49,9 +51,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Timer? _bannerTimer;
   final Map<int, bool> _pendingWatchlistState = <int, bool>{};
 
+  int _frameCount = 0;
+  DateTime _lastFpsLogTime = DateTime.now();
+
+  void _onFrameTiming(List<FrameTiming> timings) {
+    if (!mounted) return;
+    _frameCount += timings.length;
+    final now = DateTime.now();
+    if (now.difference(_lastFpsLogTime).inSeconds >= 1) {
+      appDebugLog('📊 HomeScreen FPS: $_frameCount');
+      _frameCount = 0;
+      _lastFpsLogTime = now;
+    }
+
+    for (final timing in timings) {
+      final ms = timing.totalSpan.inMilliseconds;
+      if (ms > 16) {
+        appDebugLog('⚠️ JANK DETECTED: Frame took ${ms}ms');
+      }
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    SchedulerBinding.instance.addTimingsCallback(_onFrameTiming);
     _scrollController.addListener(() {
       if (_scrollController.offset > 50 && !_showAppBarBackground) {
         setState(() => _showAppBarBackground = true);
@@ -89,6 +113,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   void dispose() {
+    SchedulerBinding.instance.removeTimingsCallback(_onFrameTiming);
     _scrollController.dispose();
     _pageController.dispose();
     _bannerTimer?.cancel();
@@ -108,34 +133,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           elevation: 0,
           backgroundColor: Colors.transparent,
           flexibleSpace: ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: _showAppBarBackground ? 12 : 0,
-                sigmaY: _showAppBarBackground ? 12 : 0,
-              ),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: _showAppBarBackground
-                      ? const Color(0x6A0D0F14)
-                      : Colors.transparent,
-                  border: _showAppBarBackground
-                      ? const Border(
-                          bottom: BorderSide(color: Color(0x22FFFFFF)),
-                        )
-                      : null,
-                  gradient: _showAppBarBackground
-                      ? null
-                      : LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.black.withValues(alpha: 0.7),
-                            Colors.transparent,
-                          ],
-                        ),
-                ),
-              ),
-            ),
+            child: _showAppBarBackground
+                ? Container(
+                    decoration: const BoxDecoration(
+                      color: Color(0xFA0D0F14), // Near opaque dark background
+                      border: Border(
+                        bottom: BorderSide(color: Color(0x22FFFFFF)),
+                      ),
+                    ),
+                  )
+                : Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.7),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
           ),
           title: const Padding(
             padding: EdgeInsets.only(top: 6, left: 2),
@@ -174,7 +192,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
       body: CustomScrollView(
         controller: _scrollController,
-        cacheExtent: 1000,
+        cacheExtent: 300,
         slivers: [
           SliverToBoxAdapter(
             child: RepaintBoundary(
@@ -221,7 +239,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     )
                     .toList(growable: false);
 
-                return ContentRow(title: 'Your List', items: watchlistItems);
+                return RepaintBoundary(
+                  child: ContentRow(title: 'Your List', items: watchlistItems),
+                );
               },
             ),
           ),
@@ -246,7 +266,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             ),
                           ),
                           SizedBox(height: 12),
-                          ContinueWatchingRow(),
+                          RepaintBoundary(
+                            child: ContinueWatchingRow(),
+                          ),
                           SizedBox(height: 30),
                         ],
                       ),
@@ -290,7 +312,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         builder: (context, ref, child) {
           final asyncItems = ref.watch(provider);
           return asyncItems.when(
-            data: (items) => ContentRow(title: title, items: items),
+            data: (items) => RepaintBoundary(
+              child: ContentRow(title: title, items: items),
+            ),
             loading: () => const SizedBox(height: 220),
             error: (error, stackTrace) => const SizedBox.shrink(),
           );
@@ -304,9 +328,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final providers = allProviders.take(20).toList();
 
     return SliverToBoxAdapter(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: RepaintBoundary(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: Row(
@@ -403,6 +428,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           const SizedBox(height: 24),
         ],
+      ),
       ),
     );
   }
