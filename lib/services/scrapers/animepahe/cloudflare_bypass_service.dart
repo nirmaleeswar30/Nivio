@@ -16,12 +16,14 @@ class CloudflareBypassService extends ChangeNotifier {
   
   bool _isBypassing = false;
   bool _isBypassed = false;
+  String _bypassedUrl = 'https://animepahe.pw';
   Completer<void>? _bypassCompleter;
   
   String get userAgent => _userAgent;
   Map<String, String> get cookies => _cookies;
   bool get isReady => _isBypassed;
   bool get isBypassing => _isBypassing;
+  String get bypassedUrl => _bypassedUrl;
   
   String get cookieString {
     return _cookies.entries.map((e) => '${e.key}=${e.value}').join('; ');
@@ -42,6 +44,12 @@ class CloudflareBypassService extends ChangeNotifier {
       appDebugLog('🛡️ Background refresh of Cloudflare cookies...');
       _startBypass(forceRefresh: true);
     });
+  }
+  
+  /// Manually force a refresh of the bypass
+  Future<void> forceRefresh() async {
+    appDebugLog('🛡️ Manual refresh of Cloudflare bypass requested...');
+    await _startBypass(forceRefresh: true);
   }
   
   /// Wait until bypass is complete. Returns immediately if already bypassed.
@@ -105,7 +113,16 @@ class CloudflareBypassService extends ChangeNotifier {
   }
 
   Future<void> onBypassSuccess(String url) async {
-    appDebugLog('🛡️ Cloudflare bypassed successfully!');
+    appDebugLog('🛡️ Cloudflare bypassed successfully! Resolved URL: $url');
+    
+    // Save the resolved origin (e.g. if it redirected to .ru)
+    try {
+      final uri = Uri.parse(url);
+      _bypassedUrl = '${uri.scheme}://${uri.host}';
+    } catch (_) {
+      _bypassedUrl = 'https://animepahe.pw';
+    }
+    
     await _extractCookies(url);
     
     _isBypassed = true;
@@ -117,38 +134,36 @@ class CloudflareBypassService extends ChangeNotifier {
     }
   }
 
-  /// Proxies an HTTP GET request through the physical WebView to completely bypass Cloudflare's TLS fingerprinting
   Future<String?> fetchViaWebView(String url) async {
     final controller = _controllerGetter?.call();
     if (controller == null) return null;
     
-    final result = await controller.callAsyncJavaScript(functionBody: """
-      return new Promise((resolve) => {
-        try {
-          var xhr = new XMLHttpRequest();
-          xhr.open('GET', url, true);
-          xhr.setRequestHeader('Accept', 'application/json, text/javascript, */*; q=0.01');
-          xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-          xhr.onreadystatechange = function() {
-            if (xhr.readyState === 4) {
-              if (xhr.status === 200) {
-                resolve(xhr.responseText);
-              } else {
-                resolve('ERROR: HTTP ' + xhr.status + ' - ' + xhr.responseText);
-              }
-            }
-          };
-          xhr.onerror = function() {
-            resolve('ERROR: XHR failed');
-          };
-          xhr.send();
-        } catch (e) {
-          resolve('ERROR: ' + e.toString());
-        }
-      });
-    """, arguments: {'url': url});
-    
-    return result?.value as String?;
+    try {
+      appDebugLog('🛡️ Executing Fetch via WebView for: $url');
+      final result = await controller.callAsyncJavaScript(functionBody: """
+        return fetch(url, {
+          headers: {
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'X-Requested-With': 'XMLHttpRequest'
+          }
+        })
+        .then(response => {
+          if (!response.ok) {
+            return response.text().then(text => 'ERROR: HTTP ' + response.status + ' - ' + text).catch(e => 'ERROR: HTTP ' + response.status);
+          }
+          return response.text();
+        })
+        .catch(err => {
+          return 'ERROR: Fetch failed - ' + err.toString();
+        });
+      """, arguments: {'url': url}).timeout(const Duration(seconds: 20));
+      
+      appDebugLog('🛡️ Fetch completed. Value starts with: ${(result?.value as String?)?.substring(0, (result?.value as String?)?.length.clamp(0, 50) ?? 0)}...');
+      return result?.value as String?;
+    } catch (e) {
+      appDebugLog('🛡️ fetchViaWebView threw an exception: $e');
+      return null;
+    }
   }
 
   Future<void> _extractCookies(String url) async {

@@ -14,6 +14,7 @@ import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/services/episode_check_service.dart';
+import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_service.dart';
 import 'package:nivio/widgets/content_row.dart';
 import 'package:nivio/widgets/continue_watching_row.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -147,6 +148,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
           actions: [
+            _buildCloudflareIndicator(context),
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: IconButton(
@@ -644,6 +646,51 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
       tooltip: 'Profile',
       onPressed: () => context.push('/profile'),
+    );
+  }
+
+  Widget _buildCloudflareIndicator(BuildContext context) {
+    return Consumer(
+      builder: (context, ref, child) {
+        final bypassService = ref.watch(cloudflareBypassProvider);
+        final languagePreferences = ref.watch(languagePreferencesProvider);
+        
+        if (!languagePreferences.showAnime) return const SizedBox.shrink();
+        
+        Widget icon;
+        String tooltip;
+        if (bypassService.isBypassing) {
+           icon = SizedBox(
+             width: 18, height: 18,
+             child: CircularProgressIndicator(strokeWidth: 2, color: NivioTheme.accentColorOf(context)),
+           );
+           tooltip = 'Bypassing Anime Protection...';
+        } else if (bypassService.isReady) {
+           icon = const PhosphorIcon(PhosphorIconsFill.shieldCheck, color: Colors.green, size: 22);
+           tooltip = 'Anime Protection Bypassed';
+        } else {
+           icon = const PhosphorIcon(PhosphorIconsRegular.shieldWarning, color: Colors.amber, size: 22);
+           tooltip = 'Anime Protection Pending';
+        }
+        
+        return Tooltip(
+          message: tooltip,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8, right: 4),
+            child: IconButton(
+              icon: icon,
+              onPressed: () {
+                 if (!bypassService.isBypassing) {
+                   bypassService.forceRefresh();
+                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Retrying Anime Protection Bypass...')));
+                 } else {
+                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tooltip)));
+                 }
+              },
+            ),
+          ),
+        );
+      }
     );
   }
 

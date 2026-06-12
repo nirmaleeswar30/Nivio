@@ -11,6 +11,7 @@ import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/media_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
+import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/services/streaming_service.dart';
@@ -274,7 +275,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final manualQuality = ref.read(selectedQualityProvider);
       final preferredQuality =
           manualQuality ?? (settingsQuality == 'auto' ? null : settingsQuality);
-      final subDubPref = ref.read(animeSubDubProvider);
+      final subDubPref = ref.read(languagePreferencesProvider).animePreferredAudio;
 
       final result = await streamingService.fetchStreamUrl(
         media: media,
@@ -315,7 +316,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         return;
       }
 
-      // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Check watch history for resume ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+      // —————————————————————————————————————————————————————————————————————————————————————————— Check watch history for resume ——————————————————————————————————————————————————————————————————————————————————————————
       final historyService = ref.read(watchHistoryServiceProvider);
       await historyService.init();
       final history = await historyService.getHistory(widget.mediaId);
@@ -341,7 +342,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _resumePosition = startAt;
       }
 
-      // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Build subtitle sources ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+      // —————————————————————————————————————————————————————————————————————————————————————————— Build subtitle sources ——————————————————————————————————————————————————————————————————————————————————————————
       final subtitleSources = result.subtitles.map((sub) {
         return BetterPlayerSubtitlesSource(
           type: BetterPlayerSubtitlesSourceType.network,
@@ -350,7 +351,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         );
       }).toList();
 
-      // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Build resolutions map for non-HLS multi-quality ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+      // —————————————————————————————————————————————————————————————————————————————————————————— Build resolutions map for non-HLS multi-quality ——————————————————————————————————————————————————————————————————————————————————————————
       Map<String, String>? resolutions;
       if (result.sources.length > 1) {
         resolutions = {};
@@ -365,10 +366,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
       final cacheConfiguration = _buildCacheConfiguration(result);
 
-      // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Headers ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+      // —————————————————————————————————————————————————————————————————————————————————————————— Headers ——————————————————————————————————————————————————————————————————————————————————————————
       final headers = _buildPlaybackHeaders(result.headers);
 
-      // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Data source ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+      // —————————————————————————————————————————————————————————————————————————————————————————— Data source ——————————————————————————————————————————————————————————————————————————————————————————
       final dataSource = BetterPlayerDataSource(
         BetterPlayerDataSourceType.network,
         result.url,
@@ -384,7 +385,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         cacheConfiguration: cacheConfiguration,
       );
 
-      // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Controller config ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+      // —————————————————————————————————————————————————————————————————————————————————————————— Controller config ——————————————————————————————————————————————————————————————————————————————————————————
       _betterPlayerController = BetterPlayerController(
         BetterPlayerConfiguration(
           autoPlay: true,
@@ -491,7 +492,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _betterPlayerController!.addEventsListener(_onBetterPlayerEvent);
       _applyDisplaySettings(refreshUi: false);
 
-      // Show the player immediately ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â BetterPlayer handles its own buffering UI
+      // Show the player immediately — BetterPlayer handles its own buffering UI
       setState(() {
         _isLoading = false;
         _retryCount = 0;
@@ -528,7 +529,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
-  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ BetterPlayer event listener ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+  // —————————————————————————————————————————————————————————————————————————————————————————— BetterPlayer event listener ——————————————————————————————————————————————————————————————————————————————————————————
   Map<String, String> _buildPlaybackHeaders(Map<String, String> incoming) {
     final headers = <String, String>{
       'User-Agent':
@@ -1215,7 +1216,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
-  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Season data fetch ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+  // —————————————————————————————————————————————————————————————————————————————————————————— Season data fetch ——————————————————————————————————————————————————————————————————————————————————————————
   Future<void> _fetchSeasonData() async {
     try {
       final tmdbService = ref.read(tmdbServiceProvider);
@@ -1226,7 +1227,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     } catch (_) {}
   }
 
-  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Next episode popup ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+  // —————————————————————————————————————————————————————————————————————————————————————————— Next episode popup ——————————————————————————————————————————————————————————————————————————————————————————
   void _showNextEpisodePopup() {
     if (_showNextEpisodeButton) return;
     setState(() {
@@ -1273,7 +1274,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ WebView event handler ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+  // —————————————————————————————————————————————————————————————————————————————————————————— WebView event handler ——————————————————————————————————————————————————————————————————————————————————————————
 
   bool _hasNextEpisode() {
     final media = ref.read(selectedMediaProvider);
@@ -1626,8 +1627,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final normalizedCurrent = _normalizeQualityLabel(currentRaw);
     if (normalizedTarget == normalizedCurrent) return;
 
-    final currentPosition =
-        _betterPlayerController?.videoPlayerController?.value.position;
+    final currentPosition = _isDirectStream
+        ? _betterPlayerController?.videoPlayerController?.value.position
+        : _webViewPosition;
     await _saveProgress();
 
     ref.read(selectedQualityProvider.notifier).state =
@@ -1643,6 +1645,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           backgroundColor: NivioTheme.accentColorOf(context),
         ),
       );
+    }
+    
+    if (!_isDirectStream && _streamResult != null && _streamResult!.sources.isNotEmpty) {
+      final currentAudio = ref.read(languagePreferencesProvider).animePreferredAudio.toLowerCase();
+      final isDubTarget = currentAudio == 'dub';
+      
+      StreamSource? bestMatch;
+      if (normalizedTarget == 'auto') {
+        bestMatch = _streamResult!.sources.firstWhere(
+          (s) => s.isDub == isDubTarget,
+          orElse: () => _streamResult!.sources.first,
+        );
+      } else {
+        bestMatch = _streamResult!.sources.firstWhere(
+          (s) => _normalizeQualityLabel(s.quality) == normalizedTarget && s.isDub == isDubTarget,
+          orElse: () => _streamResult!.sources.firstWhere(
+            (s) => _normalizeQualityLabel(s.quality) == normalizedTarget,
+            orElse: () => _streamResult!.sources.first,
+          ),
+        );
+      }
+      
+      setState(() {
+        _streamResult = _streamResult!.copyWith(
+          url: bestMatch!.url,
+          quality: bestMatch.quality,
+        );
+      });
+      return;
     }
 
     _disposePlayer();
@@ -1667,7 +1698,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   bool _isAimiAnimeStream() {
     final provider = (_streamResult?.provider ?? '').toLowerCase();
-    if (!_isDirectStream || provider.isEmpty) return false;
+    if (provider.isEmpty) return false;
     return provider.startsWith('aimi-') ||
         provider.contains('animepahe') ||
         provider.contains('allanime') ||
@@ -1685,7 +1716,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
 
   List<PopupMenuEntry<String>> _buildAnimeModeMenuItems() {
-    final selected = ref.read(animeSubDubProvider).toLowerCase();
+    final selected = ref.read(languagePreferencesProvider).animePreferredAudio.toLowerCase();
     final modes = const ['sub', 'dub'];
 
     return modes.map((mode) {
@@ -1719,13 +1750,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Future<void> _switchAnimeMode(String mode) async {
     final target = mode.toLowerCase() == 'dub' ? 'dub' : 'sub';
-    final current = ref.read(animeSubDubProvider).toLowerCase();
+    final current = ref.read(languagePreferencesProvider).animePreferredAudio.toLowerCase();
     if (target == current) return;
 
-    final currentPosition =
-        _betterPlayerController?.videoPlayerController?.value.position;
+    final currentPosition = _isDirectStream
+        ? _betterPlayerController?.videoPlayerController?.value.position
+        : _webViewPosition;
     await _saveProgress();
-    await ref.read(animeSubDubProvider.notifier).setPreference(target);
+    
+    await ref.read(languagePreferencesProvider.notifier).setAnimePreferredAudio(target);
     ref.read(selectedQualityProvider.notifier).state = null;
 
     if (mounted) {
@@ -1736,6 +1769,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           backgroundColor: NivioTheme.accentColorOf(context),
         ),
       );
+    }
+    
+    if (!_isDirectStream && _streamResult != null && _streamResult!.sources.isNotEmpty) {
+      final isDubTarget = target == 'dub';
+      StreamSource? bestMatch = _streamResult!.sources.firstWhere(
+        (s) => s.isDub == isDubTarget,
+        orElse: () => _streamResult!.sources.first,
+      );
+      
+      setState(() {
+        _streamResult = _streamResult!.copyWith(
+          url: bestMatch.url,
+          quality: bestMatch.quality,
+          selectedAudio: target,
+        );
+      });
+      return;
     }
 
     _disposePlayer();
@@ -2136,8 +2186,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                             itemBuilder: _buildAnimeModeMenuItems,
                             onSelected: _switchAnimeMode,
                           ),
-if (_isDirectStream &&
-                            _buildQualityOptions().length > 1)
+                        if (_buildQualityOptions().length > 1)
                           _buildTopActionMenuButton<String>(
                             menuId: 'top-quality-menu',
                             icon: Icon(Icons.hd, color: Colors.white),
@@ -2466,8 +2515,7 @@ if (_isDirectStream &&
                                 itemBuilder: _buildAnimeModeMenuItems,
                                 onSelected: _switchAnimeMode,
                               ),
-if (_isDirectStream &&
-                                _buildQualityOptions().length > 1)
+                             if (_buildQualityOptions().length > 1)
                               _buildTopActionMenuButton<String>(
                                 menuId: 'fs-quality-menu',
                                 icon: Icon(Icons.hd, color: Colors.white),
@@ -2640,7 +2688,7 @@ if (_isDirectStream &&
                         onPressed: _showEpisodesBottomSheet,
                         icon: Icon(Icons.list, color: Colors.white),
                       ),
-                    if (_isDirectStream)
+                    if (_buildQualityOptions().length > 1)
                       PopupMenuButton<String>(
                         icon: Icon(Icons.aspect_ratio, color: Colors.white),
                         tooltip: 'Display',

@@ -234,7 +234,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     title: 'Content Feed',
                     child: Column(
                       children: [
-                        if (_matches('anime language'))
+                        if (_matches('anime language audio sub dub subbed dubbed')) ...[
+                          _buildActionTile(
+                            icon: Icons.record_voice_over_rounded,
+                            title: 'Preferred Anime Audio',
+                            subtitle: languagePrefs.animePreferredAudio == 'sub' ? 'Subbed' : 'Dubbed',
+                            onTap: _showAnimeAudioDialog,
+                          ),
                           _buildSwitchTile(
                             icon: Icons.animation_rounded,
                             title: 'Anime',
@@ -246,6 +252,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                   .toggleAnime(value);
                             },
                           ),
+                        ],
                         if (_matches('tamil language'))
                           _buildSwitchTile(
                             icon: Icons.movie_filter_rounded,
@@ -603,6 +610,47 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
   }
+  
+  void _showAnimeAudioDialog() {
+    final prefs = ref.read(languagePreferencesProvider);
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1F1F1F),
+          title: const Text(
+            'Preferred Anime Audio',
+            style: TextStyle(color: Colors.white, fontSize: 18),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RadioListTile<String>(
+                title: const Text('Subbed (Japanese Audio)', style: TextStyle(color: Colors.white)),
+                value: 'sub',
+                groupValue: prefs.animePreferredAudio,
+                activeColor: NivioTheme.accentColorOf(context),
+                onChanged: (val) {
+                  ref.read(languagePreferencesProvider.notifier).setAnimePreferredAudio(val!);
+                  Navigator.pop(context);
+                },
+              ),
+              RadioListTile<String>(
+                title: const Text('Dubbed (English Audio)', style: TextStyle(color: Colors.white)),
+                value: 'dub',
+                groupValue: prefs.animePreferredAudio,
+                activeColor: NivioTheme.accentColorOf(context),
+                onChanged: (val) {
+                  ref.read(languagePreferencesProvider.notifier).setAnimePreferredAudio(val!);
+                  Navigator.pop(context);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   Widget _buildSectionCard({required String title, required Widget child}) {
     return Container(
@@ -661,7 +709,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
       );
     }
-    if (_matches('anime language')) {
+    if (_matches('anime language audio sub dub subbed dubbed')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.record_voice_over_rounded,
+          title: 'Preferred Anime Audio',
+          subtitle: languagePrefs.animePreferredAudio == 'sub' ? 'Subbed' : 'Dubbed',
+          onTap: _showAnimeAudioDialog,
+        ),
+      );
       results.add(
         _buildSwitchTile(
           icon: Icons.animation_rounded,

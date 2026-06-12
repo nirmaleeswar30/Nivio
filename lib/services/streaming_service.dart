@@ -51,27 +51,14 @@ class StreamingService {
       
       // Handle Native Animepahe
       if (providerName == 'Animepahe (NATIVE)') {
-        final streamUrl = await animepaheScraper.fetchStreamUrl(
+        final streamResult = await animepaheScraper.fetchStreamUrl(
           media.title ?? media.name ?? '', 
           season, 
           episode,
           subDub: subDubPreference,
         );
         
-        if (streamUrl != null) {
-          return StreamResult(
-            url: streamUrl,
-            quality: 'Auto',
-            provider: providerName,
-            isM3U8: streamUrl.contains('.m3u8'),
-            headers: {
-              'Referer': 'https://kwik.cx/',
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            },
-          );
-        } else {
-          return null; // Fallback to next provider handled by PlayerScreen
-        }
+        return streamResult; // AnimepaheScraper natively returns StreamResult
       }
 
       // Handle standard 7reels providers

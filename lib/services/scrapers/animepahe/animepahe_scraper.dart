@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/core/debug_log.dart';
+import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_service.dart';
 final animepaheScraperProvider = Provider<AnimepaheScraperService>((ref) {
   return AnimepaheScraperService(ref.read(cloudflareBypassProvider));
@@ -13,8 +14,8 @@ class AnimepaheScraperService {
 
 
 
-  /// Scrapes the direct native .m3u8 link from Animepahe
-  Future<String?> fetchStreamUrl(String title, int season, int episode, {String subDub = 'sub'}) async {
+  /// Scrapes the direct native .m3u8 or Kwik link from Animepahe
+  Future<StreamResult?> fetchStreamUrl(String title, int season, int episode, {String subDub = 'sub'}) async {
     try {
       // 1. Wait for Cloudflare bypass to complete if it hasn't
       await _bypassService.waitForBypass();
@@ -76,6 +77,9 @@ class AnimepaheScraperService {
       final playHtml = await _bypassService.fetchViaWebView(playUrl);
       
       String? kwikUrl;
+      List<StreamSource> sources = [];
+      List<String> qualities = [];
+      List<String> audios = [];
       
       if (playHtml != null && playHtml.contains('kwik')) {
         appDebugLog('🎌 Animepahe: Extracting links from Play HTML...');
@@ -99,6 +103,20 @@ class AnimepaheScraperService {
             'audio': audio,
             'resolution': resolution,
           });
+          
+          final isDub = audio != 'jpn';
+          sources.add(StreamSource(
+            url: src,
+            quality: '${resolution}p',
+            isM3U8: false,
+            isDub: isDub,
+          ));
+          
+          final q = '${resolution}p';
+          if (!qualities.contains(q)) qualities.add(q);
+          
+          final a = isDub ? 'dub' : 'sub';
+          if (!audios.contains(a)) audios.add(a);
         }
         
         if (extractedLinks.isNotEmpty) {
@@ -116,7 +134,7 @@ class AnimepaheScraperService {
           
           // Fallback to highest res if sub/dub match not found
           kwikUrl ??= extractedLinks.first['src'];
-          appDebugLog('🎌 Animepahe: Successfully extracted Kwik URL from HTML: $kwikUrl');
+          appDebugLog('🎌 Animepahe: Successfully extracted ${extractedLinks.length} Kwik URLs');
         }
       }
 
@@ -125,8 +143,23 @@ class AnimepaheScraperService {
         return null;
       }
       
-      appDebugLog('🎌 Animepahe: Returning Kwik Embed URL: $kwikUrl');
-      return kwikUrl;
+      appDebugLog('🎌 Animepahe: Returning StreamResult with ${sources.length} sources. Default: $kwikUrl');
+      
+      return StreamResult(
+        url: kwikUrl,
+        quality: 'auto',
+        provider: 'Animepahe (NATIVE)',
+        subtitles: [],
+        availableQualities: qualities,
+        availableAudios: audios,
+        selectedAudio: subDub,
+        isM3U8: false,
+        headers: {
+          'Referer': 'https://kwik.cx/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        sources: sources,
+      );
       
     } catch (e) {
       appDebugLog('🎌 Animepahe Error: $e');

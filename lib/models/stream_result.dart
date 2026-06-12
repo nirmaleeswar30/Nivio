@@ -59,4 +59,30 @@ class StreamResult {
     this.headers = const {},
     this.sources = const [],
   });
+
+  StreamResult copyWith({
+    String? url,
+    String? quality,
+    String? provider,
+    List<SubtitleTrack>? subtitles,
+    List<String>? availableQualities,
+    List<String>? availableAudios,
+    String? selectedAudio,
+    bool? isM3U8,
+    Map<String, String>? headers,
+    List<StreamSource>? sources,
+  }) {
+    return StreamResult(
+      url: url ?? this.url,
+      quality: quality ?? this.quality,
+      provider: provider ?? this.provider,
+      subtitles: subtitles ?? this.subtitles,
+      availableQualities: availableQualities ?? this.availableQualities,
+      availableAudios: availableAudios ?? this.availableAudios,
+      selectedAudio: selectedAudio ?? this.selectedAudio,
+      isM3U8: isM3U8 ?? this.isM3U8,
+      headers: headers ?? this.headers,
+      sources: sources ?? this.sources,
+    );
+  }
 }
