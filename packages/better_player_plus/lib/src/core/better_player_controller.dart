@@ -101,6 +101,11 @@ class BetterPlayerController {
   ///Subtitles lines for current data source.
   List<BetterPlayerSubtitle> subtitlesLines = [];
 
+  ///Runtime override for the subtitle font size. When non-null it takes
+  ///precedence over [BetterPlayerSubtitlesConfiguration.fontSize], allowing the
+  ///subtitle size to be changed live without recreating the controller.
+  double? subtitlesFontSizeOverride;
+
   ///List of tracks available for current data source. Used only for HLS / DASH.
   List<BetterPlayerAsmsTrack> _betterPlayerAsmsTracks = [];
 
@@ -379,6 +384,15 @@ class BetterPlayerController {
 
     _postEvent(BetterPlayerEvent(BetterPlayerEventType.changedSubtitles));
     if (!_disposed && !sourceInitialize) {
+      _postControllerEvent(BetterPlayerControllerEvent.changeSubtitles);
+    }
+  }
+
+  ///Changes the subtitle font size at runtime. Takes effect immediately on the
+  ///currently displayed subtitles.
+  void setSubtitlesFontSize(double fontSize) {
+    subtitlesFontSizeOverride = fontSize;
+    if (!_disposed) {
       _postControllerEvent(BetterPlayerControllerEvent.changeSubtitles);
     }
   }

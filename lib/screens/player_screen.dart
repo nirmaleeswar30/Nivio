@@ -21,6 +21,8 @@ import 'package:nivio/services/watch_party/watch_party_models.dart';
 import 'package:nivio/services/watch_party/watch_party_service_supabase.dart';
 
 import 'dart:async';
+import 'dart:io';
+import 'package:nivio/services/download_service.dart';
 import 'package:nivio/widgets/webview_player.dart';
 import 'dart:math' as math;
 
@@ -89,6 +91,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _isInFullscreen = false;
   bool _disposed = false;
   Duration? _resumePosition;
+  // Effective local file to play: either the explicit widget.localPath, or a
+  // completed download discovered for this media. When set, playback is offline.
+  String? _effectiveLocalPath;
   DateTime? _lastTapTime;
   
   BoxFit _currentFit = BoxFit.cover;
@@ -288,16 +293,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       StreamResult? result;
 
-      if (widget.localPath != null && widget.localPath!.isNotEmpty) {
-        final String srtPath = widget.localPath!.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '.srt');
+      // Always prefer a local downloaded copy if one exists for this media,
+      // regardless of how playback was launched. An explicit localPath (e.g.
+      // from the Downloads screen) takes precedence; otherwise we look one up.
+      _effectiveLocalPath = (widget.localPath != null && widget.localPath!.isNotEmpty)
+          ? widget.localPath
+          : DownloadService.findPlayableDownload(
+              mediaId: widget.mediaId,
+              season: widget.season,
+              episode: _currentEpisode,
+            )?.savePath;
+
+      if (_effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty) {
+        final String srtPath = _effectiveLocalPath!.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '.srt');
         final bool hasSrt = await File(srtPath).exists();
-        
+
         result = StreamResult(
-          url: widget.localPath!,
+          url: _effectiveLocalPath!,
           quality: 'Downloaded',
           provider: 'Local',
           headers: {},
-          subtitles: hasSrt ? [SubtitleData(lang: 'Default', url: srtPath)] : [],
+          subtitles: hasSrt ? [SubtitleTrack(lang: 'Default', url: srtPath)] : [],
         );
       } else {
         result = await streamingService.fetchStreamUrl(
@@ -323,10 +339,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       _streamResult = result;
       _currentProvider = result.provider;
-      _isDirectStream = StreamingService.isDirectStream(
-        _currentProviderIndex,
-        isAnime: _isAnimeMedia(media),
-      );
+      // A local downloaded file is always played directly (never via WebView).
+      _isDirectStream = (_effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty)
+          ? true
+          : StreamingService.isDirectStream(
+              _currentProviderIndex,
+              isAnime: _isAnimeMedia(media),
+            );
       
       _trackInitialPlay();
 
@@ -371,7 +390,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       // —————————————————————————————————————————————————————————————————————————————————————————— Build subtitle sources ——————————————————————————————————————————————————————————————————————————————————————————
       final subtitleSources = result.subtitles.map((sub) {
         return BetterPlayerSubtitlesSource(
-          type: widget.localPath != null && widget.localPath!.isNotEmpty 
+          type: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty 
               ? BetterPlayerSubtitlesSourceType.file 
               : BetterPlayerSubtitlesSourceType.network,
           name: sub.lang,
@@ -399,22 +418,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       // —————————————————————————————————————————————————————————————————————————————————————————— Data source ——————————————————————————————————————————————————————————————————————————————————————————
       final dataSource = BetterPlayerDataSource(
-        widget.localPath != null && widget.localPath!.isNotEmpty 
+        _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty 
             ? BetterPlayerDataSourceType.file 
             : BetterPlayerDataSourceType.network,
         result.url,
-        headers: widget.localPath != null && widget.localPath!.isNotEmpty ? null : headers,
-        videoFormat: widget.localPath != null && widget.localPath!.isNotEmpty 
+        headers: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty ? null : headers,
+        videoFormat: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty 
             ? BetterPlayerVideoFormat.other
             : (result.isM3U8
                 ? BetterPlayerVideoFormat.hls
                 : BetterPlayerVideoFormat.other),
-        useAsmsTracks: widget.localPath != null && widget.localPath!.isNotEmpty ? false : result.isM3U8,
-        useAsmsSubtitles: widget.localPath != null && widget.localPath!.isNotEmpty ? false : result.isM3U8,
-        useAsmsAudioTracks: widget.localPath != null && widget.localPath!.isNotEmpty ? false : result.isM3U8,
+        useAsmsTracks: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty ? false : result.isM3U8,
+        useAsmsSubtitles: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty ? false : result.isM3U8,
+        useAsmsAudioTracks: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty ? false : result.isM3U8,
         subtitles: subtitleSources.isNotEmpty ? subtitleSources : null,
         resolutions: resolutions,
-        cacheConfiguration: widget.localPath != null && widget.localPath!.isNotEmpty ? const BetterPlayerCacheConfiguration(useCache: false) : cacheConfiguration,
+        cacheConfiguration: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty ? const BetterPlayerCacheConfiguration(useCache: false) : cacheConfiguration,
         bufferingConfiguration: const BetterPlayerBufferingConfiguration(
           minBufferMs: 120000, // 2 minutes minimum buffer
           maxBufferMs: 900000, // 15 minutes max buffer
@@ -428,6 +447,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           autoPlay: true,
           looping: false,
           fullScreenByDefault: false,
+          subtitlesConfiguration: BetterPlayerSubtitlesConfiguration(
+            fontSize: ref.read(subtitleFontSizeProvider),
+          ),
           aspectRatio: MediaQuery.of(context).size.width / MediaQuery.of(context).size.height,
           deviceOrientationsAfterFullScreen: const [
             DeviceOrientation.landscapeLeft,
@@ -2603,6 +2625,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                         ],
                                       ),
                                     ),
+                                  Theme(
+                                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                                    child: ExpansionTile(
+                                      iconColor: Theme.of(context).primaryColor,
+                                      collapsedIconColor: Colors.white54,
+                                      leading: const Icon(Icons.format_size),
+                                      title: const Text('SUBTITLE SIZE', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                                      children: [
+                                        ...subtitleFontSizeOptions.entries.map((entry) {
+                                          final currentSize = ref.read(subtitleFontSizeProvider);
+                                          final isCurrent = currentSize == entry.value;
+                                          return ListTile(
+                                            contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                            title: Text(entry.key, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
+                                            trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                            onTap: () {
+                                              ref.read(subtitleFontSizeProvider.notifier).setSize(entry.value);
+                                              _betterPlayerController?.setSubtitlesFontSize(entry.value);
+                                              setDialogState(() {});
+                                            },
+                                          );
+                                        }),
+                                      ],
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),

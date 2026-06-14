@@ -163,6 +163,45 @@ class PreferredSubtitleLanguageNotifier extends StateNotifier<String> {
   }
 }
 
+// Subtitle Font Size Provider
+const Map<String, double> subtitleFontSizeOptions = {
+  'Small': 14.0,
+  'Medium': 18.0,
+  'Large': 24.0,
+  'Extra Large': 30.0,
+};
+
+const double kDefaultSubtitleFontSize = 18.0;
+
+String subtitleFontSizeLabel(double size) {
+  for (final entry in subtitleFontSizeOptions.entries) {
+    if (entry.value == size) return entry.key;
+  }
+  return 'Custom';
+}
+
+final subtitleFontSizeProvider =
+    StateNotifierProvider<SubtitleFontSizeNotifier, double>((ref) {
+      return SubtitleFontSizeNotifier();
+    });
+
+class SubtitleFontSizeNotifier extends StateNotifier<double> {
+  SubtitleFontSizeNotifier() : super(kDefaultSubtitleFontSize) {
+    _loadSetting();
+  }
+
+  Future<void> _loadSetting() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getDouble('subtitle_font_size') ?? kDefaultSubtitleFontSize;
+  }
+
+  Future<void> setSize(double size) async {
+    state = size;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('subtitle_font_size', size);
+  }
+}
+
 // Preferred Audio Language Provider
 final preferredAudioLanguageProvider =
     StateNotifierProvider<PreferredAudioLanguageNotifier, String>((ref) {

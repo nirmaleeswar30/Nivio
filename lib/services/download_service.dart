@@ -40,6 +40,33 @@ class DownloadService {
 
   static Box<DownloadItem> get box => Hive.box<DownloadItem>(_boxName);
 
+  /// Returns a completed download for the given media whose file still exists on
+  /// disk, or null if none is available. Used to transparently prefer offline
+  /// playback whenever a local copy exists.
+  ///
+  /// For TV episodes the season/episode must match. For movies (no season /
+  /// episode on the stored item) only the media id is matched.
+  static DownloadItem? findPlayableDownload({
+    required int mediaId,
+    int? season,
+    int? episode,
+  }) {
+    if (!Hive.isBoxOpen(_boxName)) return null;
+    for (final item in box.values) {
+      if (item.mediaId != mediaId) continue;
+      if (item.status != DownloadStatus.completed) continue;
+
+      final bool isEpisode = item.season != null && item.episode != null;
+      if (isEpisode) {
+        if (item.season != season || item.episode != episode) continue;
+      }
+
+      if (item.savePath.isEmpty || !File(item.savePath).existsSync()) continue;
+      return item;
+    }
+    return null;
+  }
+
   static Future<bool> requestPermissions() async {
     if (Platform.isAndroid) {
       await Permission.notification.request();

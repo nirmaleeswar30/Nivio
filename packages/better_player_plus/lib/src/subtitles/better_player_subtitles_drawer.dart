@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:better_player_plus/better_player_plus.dart';
+import 'package:better_player_plus/src/configuration/better_player_controller_event.dart';
 import 'package:better_player_plus/src/subtitles/better_player_subtitle.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
@@ -25,8 +26,6 @@ class _BetterPlayerSubtitlesDrawerState extends State<BetterPlayerSubtitlesDrawe
   final RegExp htmlRegExp =
       // ignore: unnecessary_raw_strings
       RegExp(r'<[^>]*>', multiLine: true);
-  late TextStyle _innerTextStyle;
-  late TextStyle _outerTextStyle;
 
   VideoPlayerValue? _latestValue;
   BetterPlayerSubtitlesConfiguration? _configuration;
@@ -34,6 +33,9 @@ class _BetterPlayerSubtitlesDrawerState extends State<BetterPlayerSubtitlesDrawe
 
   ///Stream used to detect if play controls are visible or not
   late StreamSubscription<bool> _visibilityStreamSubscription;
+
+  ///Stream used to detect runtime subtitle changes (e.g. font size).
+  StreamSubscription<BetterPlayerControllerEvent>? _controllerEventSubscription;
 
   @override
   void initState() {
@@ -51,28 +53,42 @@ class _BetterPlayerSubtitlesDrawerState extends State<BetterPlayerSubtitlesDrawe
 
     widget.betterPlayerController.videoPlayerController!.addListener(_updateState);
 
-    _outerTextStyle = TextStyle(
-      fontSize: _configuration!.fontSize,
-      fontFamily: _configuration!.fontFamily,
-      foreground: Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = _configuration!.outlineSize
-        ..color = _configuration!.outlineColor,
-    );
-
-    _innerTextStyle = TextStyle(
-      fontFamily: _configuration!.fontFamily,
-      color: _configuration!.fontColor,
-      fontSize: _configuration!.fontSize,
-    );
+    _controllerEventSubscription =
+        widget.betterPlayerController.controllerEventStream.listen((event) {
+      if (event == BetterPlayerControllerEvent.changeSubtitles && mounted) {
+        setState(() {});
+      }
+    });
 
     super.initState();
   }
+
+  ///Effective subtitle font size, honoring any runtime override set on the
+  ///controller.
+  double get _effectiveFontSize =>
+      widget.betterPlayerController.subtitlesFontSizeOverride ??
+      _configuration!.fontSize;
+
+  TextStyle get _outerTextStyle => TextStyle(
+        fontSize: _effectiveFontSize,
+        fontFamily: _configuration!.fontFamily,
+        foreground: Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = _configuration!.outlineSize
+          ..color = _configuration!.outlineColor,
+      );
+
+  TextStyle get _innerTextStyle => TextStyle(
+        fontFamily: _configuration!.fontFamily,
+        color: _configuration!.fontColor,
+        fontSize: _effectiveFontSize,
+      );
 
   @override
   void dispose() {
     widget.betterPlayerController.videoPlayerController!.removeListener(_updateState);
     _visibilityStreamSubscription.cancel();
+    _controllerEventSubscription?.cancel();
     super.dispose();
   }
 
