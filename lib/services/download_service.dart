@@ -218,16 +218,23 @@ class DownloadService {
       });
     }
 
-    final List<String> ffmpegArgs = [];
+    final List<String> ffmpegArgs = ['-loglevel', 'debug'];
 
     void addInputFile(String url) {
       ffmpegArgs.addAll([
         '-reconnect', '1',
         '-reconnect_streamed', '1',
         '-reconnect_delay_max', '15',
+        '-rw_timeout', '15000000',
+        '-http_persistent', '0',
         '-allowed_extensions', 'ALL',
         '-allowed_segment_extensions', 'ALL',
-        '-extension_picky', '0'
+        '-extension_picky', '0',
+        '-seg_max_retry', '5',
+        '-err_detect', 'ignore_err',
+        '-fflags', '+genpts+igndts+discardcorrupt',
+        '-probesize', '50000000',
+        '-analyzeduration', '50000000'
       ]);
       if (headers.isNotEmpty) {
         ffmpegArgs.addAll(['-headers', headers]);
@@ -245,11 +252,8 @@ class DownloadService {
       audioIdx = inputIdx++;
     }
     
-    int? subIdx;
-    if (streams?.subtitleUrl != null) {
-      addInputFile(streams!.subtitleUrl!);
-      subIdx = inputIdx++;
-    }
+    // Do NOT add subtitle URL to the primary FFmpeg command to prevent AVERROR_INVALIDDATA!
+    // We will download it independently in the post-processing step.
 
     // Map video
     ffmpegArgs.addAll(['-map', '0:v:0?']);
@@ -271,11 +275,8 @@ class DownloadService {
     final String subCodec = filePath.toLowerCase().endsWith('.mkv') ? 'srt' : 'mov_text';
     final String srtFilePath = filePath.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '.srt');
 
-    // Map subtitles into the primary video file
-    if (subIdx != null) {
-      ffmpegArgs.addAll(['-map', '$subIdx:s:0?']);
-      ffmpegArgs.addAll(['-c:s', subCodec]);
-    } else {
+    // Map embedded subtitles into the primary video file (ONLY if they are already embedded)
+    if (streams?.subtitleUrl == null) {
       if (item.selectedSubtitleLanguage != null && item.selectedSubtitleLanguage!.isNotEmpty) {
         ffmpegArgs.addAll(['-map', '0:s:m:language:${item.selectedSubtitleLanguage}?', '-map', '0:s:0?']);
         ffmpegArgs.addAll(['-c:s', subCodec]);
@@ -289,23 +290,16 @@ class DownloadService {
       }
     }
 
+    // Set metadata tags so players natively recognize the language of the downloaded tracks
+    final String audioLang = item.selectedAudioLanguage ?? 'eng';
+    ffmpegArgs.addAll(['-metadata:s:a:0', 'language=$audioLang']);
+    
+    // Add output-specific muxing flags
+    ffmpegArgs.addAll(['-max_muxing_queue_size', '9999']);
+    
     // Output 1: Video file
     ffmpegArgs.add(filePath);
 
-    // Output 2: Extracted SRT file (for BetterPlayer UI)
-    if (subIdx != null) {
-      ffmpegArgs.addAll(['-map', '$subIdx:s:0?', '-c:s', 'srt', srtFilePath]);
-    } else {
-      if (item.selectedSubtitleLanguage != null && item.selectedSubtitleLanguage!.isNotEmpty) {
-        ffmpegArgs.addAll(['-map', '0:s:m:language:${item.selectedSubtitleLanguage}?', '-map', '0:s:0?', '-c:s', 'srt', srtFilePath]);
-      } else if (item.selectedSubtitleLanguage == null && item.id.contains('suboff')) {
-        // None
-      } else if (item.selectedSubtitleLanguage == null) {
-        // None
-      } else {
-        ffmpegArgs.addAll(['-map', '0:s:m:language:eng?', '-map', '0:s:0?', '-c:s', 'srt', srtFilePath]);
-      }
-    }
 
     final completer = Completer<void>();
     int lastUpdateMs = 0;
@@ -315,7 +309,12 @@ class DownloadService {
       (session) async {
         final returnCode = await session.getReturnCode();
         if (ReturnCode.isSuccess(returnCode)) {
-           completer.complete();
+           if (item.progress > 0 && item.progress < 0.95) {
+             appDebugLog("FFMPEG returned success but progress is only ${(item.progress * 100).toStringAsFixed(1)}%. Treating as FAILED due to network drop.");
+             completer.completeError(Exception("Network drop: Download incomplete"));
+           } else {
+             completer.complete();
+           }
         } else if (ReturnCode.isCancel(returnCode)) {
            completer.completeError(Exception("Cancelled"));
         } else {
@@ -345,15 +344,16 @@ class DownloadService {
              box.put(item.id, item);
              _showProgressNotification(item);
            }
-         } else {
+          } else {
            // Fallback progress if duration is unknown (e.g. live stream or probe failed)
            int sizeBytes = statistics.getSize();
            item.downloadedBytes = sizeBytes;
-           item.progress = 0.5; // Arbitrary 50% so UI doesn't look completely dead at 0%
+           item.progress = -1.0; // Indicate indeterminate progress
            int timeMs = statistics.getTime().toInt();
            if (timeMs - lastUpdateMs > 2000) {
              lastUpdateMs = timeMs;
              box.put(item.id, item);
+             _showProgressNotification(item);
            }
          }
       },
@@ -364,11 +364,28 @@ class DownloadService {
     });
 
     await completer.future;
+
+    // Post-processing: Extract or download the subtitle into an SRT file
+    // Doing this after the main download prevents FFmpeg from crashing with AVERROR_INVALIDDATA 
+    // when trying to multiplex sparse network WebVTT streams with heavy video streams.
+    try {
+      final String srtFilePath = filePath.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '.srt');
+      if (streams?.subtitleUrl != null) {
+        // Download external subtitle directly to SRT
+        await FFmpegKit.execute('-y -i "${streams!.subtitleUrl!}" -c:s srt "$srtFilePath"');
+      } else {
+        // Extract embedded subtitle
+        await FFmpegKit.execute('-y -i "$filePath" -map 0:s:0? -c:s srt "$srtFilePath"');
+      }
+    } catch (e) {
+      appDebugLog("Failed to extract SRT post-download: $e");
+    }
+
     _completeDownload(item);
   }
 
   static Future<void> _showProgressNotification(DownloadItem item) async {
-    int progressPercentage = (item.progress * 100).toInt();
+    int progressPercentage = item.progress >= 0 ? (item.progress * 100).toInt() : 0;
     
     String title = item.title;
     if (item.season != null && item.episode != null) {
@@ -384,6 +401,7 @@ class DownloadService {
       showProgress: true,
       maxProgress: 100,
       progress: progressPercentage,
+      indeterminate: item.progress < 0,
       onlyAlertOnce: true,
       ongoing: item.status == DownloadStatus.extracting || item.status == DownloadStatus.downloading,
     );

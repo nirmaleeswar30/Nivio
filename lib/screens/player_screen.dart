@@ -22,6 +22,8 @@ import 'package:nivio/services/watch_party/watch_party_service_supabase.dart';
 
 import 'dart:async';
 import 'dart:io';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:nivio/models/download_item.dart';
 import 'package:nivio/services/download_service.dart';
 import 'package:nivio/widgets/webview_player.dart';
 import 'dart:math' as math;
@@ -94,14 +96,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   // Effective local file to play: either the explicit widget.localPath, or a
   // completed download discovered for this media. When set, playback is offline.
   String? _effectiveLocalPath;
+  String _localAudioLang = 'English';
   DateTime? _lastTapTime;
   
-  BoxFit _currentFit = BoxFit.cover;
+  BoxFit _currentFit = BoxFit.contain;
 
   bool _arePlayerControlsVisible = true;
   bool _autoFullscreenTriggeredForCurrentLoad = false;
   String? _openTopActionMenuId;
-  String _selectedDisplayFitKey = 'fitScreen';
+  String _selectedDisplayFitKey = 'bestFit';
   final ValueNotifier<bool> _fullscreenTopBarVisibleNotifier = ValueNotifier(
     false,
   );
@@ -295,25 +298,51 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       // Always prefer a local downloaded copy if one exists for this media,
       // regardless of how playback was launched. An explicit localPath (e.g.
-      // from the Downloads screen) takes precedence; otherwise we look one up.
+      final downloadItem = DownloadService.findPlayableDownload(
+        mediaId: widget.mediaId,
+        season: widget.season,
+        episode: _currentEpisode,
+      );
+
       _effectiveLocalPath = (widget.localPath != null && widget.localPath!.isNotEmpty)
           ? widget.localPath
-          : DownloadService.findPlayableDownload(
-              mediaId: widget.mediaId,
-              season: widget.season,
-              episode: _currentEpisode,
-            )?.savePath;
+          : downloadItem?.savePath;
+
+      String getLangName(String? code) {
+        if (code == null || code.isEmpty) return 'English';
+        final c = code.toLowerCase();
+        if (c.contains('eng') || c.startsWith('en')) return 'English';
+        if (c.contains('hin') || c.startsWith('hi')) return 'Hindi';
+        if (c.contains('tam') || c.startsWith('ta')) return 'Tamil';
+        if (c.contains('tel') || c.startsWith('te')) return 'Telugu';
+        if (c.contains('spa') || c.startsWith('es')) return 'Spanish';
+        if (c.contains('fra') || c.startsWith('fr')) return 'French';
+        if (c.contains('jpn') || c.startsWith('ja')) return 'Japanese';
+        if (c.contains('kor') || c.startsWith('ko')) return 'Korean';
+        if (c.contains('deu') || c.startsWith('de')) return 'German';
+        if (c.contains('ita') || c.startsWith('it')) return 'Italian';
+        return code;
+      }
+
+      if (downloadItem != null) {
+        _localAudioLang = getLangName(downloadItem.selectedAudioLanguage);
+      }
 
       if (_effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty) {
         final String srtPath = _effectiveLocalPath!.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '.srt');
         final bool hasSrt = await File(srtPath).exists();
+
+        String subLang = 'English';
+        if (downloadItem != null) {
+          subLang = getLangName(downloadItem.selectedSubtitleLanguage);
+        }
 
         result = StreamResult(
           url: _effectiveLocalPath!,
           quality: 'Downloaded',
           provider: 'Local',
           headers: {},
-          subtitles: hasSrt ? [SubtitleTrack(lang: 'Default', url: srtPath)] : [],
+          subtitles: hasSrt ? [SubtitleTrack(lang: subLang, url: srtPath)] : [],
         );
       } else {
         result = await streamingService.fetchStreamUrl(
@@ -2573,7 +2602,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                         if (audioTracks.isEmpty)
                                           ListTile(
                                             contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                            title: Text('Default', style: TextStyle(color: Theme.of(context).primaryColor)),
+                                            title: Text(_localAudioLang, style: TextStyle(color: Theme.of(context).primaryColor)),
                                             trailing: Icon(Icons.check, color: Theme.of(context).primaryColor),
                                           ),
                                         ...audioTracks.map((track) {
