@@ -105,6 +105,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final languagePrefs = ref.watch(languagePreferencesProvider);
     final playbackSpeed = ref.watch(playbackSpeedProvider);
     final videoQuality = ref.watch(videoQualityProvider);
+    final preferredAudio = ref.watch(preferredAudioLanguageProvider);
+    final preferredSubtitle = ref.watch(preferredSubtitleLanguageProvider);
     final episodeCheckEnabled = ref.watch(episodeCheckEnabledProvider);
     final episodeFrequency = ref.watch(episodeCheckFrequencyProvider);
     final appAccentKey = ref.watch(appAccentColorProvider);
@@ -175,6 +177,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       languagePrefs: languagePrefs,
                       playbackSpeed: playbackSpeed,
                       videoQuality: videoQuality,
+                      preferredAudio: preferredAudio,
+                      preferredSubtitle: preferredSubtitle,
                       episodeCheckEnabled: episodeCheckEnabled,
                       episodeFrequency: episodeFrequency,
                       appAccentKey: appAccentKey,
@@ -221,6 +225,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             title: 'Preferred Video Quality',
                             subtitle: _qualityLabel(videoQuality),
                             onTap: _showVideoQualityDialog,
+                          ),
+                        if (_matches('preferred default audio language'))
+                          _buildActionTile(
+                            icon: Icons.audiotrack_rounded,
+                            title: 'Preferred Audio Language',
+                            subtitle: preferredAudio,
+                            onTap: _showAudioLanguageDialog,
+                          ),
+                        if (_matches('preferred default subtitle language'))
+                          _buildActionTile(
+                            icon: Icons.subtitles_rounded,
+                            title: 'Preferred Subtitle Language',
+                            subtitle: preferredSubtitle,
+                            onTap: _showSubtitleLanguageDialog,
                           ),
                       ],
                     ),
@@ -683,6 +701,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     required LanguagePreferences languagePrefs,
     required double playbackSpeed,
     required String videoQuality,
+    required String preferredAudio,
+    required String preferredSubtitle,
     required bool episodeCheckEnabled,
     required int episodeFrequency,
     required String appAccentKey,
@@ -706,6 +726,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           title: 'Preferred Video Quality',
           subtitle: _qualityLabel(videoQuality),
           onTap: _showVideoQualityDialog,
+        ),
+      );
+    }
+    if (_matches('preferred default audio language')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.audiotrack_rounded,
+          title: 'Preferred Audio Language',
+          subtitle: preferredAudio,
+          onTap: _showAudioLanguageDialog,
+        ),
+      );
+    }
+    if (_matches('preferred default subtitle language')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.subtitles_rounded,
+          title: 'Preferred Subtitle Language',
+          subtitle: preferredSubtitle,
+          onTap: _showSubtitleLanguageDialog,
         ),
       );
     }
@@ -1698,4 +1738,137 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
   }
+
+  Future<void> _showAudioLanguageDialog() async {
+    final current = ref.read(preferredAudioLanguageProvider);
+    final options = ['Original', 'English', 'Japanese', 'Hindi', 'Tamil', 'Telugu', 'Spanish', 'French', 'Korean', 'German', 'Italian'];
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: NivioTheme.netflixDarkGrey,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              child: Text(
+                'Preferred Audio Language',
+                style: TextStyle(
+                  color: NivioTheme.netflixWhite,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (context, index) {
+                  final option = options[index];
+                  final isSelected = current == option;
+
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                    title: Text(
+                      option,
+                      style: TextStyle(
+                        color: isSelected
+                            ? NivioTheme.accentColorOf(context)
+                            : NivioTheme.netflixWhite,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                    trailing: isSelected
+                        ? Icon(Icons.check_circle_rounded,
+                            color: NivioTheme.accentColorOf(context))
+                        : null,
+                    onTap: () {
+                      ref.read(preferredAudioLanguageProvider.notifier).setLanguage(option);
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showSubtitleLanguageDialog() async {
+    final current = ref.read(preferredSubtitleLanguageProvider);
+    final options = ['Auto', 'Off', 'English', 'Japanese', 'Hindi', 'Tamil', 'Telugu', 'Spanish', 'French', 'Korean', 'German', 'Italian'];
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: NivioTheme.netflixDarkGrey,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              child: Text(
+                'Preferred Subtitle Language',
+                style: TextStyle(
+                  color: NivioTheme.netflixWhite,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (context, index) {
+                  final option = options[index];
+                  final isSelected = current == option;
+
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                    title: Text(
+                      option,
+                      style: TextStyle(
+                        color: isSelected
+                            ? NivioTheme.accentColorOf(context)
+                            : NivioTheme.netflixWhite,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                    trailing: isSelected
+                        ? Icon(Icons.check_circle_rounded,
+                            color: NivioTheme.accentColorOf(context))
+                        : null,
+                    onTap: () {
+                      ref.read(preferredSubtitleLanguageProvider.notifier).setLanguage(option);
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
+

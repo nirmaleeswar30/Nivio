@@ -140,26 +140,49 @@ class VideoQualityNotifier extends StateNotifier<String> {
   }
 }
 
-// Subtitle Enabled Provider
-final subtitlesEnabledProvider =
-    StateNotifierProvider<SubtitlesEnabledNotifier, bool>((ref) {
-      return SubtitlesEnabledNotifier();
+// Preferred Subtitle Language Provider
+final preferredSubtitleLanguageProvider =
+    StateNotifierProvider<PreferredSubtitleLanguageNotifier, String>((ref) {
+      return PreferredSubtitleLanguageNotifier();
     });
 
-class SubtitlesEnabledNotifier extends StateNotifier<bool> {
-  SubtitlesEnabledNotifier() : super(false) {
+class PreferredSubtitleLanguageNotifier extends StateNotifier<String> {
+  PreferredSubtitleLanguageNotifier() : super('Auto') {
     _loadSetting();
   }
 
   Future<void> _loadSetting() async {
     final prefs = await SharedPreferences.getInstance();
-    state = prefs.getBool('subtitles_enabled') ?? false;
+    state = prefs.getString('preferred_subtitle_language') ?? 'Auto';
   }
 
-  Future<void> toggle() async {
-    state = !state;
+  Future<void> setLanguage(String language) async {
+    state = language;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('subtitles_enabled', state);
+    await prefs.setString('preferred_subtitle_language', language);
+  }
+}
+
+// Preferred Audio Language Provider
+final preferredAudioLanguageProvider =
+    StateNotifierProvider<PreferredAudioLanguageNotifier, String>((ref) {
+      return PreferredAudioLanguageNotifier();
+    });
+
+class PreferredAudioLanguageNotifier extends StateNotifier<String> {
+  PreferredAudioLanguageNotifier() : super('Original') {
+    _loadSetting();
+  }
+
+  Future<void> _loadSetting() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getString('preferred_audio_language') ?? 'Original';
+  }
+
+  Future<void> setLanguage(String language) async {
+    state = language;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('preferred_audio_language', language);
   }
 }
 

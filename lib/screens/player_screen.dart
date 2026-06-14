@@ -1,4 +1,5 @@
 import 'package:better_player_plus/better_player_plus.dart';
+import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/theme.dart';
+import 'package:nivio/screens/player/widgets/custom_player_controls.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/media_provider.dart';
@@ -81,9 +83,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Timer? _nextEpisodeTimer;
   int? _nextEpisodeCountdown;
   bool _isDirectStream = false;
-  Duration? _resumePosition;
   int _currentEpisode = 0;
   bool _isInFullscreen = false;
+  bool _disposed = false;
+  Duration? _resumePosition;
+  DateTime? _lastTapTime;
+  
+  BoxFit _currentFit = BoxFit.contain;
+
   bool _arePlayerControlsVisible = true;
   bool _autoFullscreenTriggeredForCurrentLoad = false;
   String? _openTopActionMenuId;
@@ -144,8 +151,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
-      DeviceOrientation.portraitUp,
     ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
     });
@@ -313,6 +320,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _retryCount = 0;
         });
         _updateWatchPartyHostSyncTimer();
+        _startProgressTracking();
         return;
       }
 
@@ -377,12 +385,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         videoFormat: result.isM3U8
             ? BetterPlayerVideoFormat.hls
             : BetterPlayerVideoFormat.other,
-        useAsmsTracks: false,
-        useAsmsSubtitles: false,
-        useAsmsAudioTracks: false,
+        useAsmsTracks: result.isM3U8,
+        useAsmsSubtitles: result.isM3U8,
+        useAsmsAudioTracks: result.isM3U8,
         subtitles: subtitleSources.isNotEmpty ? subtitleSources : null,
         resolutions: resolutions,
         cacheConfiguration: cacheConfiguration,
+        bufferingConfiguration: const BetterPlayerBufferingConfiguration(
+          minBufferMs: 120000, // 2 minutes minimum buffer
+          maxBufferMs: 900000, // 15 minutes max buffer
+          bufferForPlaybackMs: 2500, // Start playing after 2.5s
+          bufferForPlaybackAfterRebufferMs: 5000, // Resume after 5s
+        ),
       );
 
       // —————————————————————————————————————————————————————————————————————————————————————————— Controller config ——————————————————————————————————————————————————————————————————————————————————————————
@@ -420,7 +434,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             overflowModalColor: const Color(0xFF1F1F1F),
             overflowModalTextColor: Colors.white,
             overflowMenuIconsColor: Colors.white70,
-            playerTheme: BetterPlayerTheme.material,
+            playerTheme: BetterPlayerTheme.custom,
+            customControlsBuilder: (controller, onPlayerVisibilityChanged, controlsConfiguration) {
+              final media = ref.read(selectedMediaProvider);
+              final subtitle = media?.mediaType == 'tv' ? 'S${widget.season} E$_currentEpisode' : null;
+              final title = media?.title ?? media?.name ?? 'Playing';
+              
+              return CustomPlayerControls(
+                controller: controller,
+                onPlayerVisibilityChanged: onPlayerVisibilityChanged,
+                controlsConfiguration: controlsConfiguration,
+                title: title,
+                subtitle: subtitle,
+                providerName: _streamResult?.provider ?? _currentProvider,
+                onBack: _handleBackNavigation,
+                onServerChange: () {
+                  _showServerOverlayPanel();
+                },
+                onSettings: () {
+                  _showSettingsOverlayPanel();
+                },
+              );
+            },
             overflowMenuCustomItems: [
               if (_isDirectStream)
                 BetterPlayerOverflowMenuItem(
@@ -574,6 +609,81 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return null;
   }
 
+  bool _isLanguageMatch(String trackLang, String preferredLang) {
+    if (trackLang.isEmpty || preferredLang.isEmpty) return false;
+    final t = trackLang.toLowerCase().trim();
+    final p = preferredLang.toLowerCase().trim();
+    if (t == p || t.contains(p) || p.contains(t)) return true;
+    
+    // Map preferred language to ISO codes
+    final map = {
+      'english': ['en', 'eng'],
+      'japanese': ['ja', 'jpn'],
+      'hindi': ['hi', 'hin'],
+      'tamil': ['ta', 'tam'],
+      'telugu': ['te', 'tel'],
+      'spanish': ['es', 'spa'],
+      'french': ['fr', 'fre', 'fra'],
+      'korean': ['ko', 'kor'],
+      'german': ['de', 'ger', 'deu'],
+      'italian': ['it', 'ita'],
+      'arabic': ['ar', 'ara'],
+    };
+
+    final pIsoCodes = map[p] ?? [p];
+    final tIsoCodes = map[t] ?? [t];
+
+    if (pIsoCodes.any((code) => t.contains(code) || t == code)) return true;
+    if (tIsoCodes.any((code) => p.contains(code) || p == code)) return true;
+
+    for (final iso in pIsoCodes) {
+      final regex = RegExp(r'\b' + iso + r'\b', caseSensitive: false);
+      if (regex.hasMatch(t)) return true;
+    }
+    
+    return false;
+  }
+
+  bool _hasAppliedGlobalTracks = false;
+
+  void _applyGlobalTrackPreferences() {
+    if (_hasAppliedGlobalTracks) return;
+    
+    final audioTracks = _betterPlayerController?.betterPlayerAsmsAudioTracks ?? [];
+    final subtitleTracks = _betterPlayerController?.betterPlayerSubtitlesSourceList ?? [];
+    
+    // If tracks haven't been parsed yet from the stream, wait for the next event
+    if (audioTracks.isEmpty && subtitleTracks.isEmpty) return;
+
+    final preferredAudio = ref.read(preferredAudioLanguageProvider);
+    final preferredSubtitle = ref.read(preferredSubtitleLanguageProvider);
+
+    // Apply Audio Language
+    if (preferredAudio != 'Original') {
+      for (final track in audioTracks) {
+        if (_isLanguageMatch(track.label ?? '', preferredAudio) || 
+            _isLanguageMatch(track.language ?? '', preferredAudio)) {
+          _betterPlayerController?.setAudioTrack(track);
+          break;
+        }
+      }
+    }
+
+    // Apply Subtitle Language
+    if (preferredSubtitle == 'Off') {
+      _betterPlayerController?.setupSubtitleSource(BetterPlayerSubtitlesSource(type: BetterPlayerSubtitlesSourceType.none));
+    } else if (preferredSubtitle != 'Auto') {
+      for (final track in subtitleTracks) {
+        if (_isLanguageMatch(track.name ?? '', preferredSubtitle)) {
+          _betterPlayerController?.setupSubtitleSource(track);
+          break;
+        }
+      }
+    }
+
+    _hasAppliedGlobalTracks = true;
+  }
+
   void _onBetterPlayerEvent(BetterPlayerEvent event) {
     if (!mounted) return;
 
@@ -582,19 +692,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         // Set playback speed after initialization
         final speed = ref.read(playbackSpeedProvider);
         _betterPlayerController?.setSpeed(speed);
+
         _applyDisplaySettings(refreshUi: false);
         _maybeAutoEnterFullscreenOnce();
         // Refresh action menus after ASMS tracks are parsed.
         setState(() {});
         // Show resume snackbar
         if (_resumePosition != null && mounted) {
+          final marginHorizontal = (MediaQuery.of(context).size.width - 250) / 2;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
+              behavior: SnackBarBehavior.floating,
+              margin: EdgeInsets.only(bottom: 32, left: marginHorizontal, right: marginHorizontal),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
+              ),
               content: Text(
                 'Resumed from ${_formatDuration(_resumePosition!)}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
               ),
-              duration: const Duration(seconds: 2),
-              backgroundColor: NivioTheme.accentColorOf(context),
+              duration: const Duration(seconds: 3),
+              backgroundColor: const Color(0xE6000000),
             ),
           );
           _resumePosition = null;
@@ -607,6 +726,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         unawaited(_broadcastWatchPartyPlayback(force: true));
         break;
       case BetterPlayerEventType.play:
+        _applyGlobalTrackPreferences();
         unawaited(_broadcastWatchPartyPlayback(force: true));
         break;
       case BetterPlayerEventType.pause:
@@ -658,6 +778,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _syncFullscreenTopBarVisibility();
         break;
       case BetterPlayerEventType.progress:
+        _applyGlobalTrackPreferences();
         _checkNextEpisode();
         unawaited(_broadcastWatchPartyPlayback(force: false));
         break;
@@ -1854,10 +1975,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
   }
 
-  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ WebView progress helpers ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
-
-
-  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Formatting & progress ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+  // —————————————————————————————————————————————————————————————————————————————————————————— Formatting & progress ——————————————————————————————————————————————————————————————————————————————————————————
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
     final h = duration.inHours;
@@ -1867,13 +1985,92 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return '${twoDigits(m)}:${twoDigits(s)}';
   }
 
+  Widget _buildSingleProviderTile(int index, SearchResult? media, {bool isSubItem = false}) {
+    final isCurrent = index == _currentProviderIndex;
+    final providerName = StreamingService.getProviderName(index, isAnime: _isAnimeMedia(media));
+    
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: isSubItem ? 32.0 : 16.0, vertical: 4.0),
+      child: ListTile(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        tileColor: isCurrent ? Theme.of(context).primaryColor.withOpacity(0.15) : null,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+        title: Text(
+          providerName,
+          style: TextStyle(
+            color: isCurrent ? Theme.of(context).primaryColor : (isSubItem ? Colors.white70 : Colors.white),
+            fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+            fontSize: isSubItem ? 14 : 16,
+          ),
+        ),
+        trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+        onTap: () {
+          Navigator.of(context).pop();
+          if (!isCurrent) _switchToProvider(index);
+        },
+      ),
+    );
+  }
+
+  List<Widget> _buildProviderListTiles(SearchResult? media) {
+    final List<Widget> widgets = [];
+    List<int> currentNewTvGroup = [];
+    
+    void flushNewTvGroup() {
+      if (currentNewTvGroup.isEmpty) return;
+      final isAnyNewTvCurrent = currentNewTvGroup.contains(_currentProviderIndex);
+      widgets.add(
+        Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            initiallyExpanded: isAnyNewTvCurrent,
+            iconColor: Theme.of(context).primaryColor,
+            collapsedIconColor: Colors.white54,
+            title: Padding(
+              padding: const EdgeInsets.only(left: 4.0),
+              child: Text(
+                'NewTV Premium',
+                style: TextStyle(
+                  color: isAnyNewTvCurrent ? Theme.of(context).primaryColor : Colors.white,
+                  fontWeight: isAnyNewTvCurrent ? FontWeight.bold : FontWeight.normal,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+            children: currentNewTvGroup.map((index) => _buildSingleProviderTile(index, media, isSubItem: true)).toList(),
+          ),
+        ),
+      );
+      currentNewTvGroup = [];
+    }
+
+    for (int i = 0; i < _maxProviders; i++) {
+      final name = StreamingService.getProviderName(i, isAnime: _isAnimeMedia(media));
+      if (name.startsWith('NewTV')) {
+        currentNewTvGroup.add(i);
+      } else {
+        flushNewTvGroup();
+        widgets.add(_buildSingleProviderTile(i, media, isSubItem: false));
+      }
+    }
+    flushNewTvGroup();
+
+    return widgets;
+  }
+
   void _startProgressTracking() {
     _progressTimer?.cancel();
     _progressTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      if (_betterPlayerController != null &&
-          _betterPlayerController!.isVideoInitialized() == true &&
-          _betterPlayerController!.isPlaying() == true) {
-        _saveProgress();
+      if (_isDirectStream) {
+        if (_betterPlayerController != null &&
+            _betterPlayerController!.isVideoInitialized() == true &&
+            _betterPlayerController!.isPlaying() == true) {
+          _saveProgress();
+        }
+      } else {
+        if (_webViewPosition > Duration.zero && _webViewDuration > Duration.zero) {
+          _saveProgress();
+        }
       }
     });
   }
@@ -1887,11 +2084,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final vpc = _betterPlayerController!.videoPlayerController!;
       position = vpc.value.position;
       duration = vpc.value.duration ?? Duration.zero;
+      
+      // Fix for HLS streams: If the player hasn't parsed the full playlist duration yet,
+      // it might report a duration smaller than our current seek position.
+      // This causes progressPercent > 1.0, prematurely marking the movie as "Completed" 
+      // and removing it from Continue Watching. We pad the duration to prevent this.
+      if (duration < position) {
+        debugPrint('⚠️ WARNING: Player reported duration (${duration.inSeconds}s) is smaller than current position (${position.inSeconds}s)! Padding duration to prevent premature completion.');
+        duration = position + const Duration(minutes: 30);
+      }
     } else {
       position = _webViewPosition;
       duration = _webViewDuration;
       if (duration == Duration.zero) return;
     }
+
+    // Prevent division by zero crash in JSON encoding when duration is missing
+    if (duration == Duration.zero || duration.inSeconds <= 0) return;
 
     final media = ref.read(selectedMediaProvider);
     if (media == null) return;
@@ -1899,10 +2108,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     
     // Attempt to get total seasons if available
     int totalSeasons = 1;
-    // We don't have numberOfSeasons on SearchResult, but we can default to 1 
-    // WatchHistoryService will now keep it in Continue Watching properly.
     
-    await historyService.updateProgress(
+    // Fire and forget progress update
+    historyService.updateProgress(
       tmdbId: widget.mediaId,
       mediaType: media.mediaType,
       title: media.title ?? media.name ?? 'Unknown',
@@ -1917,6 +2125,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _disposePlayer() {
+    _saveProgress(); // Ensure we save one last time on exit
     _progressTimer?.cancel();
     _removeFullscreenTopBarOverlayEntry();
     if (_betterPlayerController != null) {
@@ -1947,12 +2156,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _betterPlayerController!.dispose(forceDispose: true);
       _betterPlayerController = null;
     }
+    _hasAppliedGlobalTracks = false;
     _focusNode.dispose();
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
     ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
 
@@ -2045,6 +2254,312 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Build ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+  void _showServerOverlayPanel() {
+    final media = ref.read(selectedMediaProvider);
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Server Overlay',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Material(
+            color: Colors.transparent,
+            child: ClipRRect(
+              borderRadius: const BorderRadius.horizontal(left: Radius.circular(24.0)),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 16.0, sigmaY: 16.0),
+                child: Container(
+                  width: 350,
+                  height: double.infinity,
+                  decoration: const BoxDecoration(
+                    color: Color(0x99101010),
+                  ),
+              child: SafeArea(
+                left: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.dns, color: Colors.white, size: 28),
+                          const SizedBox(width: 16),
+                          const Text('Select Server', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                          const Spacer(),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white),
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView(
+                        padding: EdgeInsets.zero,
+                        children: _buildProviderListTiles(media),
+                      ),
+                    ),
+                  ],
+                ), // Column
+              ), // SafeArea
+            ), // Container
+          ), // BackdropFilter
+        ), // ClipRRect
+      ), // Material
+    ); // Align
+  },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween<Offset>(begin: const Offset(1.0, 0.0), end: Offset.zero).animate(
+            CurvedAnimation(parent: animation, curve: Curves.easeOutExpo),
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+
+  void _showSettingsOverlayPanel() {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Settings Overlay',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Material(
+            color: Colors.transparent,
+            child: ClipRRect(
+              borderRadius: const BorderRadius.horizontal(left: Radius.circular(24.0)),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 16.0, sigmaY: 16.0),
+                child: Container(
+                  width: 350,
+                  height: double.infinity,
+                  decoration: const BoxDecoration(
+                    color: Color(0x99101010),
+                  ),
+              child: SafeArea(
+                left: false,
+                child: StatefulBuilder(
+                      builder: (context, setDialogState) {
+                        final asmsTracks = _betterPlayerController?.betterPlayerAsmsTracks ?? [];
+                        final currentAsmsTrack = _betterPlayerController?.betterPlayerAsmsTrack;
+                        final resolutions = _betterPlayerController?.betterPlayerDataSource?.resolutions ?? {};
+                        final audioTracks = _betterPlayerController?.betterPlayerAsmsAudioTracks ?? [];
+                        final currentAudioTrack = _betterPlayerController?.betterPlayerAsmsAudioTrack;
+                        final subtitleSources = _betterPlayerController?.betterPlayerSubtitlesSourceList ?? [];
+                        final currentSubtitle = _betterPlayerController?.betterPlayerSubtitlesSource;
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(24.0),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.settings, color: Colors.white, size: 28),
+                                  const SizedBox(width: 16),
+                                  const Text('Settings', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                                  const Spacer(),
+                                  IconButton(
+                                    icon: const Icon(Icons.close, color: Colors.white),
+                                    onPressed: () => Navigator.of(context).pop(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: ListView(
+                                padding: EdgeInsets.zero,
+                                children: [
+                                  Theme(
+                                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                                    child: ExpansionTile(
+                                      iconColor: Theme.of(context).primaryColor,
+                                      collapsedIconColor: Colors.white54,
+                                      leading: const Icon(Icons.aspect_ratio),
+                                      title: const Text('DISPLAY FIT', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                                      children: [
+                                        ListTile(
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                          title: Text('Contain', style: TextStyle(color: _currentFit == BoxFit.contain ? Theme.of(context).primaryColor : Colors.white)),
+                                          trailing: _currentFit == BoxFit.contain ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                          onTap: () {
+                                            setDialogState(() => _currentFit = BoxFit.contain);
+                                            setState(() => _currentFit = BoxFit.contain);
+                                            _betterPlayerController?.setOverriddenFit(BoxFit.contain);
+                                          },
+                                        ),
+                                        ListTile(
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                          title: Text('Cover', style: TextStyle(color: _currentFit == BoxFit.cover ? Theme.of(context).primaryColor : Colors.white)),
+                                          trailing: _currentFit == BoxFit.cover ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                          onTap: () {
+                                            setDialogState(() => _currentFit = BoxFit.cover);
+                                            setState(() => _currentFit = BoxFit.cover);
+                                            _betterPlayerController?.setOverriddenFit(BoxFit.cover);
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Theme(
+                                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                                    child: ExpansionTile(
+                                      iconColor: Theme.of(context).primaryColor,
+                                      collapsedIconColor: Colors.white54,
+                                      leading: const Icon(Icons.high_quality),
+                                      title: const Text('QUALITY', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                                      children: [
+                                        if (asmsTracks.isEmpty && resolutions.isEmpty)
+                                          ListTile(
+                                            contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                            title: Text('Default', style: TextStyle(color: Theme.of(context).primaryColor)),
+                                            trailing: Icon(Icons.check, color: Theme.of(context).primaryColor),
+                                          ),
+                                        if (asmsTracks.isNotEmpty) ...[
+                                          ListTile(
+                                            contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                            title: Text('Auto', style: TextStyle(color: currentAsmsTrack == null ? Theme.of(context).primaryColor : Colors.white)),
+                                            trailing: currentAsmsTrack == null ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                            onTap: () {
+                                              _betterPlayerController?.setTrack(BetterPlayerAsmsTrack.defaultTrack());
+                                              setDialogState(() {});
+                                            },
+                                          ),
+                                            ...asmsTracks.where((track) => track.height != null && track.height! > 0).map((track) {
+                                              final isCurrent = currentAsmsTrack == track;
+                                              String label = '${track.height}p';
+                                              return ListTile(
+                                                contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                                title: Text(label, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
+                                                trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                                onTap: () {
+                                                  _betterPlayerController?.setTrack(track);
+                                                  setDialogState(() {});
+                                                },
+                                              );
+                                            }),
+                                          ],
+                                          if (resolutions.isNotEmpty) ...[
+                                            ...resolutions.entries.map((entry) {
+                                              return ListTile(
+                                                contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                                title: Text(entry.key, style: const TextStyle(color: Colors.white)),
+                                                onTap: () {
+                                                  _betterPlayerController?.setResolution(entry.value);
+                                                  setDialogState(() {});
+                                                },
+                                              );
+                                            }),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  Theme(
+                                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                                    child: ExpansionTile(
+                                      iconColor: Theme.of(context).primaryColor,
+                                      collapsedIconColor: Colors.white54,
+                                      leading: const Icon(Icons.audiotrack),
+                                      title: const Text('AUDIO', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                                      children: [
+                                        if (audioTracks.isEmpty)
+                                          ListTile(
+                                            contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                            title: Text('Default', style: TextStyle(color: Theme.of(context).primaryColor)),
+                                            trailing: Icon(Icons.check, color: Theme.of(context).primaryColor),
+                                          ),
+                                        ...audioTracks.map((track) {
+                                            final isCurrent = currentAudioTrack == track;
+                                            final label = track.label ?? track.language ?? 'Audio ${track.id ?? ""}';
+                                            return ListTile(
+                                              contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                              title: Text(label, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
+                                              trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                              onTap: () {
+                                                _betterPlayerController?.setAudioTrack(track);
+                                                setDialogState(() {});
+                                              },
+                                            );
+                                          }),
+                                        ],
+                                      ),
+                                    ),
+                                  Theme(
+                                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                                    child: ExpansionTile(
+                                      iconColor: Theme.of(context).primaryColor,
+                                      collapsedIconColor: Colors.white54,
+                                      leading: const Icon(Icons.subtitles),
+                                      title: const Text('SUBTITLES', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                                        children: [
+                                          ListTile(
+                                            contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                            title: Text('Off', style: TextStyle(color: currentSubtitle?.name == null || currentSubtitle?.type == BetterPlayerSubtitlesSourceType.none ? Theme.of(context).primaryColor : Colors.white)),
+                                            trailing: currentSubtitle?.name == null || currentSubtitle?.type == BetterPlayerSubtitlesSourceType.none ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                            onTap: () {
+                                              _betterPlayerController?.setupSubtitleSource(BetterPlayerSubtitlesSource(type: BetterPlayerSubtitlesSourceType.none));
+                                              setDialogState(() {});
+                                            },
+                                          ),
+                                          ...subtitleSources.where((sub) => sub.type != BetterPlayerSubtitlesSourceType.none).map((sub) {
+                                            final isCurrent = currentSubtitle == sub;
+                                            final label = sub.name ?? 'Subtitle';
+                                            return ListTile(
+                                              contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                              title: Text(label, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
+                                              trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                              onTap: () {
+                                                _betterPlayerController?.setupSubtitleSource(sub);
+                                                setDialogState(() {});
+                                              },
+                                            );
+                                          }),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                  }
+                ),
+              ), // SafeArea
+            ), // Container
+          ), // BackdropFilter
+        ), // ClipRRect
+      ), // Material
+    ); // Align
+  },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween<Offset>(begin: const Offset(1.0, 0.0), end: Offset.zero).animate(
+            CurvedAnimation(parent: animation, curve: Curves.easeOutExpo),
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+
+  Widget _buildPlayerBody(bool isPortrait) {
+    if (_isLoading) return _buildLoadingState();
+    if (_error != null) return _buildErrorState();
+    if (_streamResult != null && !_isDirectStream) return _buildDirectStreamLayout(isPortrait);
+    if (_betterPlayerController == null) return _buildLoadingState();
+
+    return _buildDirectStreamLayout(isPortrait);
+  }
+
   @override
   Widget build(BuildContext context) {
     final media = ref.watch(selectedMediaProvider);
@@ -2066,164 +2581,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           child: Scaffold(
             backgroundColor: Colors.black,
             extendBodyBehindAppBar: false,
-            appBar: shouldShowAppBar
-                ? PreferredSize(
-                    preferredSize: const Size.fromHeight(kToolbarHeight),
-                    child: AppBar(
-                      backgroundColor: Colors.black.withValues(alpha: 0.7),
-                      elevation: 0,
-                      leading: IconButton(
-                        icon: const Icon(
-                          Icons.chevron_left,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                        onPressed: _handleBackNavigation,
-                      ),
-                      title: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            media?.title ?? media?.name ?? 'Playing',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: [
-                                if (media?.mediaType == 'tv')
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: NivioTheme.accentColorOf(context),
-                                      borderRadius: BorderRadius.circular(3),
-                                    ),
-                                    child: Text(
-                                      'S${widget.season} E$_currentEpisode',
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                if (_watchPartySession != null) ...[
-                                  const SizedBox(width: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 5,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.12,
-                                      ),
-                                      borderRadius: BorderRadius.circular(3),
-                                    ),
-                                    child: Text(
-                                      '${_watchPartySession!.sessionCode} • ${_watchPartySession!.participantCount}',
-                                      style: const TextStyle(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.w500,
-                                        color: Colors.white70,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 5,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(3),
-                                  ),
-                                  child: Text(
-                                    _streamResult!.provider.toUpperCase(),
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.white70,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      actions: [
-                        if (_watchPartySession != null)
-                          IconButton(
-                            tooltip: 'Watch Party',
-                            onPressed: _showWatchPartyDetailsSheet,
-                            icon: const Icon(
-                              Icons.group,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                          ),
-                        if (_isAimiAnimeStream())
-                          _buildTopActionMenuButton<String>(
-                            menuId: 'top-subdub-menu',
-                            icon: Icon(
-                              Icons.record_voice_over,
-                              color: Colors.white,
-                            ),
-                            tooltip: 'Sub/Dub',
-                            itemBuilder: _buildAnimeModeMenuItems,
-                            onSelected: _switchAnimeMode,
-                          ),
-                        if (_buildQualityOptions().length > 1)
-                          _buildTopActionMenuButton<String>(
-                            menuId: 'top-quality-menu',
-                            icon: Icon(Icons.hd, color: Colors.white),
-                            tooltip: 'Quality',
-                            itemBuilder: _buildQualityMenuItems,
-                            onSelected: _switchQuality,
-                          ),
-                        // Switch Server
-                        _buildTopActionMenuButton<int>(
-                          menuId: 'top-server-menu',
-                          icon: const Icon(
-                            Icons.sync,
-                            color: Colors.white,
-                            size: 21,
-                          ),
-                          tooltip: 'Switch Server',
-                          itemBuilder: _buildProviderMenuItems,
-                          onSelected: _switchToProvider,
-                        ),
-                      ],
-                    ),
-                  )
-                : null,
+            appBar: null,
             body: _buildPlayerBody(isPortrait),
           ),
         ),
       ),
     );
-  }
-
-  Widget _buildPlayerBody(bool isPortrait) {
-    if (_isLoading) return _buildLoadingState();
-    if (_error != null) return _buildErrorState();
-    if (_streamResult != null && !_isDirectStream) return _buildDirectStreamLayout(isPortrait);
-    if (_betterPlayerController == null) return _buildLoadingState();
-
-    return _buildDirectStreamLayout(isPortrait);
   }
 
   
@@ -2282,12 +2645,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   },
                 ),
               ),
-              if (ref.read(selectedMediaProvider)?.mediaType == 'tv')
-                Positioned(
-                  top: 12,
-                  right: 12,
-                  child: _buildEpisodesFloatingButton(),
+              Positioned(
+                top: 12,
+                right: 12,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildServerFloatingButton(),
+                    if (ref.read(selectedMediaProvider)?.mediaType == 'tv') ...[
+                      const SizedBox(width: 8),
+                      _buildEpisodesFloatingButton(),
+                    ],
+                  ],
                 ),
+              ),
             ],
           ),
         ),
@@ -2320,6 +2691,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
+  Widget _buildServerFloatingButton() {
+    return Material(
+      color: Colors.black54,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: () {
+          _setFullscreenTopBarVisibility(false);
+          _showServerOverlayPanel();
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Icon(Icons.dns, color: Colors.white, size: 20),
+              SizedBox(width: 6),
+              Text('Server', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _handlePlayerEvent(String event, double currentTime, double duration) {
     if (!mounted) return;
     
@@ -2337,35 +2733,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
 
   Widget _buildDirectStreamLayout(bool isPortrait) {
-    final safeAspectRatio = _resolvedVideoAspectRatio();
-
     return Column(
       children: [
         Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final maxWidth = constraints.maxWidth;
-              final maxHeight = constraints.maxHeight;
-              final fittedWidth = math.min(
-                maxWidth,
-                maxHeight * safeAspectRatio,
-              );
-              final fittedHeight = fittedWidth / safeAspectRatio;
-
-              return Align(
-                alignment: Alignment.center,
-                child: SizedBox(
-                  width: fittedWidth,
-                  height: fittedHeight,
-                  child: (!_isDirectStream && _streamResult != null) 
-                      ? _buildWebViewPlayer() 
-                      : _buildVideoPlayer(),
-                ),
-              );
-            },
+          child: SizedBox.expand(
+            child: (!_isDirectStream && _streamResult != null) 
+                ? _buildWebViewPlayer() 
+                : _buildVideoPlayer(),
           ),
         ),
-        if (isPortrait) _buildPortraitBottomControls(),
       ],
     );
   }
@@ -2578,14 +2954,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _showFullscreenTopBarOverlayEntry() {
-    if (!mounted || _fullscreenTopBarOverlayEntry != null) return;
-    _fullscreenTopBarOverlayEntry = OverlayEntry(
-      builder: (_) => Positioned.fill(child: _buildFullscreenFloatingTopBar()),
-    );
-    Overlay.of(
-      context,
-      rootOverlay: true,
-    ).insert(_fullscreenTopBarOverlayEntry!);
+    // Disabled old overlay to prevent duplication
   }
 
   void _removeFullscreenTopBarOverlayEntry() {
