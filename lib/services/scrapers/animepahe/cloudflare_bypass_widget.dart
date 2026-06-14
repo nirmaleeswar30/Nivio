@@ -30,8 +30,8 @@ class _CloudflareBypassWidgetState extends ConsumerState<CloudflareBypassWidget>
       }
     });
 
-    // Delay mounting the PlatformView to avoid dropping frames during initial app launch animations
-    Future.delayed(const Duration(seconds: 4), () {
+    // Mount the PlatformView immediately
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         setState(() => _mountWebView = true);
       }
@@ -90,6 +90,14 @@ class _CloudflareBypassWidgetState extends ConsumerState<CloudflareBypassWidget>
                   window.chrome = {
                     runtime: {}
                   };
+                  
+                  var meta = document.createElement('meta');
+                  meta.name = 'viewport';
+                  meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+                  var head = document.getElementsByTagName('head')[0];
+                  if (head) {
+                      head.appendChild(meta);
+                  }
                 """);
               },
               onLoadStop: (controller, url) async {
@@ -128,12 +136,10 @@ class _CloudflareBypassWidgetState extends ConsumerState<CloudflareBypassWidget>
                     appDebugLog('🛡️ Still waiting on Cloudflare challenge...');
                     
                     if (!_showChallengeUI) {
-                      Future.delayed(const Duration(seconds: 4), () {
-                        if (mounted && ref.read(cloudflareBypassProvider).isBypassing) {
-                          appDebugLog('🛡️ Showing challenge to user');
-                          setState(() => _showChallengeUI = true);
-                        }
-                      });
+                      if (mounted && ref.read(cloudflareBypassProvider).isBypassing) {
+                        appDebugLog('🛡️ Showing challenge to user');
+                        setState(() => _showChallengeUI = true);
+                      }
                     }
                     
                     // Poll again in 2 seconds

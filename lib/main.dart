@@ -13,6 +13,7 @@ import 'package:nivio/firebase_options.dart';
 import 'package:nivio/models/cache_entry.dart';
 import 'package:nivio/models/watchlist_item.dart';
 import 'package:nivio/models/new_episode.dart';
+import 'package:nivio/models/download_item.dart';
 import 'package:nivio/services/cache_service.dart';
 import 'package:nivio/services/watchlist_service.dart';
 import 'package:nivio/services/episode_check_service.dart';
@@ -86,6 +87,16 @@ Future<void> _initHive() async {
   Hive.registerAdapter(CacheEntryAdapter());
   Hive.registerAdapter(WatchlistItemAdapter());
   Hive.registerAdapter(NewEpisodeAdapter());
+  Hive.registerAdapter(DownloadStatusAdapter());
+  Hive.registerAdapter(DownloadItemAdapter());
+
+  await Future.wait([
+    Hive.openBox<CacheEntry>('cache'),
+    Hive.openBox<WatchlistItem>('watchlist'),
+    Hive.openBox<NewEpisode>('new_episodes'),
+    Hive.openBox('settings'),
+    Hive.openBox<DownloadItem>('downloads'),
+  ]);
   // Initialize watchlist box
   await WatchlistService.init();
 }
@@ -230,6 +241,7 @@ final _router = GoRouter(
         final partyRole = WatchPartyRoleX.fromQuery(
           state.uri.queryParameters['partyRole'],
         );
+        final localPath = state.uri.queryParameters['localPath'];
         return PlayerScreen(
           mediaId: int.parse(id),
           season: season,
@@ -238,6 +250,7 @@ final _router = GoRouter(
           providerIndex: providerIndex,
           watchPartyCode: partyCode,
           watchPartyRole: partyRole,
+          localPath: localPath,
         );
       },
     ),
@@ -256,9 +269,7 @@ class _NivioAppState extends ConsumerState<NivioApp> {
   void initState() {
     super.initState();
     // Initialize the background Cloudflare bypass service silently
-    // Delay initialization by a few seconds to prevent the Android WebView 
-    // PlatformView from freezing the UI thread during the initial Home Screen load.
-    Future.delayed(const Duration(seconds: 4), () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         ref.read(cloudflareBypassProvider).init();
         ref.read(newTvBypassProvider).init();

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/screens/new_episodes_screen.dart';
 import 'package:nivio/screens/watchlist_screen.dart';
+import 'package:nivio/screens/downloads_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
   final int initialTab;
@@ -20,16 +21,16 @@ class _LibraryScreenState extends State<LibraryScreen>
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 2,
+      length: 3,
       vsync: this,
-      initialIndex: widget.initialTab.clamp(0, 1),
+      initialIndex: widget.initialTab.clamp(0, 2),
     );
   }
 
   @override
   void didUpdateWidget(covariant LibraryScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final nextIndex = widget.initialTab.clamp(0, 1);
+    final nextIndex = widget.initialTab.clamp(0, 2);
     if (nextIndex != _tabController.index) {
       _tabController.animateTo(nextIndex);
     }
@@ -94,9 +95,15 @@ class _LibraryScreenState extends State<LibraryScreen>
                       );
                       final indicatorPadding = activeIndex == 0
                           ? const EdgeInsets.fromLTRB(6, 6, 10, 6)
-                          : const EdgeInsets.fromLTRB(10, 6, 6, 6);
+                          : activeIndex == 2
+                              ? const EdgeInsets.fromLTRB(10, 6, 6, 6)
+                              : const EdgeInsets.fromLTRB(10, 6, 10, 6);
                       return TabBar(
                         controller: _tabController,
+                        isScrollable: true,
+                        tabAlignment: TabAlignment.start,
+                        splashFactory: NoSplash.splashFactory,
+                        overlayColor: WidgetStateProperty.all(Colors.transparent),
                         indicatorSize: TabBarIndicatorSize.tab,
                         indicatorPadding: indicatorPadding,
                         indicator: BoxDecoration(
@@ -115,6 +122,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                         tabs: const [
                           Tab(text: 'New Episodes'),
                           Tab(text: 'Watchlist'),
+                          Tab(text: 'Downloads'),
                         ],
                       );
                     },
@@ -128,6 +136,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                   children: [
                     const NewEpisodesScreen(embedded: true),
                     const WatchlistScreen(embedded: true),
+                    const DownloadsScreen(embedded: true),
                   ],
                 ),
               ),

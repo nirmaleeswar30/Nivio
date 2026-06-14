@@ -49,23 +49,23 @@ Map<String, dynamic> _$$WatchHistoryImplToJson(_$WatchHistoryImpl instance) =>
     };
 
 _$EpisodeProgressImpl _$$EpisodeProgressImplFromJson(
-  Map<String, dynamic> json,
-) => _$EpisodeProgressImpl(
-  season: (json['season'] as num).toInt(),
-  episode: (json['episode'] as num).toInt(),
-  lastPositionSeconds: (json['lastPositionSeconds'] as num).toInt(),
-  totalDurationSeconds: (json['totalDurationSeconds'] as num).toInt(),
-  isCompleted: json['isCompleted'] as bool,
-  watchedAt: _dateTimeFromJson(json['watchedAt']),
-);
+        Map<String, dynamic> json) =>
+    _$EpisodeProgressImpl(
+      season: (json['season'] as num).toInt(),
+      episode: (json['episode'] as num).toInt(),
+      lastPositionSeconds: (json['lastPositionSeconds'] as num).toInt(),
+      totalDurationSeconds: (json['totalDurationSeconds'] as num).toInt(),
+      isCompleted: json['isCompleted'] as bool,
+      watchedAt: _dateTimeFromJson(json['watchedAt']),
+    );
 
 Map<String, dynamic> _$$EpisodeProgressImplToJson(
-  _$EpisodeProgressImpl instance,
-) => <String, dynamic>{
-  'season': instance.season,
-  'episode': instance.episode,
-  'lastPositionSeconds': instance.lastPositionSeconds,
-  'totalDurationSeconds': instance.totalDurationSeconds,
-  'isCompleted': instance.isCompleted,
-  'watchedAt': _dateTimeToJson(instance.watchedAt),
-};
+        _$EpisodeProgressImpl instance) =>
+    <String, dynamic>{
+      'season': instance.season,
+      'episode': instance.episode,
+      'lastPositionSeconds': instance.lastPositionSeconds,
+      'totalDurationSeconds': instance.totalDurationSeconds,
+      'isCompleted': instance.isCompleted,
+      'watchedAt': _dateTimeToJson(instance.watchedAt),
+    };

@@ -354,10 +354,11 @@ class NewTvScraperService {
       availableAudios: const [],
       selectedAudio: '',
       isM3U8: true,
-      headers: {
-        'User-Agent': userAgent,
-        'Referer': referer,
-      },
+      headers: _ajaxHeaders(
+        cookie: sessionCookie,
+        referer: referer,
+        userAgent: userAgent,
+      ),
       sources: [
         StreamSource(
           url: videoLink,

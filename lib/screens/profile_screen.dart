@@ -141,6 +141,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           ),
                         ),
                       ),
+
                       _buildProfileHeader(user),
                     ],
                   ),
@@ -239,6 +240,32 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             title: 'Preferred Subtitle Language',
                             subtitle: preferredSubtitle,
                             onTap: _showSubtitleLanguageDialog,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                  child: _buildSectionCard(
+                    title: 'Downloads',
+                    child: Column(
+                      children: [
+                        if (_matches('preferred download audio language'))
+                          _buildActionTile(
+                            icon: Icons.audio_file_rounded,
+                            title: 'Preferred Download Audio',
+                            subtitle: ref.watch(preferredDownloadAudioLanguageProvider),
+                            onTap: _showDownloadAudioLanguageDialog,
+                          ),
+                        if (_matches('preferred download subtitle language'))
+                          _buildActionTile(
+                            icon: Icons.subtitles_rounded,
+                            title: 'Preferred Download Subtitle',
+                            subtitle: ref.watch(preferredDownloadSubtitleLanguageProvider),
+                            onTap: _showDownloadSubtitleLanguageDialog,
                           ),
                       ],
                     ),
@@ -767,6 +794,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           onChanged: (value) {
             ref.read(languagePreferencesProvider.notifier).toggleAnime(value);
           },
+        ),
+      );
+    }
+    if (_matches('preferred download audio language')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.audio_file_rounded,
+          title: 'Preferred Download Audio',
+          subtitle: ref.watch(preferredDownloadAudioLanguageProvider),
+          onTap: _showDownloadAudioLanguageDialog,
+        ),
+      );
+    }
+    if (_matches('preferred download subtitle language')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.subtitles_rounded,
+          title: 'Preferred Download Subtitle',
+          subtitle: ref.watch(preferredDownloadSubtitleLanguageProvider),
+          onTap: _showDownloadSubtitleLanguageDialog,
         ),
       );
     }
@@ -1859,6 +1906,138 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         : null,
                     onTap: () {
                       ref.read(preferredSubtitleLanguageProvider.notifier).setLanguage(option);
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showDownloadAudioLanguageDialog() async {
+    final current = ref.read(preferredDownloadAudioLanguageProvider);
+    final options = ['Original', 'English', 'Japanese', 'Hindi', 'Tamil', 'Telugu', 'Spanish', 'French', 'Korean', 'German', 'Italian'];
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: NivioTheme.netflixDarkGrey,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              child: Text(
+                'Preferred Download Audio',
+                style: TextStyle(
+                  color: NivioTheme.netflixWhite,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (context, index) {
+                  final option = options[index];
+                  final isSelected = current == option;
+
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                    title: Text(
+                      option,
+                      style: TextStyle(
+                        color: isSelected
+                            ? NivioTheme.accentColorOf(context)
+                            : NivioTheme.netflixWhite,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                    trailing: isSelected
+                        ? Icon(Icons.check_circle_rounded,
+                            color: NivioTheme.accentColorOf(context))
+                        : null,
+                    onTap: () {
+                      ref.read(preferredDownloadAudioLanguageProvider.notifier).setLanguage(option);
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showDownloadSubtitleLanguageDialog() async {
+    final current = ref.read(preferredDownloadSubtitleLanguageProvider);
+    final options = ['Auto', 'Off', 'English', 'Japanese', 'Hindi', 'Tamil', 'Telugu', 'Spanish', 'French', 'Korean', 'German', 'Italian'];
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: NivioTheme.netflixDarkGrey,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              child: Text(
+                'Preferred Download Subtitle',
+                style: TextStyle(
+                  color: NivioTheme.netflixWhite,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (context, index) {
+                  final option = options[index];
+                  final isSelected = current == option;
+
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                    title: Text(
+                      option,
+                      style: TextStyle(
+                        color: isSelected
+                            ? NivioTheme.accentColorOf(context)
+                            : NivioTheme.netflixWhite,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                    trailing: isSelected
+                        ? Icon(Icons.check_circle_rounded,
+                            color: NivioTheme.accentColorOf(context))
+                        : null,
+                    onTap: () {
+                      ref.read(preferredDownloadSubtitleLanguageProvider.notifier).setLanguage(option);
                       Navigator.pop(context);
                     },
                   );

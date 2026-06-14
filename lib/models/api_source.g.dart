@@ -29,22 +29,25 @@ _$APISourceImpl _$$APISourceImplFromJson(Map<String, dynamic> json) =>
     );
 
 Map<String, dynamic> _$$APISourceImplToJson(_$APISourceImpl instance) =>
-    <String, dynamic>{'url': instance.url, 'quality': instance.quality};
+    <String, dynamic>{
+      'url': instance.url,
+      'quality': instance.quality,
+    };
 
 _$APISourceResultsImpl _$$APISourceResultsImplFromJson(
-  Map<String, dynamic> json,
-) => _$APISourceResultsImpl(
-  sources: (json['sources'] as List<dynamic>?)
-      ?.map((e) => APISource.fromJson(e as Map<String, dynamic>))
-      .toList(),
-  subtitles: (json['subtitles'] as List<dynamic>?)
-      ?.map((e) => SubtitleTrack.fromJson(e as Map<String, dynamic>))
-      .toList(),
-);
+        Map<String, dynamic> json) =>
+    _$APISourceResultsImpl(
+      sources: (json['sources'] as List<dynamic>?)
+          ?.map((e) => APISource.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      subtitles: (json['subtitles'] as List<dynamic>?)
+          ?.map((e) => SubtitleTrack.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
 
 Map<String, dynamic> _$$APISourceResultsImplToJson(
-  _$APISourceResultsImpl instance,
-) => <String, dynamic>{
-  'sources': instance.sources,
-  'subtitles': instance.subtitles,
-};
+        _$APISourceResultsImpl instance) =>
+    <String, dynamic>{
+      'sources': instance.sources,
+      'subtitles': instance.subtitles,
+    };

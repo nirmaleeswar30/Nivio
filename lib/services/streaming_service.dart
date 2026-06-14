@@ -195,4 +195,16 @@ class StreamingService {
     if (providerName.startsWith('NewTV')) return true;
     return false; // All other providers, including Animepahe, now use WebView fallback for stability
   }
+
+  static bool isDownloadable(int providerIndex, {required bool isAnime}) {
+    final providerName = getProviderName(providerIndex, isAnime: isAnime);
+    // NewTV provides M3U8 streams which our custom downloader can parse and concatenate
+    if (providerName.startsWith('NewTV')) return true;
+    
+    // Animepahe returns Kwik embed URLs which we can extract via WebView
+    if (providerName == 'Animepahe (NATIVE)') return true;
+    
+    // Iframe providers cannot be natively downloaded because we don't have the raw stream URL
+    return false;
+  }
 }

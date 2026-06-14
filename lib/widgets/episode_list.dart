@@ -2,14 +2,20 @@ import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../widgets/download_prompt.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/dynamic_colors_provider.dart';
 import 'package:nivio/providers/media_provider.dart';
+import 'package:nivio/providers/service_providers.dart';
+import 'package:nivio/services/streaming_service.dart';
+import 'package:nivio/services/download_service.dart';
+import 'package:nivio/models/download_item.dart';
 
 class EpisodeList extends ConsumerStatefulWidget {
   final SearchResult media;
@@ -355,6 +361,46 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                         ],
                       ),
                     ),
+                    if (!isUnaired) ...[
+                      const SizedBox(width: 8),
+                      ValueListenableBuilder<Box<DownloadItem>>(
+                        valueListenable: DownloadService.box.listenable(),
+                        builder: (context, box, _) {
+                          final id = '${widget.media.id}_${widget.season}_${episode.episodeNumber}';
+                          final item = box.get(id);
+                          
+                          if (item != null) {
+                            if (item.status == DownloadStatus.downloading || 
+                                item.status == DownloadStatus.pending || 
+                                item.status == DownloadStatus.extracting) {
+                              return SizedBox(
+                                width: 40,
+                                height: 40,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12.0),
+                                  child: CircularProgressIndicator(
+                                    value: item.progress > 0 ? item.progress : null,
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(NivioTheme.accentColorOf(context)),
+                                  ),
+                                ),
+                              );
+                            }
+                            if (item.status == DownloadStatus.completed) {
+                              return IconButton(
+                                icon: Icon(Icons.download_done_rounded, color: NivioTheme.accentColorOf(context)),
+                                onPressed: () {},
+                              );
+                            }
+                          }
+                          
+                          return IconButton(
+                            icon: const Icon(Icons.file_download, color: Colors.white70),
+                            onPressed: () => _downloadEpisode(episode),
+                          );
+                        },
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -378,6 +424,54 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
     } catch (_) {
       return true;
     }
+  }
+
+  Future<void> _downloadEpisode(EpisodeData episode) async {
+    final streamingService = ref.read(streamingServiceProvider);
+    final isAnime = widget.media.originalLanguage == 'ja';
+    final providerIndex = 0;
+    
+    if (!StreamingService.isDownloadable(providerIndex, isAnime: isAnime)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Selected provider does not support downloading.')),
+        );
+      }
+      return;
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Preparing download for Episode ${episode.episodeNumber}...')),
+      );
+    }
+
+    final result = await streamingService.fetchStreamUrl(
+      media: widget.media,
+      season: widget.season,
+      episode: episode.episodeNumber,
+      providerIndex: providerIndex,
+    );
+
+      if (result != null && result.url.isNotEmpty) {
+        await DownloadPrompt.showAndQueue(
+          context: context,
+          ref: ref,
+          streamResult: result,
+          mediaId: widget.media.id,
+          title: widget.media.title ?? widget.media.name ?? 'Episode',
+          mediaType: 'tv',
+          season: widget.season,
+          episode: episode.episodeNumber,
+          posterPath: widget.media.posterPath,
+        );
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to find downloadable stream.')),
+          );
+        }
+      }
   }
 
   String _relativeDate(String? dateStr) {

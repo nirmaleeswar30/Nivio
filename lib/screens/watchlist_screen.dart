@@ -68,6 +68,25 @@ class WatchlistScreen extends ConsumerWidget {
                                     theme.colorScheme.surfaceContainerHighest,
                                 child: const Icon(Icons.movie, size: 48),
                               ),
+                            Positioned(
+                              top: 8,
+                              left: 8,
+                              child: Container(
+                                decoration: const BoxDecoration(
+                                  color: Colors.black54,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: IconButton(
+                                  icon: const Icon(Icons.close, size: 18, color: Colors.white),
+                                  onPressed: () async {
+                                    await ref.read(watchlistServiceProvider).removeFromWatchlist(item.id);
+                                    ref.read(watchlistRefreshProvider.notifier).refresh();
+                                  },
+                                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                  padding: EdgeInsets.zero,
+                                ),
+                              ),
+                            ),
                             if (item.voteAverage != null)
                               Positioned(
                                 top: 8,

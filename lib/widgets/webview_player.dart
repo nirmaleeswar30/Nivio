@@ -128,8 +128,42 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                         if (!isNaN(duration) && duration > 0) {
                             window.flutter_inappwebview.callHandler('TimeUpdate', currentTime, duration);
                         }
+                        if (!video._hasEndedHook) {
+                            video._hasEndedHook = true;
+                            video.addEventListener('ended', function() {
+                                window.flutter_inappwebview.callHandler('VideoEnded');
+                            });
+                        }
                     }
                 }, 1000);
+                
+                // 5. Automatically click the fullscreen button
+                var autoFullscreenInterval = setInterval(function() {
+                   try {
+                       var fsBtn = document.querySelector('.jw-icon-fullscreen') || 
+                                   document.querySelector('.vjs-fullscreen-control') || 
+                                   document.querySelector('[title="Fullscreen"]') || 
+                                   document.querySelector('.plyr__control[data-plyr="fullscreen"]') || 
+                                   document.querySelector('.plyr__controls [data-plyr="fullscreen"]') ||
+                                   document.querySelector('button[aria-label="Fullscreen"]') ||
+                                   document.querySelector('button[title*="ullscreen"]');
+                       if (fsBtn) {
+                           console.error('Nivio: Found fullscreen button: ' + fsBtn.className);
+                           fsBtn.click();
+                           
+                           // Also try dispatching 'f' key which many players use for fullscreen
+                           var event = new KeyboardEvent('keydown', {key: 'f', code: 'KeyF', keyCode: 70, which: 70, bubbles: true});
+                           document.dispatchEvent(event);
+                           if (document.body) document.body.dispatchEvent(event);
+                           
+                           clearInterval(autoFullscreenInterval);
+                       } else {
+                           console.error('Nivio: Fullscreen button not found yet...');
+                       }
+                   } catch(e) {
+                       console.error('Nivio Error: ' + e.message);
+                   }
+                }, 500);
               """,
               injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
               forMainFrameOnly: false,
@@ -336,6 +370,13 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                   final duration = (args[1] as num).toDouble();
                   widget.onPlayerEvent?.call('timeupdate', currentTime, duration);
                 }
+              },
+            );
+            controller.addJavaScriptHandler(
+              handlerName: 'VideoEnded',
+              callback: (args) {
+                if (!mounted) return;
+                widget.onPlayerEvent?.call('ended', 0, 0);
               },
             );
           },

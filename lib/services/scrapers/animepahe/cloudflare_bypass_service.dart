@@ -9,6 +9,10 @@ final cloudflareBypassProvider = ChangeNotifierProvider<CloudflareBypassService>
 });
 
 class CloudflareBypassService extends ChangeNotifier {
+  static final CloudflareBypassService instance = CloudflareBypassService._internal();
+  factory CloudflareBypassService() => instance;
+  CloudflareBypassService._internal();
+
   InAppWebViewController? Function()? _controllerGetter;
   
   String _userAgent = 'Mozilla/5.0 (Linux; Android 13; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Mobile Safari/537.36';
@@ -134,7 +138,7 @@ class CloudflareBypassService extends ChangeNotifier {
     }
   }
 
-  Future<String?> fetchViaWebView(String url) async {
+  Future<String?> fetchViaWebView(String url, {bool retry = true}) async {
     final controller = _controllerGetter?.call();
     if (controller == null) return null;
     
@@ -158,10 +162,60 @@ class CloudflareBypassService extends ChangeNotifier {
         });
       """, arguments: {'url': url}).timeout(const Duration(seconds: 20));
       
-      appDebugLog('🛡️ Fetch completed. Value starts with: ${(result?.value as String?)?.substring(0, (result?.value as String?)?.length.clamp(0, 50) ?? 0)}...');
-      return result?.value as String?;
+      final val = result?.value as String?;
+      appDebugLog('🛡️ Fetch completed. Value starts with: ${(val)?.substring(0, (val)?.length.clamp(0, 50) ?? 0)}...');
+      
+      if (val != null && val.startsWith('ERROR: HTTP 403') && retry) {
+         appDebugLog('🛡️ Got 403. Likely Cloudflare challenge. Forcing refresh...');
+         await forceRefresh();
+         await waitForBypass();
+         return fetchViaWebView(url, retry: false);
+      }
+      
+      return val;
     } catch (e) {
       appDebugLog('🛡️ fetchViaWebView threw an exception: $e');
+      return null;
+    }
+  }
+
+  /// Secretly load the kwik player and extract the direct .mp4 or .m3u8 source URL
+  Future<String?> extractKwikVideoUrl(String kwikUrl) async {
+    final controller = _controllerGetter?.call();
+    if (controller == null) return null;
+    
+    appDebugLog('🛡️ Extracting direct video link from Kwik embed: $kwikUrl');
+    
+    try {
+      // Temporarily navigate the hidden WebView to the Kwik embed URL
+      await controller.loadUrl(urlRequest: URLRequest(url: WebUri(kwikUrl)));
+      
+      String? videoUrl;
+      // Poll every 500ms for up to 10 seconds to wait for the video source to be populated
+      for (int i = 0; i < 20; i++) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        
+        final result = await controller.evaluateJavascript(source: """
+          (function() {
+            var src = document.querySelector('video source')?.src;
+            if (!src) src = document.querySelector('video')?.src;
+            return src;
+          })();
+        """);
+        
+        if (result != null && result is String && result.isNotEmpty && result != 'null') {
+          videoUrl = result;
+          appDebugLog('🛡️ Extracted video URL: $videoUrl');
+          break;
+        }
+      }
+      
+      // Navigate back to the bypassed URL to keep it alive
+      await controller.loadUrl(urlRequest: URLRequest(url: WebUri(_bypassedUrl)));
+      
+      return videoUrl;
+    } catch (e) {
+      appDebugLog('🛡️ Failed to extract video URL: $e');
       return null;
     }
   }

@@ -32,6 +32,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final int? providerIndex;
   final String? watchPartyCode;
   final WatchPartyRole? watchPartyRole;
+  final String? localPath;
 
   const PlayerScreen({
     super.key,
@@ -42,6 +43,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.providerIndex,
     this.watchPartyCode,
     this.watchPartyRole,
+    this.localPath,
   });
 
   @override
@@ -89,12 +91,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Duration? _resumePosition;
   DateTime? _lastTapTime;
   
-  BoxFit _currentFit = BoxFit.contain;
+  BoxFit _currentFit = BoxFit.cover;
 
   bool _arePlayerControlsVisible = true;
   bool _autoFullscreenTriggeredForCurrentLoad = false;
   String? _openTopActionMenuId;
-  String _selectedDisplayFitKey = 'cover';
+  String _selectedDisplayFitKey = 'fitScreen';
   final ValueNotifier<bool> _fullscreenTopBarVisibleNotifier = ValueNotifier(
     false,
   );
@@ -284,14 +286,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           manualQuality ?? (settingsQuality == 'auto' ? null : settingsQuality);
       final subDubPref = ref.read(languagePreferencesProvider).animePreferredAudio;
 
-      final result = await streamingService.fetchStreamUrl(
-        media: media,
-        season: widget.season,
-        episode: _currentEpisode,
-        preferredQuality: preferredQuality,
-        providerIndex: _currentProviderIndex,
-        subDubPreference: subDubPref,
-      );
+      StreamResult? result;
+
+      if (widget.localPath != null && widget.localPath!.isNotEmpty) {
+        final String srtPath = widget.localPath!.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '.srt');
+        final bool hasSrt = await File(srtPath).exists();
+        
+        result = StreamResult(
+          url: widget.localPath!,
+          quality: 'Downloaded',
+          provider: 'Local',
+          headers: {},
+          subtitles: hasSrt ? [SubtitleData(lang: 'Default', url: srtPath)] : [],
+        );
+      } else {
+        result = await streamingService.fetchStreamUrl(
+          media: media,
+          season: widget.season,
+          episode: _currentEpisode,
+          preferredQuality: preferredQuality,
+          providerIndex: _currentProviderIndex,
+          subDubPreference: subDubPref,
+        );
+      }
 
       if (result == null) {
         if (_currentProviderIndex < _maxProviders - 1) {
@@ -321,6 +338,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         });
         _updateWatchPartyHostSyncTimer();
         _startProgressTracking();
+        _maybeAutoEnterFullscreenOnce();
         return;
       }
 
@@ -353,7 +371,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       // —————————————————————————————————————————————————————————————————————————————————————————— Build subtitle sources ——————————————————————————————————————————————————————————————————————————————————————————
       final subtitleSources = result.subtitles.map((sub) {
         return BetterPlayerSubtitlesSource(
-          type: BetterPlayerSubtitlesSourceType.network,
+          type: widget.localPath != null && widget.localPath!.isNotEmpty 
+              ? BetterPlayerSubtitlesSourceType.file 
+              : BetterPlayerSubtitlesSourceType.network,
           name: sub.lang,
           urls: [sub.url],
         );
@@ -379,18 +399,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       // —————————————————————————————————————————————————————————————————————————————————————————— Data source ——————————————————————————————————————————————————————————————————————————————————————————
       final dataSource = BetterPlayerDataSource(
-        BetterPlayerDataSourceType.network,
+        widget.localPath != null && widget.localPath!.isNotEmpty 
+            ? BetterPlayerDataSourceType.file 
+            : BetterPlayerDataSourceType.network,
         result.url,
-        headers: headers,
-        videoFormat: result.isM3U8
-            ? BetterPlayerVideoFormat.hls
-            : BetterPlayerVideoFormat.other,
-        useAsmsTracks: result.isM3U8,
-        useAsmsSubtitles: result.isM3U8,
-        useAsmsAudioTracks: result.isM3U8,
+        headers: widget.localPath != null && widget.localPath!.isNotEmpty ? null : headers,
+        videoFormat: widget.localPath != null && widget.localPath!.isNotEmpty 
+            ? BetterPlayerVideoFormat.other
+            : (result.isM3U8
+                ? BetterPlayerVideoFormat.hls
+                : BetterPlayerVideoFormat.other),
+        useAsmsTracks: widget.localPath != null && widget.localPath!.isNotEmpty ? false : result.isM3U8,
+        useAsmsSubtitles: widget.localPath != null && widget.localPath!.isNotEmpty ? false : result.isM3U8,
+        useAsmsAudioTracks: widget.localPath != null && widget.localPath!.isNotEmpty ? false : result.isM3U8,
         subtitles: subtitleSources.isNotEmpty ? subtitleSources : null,
         resolutions: resolutions,
-        cacheConfiguration: cacheConfiguration,
+        cacheConfiguration: widget.localPath != null && widget.localPath!.isNotEmpty ? const BetterPlayerCacheConfiguration(useCache: false) : cacheConfiguration,
         bufferingConfiguration: const BetterPlayerBufferingConfiguration(
           minBufferMs: 120000, // 2 minutes minimum buffer
           maxBufferMs: 900000, // 15 minutes max buffer
@@ -399,12 +423,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ),
       );
 
-      // —————————————————————————————————————————————————————————————————————————————————————————— Controller config ——————————————————————————————————————————————————————————————————————————————————————————
       _betterPlayerController = BetterPlayerController(
         BetterPlayerConfiguration(
           autoPlay: true,
           looping: false,
           fullScreenByDefault: false,
+          aspectRatio: MediaQuery.of(context).size.width / MediaQuery.of(context).size.height,
           deviceOrientationsAfterFullScreen: const [
             DeviceOrientation.landscapeLeft,
             DeviceOrientation.landscapeRight,
@@ -1314,15 +1338,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   void _maybeAutoEnterFullscreenOnce() {
     if (_autoFullscreenTriggeredForCurrentLoad) return;
-    if (!_isDirectStream || _betterPlayerController == null) return;
-    if (_betterPlayerController!.isFullScreen) return;
-
     _autoFullscreenTriggeredForCurrentLoad = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _betterPlayerController == null) return;
-      if (_betterPlayerController!.isFullScreen) return;
-      _betterPlayerController!.enterFullScreen();
-    });
+
+    if (_isDirectStream) {
+      if (_betterPlayerController?.isFullScreen == true) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _betterPlayerController == null) return;
+        if (_betterPlayerController!.isFullScreen) return;
+        _betterPlayerController!.enterFullScreen();
+      });
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+        if (mounted) {
+          setState(() {
+            _isInFullscreen = true;
+          });
+          _syncFullscreenTopBarVisibility();
+        }
+      });
+    }
   }
 
   void _checkNextEpisode() {
@@ -1443,7 +1481,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _isLoading = true;
         _error = null;
         _retryCount = 0;
-        _currentProviderIndex = 0;
         _streamResult = null;
         _betterPlayerController = null;
       });
@@ -1472,6 +1509,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         mediaType: media.mediaType,
         watchPartyCode: widget.watchPartyCode,
         watchPartyRole: widget.watchPartyRole,
+        providerIndex: _currentProviderIndex,
       ),
     );
   }
@@ -1608,9 +1646,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final controller = _betterPlayerController;
     if (controller == null) return;
     // Apply aspect ratio first, then fit (fit emits refresh event in BetterPlayer).
-    controller.setOverriddenAspectRatio(_resolvedVideoAspectRatio());
+    final screenAspectRatio = MediaQuery.of(context).size.width / MediaQuery.of(context).size.height;
+    controller.setOverriddenAspectRatio(screenAspectRatio);
     controller.setOverriddenFit(
-      _displayFitOptions[_selectedDisplayFitKey] ?? BoxFit.contain,
+      _displayFitOptions[_selectedDisplayFitKey] ?? BoxFit.cover,
     );
     if (refreshUi && mounted) {
       setState(() {});
@@ -2079,9 +2118,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _saveProgress();
         }
       } else {
-        if (_webViewPosition > Duration.zero && _webViewDuration > Duration.zero) {
-          _saveProgress();
-        }
+        // For embed players, always save progress periodically.
+        // Even if we can't track precise playback time inside cross-origin iframes,
+        // this ensures the episode/movie is added to the "Continue Watching" list!
+        _saveProgress();
       }
     });
   }
@@ -2107,11 +2147,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     } else {
       position = _webViewPosition;
       duration = _webViewDuration;
-      if (duration == Duration.zero) return;
+      
+      // Fallback for embed players (like cross-origin iframes) where JS can't extract `<video>` duration.
+      if (duration == Duration.zero) {
+        duration = const Duration(minutes: 90); // Dummy duration so JSON encoding doesn't crash
+      }
     }
 
     // Prevent division by zero crash in JSON encoding when duration is missing
-    if (duration == Duration.zero || duration.inSeconds <= 0) return;
+    if (duration.inSeconds <= 0) return;
 
     final media = ref.read(selectedMediaProvider);
     if (media == null) return;
@@ -2140,9 +2184,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _progressTimer?.cancel();
     _removeFullscreenTopBarOverlayEntry();
     if (_betterPlayerController != null) {
-      _betterPlayerController!.removeEventsListener(_onBetterPlayerEvent);
-      _betterPlayerController!.dispose(forceDispose: true);
+      final oldController = _betterPlayerController;
       _betterPlayerController = null;
+      oldController!.removeEventsListener(_onBetterPlayerEvent);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        oldController.dispose(forceDispose: true);
+      });
     }
   }
 
@@ -2177,6 +2224,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _handleBackNavigation() {
+    if (!_isDirectStream && _isInFullscreen) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+      setState(() {
+        _isInFullscreen = false;
+      });
+      _syncFullscreenTopBarVisibility();
+      return;
+    }
+
+    if (context.canPop()) {
+      Navigator.of(context).pop();
+      return;
+    }
+    context.go('/home');
+  }
+
+  void _forceExitPlayer() {
     if (context.canPop()) {
       Navigator.of(context).pop();
       return;
@@ -2282,12 +2349,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               borderRadius: const BorderRadius.horizontal(left: Radius.circular(24.0)),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 16.0, sigmaY: 16.0),
-                child: Container(
-                  width: 350,
-                  height: double.infinity,
-                  decoration: const BoxDecoration(
-                    color: Color(0x99101010),
-                  ),
+                child: Material(
+                  color: const Color(0x99101010),
+                  child: SizedBox(
+                    width: 350,
+                    height: double.infinity,
               child: SafeArea(
                 left: false,
                 child: Column(
@@ -2317,7 +2383,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   ],
                 ), // Column
               ), // SafeArea
-            ), // Container
+            ), // SizedBox
+            ), // Material
           ), // BackdropFilter
         ), // ClipRRect
       ), // Material
@@ -2350,12 +2417,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               borderRadius: const BorderRadius.horizontal(left: Radius.circular(24.0)),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 16.0, sigmaY: 16.0),
-                child: Container(
-                  width: 350,
-                  height: double.infinity,
-                  decoration: const BoxDecoration(
-                    color: Color(0x99101010),
-                  ),
+                child: Material(
+                  color: const Color(0x99101010),
+                  child: SizedBox(
+                    width: 350,
+                    height: double.infinity,
               child: SafeArea(
                 left: false,
                 child: StatefulBuilder(
@@ -2545,7 +2611,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   }
                 ),
               ), // SafeArea
-            ), // Container
+            ), // SizedBox
+            ), // Material
           ), // BackdropFilter
         ), // ClipRRect
       ), // Material
@@ -2601,20 +2668,38 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   
+  Timer? _webViewControlsTimer;
+
+  void _toggleWebViewControls() {
+    setState(() {
+      _isInFullscreen = !_isInFullscreen;
+    });
+    _webViewControlsTimer?.cancel();
+    if (_isInFullscreen) {
+      _webViewControlsTimer = Timer(const Duration(seconds: 4), () {
+        if (mounted) {
+          setState(() {
+            _isInFullscreen = false;
+          });
+        }
+      });
+    }
+  }
+
   // ─── WebView player (embed fallback) ───────────────────────────────────────
   Widget _buildWebViewPlayer() {
     return RepaintBoundary(
-      child: Center(
-        child: AspectRatio(
-          aspectRatio: 16 / 9,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: WebViewPlayer(
-                  key: ValueKey(_streamResult!.url),
-                  streamUrl: _streamResult!.url,
-                  headers: _streamResult!.headers,
-                  title:
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: Listener(
+              onPointerDown: (_) => _toggleWebViewControls(),
+              behavior: HitTestBehavior.translucent,
+              child: WebViewPlayer(
+                key: ValueKey(_streamResult!.url),
+                    streamUrl: _streamResult!.url,
+                    headers: _streamResult!.headers,
+                    title:
                       ref.read(selectedMediaProvider)?.title ??
                       ref.read(selectedMediaProvider)?.name ??
                       'Video',
@@ -2656,12 +2741,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   },
                 ),
               ),
-              Positioned(
-                top: 12,
-                right: 12,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+            ),
+            Positioned(
+              top: 12,
+              right: 12,
+              child: IgnorePointer(
+                ignoring: !_isInFullscreen,
+                child: AnimatedOpacity(
+                  opacity: _isInFullscreen ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 300),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (_buildQualityOptions().length > 1) ...[
+                      _buildQualityFloatingButton(),
+                      const SizedBox(width: 8),
+                    ],
+                    if (_isAimiAnimeStream()) ...[
+                      _buildAudioFloatingButton(),
+                      const SizedBox(width: 8),
+                    ],
                     _buildServerFloatingButton(),
                     if (ref.read(selectedMediaProvider)?.mediaType == 'tv') ...[
                       const SizedBox(width: 8),
@@ -2670,10 +2769,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   ],
                 ),
               ),
-            ],
-          ),
+            ),
+            ),
+          ],
         ),
-      ),
     );
   }
 
@@ -2727,6 +2826,54 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
+  Widget _buildQualityFloatingButton() {
+    return Material(
+      color: Colors.black54,
+      borderRadius: BorderRadius.circular(8),
+      child: PopupMenuButton<String>(
+        tooltip: 'Quality',
+        onSelected: _switchQuality,
+        itemBuilder: (context) => _buildQualityMenuItems(),
+        offset: const Offset(0, 40),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Icon(Icons.hd, color: Colors.white, size: 20),
+              SizedBox(width: 6),
+              Text('Quality', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAudioFloatingButton() {
+    return Material(
+      color: Colors.black54,
+      borderRadius: BorderRadius.circular(8),
+      child: PopupMenuButton<String>(
+        tooltip: 'Audio',
+        onSelected: _switchAnimeMode,
+        itemBuilder: (context) => _buildAnimeModeMenuItems(),
+        offset: const Offset(0, 40),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Icon(Icons.record_voice_over, color: Colors.white, size: 20),
+              SizedBox(width: 6),
+              Text('Audio', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _handlePlayerEvent(String event, double currentTime, double duration) {
     if (!mounted) return;
     
@@ -2737,8 +2884,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       // Also broadcast watch party progress if we are the host
       // Since _broadcastWatchPartyPlayback handles interval throttling, we can call it safely
       _broadcastWatchPartyPlayback(force: false);
+
+      final media = ref.read(selectedMediaProvider);
+      if (media != null && media.mediaType == 'tv') {
+        if (_hasNextEpisode()) {
+          final remaining = duration - currentTime;
+          if (duration > 0 && remaining <= 15 && !_showNextEpisodeButton) {
+            _showNextEpisodePopup();
+          }
+        }
+      }
     } else if (event == 'ended') {
       _markAsCompleted();
+      final media = ref.read(selectedMediaProvider);
+      if (media != null && media.mediaType == 'tv' && _hasNextEpisode()) {
+         _playNextEpisode();
+      }
     }
   }
 
@@ -2868,6 +3029,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         scrollDirection: Axis.horizontal,
                         child: Row(
                           children: [
+                            _buildServerFloatingButton(),
+                            const SizedBox(width: 8),
                             if (ref.read(selectedMediaProvider)?.mediaType == 'tv')
                               IconButton(
                                 tooltip: 'Episodes',
@@ -2952,16 +3115,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _exitPlayerFromTopBar() {
-    final isFullscreen = _betterPlayerController?.isFullScreen == true;
+    final isFullscreen = _betterPlayerController?.isFullScreen == true || (!_isDirectStream && _isInFullscreen);
     if (isFullscreen) {
-      _betterPlayerController?.exitFullScreen();
-      Future.delayed(const Duration(milliseconds: 220), () {
-        if (!mounted) return;
-        _handleBackNavigation();
-      });
+      if (_isDirectStream) {
+        _betterPlayerController?.exitFullScreen();
+        Future.delayed(const Duration(milliseconds: 220), () {
+          if (!mounted) return;
+          _forceExitPlayer();
+        });
+      } else {
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+        ]);
+        setState(() {
+          _isInFullscreen = false;
+        });
+        _syncFullscreenTopBarVisibility();
+        _forceExitPlayer();
+      }
       return;
     }
-    _handleBackNavigation();
+    _forceExitPlayer();
   }
 
   void _showFullscreenTopBarOverlayEntry() {
@@ -3378,6 +3553,7 @@ class _EpisodePickerSheet extends ConsumerStatefulWidget {
   final String? mediaType;
   final String? watchPartyCode;
   final WatchPartyRole? watchPartyRole;
+  final int providerIndex;
 
   const _EpisodePickerSheet({
     required this.mediaId,
@@ -3386,6 +3562,7 @@ class _EpisodePickerSheet extends ConsumerStatefulWidget {
     this.mediaType,
     this.watchPartyCode,
     this.watchPartyRole,
+    this.providerIndex = 0,
   });
 
   @override
@@ -3579,6 +3756,7 @@ class _EpisodePickerSheetState extends ConsumerState<_EpisodePickerSheet> {
                                     final query = <String, String>{
                                       'season': '${widget.currentSeason}',
                                       'episode': '${episode.episodeNumber}',
+                                      'providerIndex': '${widget.providerIndex}',
                                       if ((widget.mediaType ?? '').isNotEmpty)
                                         'type': widget.mediaType!,
                                       if ((widget.watchPartyCode ?? '')

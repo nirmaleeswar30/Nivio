@@ -186,6 +186,52 @@ class PreferredAudioLanguageNotifier extends StateNotifier<String> {
   }
 }
 
+// Preferred Download Subtitle Language Provider
+final preferredDownloadSubtitleLanguageProvider =
+    StateNotifierProvider<PreferredDownloadSubtitleLanguageNotifier, String>((ref) {
+      return PreferredDownloadSubtitleLanguageNotifier();
+    });
+
+class PreferredDownloadSubtitleLanguageNotifier extends StateNotifier<String> {
+  PreferredDownloadSubtitleLanguageNotifier() : super('English') {
+    _loadSetting();
+  }
+
+  Future<void> _loadSetting() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getString('preferred_download_subtitle_language') ?? 'English';
+  }
+
+  Future<void> setLanguage(String language) async {
+    state = language;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('preferred_download_subtitle_language', language);
+  }
+}
+
+// Preferred Download Audio Language Provider
+final preferredDownloadAudioLanguageProvider =
+    StateNotifierProvider<PreferredDownloadAudioLanguageNotifier, String>((ref) {
+      return PreferredDownloadAudioLanguageNotifier();
+    });
+
+class PreferredDownloadAudioLanguageNotifier extends StateNotifier<String> {
+  PreferredDownloadAudioLanguageNotifier() : super('English') {
+    _loadSetting();
+  }
+
+  Future<void> _loadSetting() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getString('preferred_download_audio_language') ?? 'English';
+  }
+
+  Future<void> setLanguage(String language) async {
+    state = language;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('preferred_download_audio_language', language);
+  }
+}
+
 // Animations Enabled Provider
 final animationsEnabledProvider =
     StateNotifierProvider<AnimationsEnabledNotifier, bool>((ref) {

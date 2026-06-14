@@ -18,7 +18,6 @@ dependencies:
 
   # Networking
   dio: ^5.7.0
-  aimi_lib: ^3.0.0
 
   # Local Storage
   hive: ^2.2.3
@@ -59,10 +58,11 @@ dependencies:
   supabase_flutter: ^2.8.0
   flutter_dotenv: ^6.0.0
   phosphoricons_flutter: ^1.0.0
-  adblocker_webview: ^2.3.0
   screen_brightness: ^2.1.9
-  volume_controller: ^3.6.0
   flutter_volume_controller: ^2.0.1
+  permission_handler: ^12.0.3
+  path_provider: ^2.1.5
+  ffmpeg_kit_flutter_new: ^4.2.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -604,11 +604,11 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                                   builder: (context, ref, child) {
                                     final inWatchlist = ref.watch(isInWatchlistProvider(tmdbId));
                                     return ElevatedButton.icon(
-                                      onPressed: () {
+                                      onPressed: () async {
                                         if (inWatchlist) {
-                                          ref.read(watchlistServiceProvider).removeFromWatchlist(tmdbId);
+                                          await ref.read(watchlistServiceProvider).removeFromWatchlist(tmdbId);
                                         } else {
-                                          ref.read(watchlistServiceProvider).addToWatchlist(
+                                          await ref.read(watchlistServiceProvider).addToWatchlist(
                                             WatchlistItem(
                                               id: tmdbId,
                                               title: title,
@@ -621,6 +621,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                                             )
                                           );
                                         }
+                                        ref.read(watchlistRefreshProvider.notifier).refresh();
                                       },
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.white.withOpacity(0.15),
