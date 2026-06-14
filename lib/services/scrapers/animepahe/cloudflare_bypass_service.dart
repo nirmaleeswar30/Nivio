@@ -3,7 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/core/debug_log.dart';
-
+import 'package:dio/dio.dart';
+import 'dart:convert';
 final cloudflareBypassProvider = ChangeNotifierProvider<CloudflareBypassService>((ref) {
   return CloudflareBypassService();
 });
@@ -15,8 +16,13 @@ class CloudflareBypassService extends ChangeNotifier {
 
   InAppWebViewController? Function()? _controllerGetter;
   
-  String _userAgent = 'Mozilla/5.0 (Linux; Android 13; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Mobile Safari/537.36';
+  String _userAgent = 'Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
   Map<String, String> _cookies = {};
+  
+  Map<String, String> get headers => {
+    'User-Agent': _userAgent,
+    'Cookie': cookieString,
+  };
   
   bool _isBypassing = false;
   bool _isBypassed = false;
@@ -187,35 +193,72 @@ class CloudflareBypassService extends ChangeNotifier {
     appDebugLog('🛡️ Extracting direct video link from Kwik embed: $kwikUrl');
     
     try {
-      // Temporarily navigate the hidden WebView to the Kwik embed URL
-      await controller.loadUrl(urlRequest: URLRequest(url: WebUri(kwikUrl)));
+      // Use Dio to fetch the Kwik embed page directly
+      final dio = Dio(BaseOptions(
+        headers: {
+          'Referer': 'https://animepahe.pw/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        validateStatus: (status) => true,
+      ));
       
-      String? videoUrl;
-      // Poll every 500ms for up to 10 seconds to wait for the video source to be populated
-      for (int i = 0; i < 20; i++) {
-        await Future.delayed(const Duration(milliseconds: 500));
+      final response = await dio.get(kwikUrl);
+      final text = response.data.toString();
+      
+      if (text.contains('p,a,c,k,e,d')) {
+        appDebugLog('🛡️ Found packed script via Dio!');
         
+        // Use a hidden WebView just to execute the JavaScript unpacker
         final result = await controller.evaluateJavascript(source: """
           (function() {
-            var src = document.querySelector('video source')?.src;
-            if (!src) src = document.querySelector('video')?.src;
-            return src;
+            try {
+              var text = ${jsonEncode(text)};
+              var unpacked = "";
+              var originalEval = window.eval;
+              window.eval = function(str) {
+                  unpacked = str;
+              };
+              
+              // Find the eval script block
+              var scriptMatch = text.match(/<script>(eval\\(function\\(p,a,c,k,e,d\\)[\\s\\S]*?)<\\/script>/);
+              if (scriptMatch) {
+                 var scriptContent = scriptMatch[1].replace('<\\/script>', '');
+                 try {
+                     originalEval(scriptContent);
+                 } catch(e) {
+                     return "DEBUG_DUMP:Error evaling: " + e.message;
+                 }
+                 window.eval = originalEval;
+                 
+                 if (unpacked) {
+                    var urlMatch = unpacked.match(/(https:\\/\\/[^"']*?\\.(m3u8|mp4)[^"']*)/);
+                    if (urlMatch) {
+                        return urlMatch[1];
+                    }
+                 }
+              }
+              return "DEBUG_DUMP:No match or unpack failed";
+            } catch(e) {
+              return "DEBUG_DUMP:Catch " + e.message;
+            }
           })();
         """);
         
         if (result != null && result is String && result.isNotEmpty && result != 'null') {
-          videoUrl = result;
-          appDebugLog('🛡️ Extracted video URL: $videoUrl');
-          break;
+          if (result.startsWith('http')) {
+            appDebugLog('🛡️ Extracted video URL: $result');
+            return result;
+          } else {
+            appDebugLog('🛡️ DEBUG JS: $result');
+          }
         }
+      } else {
+        appDebugLog('🛡️ Dio response did not contain p,a,c,k,e,d script');
       }
       
-      // Navigate back to the bypassed URL to keep it alive
-      await controller.loadUrl(urlRequest: URLRequest(url: WebUri(_bypassedUrl)));
-      
-      return videoUrl;
+      return null;
     } catch (e) {
-      appDebugLog('🛡️ Failed to extract video URL: $e');
+      appDebugLog('🛡️ Bypass error extracting Kwik URL: $e');
       return null;
     }
   }

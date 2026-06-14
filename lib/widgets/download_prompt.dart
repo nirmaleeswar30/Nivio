@@ -18,6 +18,80 @@ class DownloadPrompt {
     int? episode,
     String? posterPath,
   }) async {
+    // If we have multiple sources (like Animepahe qualities/audios), prompt for those
+    if (streamResult.sources.length > 1) {
+      if (!context.mounted) return;
+      
+      StreamSource? selectedSource = streamResult.sources.first;
+      
+      await showModalBottomSheet(
+        context: context,
+        backgroundColor: NivioTheme.netflixDarkGrey,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) {
+          return StatefulBuilder(
+            builder: (ctx, setState) {
+              return SafeArea(
+                child: Container(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Select Quality', style: TextStyle(color: NivioTheme.netflixWhite, fontSize: 20, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 24),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<StreamSource>(
+                            value: selectedSource,
+                            isExpanded: true,
+                            dropdownColor: NivioTheme.netflixDarkGrey,
+                            icon: const Icon(Icons.arrow_drop_down, color: NivioTheme.netflixWhite),
+                            items: streamResult.sources.map((source) {
+                              final label = "${source.quality} ${source.isDub ? '(Dub)' : '(Sub)'}";
+                              return DropdownMenuItem(
+                                value: source,
+                                child: Text(label, style: const TextStyle(color: NivioTheme.netflixWhite)),
+                              );
+                            }).toList(),
+                            onChanged: (val) => setState(() => selectedSource = val),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: NivioTheme.accentColorOf(context),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _queue(mediaId, title, mediaType, season, episode, posterPath, selectedSource!.url, streamResult.headers, null, null);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Download queued!')));
+                            }
+                          },
+                          child: const Text('Confirm Download', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+      return;
+    }
+
     // If it's not m3u8, or it's a provider that doesn't use m3u8, just download directly.
     if (!streamResult.isM3U8) {
       await _queue(mediaId, title, mediaType, season, episode, posterPath, streamResult.url, streamResult.headers, null, null);

@@ -1,7 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
@@ -16,6 +20,60 @@ import '../core/debug_log.dart';
 import 'package:nivio/models/download_item.dart';
 import 'package:nivio/services/m3u8_parser.dart';
 import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_service.dart' as nivio;
+import 'package:nivio/main.dart';
+
+@pragma('vm:entry-point')
+void notificationTapBackground(NotificationResponse response) async {
+  DartPluginRegistrant.ensureInitialized();
+  WidgetsFlutterBinding.ensureInitialized();
+  debugPrint("🚨 notificationTapBackground triggered with actionId: ${response.actionId}");
+  if (response.actionId != null && response.actionId!.startsWith('cancel_')) {
+    final id = response.actionId!.substring(7);
+    debugPrint("🚨 Attempting to cancel download with id: $id");
+    
+    try {
+      await DownloadService.deleteDownload(id);
+    } catch (e) {
+      debugPrint("🚨 Error in deleteDownload: $e");
+    }
+
+    final sendPort = IsolateNameServer.lookupPortByName('download_cancel_port');
+    if (sendPort != null) {
+      debugPrint("🚨 Found sendPort, sending id: $id");
+      sendPort.send(id);
+    } else {
+      debugPrint("🚨 sendPort not found, calling FFmpegKit.cancel()");
+      // Fallback for background isolate FFmpeg cancel
+      await FFmpegKit.cancel();
+    }
+    return;
+  }
+
+  if (response.payload == 'open_downloads') {
+    debugPrint("🚨 Tapped download notification body. Routing to downloads...");
+    // The main notification tap forces the app into foreground, so appRouter is available.
+    appRouter.go('/library?tab=downloads');
+  }
+}
+
+void notificationTapForeground(NotificationResponse response) {
+  debugPrint("🚨 notificationTapForeground triggered with actionId: \${response.actionId}");
+  if (response.actionId != null && response.actionId!.startsWith('cancel_')) {
+    final id = response.actionId!.substring(7);
+    DownloadService.deleteDownload(id);
+    return;
+  }
+  
+  if (response.payload == 'open_downloads') {
+    debugPrint("🚨 Tapped download notification body. Routing to downloads...");
+    // Delay slightly to ensure app is fully resumed/ready to process navigation
+    Future.delayed(const Duration(milliseconds: 100), () {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        appRouter.go('/library?tab=downloads');
+      });
+    });
+  }
+}
 
 class DownloadService {
   static const String _boxName = 'downloads';
@@ -32,7 +90,23 @@ class DownloadService {
     // Initialize notifications
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidSettings);
-    await _notifications.initialize(initSettings);
+    await _notifications.initialize(
+      initSettings,
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
+      onDidReceiveNotificationResponse: notificationTapForeground,
+    );
+    
+    // Check if app was launched by tapping a notification
+    final launchDetails = await _notifications.getNotificationAppLaunchDetails();
+    if (launchDetails?.didNotificationLaunchApp ?? false) {
+      final response = launchDetails!.notificationResponse;
+      if (response != null) {
+        // Wait a brief moment for the router to be ready, then trigger the tap logic
+        Future.delayed(const Duration(milliseconds: 500), () {
+          notificationTapForeground(response);
+        });
+      }
+    }
     
     _isInitialized = true;
     appDebugLog('📥 DownloadService initialized');
@@ -109,11 +183,10 @@ class DownloadService {
 
   static String generateFileName(DownloadItem item) {
     String cleanTitle = item.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
-    String ext = (item.streamUrl?.contains('.m3u8') == true) ? 'mkv' : 'mp4';
     if (item.season != null && item.episode != null) {
-      return '${cleanTitle}_S${item.season}E${item.episode}.$ext';
+      return '${cleanTitle}_S${item.season}E${item.episode}.mkv';
     }
-    return '$cleanTitle.$ext';
+    return '$cleanTitle.mkv';
   }
 
   static Future<void> startDownload(DownloadItem item) async {
@@ -139,11 +212,59 @@ class DownloadService {
       // If it's Animepahe Kwik embed URL, we need to extract the raw video link first
       if (streamUrl.contains('kwik.cx/e/')) {
         _updateStatus(item, DownloadStatus.extracting);
-        appDebugLog('🛡️ Animepahe Kwik link detected. Extracting raw video URL...');
+        appDebugLog('🛡️ Animepahe Kwik link detected. Extracting raw video URL from: $streamUrl');
         final bypassService = nivio.CloudflareBypassService.instance; // Use prefix if needed, or import directly
         final rawUrl = await bypassService.extractKwikVideoUrl(streamUrl);
         if (rawUrl != null) {
-          streamUrl = rawUrl;
+          if (rawUrl.startsWith('{')) {
+            try {
+              final Map<String, dynamic> data = jsonDecode(rawUrl);
+              if (data['type'] == 'form') {
+                final action = data['action'];
+                final token = data['token'];
+                appDebugLog('🛡️ Kwik form detected. Action: $action, Token: $token');
+                
+                // Get the cookies from the bypass service
+                final cookies = bypassService.cookieString;
+                
+                // We need to fetch the form action to get the actual download redirect
+                final dioRedirect = Dio(BaseOptions(
+                  followRedirects: false,
+                  validateStatus: (status) => status != null && status < 500,
+                  headers: {
+                    'Cookie': cookies,
+                    'Referer': streamUrl,
+                    'User-Agent': bypassService.userAgent,
+                  }
+                ));
+                
+                final response = await dioRedirect.post(action, data: {
+                  '_token': token
+                }, options: Options(
+                  contentType: Headers.formUrlEncodedContentType
+                ));
+                
+                if (response.statusCode == 302 || response.statusCode == 301) {
+                  streamUrl = response.headers.value('location')!;
+                  appDebugLog('🛡️ Kwik form redirected to: $streamUrl');
+                } else if (response.statusCode == 200) {
+                   // Sometimes it might not redirect if it's a direct stream
+                   streamUrl = action; 
+                } else {
+                  throw Exception("Failed to get redirect from Kwik form: \${response.statusCode}");
+                }
+              } else if (data['type'] == 'link') {
+                streamUrl = data['href'];
+              } else if (data['type'] == 'm3u8') {
+                streamUrl = data['url'];
+              }
+            } catch (e) {
+               appDebugLog('🛡️ Failed to parse Kwik JSON: $e. Falling back to raw string.');
+               streamUrl = rawUrl;
+            }
+          } else {
+            streamUrl = rawUrl;
+          }
         } else {
           throw Exception("Failed to extract Kwik video URL");
         }
@@ -151,11 +272,13 @@ class DownloadService {
 
       _updateStatus(item, DownloadStatus.downloading);
 
+      // No need to change the extension to mkv, FFmpeg can mux HLS directly into mp4
       if (streamUrl.contains('.m3u8')) {
-        // Pass streamUrl explicitly because we might have changed it
-        await _downloadM3u8(item, filePath, cancelToken, streamUrlOverride: streamUrl);
+        appDebugLog('🎬 Downloading via FFmpeg (HLS)');
+        await _downloadM3u8(item, item.savePath!, cancelToken, streamUrlOverride: streamUrl);
       } else {
-        await _downloadDirect(item, filePath, cancelToken, streamUrlOverride: streamUrl);
+        appDebugLog('🎬 Downloading directly via Dio');
+        await _downloadDirect(item, item.savePath!, cancelToken, streamUrlOverride: streamUrl);
       }
     } catch (e) {
       if (cancelToken.isCancelled) {
@@ -269,8 +392,9 @@ class DownloadService {
       }
     }
 
-    // Add base codec copy before specific overrides
-    ffmpegArgs.addAll(['-c', 'copy']);
+    // Copy video, but transcode audio to fresh AAC to guarantee valid headers for MediaCodec
+    ffmpegArgs.addAll(['-c:v', 'copy']);
+    ffmpegArgs.addAll(['-c:a', 'aac', '-b:a', '128k']);
     
     final String subCodec = filePath.toLowerCase().endsWith('.mkv') ? 'srt' : 'mov_text';
     final String srtFilePath = filePath.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '.srt');
@@ -334,6 +458,7 @@ class DownloadService {
         // print(log.getMessage());
       },
       (statistics) {
+         if (cancelToken.isCancelled) return;
          if (durationMs > 0) {
            int timeMs = statistics.getTime().toInt();
            item.progress = (timeMs / durationMs).clamp(0.0, 1.0);
@@ -413,6 +538,7 @@ class DownloadService {
         title,
         'Extracting video link...',
         details,
+        payload: 'open_downloads',
       );
       return;
     }
@@ -434,6 +560,7 @@ class DownloadService {
       title,
       'Downloading... $progressPercentage%$sizeInfo',
       details,
+      payload: 'open_downloads',
     );
   }
 
@@ -460,10 +587,15 @@ class DownloadService {
       'Download Complete',
       title,
       const NotificationDetails(android: androidDetails),
+      payload: 'open_downloads',
     );
   }
 
   static void _updateStatus(DownloadItem item, DownloadStatus status) {
+    // If the item was deleted from the box, don't resurrect it unless we're just starting
+    if (!box.containsKey(item.id) && status != DownloadStatus.downloading && status != DownloadStatus.extracting) {
+      return;
+    }
     item.status = status;
     box.put(item.id, item);
     if (status == DownloadStatus.extracting) {
@@ -510,6 +642,8 @@ class DownloadService {
       }
       await box.delete(id);
     }
+    // Ensure any stuck progress notification is scrubbed
+    await _notifications.cancel(id.hashCode);
   }
 
   /// Queues a new download item. The UI should call this after fetching the stream URL.

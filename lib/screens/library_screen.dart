@@ -93,19 +93,11 @@ class _LibraryScreenState extends State<LibraryScreen>
                         0,
                         _tabController.length - 1,
                       );
-                      final indicatorPadding = activeIndex == 0
-                          ? const EdgeInsets.fromLTRB(6, 6, 10, 6)
-                          : activeIndex == 2
-                              ? const EdgeInsets.fromLTRB(10, 6, 6, 6)
-                              : const EdgeInsets.fromLTRB(10, 6, 10, 6);
                       return TabBar(
                         controller: _tabController,
-                        isScrollable: true,
-                        tabAlignment: TabAlignment.start,
                         splashFactory: NoSplash.splashFactory,
                         overlayColor: WidgetStateProperty.all(Colors.transparent),
                         indicatorSize: TabBarIndicatorSize.tab,
-                        indicatorPadding: indicatorPadding,
                         indicator: BoxDecoration(
                           color: NivioTheme.accentColorOf(
                             context,

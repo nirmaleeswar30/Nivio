@@ -1,5 +1,8 @@
 import 'dart:async';
 
+import 'dart:isolate';
+import 'dart:ui';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +10,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/firebase_options.dart';
@@ -36,6 +41,7 @@ import 'package:nivio/services/watch_party/watch_party_models.dart';
 import 'package:nivio/services/watch_party/watch_party_supabase_config.dart';
 import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_service.dart';
 import 'package:nivio/services/scrapers/newtv/newtv_bypass_service.dart';
+import 'package:nivio/services/download_service.dart';
 
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -67,6 +73,16 @@ void main() async {
 
   // Initialize episode check service (background notifications)
   await EpisodeCheckService.init();
+
+  final receivePort = ReceivePort();
+  IsolateNameServer.removePortNameMapping('download_cancel_port');
+  IsolateNameServer.registerPortWithName(receivePort.sendPort, 'download_cancel_port');
+  receivePort.listen((message) {
+    debugPrint("📥 Received message on download_cancel_port: $message");
+    if (message is String) {
+      DownloadService.deleteDownload(message);
+    }
+  });
 
   runApp(
     ProviderScope(
@@ -111,7 +127,7 @@ class _AuthStateNotifier extends ChangeNotifier {
 }
 
 // Router configuration
-final _router = GoRouter(
+final appRouter = GoRouter(
   initialLocation: '/home',
   // Optimize: Use refreshListenable for auth state instead of checking on every navigation
   refreshListenable: _AuthStateNotifier(),
@@ -165,8 +181,10 @@ final _router = GoRouter(
               path: '/library',
               builder: (context, state) {
                 final tab = state.uri.queryParameters['tab'];
-                final initialTab = tab == 'watchlist' ? 1 : 0;
-                return LibraryScreen(initialTab: initialTab);
+                int initialTab = 0;
+                if (tab == 'watchlist') initialTab = 1;
+                if (tab == 'downloads') initialTab = 2;
+                return LibraryScreen(key: ValueKey(state.uri.toString()), initialTab: initialTab);
               },
             ),
           ],
@@ -287,7 +305,7 @@ class _NivioAppState extends ConsumerState<NivioApp> {
       title: 'Nivio',
       theme: appTheme,
       darkTheme: appTheme,
-      routerConfig: _router,
+      routerConfig: appRouter,
       builder: (context, child) {
         return _GitHubReleasePromptGate(
           child: child ?? const SizedBox.shrink(),
