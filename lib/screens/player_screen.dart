@@ -2491,6 +2491,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
+  Future<void> _switchNativeStreamSource(StreamSource source) async {
+    final currentPos = _nativePosition;
+    Navigator.of(context).pop(); // Close settings panel
+    setState(() {
+      _isLoading = true;
+      _useNativePlayer = false; // Temporarily hide KwikNativePlayer
+    });
+
+    final rawUrl = await CloudflareBypassService.instance.extractKwikVideoUrl(source.url);
+    if (rawUrl != null) {
+      _useNativePlayer = true;
+      _nativeUrl = rawUrl;
+      _nativeStartAt = currentPos;
+      // Update _streamResult url to reflect current selection so we know which one is active
+      _streamResult = _streamResult!.copyWith(url: source.url);
+      setState(() {
+        _isLoading = false;
+      });
+      _startProgressTracking();
+    } else {
+      setState(() {
+        _error = "Failed to extract video stream";
+        _isLoading = false;
+      });
+    }
+  }
+
   void _showSettingsOverlayPanel() {
     showGeneralDialog(
       context: context,
@@ -2523,6 +2550,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         final currentAudioTrack = _betterPlayerController?.betterPlayerAsmsAudioTrack;
                         final subtitleSources = _betterPlayerController?.betterPlayerSubtitlesSourceList ?? [];
                         final currentSubtitle = _betterPlayerController?.betterPlayerSubtitlesSource;
+
+                        final streamSources = _streamResult?.sources ?? [];
+                        final isNative = _useNativePlayer && streamSources.isNotEmpty;
+                        
+                        final nativeCurrentSource = isNative ? streamSources.firstWhere((s) => s.url == _streamResult?.url, orElse: () => streamSources.first) : null;
+                        
+                        // Find unique qualities for current audio
+                        final allQualitiesForCurrentAudio = isNative ? streamSources.where((s) => s.isDub == nativeCurrentSource?.isDub).toList() : <StreamSource>[];
+                        final seenQualities = <String>{};
+                        final nativeQualities = <StreamSource>[];
+                        for (final q in allQualitiesForCurrentAudio) {
+                          if (seenQualities.add(q.quality)) {
+                            nativeQualities.add(q);
+                          }
+                        }
+
+                        final nativeAudios = isNative ? [
+                          if (streamSources.any((s) => !s.isDub)) 'Sub',
+                          if (streamSources.any((s) => s.isDub)) 'Dub',
+                        ] : <String>[];
 
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2585,7 +2632,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                       leading: const Icon(Icons.high_quality),
                                       title: const Text('QUALITY', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
                                       children: [
-                                        if (asmsTracks.isEmpty && resolutions.isEmpty)
+                                        if (isNative) ...[
+                                          ...nativeQualities.map((source) {
+                                            final isCurrent = source.url == _streamResult?.url;
+                                            return ListTile(
+                                              contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                              title: Text(source.quality, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
+                                              trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                              onTap: () {
+                                                _switchNativeStreamSource(source);
+                                              },
+                                            );
+                                          }),
+                                        ] else if (asmsTracks.isEmpty && resolutions.isEmpty)
                                           ListTile(
                                             contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
                                             title: Text('Default', style: TextStyle(color: Theme.of(context).primaryColor)),
@@ -2638,7 +2697,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                       leading: const Icon(Icons.audiotrack),
                                       title: const Text('AUDIO', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
                                       children: [
-                                        if (audioTracks.isEmpty)
+                                        if (isNative) ...[
+                                          ...nativeAudios.map((audioLabel) {
+                                            final isDubTarget = audioLabel == 'Dub';
+                                            final isCurrent = nativeCurrentSource?.isDub == isDubTarget;
+                                            return ListTile(
+                                              contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                              title: Text(audioLabel, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
+                                              trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                              onTap: () {
+                                                if (!isCurrent) {
+                                                  final targetSources = streamSources.where((s) => s.isDub == isDubTarget).toList();
+                                                  if (targetSources.isNotEmpty) {
+                                                    final bestMatch = targetSources.firstWhere(
+                                                      (s) => s.quality == nativeCurrentSource?.quality,
+                                                      orElse: () => targetSources.first,
+                                                    );
+                                                    _switchNativeStreamSource(bestMatch);
+                                                  }
+                                                }
+                                              },
+                                            );
+                                          }),
+                                        ] else if (audioTracks.isEmpty)
                                           ListTile(
                                             contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
                                             title: Text(_localAudioLang, style: TextStyle(color: Theme.of(context).primaryColor)),
