@@ -193,7 +193,8 @@ class StreamingService {
   static bool isDirectStream(int providerIndex, {required bool isAnime}) {
     final providerName = getProviderName(providerIndex, isAnime: isAnime);
     if (providerName.startsWith('NewTV')) return true;
-    return false; // All other providers, including Animepahe, now use WebView fallback for stability
+    if (providerName == 'Animepahe (NATIVE)') return true;
+    return false; // All other providers use WebView fallback
   }
 
   static bool isDownloadable(int providerIndex, {required bool isAnime}) {

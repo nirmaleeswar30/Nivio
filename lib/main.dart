@@ -11,6 +11,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nivio/core/theme.dart';
@@ -45,6 +46,7 @@ import 'package:nivio/services/download_service.dart';
 
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
 
   // Preserve splash screen while initializing
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);

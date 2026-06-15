@@ -26,6 +26,8 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nivio/models/download_item.dart';
 import 'package:nivio/services/download_service.dart';
 import 'package:nivio/widgets/webview_player.dart';
+import 'package:nivio/widgets/kwik_native_player.dart';
+import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_service.dart';
 import 'dart:math' as math;
 
 class PlayerScreen extends ConsumerStatefulWidget {
@@ -93,6 +95,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _isInFullscreen = false;
   bool _disposed = false;
   Duration? _resumePosition;
+  
+  bool _useNativePlayer = false;
+  String? _nativeUrl;
+  Map<String, String>? _nativeHeaders;
+  Duration? _nativeStartAt;
+  Duration _nativePosition = Duration.zero;
+  Duration _nativeDuration = Duration.zero;
+
   // Effective local file to play: either the explicit widget.localPath, or a
   // completed download discovered for this media. When set, playback is offline.
   String? _effectiveLocalPath;
@@ -252,6 +262,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Player initialization ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
   Future<void> _initializePlayer() async {
     _autoFullscreenTriggeredForCurrentLoad = false;
+    _useNativePlayer = false;
+    _nativeUrl = null;
+    _nativeHeaders = null;
+    _nativeStartAt = null;
+    _nativePosition = Duration.zero;
+    _nativeDuration = Duration.zero;
     setState(() {
       _isLoading = true;
       _error = null;
@@ -414,6 +430,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           startAt = Duration(seconds: safeResumeSeconds);
         }
         _resumePosition = startAt;
+      }
+
+      if (_isDirectStream && result!.url.contains('kwik.cx')) {
+        final rawUrl = await CloudflareBypassService.instance.extractKwikVideoUrl(result.url);
+        if (rawUrl != null) {
+          _useNativePlayer = true;
+          _nativeUrl = rawUrl;
+          _nativeHeaders = _buildPlaybackHeaders(result.headers);
+          _nativeStartAt = startAt;
+          setState(() {
+            _isLoading = false;
+            _retryCount = 0;
+          });
+          _updateWatchPartyHostSyncTimer();
+          _startProgressTracking();
+          _maybeAutoEnterFullscreenOnce();
+          return;
+        } else {
+          _isDirectStream = false;
+        }
       }
 
       // —————————————————————————————————————————————————————————————————————————————————————————— Build subtitle sources ——————————————————————————————————————————————————————————————————————————————————————————
@@ -2181,7 +2217,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     Duration position;
     Duration duration;
     
-    if (_isDirectStream) {
+    if (_useNativePlayer) {
+      position = _nativePosition;
+      duration = _nativeDuration;
+    } else if (_isDirectStream) {
       if (_betterPlayerController?.isVideoInitialized() != true) return;
       final vpc = _betterPlayerController!.videoPlayerController!;
       position = vpc.value.position;
@@ -2708,6 +2747,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Widget _buildPlayerBody(bool isPortrait) {
     if (_isLoading) return _buildLoadingState();
     if (_error != null) return _buildErrorState();
+    if (_useNativePlayer && _nativeUrl != null) return _buildDirectStreamLayout(isPortrait);
     if (_streamResult != null && !_isDirectStream) return _buildDirectStreamLayout(isPortrait);
     if (_betterPlayerController == null) return _buildLoadingState();
 
@@ -2985,12 +3025,43 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       children: [
         Expanded(
           child: SizedBox.expand(
-            child: (!_isDirectStream && _streamResult != null) 
-                ? _buildWebViewPlayer() 
-                : _buildVideoPlayer(),
+            child: _useNativePlayer 
+                ? _buildNativePlayer()
+                : (!_isDirectStream && _streamResult != null) 
+                    ? _buildWebViewPlayer() 
+                    : _buildVideoPlayer(),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildNativePlayer() {
+    final media = ref.read(selectedMediaProvider);
+    final subtitle = media?.mediaType == 'tv' ? 'S${widget.season} E$_currentEpisode' : null;
+    final title = media?.title ?? media?.name ?? 'Playing';
+    return KwikNativePlayer(
+      key: ValueKey(_nativeUrl),
+      url: _nativeUrl!,
+      headers: _nativeHeaders ?? {},
+      startAt: _nativeStartAt,
+      title: title,
+      subtitle: subtitle,
+      providerName: _currentProvider,
+      onProgress: (pos, dur) {
+        _nativePosition = pos;
+        _nativeDuration = dur;
+      },
+      onEnded: () {
+        _markAsCompleted();
+        if (_hasNextEpisode()) {
+          _showNextEpisodePopup();
+        }
+      },
+      onBack: _handleBackNavigation,
+      onSettings: _showSettingsOverlayPanel,
+      onServerChange: _showServerOverlayPanel,
+      onEpisodes: (media?.mediaType == 'tv') ? _showEpisodesBottomSheet : null,
     );
   }
 
