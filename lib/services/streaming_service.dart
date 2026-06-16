@@ -35,7 +35,7 @@ class StreamingService {
 
   // For anime, Animepahe is the primary (index 0) provider
   static const List<String> _animeProviders = [
-    'Animepahe (NATIVE)',
+    'Kwik',
     ..._premiumProviders,
   ];
 
@@ -49,6 +49,7 @@ class StreamingService {
     int providerIndex = 0,
     bool autoSkipIntro = true,
     String subDubPreference = 'sub',
+    void Function(String)? onStatusUpdate,
   }) async {
     try {
       appDebugLog(
@@ -66,12 +67,13 @@ class StreamingService {
       final providerName = providersList[providerIndex];
       
       // Handle Native Animepahe
-      if (providerName == 'Animepahe (NATIVE)') {
+      if (providerName == 'Kwik') {
         final streamResult = await animepaheScraper.fetchStreamUrl(
           media.title ?? media.name ?? '', 
           season, 
           episode,
           subDub: subDubPreference,
+          onStatusUpdate: onStatusUpdate,
         );
         
         return streamResult; // AnimepaheScraper natively returns StreamResult
@@ -193,7 +195,7 @@ class StreamingService {
   static bool isDirectStream(int providerIndex, {required bool isAnime}) {
     final providerName = getProviderName(providerIndex, isAnime: isAnime);
     if (providerName.startsWith('NewTV')) return true;
-    if (providerName == 'Animepahe (NATIVE)') return true;
+    if (providerName == 'Kwik') return true;
     return false; // All other providers use WebView fallback
   }
 
@@ -203,7 +205,7 @@ class StreamingService {
     if (providerName.startsWith('NewTV')) return true;
     
     // Animepahe returns Kwik embed URLs which we can extract via WebView
-    if (providerName == 'Animepahe (NATIVE)') return true;
+    if (providerName == 'Kwik') return true;
     
     // Iframe providers cannot be natively downloaded because we don't have the raw stream URL
     return false;

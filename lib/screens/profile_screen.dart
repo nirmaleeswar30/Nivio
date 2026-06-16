@@ -1,4 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -186,23 +188,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ),
                   ),
                 ),
-              if (_matches('watchlist my list saved'))
+              if (_matches('activity history continue'))
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
                     child: _buildSectionCard(
-                      title: 'Watchlist',
-                      child: _buildWatchlistPreview(watchlist),
+                      title: 'Recent Activity',
+                      initiallyExpanded: true,
+                      child: _buildRecentActivity(historyAsync),
                     ),
                   ),
                 ),
-              if (_matches('activity history continue'))
+              if (_matches('watchlist my list saved'))
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
                     child: _buildSectionCard(
-                      title: 'Recent Activity',
-                      child: _buildRecentActivity(historyAsync),
+                      title: 'Watchlist',
+                      child: _buildWatchlistPreview(watchlist),
                     ),
                   ),
                 ),
@@ -697,28 +700,37 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  Widget _buildSectionCard({required String title, required Widget child}) {
+  Widget _buildSectionCard({required String title, required Widget child, bool initiallyExpanded = false}) {
+    final bool isExpanded = initiallyExpanded || _query.isNotEmpty;
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          key: ValueKey('$title-$isExpanded'),
+          initiallyExpanded: isExpanded,
+          iconColor: NivioTheme.netflixWhite,
+          collapsedIconColor: Colors.white70,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+          title: Text(
             title,
-            style: TextStyle(
+            style: const TextStyle(
               color: NivioTheme.netflixWhite,
               fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 6),
-          child,
-        ],
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 4, right: 4, bottom: 8),
+              child: child,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1589,6 +1601,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     final cacheService = ref.read(cacheServiceProvider);
     await cacheService.clearAll();
+    
+    // Clear image cache
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+    await DefaultCacheManager().emptyCache();
+    
+    // Clear WebView cache (used by scrapers)
+    try {
+      await InAppWebViewController.clearAllCache();
+    } catch (e) {
+      debugPrint('Error clearing WebView cache: $e');
+    }
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(

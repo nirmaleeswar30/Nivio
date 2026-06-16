@@ -62,6 +62,9 @@ class _KwikNativePlayerState extends State<KwikNativePlayer> {
   bool _isSeekingRight = true;
   Timer? _hideIndicatorTimer;
   bool _ignoreCurrentDrag = false;
+  
+  int _seekAccumulation = 0;
+  Timer? _seekAccumulationTimer;
 
   final List<StreamSubscription> _subscriptions = [];
 
@@ -257,6 +260,15 @@ class _KwikNativePlayerState extends State<KwikNativePlayer> {
 
   void _onDoubleTap(bool isRightSide) {
     if (_isLocked) return;
+
+    // Reset accumulation if direction changed
+    if (_isSeekingRight != isRightSide || _seekAccumulation == 0) {
+      _seekAccumulation = 10;
+      _isSeekingRight = isRightSide;
+    } else {
+      _seekAccumulation += 10;
+    }
+
     final currentPos = player.state.position;
     final newPos = isRightSide
         ? currentPos + const Duration(seconds: 10)
@@ -265,14 +277,18 @@ class _KwikNativePlayerState extends State<KwikNativePlayer> {
     player.seek(newPos);
 
     setState(() {
-      _isSeekingRight = isRightSide;
-      _seekText = isRightSide ? '+10s' : '-10s';
+      _seekText = isRightSide ? '+${_seekAccumulation}s' : '-${_seekAccumulation}s';
       _showSeekRipple = true;
     });
 
-    _hideIndicatorTimer?.cancel();
-    _hideIndicatorTimer = Timer(const Duration(milliseconds: 600), () {
-      if (mounted) setState(() => _showSeekRipple = false);
+    _seekAccumulationTimer?.cancel();
+    _seekAccumulationTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) {
+        setState(() {
+          _showSeekRipple = false;
+          _seekAccumulation = 0;
+        });
+      }
     });
   }
 

@@ -149,6 +149,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Duration _webViewDuration = Duration.zero;
 
   static const int _watchPartyDriftThresholdMs = 1200;
+  String? _loadingMessage;
 
   bool _isAnimeMedia(SearchResult? media) {
     if (media == null) return false;
@@ -271,6 +272,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     setState(() {
       _isLoading = true;
       _error = null;
+      _loadingMessage = null;
     });
 
     try {
@@ -368,6 +370,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           preferredQuality: preferredQuality,
           providerIndex: _currentProviderIndex,
           subDubPreference: subDubPref,
+          onStatusUpdate: (msg) {
+            if (mounted) {
+              setState(() => _loadingMessage = msg);
+            }
+          },
         );
       }
 
@@ -3119,7 +3126,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Widget _buildNativePlayer() {
     final media = ref.read(selectedMediaProvider);
-    final subtitle = media?.mediaType == 'tv' ? 'S${widget.season} E$_currentEpisode' : null;
+    String? subtitle = media?.mediaType == 'tv' ? 'S${widget.season} E$_currentEpisode' : null;
+    
+    if (media?.mediaType == 'tv' && _currentSeasonData != null) {
+      try {
+        final episode = _currentSeasonData!.episodes.firstWhere((e) => e.episodeNumber == _currentEpisode);
+        if (episode.episodeName != null && episode.episodeName!.isNotEmpty && !episode.episodeName!.startsWith('Episode')) {
+          subtitle = '$subtitle - ${episode.episodeName}';
+        }
+      } catch (e) {}
+    }
+    
     final title = media?.title ?? media?.name ?? 'Playing';
     return KwikNativePlayer(
       key: ValueKey(_nativeUrl),
@@ -3394,10 +3411,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
 
     final fallback = 'S${widget.season} E$_currentEpisode';
-    if (episodeName == null || episodeName.trim().isEmpty) {
+    if (episodeName == null || episodeName.trim().isEmpty || episodeName.startsWith('Episode')) {
       return fallback;
     }
-    return episodeName;
+    return '$fallback - $episodeName';
   }
 
   Widget _buildPortraitBottomControls() {
@@ -3617,9 +3634,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        _currentProvider.isNotEmpty
+                        _loadingMessage ?? (_currentProvider.isNotEmpty
                             ? _currentProvider
-                            : _providerSelectorLabel(_currentProviderIndex),
+                            : _providerSelectorLabel(_currentProviderIndex)),
                         style: TextStyle(
                           color: Colors.white60,
                           fontSize: 12,

@@ -43,6 +43,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
   int _displayedCount = _pageSize;
   bool _hasMore = false;
   bool _nearBottom = false;
+  bool _sortDescending = false;
   final TextEditingController _searchController = TextEditingController();
 
   @override
@@ -64,6 +65,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
         _searchQuery = '';
         _displayedCount = _pageSize;
         _nearBottom = false;
+        _sortDescending = false;
       });
     }
   }
@@ -98,8 +100,8 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
 
     return seasonDataAsync.when(
       data: (seasonData) {
-        final filteredEpisodes = _searchQuery.isEmpty
-            ? seasonData.episodes
+        var filteredEpisodes = _searchQuery.isEmpty
+            ? seasonData.episodes.toList()
             : seasonData.episodes.where((ep) {
                 final query = _searchQuery.toLowerCase();
                 final name = ep.episodeName?.toLowerCase() ?? '';
@@ -107,66 +109,97 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                 return name.contains(query) || number.contains(query);
               }).toList();
 
+        if (_sortDescending) {
+          filteredEpisodes = filteredEpisodes.reversed.toList();
+        }
+
         _hasMore = filteredEpisodes.length > _displayedCount;
         final visibleEpisodes = filteredEpisodes.take(_displayedCount).toList();
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TextField(
-              controller: _searchController,
-              onChanged: (value) => setState(() {
-                _searchQuery = value;
-                _displayedCount = _pageSize;
-              }),
-              style: TextStyle(color: NivioTheme.netflixWhite, fontSize: 14),
-              decoration: InputDecoration(
-                hintText: 'Search episodes',
-                hintStyle: TextStyle(color: NivioTheme.netflixGrey),
-                prefixIcon: Icon(
-                  Icons.search,
-                  color: NivioTheme.netflixLightGrey.withValues(alpha: 0.7),
-                  size: 20,
-                ),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {
-                            _searchQuery = '';
-                            _displayedCount = _pageSize;
-                          });
-                        },
-                        icon: Icon(
-                          Icons.close,
-                          color: NivioTheme.netflixLightGrey.withValues(
-                            alpha: 0.7,
-                          ),
-                          size: 18,
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (value) => setState(() {
+                      _searchQuery = value;
+                      _displayedCount = _pageSize;
+                    }),
+                    style: TextStyle(color: NivioTheme.netflixWhite, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Search episodes',
+                      hintStyle: TextStyle(color: NivioTheme.netflixGrey),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: NivioTheme.netflixLightGrey.withValues(alpha: 0.7),
+                        size: 20,
+                      ),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {
+                                  _searchQuery = '';
+                                  _displayedCount = _pageSize;
+                                });
+                              },
+                              icon: Icon(
+                                Icons.close,
+                                color: NivioTheme.netflixLightGrey.withValues(
+                                  alpha: 0.7,
+                                ),
+                                size: 18,
+                              ),
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: const Color(0x1FFFFFFF),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(999),
+                        borderSide: BorderSide.none,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(999),
+                        borderSide: BorderSide(color: Color(0x26FFFFFF)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(999),
+                        borderSide: BorderSide(
+                          color: NivioTheme.accentColorOf(context),
                         ),
-                      )
-                    : null,
-                filled: true,
-                fillColor: const Color(0x1FFFFFFF),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(999),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(999),
-                  borderSide: BorderSide(color: Color(0x26FFFFFF)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(999),
-                  borderSide: BorderSide(
-                    color: NivioTheme.accentColorOf(context),
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0x1FFFFFFF),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _sortDescending = !_sortDescending;
+                        _displayedCount = _pageSize;
+                      });
+                    },
+                    icon: Icon(
+                      _sortDescending ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
+                      color: NivioTheme.netflixWhite,
+                      size: 20,
+                    ),
+                    tooltip: 'Sort episodes',
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             if (filteredEpisodes.isEmpty)

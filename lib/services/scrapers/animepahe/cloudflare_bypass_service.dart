@@ -185,6 +185,30 @@ class CloudflareBypassService extends ChangeNotifier {
     }
   }
 
+  Future<String?> getFinalUrlViaWebView(String url) async {
+    final controller = _controllerGetter?.call();
+    if (controller == null) return null;
+    
+    try {
+      final result = await controller.callAsyncJavaScript(functionBody: """
+        return fetch(url, {
+          method: 'GET'
+        })
+        .then(response => {
+          return response.url;
+        })
+        .catch(err => {
+          return null;
+        });
+      """, arguments: {'url': url}).timeout(const Duration(seconds: 15));
+      
+      return result?.value as String?;
+    } catch (e) {
+      appDebugLog('🛡️ getFinalUrlViaWebView threw an exception: $e');
+      return null;
+    }
+  }
+
   /// Secretly load the kwik player and extract the direct .mp4 or .m3u8 source URL
   Future<String?> extractKwikVideoUrl(String kwikUrl) async {
     final controller = _controllerGetter?.call();
