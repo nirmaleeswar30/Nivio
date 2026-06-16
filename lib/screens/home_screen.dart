@@ -11,6 +11,7 @@ import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/providers_data.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/watchlist_item.dart';
+import 'package:nivio/providers/changelog_provider.dart';
 import 'package:nivio/providers/home_providers.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
@@ -18,6 +19,7 @@ import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_service.dart';
 import 'package:nivio/services/scrapers/newtv/newtv_bypass_service.dart';
+import 'package:nivio/widgets/changelog_dialog.dart';
 import 'package:nivio/widgets/content_row.dart';
 import 'package:nivio/widgets/continue_watching_row.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -131,6 +133,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(changelogProvider, (previous, next) {
+      if (!next.isLoading && !next.hasSeenCurrentVersion && next.releaseNotes != null) {
+        ref.read(changelogProvider.notifier).markAsSeen();
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => ChangelogDialog(
+            version: next.currentVersion,
+            releaseNotes: next.releaseNotes!,
+            onDismiss: () {},
+          ),
+        );
+      }
+    });
+
     final featuredContent = ref.watch(featuredContentProvider);
     final languagePreferences = ref.watch(languagePreferencesProvider);
 

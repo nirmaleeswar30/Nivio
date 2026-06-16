@@ -13,6 +13,9 @@ import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
+import 'package:nivio/services/auth_service.dart';
+import 'package:nivio/widgets/changelog_dialog.dart';
+import 'package:nivio/providers/changelog_provider.dart';
 import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/github_release_update_service.dart';
 import 'package:nivio/services/shorebird_update_service.dart';
@@ -443,6 +446,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 title: 'Check GitHub Release',
                                 subtitle: subtitle,
                                 onTap: _checkForGitHubRelease,
+                              );
+                            },
+                          ),
+                        if (_matches('changelog whats new release notes version features'))
+                          FutureBuilder<String>(
+                            future: _getAppVersionLabel(),
+                            builder: (context, snapshot) {
+                              return _buildActionTile(
+                                icon: Icons.new_releases_outlined,
+                                title: "What's New",
+                                subtitle: 'See changes in ${snapshot.data ?? 'this version'}',
+                                onTap: () => _showChangelog(context, ref),
                               );
                             },
                           ),
@@ -1712,6 +1727,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ],
         );
       },
+    );
+  }
+
+  Future<void> _showChangelog(BuildContext context, WidgetRef ref) async {
+    final notifier = ref.read(changelogProvider.notifier);
+    final currentVersion = ref.read(changelogProvider).currentVersion;
+    final notes = await notifier.forceFetchNotes();
+    if (!context.mounted) return;
+    
+    if (notes == null || notes.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No release notes found for this version.')),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => ChangelogDialog(
+        version: currentVersion,
+        releaseNotes: notes,
+        onDismiss: () {},
+      ),
     );
   }
 

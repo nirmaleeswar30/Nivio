@@ -17,6 +17,7 @@ class GitHubReleaseUpdateResult {
     required this.latestVersion,
     required this.releaseUrl,
     required this.message,
+    this.releaseNotes,
   });
 
   final GitHubReleaseUpdateStatus status;
@@ -24,6 +25,7 @@ class GitHubReleaseUpdateResult {
   final String latestVersion;
   final String releaseUrl;
   final String message;
+  final String? releaseNotes;
 
   bool get hasUpdate => status == GitHubReleaseUpdateStatus.updateAvailable;
 }
@@ -139,6 +141,24 @@ class GitHubReleaseUpdateService {
         ),
       );
     }
+  }
+
+  static Future<String?> getReleaseNotesForVersion(String version) async {
+    try {
+      var response = await _dio.get('https://api.github.com/repos/$repoOwner/$repoName/releases/tags/v$version');
+      if (response.statusCode == 200 && response.data is Map) {
+        return response.data['body']?.toString();
+      }
+    } catch (_) {}
+
+    try {
+      var response = await _dio.get('https://api.github.com/repos/$repoOwner/$repoName/releases/tags/$version');
+      if (response.statusCode == 200 && response.data is Map) {
+        return response.data['body']?.toString();
+      }
+    } catch (_) {}
+
+    return null;
   }
 
   static Future<bool> openReleasePage([String? releaseUrl]) async {

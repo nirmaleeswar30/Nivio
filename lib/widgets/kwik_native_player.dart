@@ -18,6 +18,7 @@ class KwikNativePlayer extends StatefulWidget {
   final VoidCallback? onSettings;
   final VoidCallback? onServerChange;
   final VoidCallback? onEpisodes;
+  final Function(bool isPlaying)? onPlayingChanged;
 
   const KwikNativePlayer({
     super.key,
@@ -33,13 +34,14 @@ class KwikNativePlayer extends StatefulWidget {
     this.onSettings,
     this.onServerChange,
     this.onEpisodes,
+    this.onPlayingChanged,
   });
 
   @override
-  State<KwikNativePlayer> createState() => _KwikNativePlayerState();
+  State<KwikNativePlayer> createState() => KwikNativePlayerState();
 }
 
-class _KwikNativePlayerState extends State<KwikNativePlayer> {
+class KwikNativePlayerState extends State<KwikNativePlayer> {
   late final Player player;
   late final VideoController controller;
   
@@ -81,7 +83,10 @@ class _KwikNativePlayerState extends State<KwikNativePlayer> {
 
     _subscriptions.addAll([
       player.stream.playing.listen((playing) {
-        if (mounted) setState(() => _isPlaying = playing);
+        if (mounted) {
+          setState(() => _isPlaying = playing);
+          widget.onPlayingChanged?.call(playing);
+        }
       }),
       player.stream.position.listen((position) {
         if (mounted) {
@@ -125,6 +130,20 @@ class _KwikNativePlayerState extends State<KwikNativePlayer> {
     _hideIndicatorTimer?.cancel();
     super.dispose();
   }
+
+  // --- Exposed Methods for Watch Party ---
+  Future<void> seekTo(Duration position) async {
+    await player.seek(position);
+  }
+
+  Future<void> play() async {
+    await player.play();
+  }
+
+  Future<void> pause() async {
+    await player.pause();
+  }
+  // ---------------------------------------
 
   Future<void> _initHardwareLevels() async {
     try {

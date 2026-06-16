@@ -102,6 +102,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Duration? _nativeStartAt;
   Duration _nativePosition = Duration.zero;
   Duration _nativeDuration = Duration.zero;
+  bool _isNativePlaying = true;
+  final GlobalKey<KwikNativePlayerState> _kwikPlayerKey = GlobalKey<KwikNativePlayerState>();
 
   // Effective local file to play: either the explicit widget.localPath, or a
   // completed download discovered for this media. When set, playback is offline.
@@ -563,7 +565,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             playerTheme: BetterPlayerTheme.custom,
             customControlsBuilder: (controller, onPlayerVisibilityChanged, controlsConfiguration) {
               final media = ref.read(selectedMediaProvider);
-              final subtitle = media?.mediaType == 'tv' ? 'S${widget.season} E$_currentEpisode' : null;
+              String? subtitle;
+              if (media?.mediaType == 'tv') {
+                String? episodeName;
+                if (_currentSeasonData != null) {
+                  for (final episode in _currentSeasonData!.episodes) {
+                    if (episode.episodeNumber == _currentEpisode) {
+                      episodeName = episode.episodeName;
+                      break;
+                    }
+                  }
+                }
+                final fallback = 'S${widget.season} E$_currentEpisode';
+                if (episodeName == null || episodeName.trim().isEmpty || episodeName.startsWith('Episode')) {
+                  subtitle = fallback;
+                } else {
+                  subtitle = '$fallback - $episodeName';
+                }
+              }
               final title = media?.title ?? media?.name ?? 'Playing';
               
               return CustomPlayerControls(
@@ -1072,7 +1091,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return;
     }
 
-    if (_isDirectStream && _betterPlayerController?.isVideoInitialized() != true) {
+    if (!_useNativePlayer && _isDirectStream && _betterPlayerController?.isVideoInitialized() != true) {
       return;
     }
 
@@ -1087,7 +1106,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     Duration position;
     bool isPlaying;
     
-    if (_isDirectStream) {
+    if (_useNativePlayer) {
+      position = _nativePosition;
+      isPlaying = _isNativePlaying;
+    } else if (_isDirectStream) {
       final controller = _betterPlayerController!;
       final vpc = controller.videoPlayerController!;
       position = vpc.value.position;
@@ -1140,6 +1162,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
 
     if (!_isDirectStream) return;
+
+    if (_useNativePlayer) {
+      if (_isApplyingWatchPartyState) return;
+      _isApplyingWatchPartyState = true;
+      try {
+        final state = _kwikPlayerKey.currentState;
+        if (state == null) return;
+        
+        final expectedMs = playback.expectedPositionMs;
+        final currentMs = _nativePosition.inMilliseconds;
+        final driftMs = (currentMs - expectedMs).abs();
+
+        if (driftMs > _watchPartyDriftThresholdMs) {
+          await state.seekTo(Duration(milliseconds: math.max(0, expectedMs)));
+        }
+
+        if (playback.isPlaying && !_isNativePlaying) {
+          await state.play();
+        } else if (!playback.isPlaying && _isNativePlaying) {
+          await state.pause();
+        }
+      } finally {
+        Future.delayed(const Duration(milliseconds: 350), () {
+          _isApplyingWatchPartyState = false;
+        });
+      }
+      return;
+    }
 
     if (_betterPlayerController?.isVideoInitialized() != true) {
       _pendingWatchPartyPlayback = playback;
@@ -1484,10 +1534,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _fetchSeasonData() async {
     try {
       final tmdbService = ref.read(tmdbServiceProvider);
-      _currentSeasonData = await tmdbService.getSeasonInfo(
+      final seasonData = await tmdbService.getSeasonInfo(
         widget.mediaId,
         widget.season,
       );
+      if (mounted) {
+        setState(() {
+          _currentSeasonData = seasonData;
+        });
+      }
     } catch (_) {}
   }
 
@@ -1521,8 +1576,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _markAsCompleted() async {
     final media = ref.read(selectedMediaProvider);
     if (media == null) return;
-    final vpc = _betterPlayerController?.videoPlayerController;
-    final dur = vpc?.value.duration ?? Duration.zero;
+    
+    Duration dur;
+    if (_useNativePlayer) {
+      dur = _nativeDuration;
+    } else {
+      final vpc = _betterPlayerController?.videoPlayerController;
+      dur = vpc?.value.duration ?? Duration.zero;
+    }
     final historyService = ref.read(watchHistoryServiceProvider);
     await historyService.updateProgress(
       tmdbId: widget.mediaId,
@@ -2205,7 +2266,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _startProgressTracking() {
     _progressTimer?.cancel();
     _progressTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      if (_isDirectStream) {
+      if (_useNativePlayer) {
+        _saveProgress();
+      } else if (_isDirectStream) {
         if (_betterPlayerController != null &&
             _betterPlayerController!.isVideoInitialized() == true &&
             _betterPlayerController!.isPlaying() == true) {
@@ -3139,7 +3202,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     
     final title = media?.title ?? media?.name ?? 'Playing';
     return KwikNativePlayer(
-      key: ValueKey(_nativeUrl),
+      key: _kwikPlayerKey,
       url: _nativeUrl!,
       headers: _nativeHeaders ?? {},
       startAt: _nativeStartAt,
@@ -3149,6 +3212,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       onProgress: (pos, dur) {
         _nativePosition = pos;
         _nativeDuration = dur;
+      },
+      onPlayingChanged: (playing) {
+        _isNativePlaying = playing;
       },
       onEnded: () {
         _markAsCompleted();
