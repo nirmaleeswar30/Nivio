@@ -488,7 +488,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               .toString();
 
           final backdropPath =
-              (content['backdrop_path'] ?? content['poster_path'])?.toString();
+              (content['poster_path'] ?? content['backdrop_path'])?.toString();
           final backdropUrl = _tmdbImageUrl(backdropPath, backdropSize);
           final voteAverage = (content['vote_average'] as num?)?.toDouble();
           final year =

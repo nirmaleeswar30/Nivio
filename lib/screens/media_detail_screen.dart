@@ -358,9 +358,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     final tmdbService = ref.read(tmdbServiceProvider);
     final fallbackBackdropUrl = tmdbService.getBackdropUrl(media.backdropPath);
     final fallbackPosterUrl = tmdbService.getPosterUrl(media.posterPath);
-    final backdropUrl = fallbackBackdropUrl.isNotEmpty
-        ? fallbackBackdropUrl
-        : fallbackPosterUrl;
+    final backdropUrl = fallbackPosterUrl.isNotEmpty
+        ? fallbackPosterUrl
+        : fallbackBackdropUrl;
     final posterUrl = fallbackPosterUrl;
     final isInWatchlist = ref.watch(isInWatchlistProvider(media.id));
     final colorsAsync = ref.watch(dynamicColorsProvider(posterUrl));
