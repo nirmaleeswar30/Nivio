@@ -7,12 +7,16 @@ class ChangelogDialog extends StatelessWidget {
   final String version;
   final String releaseNotes;
   final VoidCallback onDismiss;
+  final bool isUpdatePrompt;
+  final VoidCallback? onInstall;
 
   const ChangelogDialog({
     super.key,
     required this.version,
     required this.releaseNotes,
     required this.onDismiss,
+    this.isUpdatePrompt = false,
+    this.onInstall,
   });
 
   @override
@@ -56,9 +60,9 @@ class ChangelogDialog extends StatelessWidget {
                     color: NivioTheme.accentColorOf(context),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
-                    "What's New",
-                    style: TextStyle(
+                  Text(
+                    isUpdatePrompt ? "Update Available!" : "What's New",
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -66,7 +70,7 @@ class ChangelogDialog extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Version $version',
+                    isUpdatePrompt ? 'Version $version is here' : 'Version $version',
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.6),
                       fontSize: 16,
@@ -117,24 +121,71 @@ class ChangelogDialog extends StatelessWidget {
             // Footer
             Padding(
               padding: const EdgeInsets.all(24),
-              child: FilledButton(
-                onPressed: () {
-                  onDismiss();
-                  Navigator.of(context).pop();
-                },
-                style: FilledButton.styleFrom(
-                  backgroundColor: NivioTheme.accentColorOf(context),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+              child: isUpdatePrompt
+                ? Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            onDismiss();
+                            Navigator.of(context).pop();
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          child: const Text(
+                            'Later',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () {
+                            if (onInstall != null) onInstall!();
+                            onDismiss();
+                            Navigator.of(context).pop();
+                          },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: NivioTheme.accentColorOf(context),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          child: const Text(
+                            'Install',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : FilledButton(
+                    onPressed: () {
+                      onDismiss();
+                      Navigator.of(context).pop();
+                    },
+                    style: FilledButton.styleFrom(
+                      backgroundColor: NivioTheme.accentColorOf(context),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: const Text(
+                      'Awesome!',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
                   ),
-                ),
-                child: const Text(
-                  'Awesome!',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ),
             ),
           ],
         ),

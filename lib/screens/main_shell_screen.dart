@@ -5,6 +5,8 @@ import 'package:nivio/core/theme.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_widget.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:nivio/services/github_release_update_service.dart';
+import 'package:nivio/widgets/changelog_dialog.dart';
 
 class MainShellScreen extends ConsumerStatefulWidget {
   final StatefulNavigationShell navigationShell;
@@ -18,6 +20,40 @@ class MainShellScreen extends ConsumerStatefulWidget {
 class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   DateTime? _lastBackPressAt;
   DateTime? _lastBackHandledAt;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkForUpdatesOnStartup();
+    });
+  }
+
+  Future<void> _checkForUpdatesOnStartup() async {
+    try {
+      final result = await GitHubReleaseUpdateService.checkForUpdate();
+      if (!mounted) return;
+
+      if (result.hasUpdate) {
+        showDialog<void>(
+          context: context,
+          builder: (ctx) {
+            return ChangelogDialog(
+              version: result.latestVersion,
+              releaseNotes: result.releaseNotes ?? 'A new update is available. Please update to enjoy the latest features and bug fixes!',
+              isUpdatePrompt: true,
+              onDismiss: () {},
+              onInstall: () async {
+                await GitHubReleaseUpdateService.openReleasePage(result.releaseUrl);
+              },
+            );
+          },
+        );
+      }
+    } catch (e) {
+      // Silently fail on startup check
+    }
+  }
 
   void _onTap(int index) {
     widget.navigationShell.goBranch(

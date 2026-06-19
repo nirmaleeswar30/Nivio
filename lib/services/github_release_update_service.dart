@@ -116,6 +116,7 @@ class GitHubReleaseUpdateService {
             latestVersion: latest,
             releaseUrl: releaseUrl,
             message: 'Update available: $latest',
+            releaseNotes: data['body']?.toString(),
           ),
         );
       }

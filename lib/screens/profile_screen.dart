@@ -1813,38 +1813,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       showDialog<void>(
         context: context,
         builder: (ctx) {
-          return AlertDialog(
-            backgroundColor: NivioTheme.netflixDarkGrey,
-            title: const Text(
-              'Update Available',
-              style: TextStyle(color: NivioTheme.netflixWhite),
-            ),
-            content: Text(
-              'Current: ${result.installedVersion}\n'
-              'Latest: ${result.latestVersion}\n\n'
-              'Open GitHub and install the latest release?',
-              style: TextStyle(color: NivioTheme.netflixLightGrey),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Later'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  await GitHubReleaseUpdateService.openReleasePage(
-                    result.releaseUrl,
-                  );
-                  if (ctx.mounted) {
-                    Navigator.pop(ctx);
-                  }
-                },
-                child: Text(
-                  'Install',
-                  style: TextStyle(color: NivioTheme.accentColorOf(context)),
-                ),
-              ),
-            ],
+          return ChangelogDialog(
+            version: result.latestVersion,
+            releaseNotes: result.releaseNotes ?? 'A new update is available. Please update to enjoy the latest features and bug fixes!',
+            isUpdatePrompt: true,
+            onDismiss: () {},
+            onInstall: () async {
+              await GitHubReleaseUpdateService.openReleasePage(result.releaseUrl);
+            },
           );
         },
       );
