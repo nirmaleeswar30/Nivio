@@ -1,4 +1,13 @@
 pluginManagement {
+    buildscript {
+        repositories {
+            mavenCentral()
+            google()
+        }
+        dependencies {
+            classpath("com.android.tools:r8:8.13.19")
+        }
+    }
     val flutterSdkPath =
         run {
             val properties = java.util.Properties()
