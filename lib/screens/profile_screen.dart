@@ -13,7 +13,6 @@ import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
-import 'package:nivio/services/auth_service.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
 import 'package:nivio/providers/changelog_provider.dart';
 import 'package:nivio/services/episode_check_service.dart';

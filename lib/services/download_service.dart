@@ -1,19 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
 import 'dart:ui';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:uuid/uuid.dart';
 
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new/ffprobe_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 
 import '../core/debug_log.dart';
@@ -275,10 +271,10 @@ class DownloadService {
       // No need to change the extension to mkv, FFmpeg can mux HLS directly into mp4
       if (streamUrl.contains('.m3u8')) {
         appDebugLog('🎬 Downloading via FFmpeg (HLS)');
-        await _downloadM3u8(item, item.savePath!, cancelToken, streamUrlOverride: streamUrl);
+        await _downloadM3u8(item, item.savePath, cancelToken, streamUrlOverride: streamUrl);
       } else {
         appDebugLog('🎬 Downloading directly via Dio');
-        await _downloadDirect(item, item.savePath!, cancelToken, streamUrlOverride: streamUrl);
+        await _downloadDirect(item, item.savePath, cancelToken, streamUrlOverride: streamUrl);
       }
     } catch (e) {
       if (cancelToken.isCancelled) {
@@ -397,7 +393,6 @@ class DownloadService {
     ffmpegArgs.addAll(['-c:a', 'aac', '-b:a', '128k']);
     
     final String subCodec = filePath.toLowerCase().endsWith('.mkv') ? 'srt' : 'mov_text';
-    final String srtFilePath = filePath.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '.srt');
 
     // Map embedded subtitles into the primary video file (ONLY if they are already embedded)
     if (streams?.subtitleUrl == null) {
@@ -601,26 +596,6 @@ class DownloadService {
     if (status == DownloadStatus.extracting) {
       _showProgressNotification(item);
     }
-  }
-
-  static void _failDownload(DownloadItem item) {
-    item.progress = 0.0;
-    _updateStatus(item, DownloadStatus.failed);
-    
-    const androidDetails = AndroidNotificationDetails(
-      'download_channel',
-      'Downloads',
-      channelDescription: 'Show download progress',
-      importance: Importance.high,
-      priority: Priority.high,
-    );
-
-    _notifications.show(
-      item.id.hashCode,
-      'Download Failed',
-      item.title,
-      const NotificationDetails(android: androidDetails),
-    );
   }
 
   static void pauseDownload(String id) {

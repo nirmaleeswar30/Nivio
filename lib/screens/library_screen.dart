@@ -86,13 +86,6 @@ class _LibraryScreenState extends State<LibraryScreen>
                   child: AnimatedBuilder(
                     animation: _tabController.animation ?? _tabController,
                     builder: (context, child) {
-                      final animationValue =
-                          _tabController.animation?.value ??
-                          _tabController.index.toDouble();
-                      final activeIndex = animationValue.round().clamp(
-                        0,
-                        _tabController.length - 1,
-                      );
                       return TabBar(
                         controller: _tabController,
                         splashFactory: NoSplash.splashFactory,

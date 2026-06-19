@@ -108,9 +108,17 @@ class KwikNativePlayerState extends State<KwikNativePlayer> {
     ]);
 
     if (widget.startAt != null) {
-      player.stream.duration.first.then((_) {
-        player.seek(widget.startAt!);
+      bool hasSeeked = false;
+      final sub = player.stream.position.listen((position) {
+        // Wait until the player actually starts playing (position > 0)
+        // and the duration is known before issuing the seek command.
+        // This prevents the player from resetting to 0 when the media pipeline initializes.
+        if (!hasSeeked && position.inMilliseconds > 0 && player.state.duration.inSeconds > 0) {
+          hasSeeked = true;
+          player.seek(widget.startAt!);
+        }
       });
+      _subscriptions.add(sub);
     }
 
     _initHardwareLevels();

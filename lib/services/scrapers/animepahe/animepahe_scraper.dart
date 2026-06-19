@@ -103,7 +103,7 @@ class AnimepaheScraperService {
                   if (paheData != null && paheData.isNotEmpty) {
                     animeSession = paheData.values.first['identifier'] as String?;
                     
-                    if (animeSession != null && int.tryParse(animeSession!) != null) {
+                    if (animeSession != null && int.tryParse(animeSession) != null) {
                       onStatusUpdate?.call('Mapping: Resolving legacy Animepahe ID...');
                       final finalUrl = await _bypassService.getFinalUrlViaWebView('https://animepahe.pw/a/$animeSession');
                       if (finalUrl != null && finalUrl.contains('/anime/')) {
@@ -186,7 +186,7 @@ class AnimepaheScraperService {
       }
 
       if (animeSession != null) {
-         episodeSession = await findEpisodeInSession(animeSession!);
+         episodeSession = await findEpisodeInSession(animeSession);
       }
       
       // AGGRESSIVE FALLBACK: IF EPISODE NOT IN PRIMARY SESSION

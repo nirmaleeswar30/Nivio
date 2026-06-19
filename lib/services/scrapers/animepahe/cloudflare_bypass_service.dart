@@ -169,7 +169,7 @@ class CloudflareBypassService extends ChangeNotifier {
       """, arguments: {'url': url}).timeout(const Duration(seconds: 20));
       
       final val = result?.value as String?;
-      appDebugLog('🛡️ Fetch completed. Value starts with: ${(val)?.substring(0, (val)?.length.clamp(0, 50) ?? 0)}...');
+      appDebugLog('🛡️ Fetch completed. Value starts with: ${val?.substring(0, val.length.clamp(0, 50))}...');
       
       if (val != null && val.startsWith('ERROR: HTTP 403') && retry) {
          appDebugLog('🛡️ Got 403. Likely Cloudflare challenge. Forcing refresh...');

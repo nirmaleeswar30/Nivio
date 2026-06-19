@@ -10,9 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/firebase_options.dart';
@@ -46,19 +44,20 @@ import 'package:nivio/services/scrapers/newtv/newtv_bypass_service.dart';
 import 'package:nivio/services/download_service.dart';
 
 void main() async {
-  WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
-  MediaKit.ensureInitialized();
-
-  // Preserve splash screen while initializing
-  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
-
-  // Load .env first so downstream services (e.g. watch party Supabase)
-  // can read credentials during initialization.
   try {
-    await dotenv.load(fileName: '.env');
-  } catch (_) {
-    // Keep app booting even when .env is missing.
-  }
+    WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+    MediaKit.ensureInitialized();
+
+    // Preserve splash screen while initializing
+    FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+
+    // Load .env first so downstream services (e.g. watch party Supabase)
+    // can read credentials during initialization.
+    try {
+      await dotenv.load(fileName: '.env');
+    } catch (_) {
+      // Keep app booting even when .env is missing.
+    }
 
   // Parallelize initialization for faster startup
   await Future.wait([
@@ -87,18 +86,38 @@ void main() async {
     }
   });
 
-  runApp(
-    ProviderScope(
-      overrides: [cacheServiceProvider.overrideWithValue(cacheService)],
-      child: const NivioApp(),
-    ),
-  );
+    runApp(
+      ProviderScope(
+        overrides: [cacheServiceProvider.overrideWithValue(cacheService)],
+        child: const NivioApp(),
+      ),
+    );
 
-  // Non-blocking OTA check at startup for Shorebird release builds.
-  unawaited(ShorebirdUpdateService.checkAndUpdateInBackground());
+    // Non-blocking OTA check at startup for Shorebird release builds.
+    unawaited(ShorebirdUpdateService.checkAndUpdateInBackground());
 
-  // Remove splash screen after app is ready
-  FlutterNativeSplash.remove();
+    // Remove splash screen after app is ready
+    FlutterNativeSplash.remove();
+  } catch (e, stack) {
+    debugPrint('Fatal Startup Error: $e\n$stack');
+    runApp(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: Colors.black,
+          body: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                'Fatal Error During Startup:\n\n$e\n\n$stack',
+                style: const TextStyle(color: Colors.red, fontSize: 12),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    FlutterNativeSplash.remove();
+  }
 }
 
 Future<void> _initHive() async {

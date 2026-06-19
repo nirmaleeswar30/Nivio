@@ -22,8 +22,6 @@ import 'package:nivio/services/watch_party/watch_party_service_supabase.dart';
 
 import 'dart:async';
 import 'dart:io';
-import 'package:hive_flutter/hive_flutter.dart';
-import 'package:nivio/models/download_item.dart';
 import 'package:nivio/services/download_service.dart';
 import 'package:nivio/widgets/webview_player.dart';
 import 'package:nivio/widgets/kwik_native_player.dart';
@@ -99,7 +97,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _isDirectStream = false;
   int _currentEpisode = 0;
   bool _isInFullscreen = false;
-  bool _disposed = false;
   Duration? _resumePosition;
   
   bool _useNativePlayer = false;
@@ -115,7 +112,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   // completed download discovered for this media. When set, playback is offline.
   String? _effectiveLocalPath;
   String _localAudioLang = 'English';
-  DateTime? _lastTapTime;
   
   BoxFit _currentFit = BoxFit.contain;
 
@@ -468,7 +464,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _resumePosition = startAt;
       }
 
-      if (_isDirectStream && result!.url.contains('kwik.cx')) {
+      if (_isDirectStream && result.url.contains('kwik.cx')) {
         final rawUrl = await CloudflareBypassService.instance.extractKwikVideoUrl(result.url);
         if (rawUrl != null) {
           _useNativePlayer = true;
@@ -1818,15 +1814,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }).toList();
   }
 
-  double _resolvedVideoAspectRatio() {
-    final ratio =
-        _betterPlayerController?.videoPlayerController?.value.aspectRatio;
-    if (ratio != null && ratio > 0 && ratio.isFinite && !ratio.isNaN) {
-      return ratio;
-    }
-    return 16 / 9;
-  }
-
   void _applyDisplaySettings({bool refreshUi = true}) {
     final controller = _betterPlayerController;
     if (controller == null) return;
@@ -2937,8 +2924,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final media = ref.watch(selectedMediaProvider);
-    final shouldShowAppBar = _streamResult != null && !_isInFullscreen;
     final isPortrait =
         MediaQuery.of(context).orientation == Orientation.portrait;
 
@@ -3259,6 +3244,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildFullscreenFloatingTopBar() {
     final appTheme = Theme.of(context);
     final watchPartySession = _watchPartySession;
@@ -3533,6 +3519,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return '$fallback - $episodeName';
   }
 
+  // ignore: unused_element
   Widget _buildPortraitBottomControls() {
     final controller = _betterPlayerController;
     final videoController = controller?.videoPlayerController;
