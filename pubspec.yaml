@@ -1,5 +1,5 @@
 name: nivio
-description: "Content streaming app"
+description: "A beautiful, all-in-one streaming application for Movies, TV Shows, Anime, and Live IPTV, featuring real-time Watch Parties and offline downloads."
 publish_to: 'none'
 version: 2.0.0
 

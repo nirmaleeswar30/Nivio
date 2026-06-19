@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 class M3u8Track {
   final String language;
@@ -49,7 +50,7 @@ class M3u8Parser {
         'subtitle': subtitles,
       };
     } catch (e) {
-      print('M3u8Parser Error: $e');
+      debugPrint('M3u8Parser Error: $e');
       return {'audio': [], 'subtitle': []};
     }
   }
@@ -141,7 +142,7 @@ class M3u8Parser {
 
       return M3u8Streams(videoUrl: videoUrl, audioUrl: audioUrl, subtitleUrl: subUrl);
     } catch (e) {
-      print('M3u8Parser Error (resolveStreams): $e');
+      debugPrint('M3u8Parser Error (resolveStreams): $e');
       return M3u8Streams(videoUrl: masterUrl);
     }
   }
@@ -162,7 +163,7 @@ class M3u8Parser {
       }
       return (totalSeconds * 1000).toInt();
     } catch (e) {
-      print('M3u8Parser Error (getDuration): $e');
+      debugPrint('M3u8Parser Error (getDuration): $e');
       return 0;
     }
   }
