@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/services/github_release_update_service.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
 
+import 'package:nivio/providers/watchlist_provider.dart';
+
 class MainShellScreen extends ConsumerStatefulWidget {
   final StatefulNavigationShell navigationShell;
 
@@ -26,7 +28,15 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForUpdatesOnStartup();
+      _syncWatchlistFromCloud();
     });
+  }
+
+  Future<void> _syncWatchlistFromCloud() async {
+    try {
+      final watchlistService = ref.read(watchlistServiceProvider);
+      await watchlistService.downloadFromCloud();
+    } catch (_) {}
   }
 
   Future<void> _checkForUpdatesOnStartup() async {

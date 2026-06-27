@@ -43,8 +43,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       final result = await authService.signInWithGoogle();
 
       if (result != null && mounted) {
-        // Sync watchlist to cloud after sign in
+        // Pull watchlist from cloud first (handles fresh installs / new devices)
         final watchlistService = ref.read(watchlistServiceProvider);
+        await watchlistService.downloadFromCloud();
+        // Then push any local-only items to cloud
         await watchlistService.syncAllToCloud();
 
         if (mounted) {

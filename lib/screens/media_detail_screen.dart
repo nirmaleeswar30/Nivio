@@ -1027,14 +1027,14 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
             TextButton(
               onPressed: () {
                 Navigator.pop(context);
-                _downloadSeason(media, providerIndex, ref.read(selectedSeasonProvider));
+                _startBatchDownload(media, providerIndex, singleSeason: ref.read(selectedSeasonProvider));
               },
               child: const Text('This Season'),
             ),
             TextButton(
               onPressed: () {
                 Navigator.pop(context);
-                _downloadAllSeasons(media, providerIndex);
+                _startBatchDownload(media, providerIndex);
               },
               child: const Text('All Seasons'),
             ),
@@ -1044,14 +1044,72 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     );
   }
 
-  Future<void> _downloadSeason(SearchResult media, int providerIndex, int season) async {
+  /// Probes the first episode to discover available languages, shows the language picker,
+  /// then queues all episodes with the selected languages.
+  Future<void> _startBatchDownload(SearchResult media, int providerIndex, {int? singleSeason}) async {
+    final streamingService = ref.read(streamingServiceProvider);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Probing first episode for language options...')),
+    );
+
+    // Probe the first episode to discover available audio/subtitle tracks
+    final seriesInfoAsync = ref.read(seriesInfoProvider(media.id));
+    final seriesInfo = seriesInfoAsync.valueOrNull;
+    if (seriesInfo == null) return;
+
+    // Find the first valid episode to probe
+    int probeSeason = singleSeason ?? seriesInfo.seasons.firstWhere((s) => s.seasonNumber > 0, orElse: () => seriesInfo.seasons.first).seasonNumber;
+    final probeSeasonData = await ref.read(seasonDataProvider((showId: media.id, seasonNumber: probeSeason)).future);
+    final probeEpisode = probeSeasonData.episodes.firstWhere(
+      (ep) => ep.airDate != null && DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) == true,
+      orElse: () => probeSeasonData.episodes.first,
+    );
+
+    final probeResult = await streamingService.fetchStreamUrl(
+      media: media,
+      season: probeSeason,
+      episode: probeEpisode.episodeNumber,
+      providerIndex: providerIndex,
+    );
+
+    if (probeResult == null || probeResult.url.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to probe first episode. Cannot determine languages.')),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+
+    // Show language picker (returns null if user cancels)
+    final langChoice = await DownloadPrompt.pickLanguages(
+      context: context,
+      ref: ref,
+      streamResult: probeResult,
+    );
+
+    if (langChoice == null) return; // User cancelled
+
+    // Now queue the actual downloads
+    if (singleSeason != null) {
+      _downloadSeason(media, providerIndex, singleSeason, langChoice.audioLang, langChoice.subtitleLang);
+    } else {
+      _downloadAllSeasons(media, providerIndex, langChoice.audioLang, langChoice.subtitleLang);
+    }
+  }
+
+  Future<void> _downloadSeason(SearchResult media, int providerIndex, int season, String? audioLang, String? subtitleLang) async {
     final seriesInfoAsync = ref.read(seriesInfoProvider(media.id));
     seriesInfoAsync.whenData((seriesInfo) async {
        final seasonData = await ref.read(seasonDataProvider((showId: media.id, seasonNumber: season)).future);
        int count = 0;
        for (final ep in seasonData.episodes) {
           if (ep.airDate != null && DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) == true) {
-             _downloadEpisode(media, season, ep.episodeNumber, providerIndex);
+             _downloadEpisode(media, season, ep.episodeNumber, providerIndex, audioLang, subtitleLang);
              count++;
           }
        }
@@ -1063,7 +1121,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     });
   }
 
-  Future<void> _downloadAllSeasons(SearchResult media, int providerIndex) async {
+  Future<void> _downloadAllSeasons(SearchResult media, int providerIndex, String? audioLang, String? subtitleLang) async {
     final seriesInfoAsync = ref.read(seriesInfoProvider(media.id));
     seriesInfoAsync.whenData((seriesInfo) async {
        int count = 0;
@@ -1072,7 +1130,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           final seasonData = await ref.read(seasonDataProvider((showId: media.id, seasonNumber: s.seasonNumber)).future);
           for (final ep in seasonData.episodes) {
             if (ep.airDate != null && DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) == true) {
-               _downloadEpisode(media, s.seasonNumber, ep.episodeNumber, providerIndex);
+               _downloadEpisode(media, s.seasonNumber, ep.episodeNumber, providerIndex, audioLang, subtitleLang);
                count++;
             }
           }
@@ -1085,7 +1143,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     });
   }
 
-  Future<void> _downloadEpisode(SearchResult media, int season, int episode, int providerIndex) async {
+  Future<void> _downloadEpisode(SearchResult media, int season, int episode, int providerIndex, String? audioLang, String? subtitleLang) async {
     final streamingService = ref.read(streamingServiceProvider);
     final result = await streamingService.fetchStreamUrl(
       media: media,
@@ -1104,6 +1162,8 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         posterPath: media.posterPath,
         streamUrl: result.url,
         headers: result.headers,
+        selectedAudioLanguage: audioLang,
+        selectedSubtitleLanguage: subtitleLang,
       );
     }
   }

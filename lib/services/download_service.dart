@@ -8,6 +8,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/return_code.dart';
@@ -79,6 +80,7 @@ class DownloadService {
 
   // Active download cancellation tokens
   static final Map<String, CancelToken> _activeDownloads = {};
+  static bool _wakelockEnabled = false;
   
   static Future<void> init() async {
     if (_isInitialized) return;
@@ -185,6 +187,30 @@ class DownloadService {
     return '$cleanTitle.mkv';
   }
 
+  static Future<void> _acquireWakelock() async {
+    if (!_wakelockEnabled && _activeDownloads.isNotEmpty) {
+      try {
+        await WakelockPlus.enable();
+        _wakelockEnabled = true;
+        appDebugLog('📥 Wakelock ENABLED for downloads');
+      } catch (e) {
+        appDebugLog('📥 Failed to enable wakelock: $e');
+      }
+    }
+  }
+
+  static Future<void> _releaseWakelock() async {
+    if (_wakelockEnabled && _activeDownloads.isEmpty) {
+      try {
+        await WakelockPlus.disable();
+        _wakelockEnabled = false;
+        appDebugLog('📥 Wakelock DISABLED (no active downloads)');
+      } catch (e) {
+        appDebugLog('📥 Failed to disable wakelock: $e');
+      }
+    }
+  }
+
   static Future<void> startDownload(DownloadItem item) async {
     if (item.streamUrl == null) return;
     
@@ -201,6 +227,7 @@ class DownloadService {
 
     final cancelToken = CancelToken();
     _activeDownloads[item.id] = cancelToken;
+    await _acquireWakelock();
 
     try {
       String streamUrl = item.streamUrl!;
@@ -285,23 +312,30 @@ class DownloadService {
       }
     } finally {
       _activeDownloads.remove(item.id);
+      await _releaseWakelock();
     }
   }
 
   static Future<void> _downloadDirect(DownloadItem item, String filePath, CancelToken cancelToken, {String? streamUrlOverride}) async {
     final urlToDownload = streamUrlOverride ?? item.streamUrl!;
+    int lastProgressUpdate = 0;
     await _dio.download(
       urlToDownload,
       filePath,
       cancelToken: cancelToken,
-      options: Options(headers: item.headers),
+      options: Options(
+        headers: item.headers,
+        receiveTimeout: const Duration(seconds: 60),
+      ),
       onReceiveProgress: (received, total) {
         if (total != -1) {
           item.downloadedBytes = received;
           item.totalBytes = total;
           item.progress = received / total;
           
-          if (received % (1024 * 1024 * 5) == 0) { // Update hive every 5MB
+          final now = DateTime.now().millisecondsSinceEpoch;
+          if (now - lastProgressUpdate > 2000) { // Update UI every 2 seconds
+            lastProgressUpdate = now;
             box.put(item.id, item);
             _showProgressNotification(item);
           }
@@ -343,13 +377,15 @@ class DownloadService {
       ffmpegArgs.addAll([
         '-reconnect', '1',
         '-reconnect_streamed', '1',
-        '-reconnect_delay_max', '15',
-        '-rw_timeout', '15000000',
+        '-reconnect_delay_max', '30',
+        '-reconnect_on_network_error', '1',
+        '-reconnect_on_http_error', '5xx',
+        '-rw_timeout', '30000000',
         '-http_persistent', '0',
         '-allowed_extensions', 'ALL',
         '-allowed_segment_extensions', 'ALL',
         '-extension_picky', '0',
-        '-seg_max_retry', '5',
+        '-seg_max_retry', '10',
         '-err_detect', 'ignore_err',
         '-fflags', '+genpts+igndts+discardcorrupt',
         '-probesize', '50000000',
@@ -427,6 +463,7 @@ class DownloadService {
       ffmpegArgs, 
       (session) async {
         final returnCode = await session.getReturnCode();
+        if (completer.isCompleted) return;
         if (ReturnCode.isSuccess(returnCode)) {
            if (item.progress > 0 && item.progress < 0.95) {
              appDebugLog("FFMPEG returned success but progress is only ${(item.progress * 100).toStringAsFixed(1)}%. Treating as FAILED due to network drop.");
@@ -485,6 +522,10 @@ class DownloadService {
 
     await completer.future;
 
+    // Mark as completed FIRST so the UI immediately shows "Completed"
+    // SRT post-processing is non-critical and should never block the status transition
+    _completeDownload(item);
+
     // Post-processing: Extract or download the subtitle into an SRT file
     // Doing this after the main download prevents FFmpeg from crashing with AVERROR_INVALIDDATA 
     // when trying to multiplex sparse network WebVTT streams with heavy video streams.
@@ -500,8 +541,6 @@ class DownloadService {
     } catch (e) {
       appDebugLog("Failed to extract SRT post-download: $e");
     }
-
-    _completeDownload(item);
   }
 
   static Future<void> _showProgressNotification(DownloadItem item) async {
