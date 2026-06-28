@@ -25,6 +25,8 @@ import 'dart:async';
 import 'dart:io';
 import 'package:nivio/services/download_service.dart';
 import 'package:nivio/widgets/webview_player.dart';
+import 'package:nivio/widgets/watch_party_chat_overlay.dart';
+import 'package:nivio/widgets/watch_party_reactions_overlay.dart';
 import 'package:nivio/widgets/kwik_native_player.dart';
 import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_service.dart';
 import 'dart:math' as math;

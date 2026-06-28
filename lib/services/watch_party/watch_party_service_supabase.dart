@@ -34,6 +34,10 @@ class WatchPartyServiceSupabase {
       StreamController<WatchPartyPlaybackState>.broadcast();
   final StreamController<String> _errorController =
       StreamController<String>.broadcast();
+  final StreamController<WatchPartyChatMessage> _chatController =
+      StreamController<WatchPartyChatMessage>.broadcast();
+  final StreamController<WatchPartyReaction> _reactionController =
+      StreamController<WatchPartyReaction>.broadcast();
 
   WatchPartySession? get currentSession => _session;
   bool get isHost => _isHost;
@@ -47,6 +51,8 @@ class WatchPartyServiceSupabase {
   Stream<WatchPartyPlaybackState> get playbackStream =>
       _playbackController.stream;
   Stream<String> get errorStream => _errorController.stream;
+  Stream<WatchPartyChatMessage> get chatStream => _chatController.stream;
+  Stream<WatchPartyReaction> get reactionStream => _reactionController.stream;
 
   String generateSessionCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -162,6 +168,8 @@ class WatchPartyServiceSupabase {
       callback: _handleControllerUpdate,
     );
     _channel!.onBroadcast(event: 'session_end', callback: _handleSessionEnd);
+    _channel!.onBroadcast(event: 'chat', callback: _handleChatBroadcast);
+    _channel!.onBroadcast(event: 'reaction', callback: _handleReactionBroadcast);
 
     _channel!.onPresenceSync((_) => _handlePresenceSync());
     _channel!.onPresenceJoin((payload) {
@@ -616,10 +624,63 @@ class WatchPartyServiceSupabase {
     _errorController.add(message);
   }
 
+  void _handleChatBroadcast(Map<String, dynamic> payload) {
+    try {
+      final message = WatchPartyChatMessage.fromJson(payload);
+      _chatController.add(message);
+    } catch (e) {
+      if (kDebugMode) debugPrint('Failed to parse chat message: $e');
+    }
+  }
+
+  void _handleReactionBroadcast(Map<String, dynamic> payload) {
+    try {
+      final reaction = WatchPartyReaction.fromJson(payload);
+      _reactionController.add(reaction);
+    } catch (e) {
+      if (kDebugMode) debugPrint('Failed to parse reaction: $e');
+    }
+  }
+
+  Future<void> sendChatMessage(String text) async {
+    if (_channel == null || _sessionCode == null || text.trim().isEmpty) return;
+    
+    final message = WatchPartyChatMessage(
+      senderId: userId,
+      senderName: userName,
+      senderPhotoUrl: userPhotoUrl,
+      text: text.trim(),
+      timestamp: DateTime.now(),
+    );
+
+    await _channel!.sendBroadcastMessage(
+      event: 'chat',
+      payload: message.toJson(),
+    );
+  }
+
+  Future<void> sendReaction(String emoji) async {
+    if (_channel == null || _sessionCode == null || emoji.trim().isEmpty) return;
+
+    final reaction = WatchPartyReaction(
+      senderId: userId,
+      senderName: userName,
+      emoji: emoji.trim(),
+      timestamp: DateTime.now(),
+    );
+
+    await _channel!.sendBroadcastMessage(
+      event: 'reaction',
+      payload: reaction.toJson(),
+    );
+  }
+
   void dispose() {
     unawaited(leaveSession());
     _sessionController.close();
     _playbackController.close();
     _errorController.close();
+    _chatController.close();
+    _reactionController.close();
   }
 }

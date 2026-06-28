@@ -115,6 +115,7 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
 
   void _onDoubleTap(bool isRightSide) {
     if (widget.isLocked) return;
+
     final currentPos =
         widget.controller.videoPlayerController?.value.position ??
         Duration.zero;

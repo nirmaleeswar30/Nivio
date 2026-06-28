@@ -117,3 +117,67 @@ class WatchPartySession {
 
   int get participantCount => participants.length;
 }
+
+class WatchPartyChatMessage {
+  const WatchPartyChatMessage({
+    required this.senderId,
+    required this.senderName,
+    this.senderPhotoUrl,
+    required this.text,
+    required this.timestamp,
+  });
+
+  final String senderId;
+  final String senderName;
+  final String? senderPhotoUrl;
+  final String text;
+  final DateTime timestamp;
+
+  factory WatchPartyChatMessage.fromJson(Map<String, dynamic> json) {
+    return WatchPartyChatMessage(
+      senderId: (json['senderId'] as String? ?? '').trim(),
+      senderName: (json['senderName'] as String? ?? 'Guest').trim(),
+      senderPhotoUrl: json['senderPhotoUrl'] as String?,
+      text: (json['text'] as String? ?? '').trim(),
+      timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ?? DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'senderId': senderId,
+    'senderName': senderName,
+    'senderPhotoUrl': senderPhotoUrl,
+    'text': text,
+    'timestamp': timestamp.toIso8601String(),
+  };
+}
+
+class WatchPartyReaction {
+  const WatchPartyReaction({
+    required this.senderId,
+    required this.senderName,
+    required this.emoji,
+    required this.timestamp,
+  });
+
+  final String senderId;
+  final String senderName;
+  final String emoji;
+  final DateTime timestamp;
+
+  factory WatchPartyReaction.fromJson(Map<String, dynamic> json) {
+    return WatchPartyReaction(
+      senderId: (json['senderId'] as String? ?? '').trim(),
+      senderName: (json['senderName'] as String? ?? 'Guest').trim(),
+      emoji: (json['emoji'] as String? ?? '').trim(),
+      timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ?? DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'senderId': senderId,
+    'senderName': senderName,
+    'emoji': emoji,
+    'timestamp': timestamp.toIso8601String(),
+  };
+}

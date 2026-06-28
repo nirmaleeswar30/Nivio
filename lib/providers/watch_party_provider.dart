@@ -32,3 +32,15 @@ final watchPartySessionProvider = StreamProvider<WatchPartySession?>((ref) {
   if (service == null) return Stream.value(null);
   return service.sessionStream;
 });
+
+final watchPartyChatProvider = StreamProvider<WatchPartyChatMessage>((ref) {
+  final service = ref.watch(watchPartyServiceProvider);
+  if (service == null) return const Stream.empty();
+  return service.chatStream;
+});
+
+final watchPartyReactionsProvider = StreamProvider<WatchPartyReaction>((ref) {
+  final service = ref.watch(watchPartyServiceProvider);
+  if (service == null) return const Stream.empty();
+  return service.reactionStream;
+});

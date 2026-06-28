@@ -1,9 +1,15 @@
 import 'package:better_player_plus/better_player_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:async';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:nivio/providers/watch_party_provider.dart';
+import 'package:nivio/widgets/watch_party_chat_overlay.dart';
+import 'package:nivio/widgets/watch_party_reactions_overlay.dart';
+import 'package:nivio/widgets/watch_party_participants_sheet.dart';
 import 'gesture_layer.dart';
 
-class CustomPlayerControls extends StatefulWidget {
+class CustomPlayerControls extends ConsumerStatefulWidget {
   final BetterPlayerController controller;
   final Function(bool visbility) onPlayerVisibilityChanged;
   final BetterPlayerControlsConfiguration controlsConfiguration;
@@ -33,12 +39,13 @@ class CustomPlayerControls extends StatefulWidget {
   });
 
   @override
-  State<CustomPlayerControls> createState() => _CustomPlayerControlsState();
+  ConsumerState<CustomPlayerControls> createState() => _CustomPlayerControlsState();
 }
 
-class _CustomPlayerControlsState extends State<CustomPlayerControls> {
+class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
   bool _isPlaying = false;
   bool _showControls = true;
+  bool _showChatOnly = false;
   bool _isLocked = false;
   Timer? _hideControlsTimer;
   double? _dragValue;
@@ -61,20 +68,85 @@ class _CustomPlayerControlsState extends State<CustomPlayerControls> {
   }
 
   void _startHideTimer() {
-    if (_isLocked) return;
     _hideControlsTimer?.cancel();
     _hideControlsTimer = Timer(const Duration(seconds: 3), () {
       if (mounted && _isPlaying) {
-        setState(() => _showControls = false);
+        setState(() {
+          _showControls = false;
+          _showChatOnly = false;
+        });
         widget.onPlayerVisibilityChanged(false);
       }
     });
+  }
+
+  void _showParticipantsPanel() {
+    _startHideTimer();
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Participants Overlay',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return const WatchPartyParticipantsSheet();
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween<Offset>(begin: const Offset(1.0, 0.0), end: Offset.zero).animate(
+            CurvedAnimation(parent: animation, curve: Curves.easeOutExpo),
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+
+  void _onSingleTap() {
+    if (_isLocked) {
+      _onLockedSingleTap();
+      return;
+    }
+
+    final isWatchParty = ref.read(watchPartySessionProvider).value != null;
+    if (isWatchParty) {
+      // Cycle: State 0 (Hidden) -> State 1 (Chat Only) -> State 2 (Both) -> State 0
+      if (!_showControls && !_showChatOnly) {
+        // Go to State 1 (Chat Only)
+        setState(() {
+          _showChatOnly = true;
+          _showControls = false;
+        });
+        widget.onPlayerVisibilityChanged(false);
+        _startHideTimer();
+      } else if (!_showControls && _showChatOnly) {
+        // Go to State 2 (Both)
+        setState(() {
+          _showChatOnly = false;
+          _showControls = true;
+        });
+        widget.onPlayerVisibilityChanged(true);
+        _startHideTimer();
+      } else {
+        // Go to State 0 (Hidden)
+        setState(() {
+          _showChatOnly = false;
+          _showControls = false;
+        });
+        widget.onPlayerVisibilityChanged(false);
+        _hideControlsTimer?.cancel();
+      }
+      return;
+    }
+
+    _toggleControls();
   }
 
   void _toggleControls() {
     if (_isLocked) return;
     setState(() {
       _showControls = !_showControls;
+      _showChatOnly = false;
     });
     widget.onPlayerVisibilityChanged(_showControls);
     if (_showControls) {
@@ -183,7 +255,7 @@ class _CustomPlayerControlsState extends State<CustomPlayerControls> {
           PlayerGestureLayer(
             controller: widget.controller,
             isLocked: _isLocked,
-            onSingleTap: _isLocked ? _onLockedSingleTap : _toggleControls,
+            onSingleTap: _onSingleTap,
             onLongPress: _toggleLock,
           ),
 
@@ -255,6 +327,25 @@ class _CustomPlayerControlsState extends State<CustomPlayerControls> {
                               ],
                             ),
                           ),
+                          if (ref.watch(watchPartySessionProvider).value != null)
+                            GestureDetector(
+                              onTap: _showParticipantsPanel,
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(horizontal: 8),
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.people, color: Colors.white, size: 16),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '${ref.watch(watchPartySessionProvider).value!.participants.length}',
+                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           if (widget.onEpisodes != null)
                             IconButton(
                               icon: const Icon(Icons.list, color: Colors.white, size: 28),
@@ -392,6 +483,41 @@ class _CustomPlayerControlsState extends State<CustomPlayerControls> {
                   ),
                 ],
               ),
+          // 4. Watch Party Overlays
+          Consumer(
+            builder: (context, ref, child) {
+              if (ref.watch(watchPartySessionProvider).value == null) {
+                return const SizedBox.shrink();
+              }
+              return Stack(
+                children: [
+                  Positioned.fill(
+                    child: WatchPartyReactionsOverlay(),
+                  ),
+                  Positioned(
+                    top: 0,
+                    bottom: 0,
+                    right: 0,
+                    child: WatchPartyChatOverlay(
+                      areControlsVisible: _showChatOnly && !_isLocked,
+                      forceHide: _showControls,
+                      onFocusChanged: (hasFocus) {
+                        if (!hasFocus) {
+                          Future.delayed(const Duration(milliseconds: 300), () {
+                            if (!mounted) return;
+                            final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+                            if (widget.controller.isFullScreen || isLandscape) {
+                              SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+                            }
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
         ],
       ),
     );
