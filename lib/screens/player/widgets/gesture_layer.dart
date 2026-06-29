@@ -9,6 +9,7 @@ class PlayerGestureLayer extends StatefulWidget {
   final BetterPlayerController controller;
   final VoidCallback onSingleTap;
   final VoidCallback? onLongPress;
+  final void Function(bool zoomIn)? onPinchZoom;
   final bool isLocked;
 
   const PlayerGestureLayer({
@@ -16,6 +17,7 @@ class PlayerGestureLayer extends StatefulWidget {
     required this.controller,
     required this.onSingleTap,
     this.onLongPress,
+    this.onPinchZoom,
     this.isLocked = false,
   });
 
@@ -141,31 +143,44 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: widget.onSingleTap,
-                onLongPress: widget.onLongPress,
-                onDoubleTap: widget.isLocked ? null : () => _onDoubleTap(false),
-                onVerticalDragStart: widget.isLocked ? null : _onVerticalDragStart,
-                onVerticalDragUpdate: widget.isLocked ? null : (d) => _onVerticalDragUpdate(d, true),
-                onVerticalDragEnd: widget.isLocked ? null : _onVerticalDragEnd,
+        GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onScaleUpdate: (details) {
+            if (widget.isLocked) return;
+            if (details.pointerCount >= 2) {
+              if (details.scale > 1.05) {
+                widget.onPinchZoom?.call(true);
+              } else if (details.scale < 0.95) {
+                widget.onPinchZoom?.call(false);
+              }
+            }
+          },
+          child: Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: widget.onSingleTap,
+                  onLongPress: widget.onLongPress,
+                  onDoubleTap: widget.isLocked ? null : () => _onDoubleTap(false),
+                  onVerticalDragStart: widget.isLocked ? null : _onVerticalDragStart,
+                  onVerticalDragUpdate: widget.isLocked ? null : (d) => _onVerticalDragUpdate(d, true),
+                  onVerticalDragEnd: widget.isLocked ? null : _onVerticalDragEnd,
+                ),
               ),
-            ),
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: widget.onSingleTap,
-                onLongPress: widget.onLongPress,
-                onDoubleTap: widget.isLocked ? null : () => _onDoubleTap(true),
-                onVerticalDragStart: widget.isLocked ? null : _onVerticalDragStart,
-                onVerticalDragUpdate: widget.isLocked ? null : (d) => _onVerticalDragUpdate(d, false),
-                onVerticalDragEnd: widget.isLocked ? null : _onVerticalDragEnd,
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: widget.onSingleTap,
+                  onLongPress: widget.onLongPress,
+                  onDoubleTap: widget.isLocked ? null : () => _onDoubleTap(true),
+                  onVerticalDragStart: widget.isLocked ? null : _onVerticalDragStart,
+                  onVerticalDragUpdate: widget.isLocked ? null : (d) => _onVerticalDragUpdate(d, false),
+                  onVerticalDragEnd: widget.isLocked ? null : _onVerticalDragEnd,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
 
         // Seek Ripple Indicator

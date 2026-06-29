@@ -340,8 +340,16 @@ List<Map<String, dynamic>> _decodeAndSortHistoryEntries(List<String> encoded) {
   decoded.sort((a, b) {
     final aRaw = a['lastWatchedAt'];
     final bRaw = b['lastWatchedAt'];
-    final aDate = DateTime.tryParse(aRaw?.toString() ?? '') ?? DateTime(1970);
-    final bDate = DateTime.tryParse(bRaw?.toString() ?? '') ?? DateTime(1970);
+    
+    DateTime parseDate(dynamic raw) {
+      if (raw is int) {
+        return DateTime.fromMillisecondsSinceEpoch(raw);
+      }
+      return DateTime.tryParse(raw?.toString() ?? '') ?? DateTime(1970);
+    }
+
+    final aDate = parseDate(aRaw);
+    final bDate = parseDate(bRaw);
     return bDate.compareTo(aDate);
   });
   return decoded;

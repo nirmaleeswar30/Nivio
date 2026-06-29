@@ -263,6 +263,10 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
             isLocked: _isLocked,
             onSingleTap: _onSingleTap,
             onLongPress: _toggleLock,
+            onPinchZoom: (zoomIn) {
+              final newFit = zoomIn ? BoxFit.cover : BoxFit.contain;
+              widget.controller.setOverriddenFit(newFit);
+            },
           ),
 
           // 3. UI Controls Layer (Toggleable)

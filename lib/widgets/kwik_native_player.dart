@@ -57,6 +57,7 @@ class KwikNativePlayerState extends State<KwikNativePlayer> {
   
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
+  BoxFit _currentFit = BoxFit.contain;
 
   // Hardware levels
   double _volume = 0.5;
@@ -378,7 +379,7 @@ class KwikNativePlayerState extends State<KwikNativePlayer> {
         Video(
           controller: controller,
           controls: NoVideoControls, // We use custom controls
-          fit: BoxFit.contain, // Default fit, could be customized
+          fit: _currentFit,
         ),
 
         // 2. Gesture Layer
@@ -386,31 +387,44 @@ class KwikNativePlayerState extends State<KwikNativePlayer> {
           Positioned.fill(
           child: Stack(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _isLocked ? _onLockedSingleTap : _toggleControls,
-                      onLongPress: _toggleLock,
-                      onDoubleTap: _isLocked ? null : () => _onDoubleTap(false),
-                      onVerticalDragStart: _isLocked ? null : _onVerticalDragStart,
-                      onVerticalDragUpdate: _isLocked ? null : (d) => _onVerticalDragUpdate(d, true),
-                      onVerticalDragEnd: _isLocked ? null : _onVerticalDragEnd,
+              GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onScaleUpdate: (details) {
+                  if (_isLocked) return;
+                  if (details.pointerCount >= 2) {
+                    if (details.scale > 1.05) {
+                      setState(() => _currentFit = BoxFit.cover);
+                    } else if (details.scale < 0.95) {
+                      setState(() => _currentFit = BoxFit.contain);
+                    }
+                  }
+                },
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _isLocked ? _onLockedSingleTap : _toggleControls,
+                        onLongPress: _toggleLock,
+                        onDoubleTap: _isLocked ? null : () => _onDoubleTap(false),
+                        onVerticalDragStart: _isLocked ? null : _onVerticalDragStart,
+                        onVerticalDragUpdate: _isLocked ? null : (d) => _onVerticalDragUpdate(d, true),
+                        onVerticalDragEnd: _isLocked ? null : _onVerticalDragEnd,
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _isLocked ? _onLockedSingleTap : _toggleControls,
-                      onLongPress: _toggleLock,
-                      onDoubleTap: _isLocked ? null : () => _onDoubleTap(true),
-                      onVerticalDragStart: _isLocked ? null : _onVerticalDragStart,
-                      onVerticalDragUpdate: _isLocked ? null : (d) => _onVerticalDragUpdate(d, false),
-                      onVerticalDragEnd: _isLocked ? null : _onVerticalDragEnd,
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _isLocked ? _onLockedSingleTap : _toggleControls,
+                        onLongPress: _toggleLock,
+                        onDoubleTap: _isLocked ? null : () => _onDoubleTap(true),
+                        onVerticalDragStart: _isLocked ? null : _onVerticalDragStart,
+                        onVerticalDragUpdate: _isLocked ? null : (d) => _onVerticalDragUpdate(d, false),
+                        onVerticalDragEnd: _isLocked ? null : _onVerticalDragEnd,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               
               if (_showSeekRipple)

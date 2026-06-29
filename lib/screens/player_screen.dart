@@ -1562,7 +1562,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ),
         );
       },
-    );
+    ).whenComplete(() {
+      if (mounted && !_isPipMode) {
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      }
+    });
 
     if (shouldLeave != true || !mounted) return;
     if (service.isHost) {
@@ -1621,12 +1625,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _autoFullscreenTriggeredForCurrentLoad = true;
 
     if (_isDirectStream) {
-      if (_betterPlayerController?.isFullScreen == true) return;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _betterPlayerController == null) return;
-        if (_betterPlayerController!.isFullScreen) return;
-        _betterPlayerController!.enterFullScreen();
-      });
+      // Nothing needed. PlayerScreen handles its own immersive fullscreen mode.
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         SystemChrome.setPreferredOrientations([
@@ -1802,7 +1801,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         watchPartyRole: widget.watchPartyRole,
         providerIndex: _currentProviderIndex,
       ),
-    );
+    ).whenComplete(() {
+      if (mounted && !_isPipMode) {
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      }
+    });
   }
 
   Future<void> _switchToProvider(int providerIndex) async {
@@ -2065,7 +2068,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ),
         );
       },
-    );
+    ).whenComplete(() {
+      if (mounted && !_isPipMode) {
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      }
+    });
   }
 
   void _switchDisplayMode(String value) {
@@ -2487,6 +2494,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     const MethodChannel('com.nivio/gesture_exclusion').invokeMethod('setCanEnterPip', {'value': false});
     const MethodChannel('com.nivio/gesture_exclusion').setMethodCallHandler(null);
     const MethodChannel('puntito.simple_pip_mode').setMethodCallHandler(null);
+    SimplePip().setAutoPipMode(aspectRatio: const (16, 9), autoEnter: false);
     _progressTimer?.cancel();
     _watchPartyHostSyncTimer?.cancel();
     _watchPartyPlaybackSub?.cancel();
@@ -2623,7 +2631,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
-  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Build ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+  // ——————————————————————————————————————————————————————————————————————————————————————————
   void _showServerOverlayPanel() {
     final media = ref.read(selectedMediaProvider);
     showGeneralDialog(
@@ -2690,7 +2698,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           child: child,
         );
       },
-    );
+    ).whenComplete(() {
+      if (mounted && !_isPipMode) {
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      }
+    });
   }
 
   Future<void> _switchNativeStreamSource(StreamSource source) async {
@@ -3096,7 +3108,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           child: child,
         );
       },
-    );
+    ).whenComplete(() {
+      if (mounted && !_isPipMode) {
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      }
+    });
   }
 
   Widget _buildPlayerBody(bool isPortrait) {
