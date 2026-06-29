@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:convert';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
@@ -8,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/watchlist_item.dart';
@@ -484,33 +486,6 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                         ),
                                         onTap: () => _openWatchPartyHub(media),
                                       ),
-                                      const SizedBox(width: 10),
-                                      _glassIconButton(
-                                        icon: const PhosphorIcon(
-                                          PhosphorIconsRegular.shareNetwork,
-                                          color: NivioTheme.netflixWhite,
-                                          size: 19,
-                                        ),
-                                        onTap: () async {
-                                          final shareUrl =
-                                              media.mediaType == 'movie'
-                                              ? 'https://www.themoviedb.org/movie/${media.id}'
-                                              : 'https://www.themoviedb.org/tv/${media.id}';
-                                          await Clipboard.setData(
-                                            ClipboardData(text: shareUrl),
-                                          );
-                                          if (!context.mounted) return;
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                'Link copied to clipboard',
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                      ),
                                     ],
                                   ),
                                 ],
@@ -592,7 +567,25 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                       },
                                     ),
                                   ),
-                                  const SizedBox(width: 12),
+                                  const SizedBox(width: 6),
+                                  // Filled heart = in watchlist, outline = not
+                                  _plainIconButton(
+                                    icon: Icon(
+                                      isInWatchlist
+                                          ? Icons.favorite
+                                          : Icons.favorite_border,
+                                      color: isInWatchlist
+                                          ? colors.dominant
+                                          : NivioTheme.netflixWhite,
+                                      size: 24,
+                                    ),
+                                    iconColor: isInWatchlist
+                                        ? colors.dominant
+                                        : NivioTheme.netflixWhite,
+                                    onTap: () =>
+                                        _toggleWatchlist(media, isInWatchlist),
+                                  ),
+                                  const SizedBox(width: 6),
                                   ValueListenableBuilder<Box<DownloadItem>>(
                                     valueListenable: DownloadService.box.listenable(),
                                     builder: (context, box, _) {
@@ -631,23 +624,15 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                       );
                                     },
                                   ),
-                                  const SizedBox(width: 12),
-                                  // Filled heart = in watchlist, outline = not
+                                  const SizedBox(width: 6),
                                   _plainIconButton(
-                                    icon: Icon(
-                                      isInWatchlist
-                                          ? Icons.favorite
-                                          : Icons.favorite_border,
-                                      color: isInWatchlist
-                                          ? colors.dominant
-                                          : NivioTheme.netflixWhite,
+                                    icon: const Icon(
+                                      Icons.share_rounded,
+                                      color: NivioTheme.netflixWhite,
                                       size: 24,
                                     ),
-                                    iconColor: isInWatchlist
-                                        ? colors.dominant
-                                        : NivioTheme.netflixWhite,
-                                    onTap: () =>
-                                        _toggleWatchlist(media, isInWatchlist),
+                                    iconColor: NivioTheme.netflixWhite,
+                                    onTap: () => _shareMedia(media),
                                   ),
                                 ],
                               ),
@@ -818,13 +803,14 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           child: InkWell(
             onTap: onTap,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               decoration: BoxDecoration(
                 color: NivioTheme.glassFill,
                 borderRadius: BorderRadius.circular(999),
                 border: Border.all(color: accentColor.withValues(alpha: 0.65)),
               ),
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   PhosphorIcon(
@@ -833,12 +819,16 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                     size: 16,
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      color: accentColor,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: accentColor,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
                     ),
                   ),
                 ],
@@ -963,6 +953,27 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         ),
       );
     }
+  }
+
+  void _shareMedia(SearchResult media) {
+    final title = media.title ?? media.name ?? 'this title';
+    
+    // Create the deep link URL
+    final mediaType = media.mediaType ?? 'movie';
+    final deepLink = 'nivio://open/media/${media.id}?type=$mediaType';
+    
+    // Encode the deep link into Base64
+    final bytes = utf8.encode(deepLink);
+    final base64DeepLink = base64.encode(bytes);
+    
+    // Build the redirect URL using our hosted HTML file
+    final redirectUrl = 'https://nirmaleeswar30.github.io/Nivio/redirect.html?url=$base64DeepLink';
+    
+    final overview = media.overview != null && media.overview!.isNotEmpty 
+        ? '\n\n${media.overview}' 
+        : '';
+    final shareText = 'Check out "$title"!$overview\n\nWatch here: $redirectUrl';
+    Share.share(shareText, subject: title);
   }
 
   Future<void> _handleDownload(SearchResult media) async {
