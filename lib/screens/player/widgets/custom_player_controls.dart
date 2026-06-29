@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:simple_pip_mode/simple_pip.dart';
 import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/widgets/watch_party_chat_overlay.dart';
 import 'package:nivio/widgets/watch_party_reactions_overlay.dart';
@@ -242,10 +243,15 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
 
   @override
   Widget build(BuildContext context) {
-    return Positioned.fill(
-      child: Stack(
-        children: [
-          // 1. Background (Darken when controls are shown)
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 250 || constraints.maxHeight < 200) {
+          return const SizedBox.shrink();
+        }
+        return Positioned.fill(
+          child: Stack(
+            children: [
+              // 1. Background (Darken when controls are shown)
           if (_showControls && !_isLocked)
             Container(
               color: Colors.black.withValues(alpha: 0.5),
@@ -520,6 +526,8 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
           ),
         ],
       ),
+    );
+      },
     );
   }
 }

@@ -71,6 +71,7 @@ dependencies:
   flutter_cache_manager: any
   http: any
   marquee: ^2.3.0
+  simple_pip_mode: ^1.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

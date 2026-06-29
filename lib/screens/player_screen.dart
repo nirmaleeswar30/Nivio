@@ -1,4 +1,9 @@
 import 'package:better_player_plus/better_player_plus.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:simple_pip_mode/pip_widget.dart';
+import 'package:simple_pip_mode/actions/pip_action.dart';
+import 'package:simple_pip_mode/actions/pip_actions_layout.dart';
+import 'package:simple_pip_mode/simple_pip.dart';
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -110,6 +115,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Duration _nativePosition = Duration.zero;
   Duration _nativeDuration = Duration.zero;
   bool _isNativePlaying = true;
+  bool _isPipMode = false;
   final GlobalKey<KwikNativePlayerState> _kwikPlayerKey = GlobalKey<KwikNativePlayerState>();
 
   // Effective local file to play: either the explicit widget.localPath, or a
@@ -173,6 +179,53 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    const MethodChannel('com.nivio/gesture_exclusion').invokeMethod('setCanEnterPip', {'value': true});
+    try {
+      () async {
+        const MethodChannel('puntito.simple_pip_mode').setMethodCallHandler((call) async {
+          if (call.method == 'onPipEntered') {
+            setState(() => _isPipMode = true);
+          } else if (call.method == 'onPipExited') {
+            setState(() => _isPipMode = false);
+          } else if (call.method == 'onPipAction') {
+            final String arg = call.arguments as String;
+            final actionStr = arg.toLowerCase();
+            if (actionStr == 'play') {
+              if (_useNativePlayer) {
+                _kwikPlayerKey.currentState?.play();
+              } else {
+                _betterPlayerController?.play();
+              }
+            } else if (actionStr == 'pause') {
+              if (_useNativePlayer) {
+                _kwikPlayerKey.currentState?.pause();
+              } else {
+                _betterPlayerController?.pause();
+              }
+            } else if (actionStr == 'next' || actionStr == 'forward') {
+              if (_useNativePlayer) {
+                final pos = _kwikPlayerKey.currentState?.player.state.position ?? Duration.zero;
+                _kwikPlayerKey.currentState?.seekTo(pos + const Duration(seconds: 10));
+              } else {
+                final pos = _betterPlayerController?.videoPlayerController?.value.position ?? Duration.zero;
+                _betterPlayerController?.seekTo(pos + const Duration(seconds: 10));
+              }
+            } else if (actionStr == 'previous' || actionStr == 'rewind') {
+              if (_useNativePlayer) {
+                final pos = _kwikPlayerKey.currentState?.player.state.position ?? Duration.zero;
+                _kwikPlayerKey.currentState?.seekTo(pos - const Duration(seconds: 10));
+              } else {
+                final pos = _betterPlayerController?.videoPlayerController?.value.position ?? Duration.zero;
+                _betterPlayerController?.seekTo(pos - const Duration(seconds: 10));
+              }
+            }
+          }
+        });
+        await SimplePip().setPipActionsLayout(PipActionsLayout.mediaWithSeek10);
+        await SimplePip().setAutoPipMode(aspectRatio: const (16, 9), autoEnter: true);
+        await SimplePip().setIsPlaying(true);
+      }();
+    } catch (_) {}
     _currentEpisode = widget.episode;
     _currentProviderIndex = math.max(0, widget.providerIndex ?? 0);
     _initializeWatchParty();
@@ -2402,6 +2455,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   @override
   void dispose() {
+    const MethodChannel('com.nivio/gesture_exclusion').invokeMethod('setCanEnterPip', {'value': false});
+    const MethodChannel('com.nivio/gesture_exclusion').setMethodCallHandler(null);
+    const MethodChannel('puntito.simple_pip_mode').setMethodCallHandler(null);
     _progressTimer?.cancel();
     _watchPartyHostSyncTimer?.cancel();
     _watchPartyPlaybackSub?.cancel();
@@ -2962,6 +3018,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final isPortrait =
         MediaQuery.of(context).orientation == Orientation.portrait;
 
+    if (_isPipMode) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: _buildDirectStreamLayout(isPortrait, isPipMode: true),
+      );
+    }
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
@@ -3221,23 +3284,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
 
-  Widget _buildDirectStreamLayout(bool isPortrait) {
+  Widget _buildDirectStreamLayout(bool isPortrait, {bool isPipMode = false}) {
     return Column(
       children: [
         Expanded(
           child: SizedBox.expand(
             child: _useNativePlayer 
-                ? _buildNativePlayer()
+                ? _buildNativePlayer(isPipMode: isPipMode)
                 : (!_isDirectStream && _streamResult != null) 
                     ? _buildWebViewPlayer() 
-                    : _buildVideoPlayer(),
+                    : _buildVideoPlayer(isPipMode: isPipMode),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildNativePlayer() {
+  Widget _buildNativePlayer({bool isPipMode = false}) {
     final media = ref.read(selectedMediaProvider);
     String? subtitle = media?.mediaType == 'tv' ? 'S${widget.season} E$_currentEpisode' : null;
     
@@ -3252,6 +3315,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     
     final title = media?.title ?? media?.name ?? 'Playing';
     return KwikNativePlayer(
+      isPipMode: isPipMode,
       key: _kwikPlayerKey,
       url: _nativeUrl!,
       headers: _nativeHeaders ?? {},
@@ -3925,7 +3989,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ WebView player (embed fallback) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 
   // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ BetterPlayer widget ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
-  Widget _buildVideoPlayer() {
+  Widget _buildVideoPlayer({bool isPipMode = false}) {
     return RepaintBoundary(
       child: BetterPlayer(controller: _betterPlayerController!),
     );

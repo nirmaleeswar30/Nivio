@@ -108,14 +108,23 @@ class _BetterPlayerSubtitlesDrawerState extends State<BetterPlayerSubtitlesDrawe
     final List<String> subtitles = subtitle?.texts ?? [];
     final List<Widget> textWidgets = subtitles.map(_buildSubtitleTextWidget).toList();
 
+    // Auto-scale subtitles if the screen is very small (e.g. PiP mode)
+    final double screenHeight = MediaQuery.of(context).size.height;
+    final bool isSmallScreen = screenHeight < 300;
+    final double scaleFactor = isSmallScreen ? 0.4 : 1.0;
+
     return SizedBox.expand(
       child: Padding(
         padding: EdgeInsets.only(
-          bottom: _playerVisible ? _configuration!.bottomPadding + 30 : _configuration!.bottomPadding,
-          left: _configuration!.leftPadding,
-          right: _configuration!.rightPadding,
+          bottom: _playerVisible ? (_configuration!.bottomPadding + 30) * scaleFactor : (_configuration!.bottomPadding * scaleFactor),
+          left: _configuration!.leftPadding * scaleFactor,
+          right: _configuration!.rightPadding * scaleFactor,
         ),
-        child: Column(mainAxisAlignment: MainAxisAlignment.end, children: textWidgets),
+        child: Transform.scale(
+          scale: scaleFactor,
+          alignment: Alignment.bottomCenter,
+          child: Column(mainAxisAlignment: MainAxisAlignment.end, children: textWidgets),
+        ),
       ),
     );
   }

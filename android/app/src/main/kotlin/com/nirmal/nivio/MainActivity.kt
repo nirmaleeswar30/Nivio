@@ -9,10 +9,13 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.nivio/gesture_exclusion"
+    private var methodChannel: MethodChannel? = null
+    private var canEnterPip = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+        methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+        methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "excludeBottomGestures" -> {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -34,6 +37,10 @@ class MainActivity : FlutterActivity() {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         window.decorView.systemGestureExclusionRects = emptyList()
                     }
+                    result.success(true)
+                }
+                "setCanEnterPip" -> {
+                    canEnterPip = call.argument<Boolean>("value") ?: false
                     result.success(true)
                 }
                 else -> result.notImplemented()

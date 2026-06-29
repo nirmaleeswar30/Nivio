@@ -19,6 +19,7 @@ class KwikNativePlayer extends StatefulWidget {
   final VoidCallback? onServerChange;
   final VoidCallback? onEpisodes;
   final Function(bool isPlaying)? onPlayingChanged;
+  final bool isPipMode;
 
   const KwikNativePlayer({
     super.key,
@@ -35,6 +36,7 @@ class KwikNativePlayer extends StatefulWidget {
     this.onServerChange,
     this.onEpisodes,
     this.onPlayingChanged,
+    this.isPipMode = false,
   });
 
   @override
@@ -373,7 +375,8 @@ class KwikNativePlayerState extends State<KwikNativePlayer> {
         ),
 
         // 2. Gesture Layer
-        Positioned.fill(
+        if (!widget.isPipMode)
+          Positioned.fill(
           child: Stack(
             children: [
               Row(
@@ -467,7 +470,7 @@ class KwikNativePlayerState extends State<KwikNativePlayer> {
         ),
 
         // 3. UI Controls Layer
-        if (_showControls && !_isLocked)
+        if (!widget.isPipMode && _showControls && !_isLocked)
           Positioned.fill(
             child: Stack(
               children: [
