@@ -289,14 +289,89 @@ class DownloadPrompt {
   /// Shows a language picker dialog and returns the selected audio/subtitle languages.
   /// Returns null if the user cancels. Used by batch/seasonal downloads to ask once
   /// and apply the same language selection to all episodes.
-  static Future<({String? audioLang, String? subtitleLang})?> pickLanguages({
+  static Future<({String? audioLang, String? subtitleLang, StreamSource? selectedSource})?> pickLanguages({
     required BuildContext context,
     required WidgetRef ref,
     required StreamResult streamResult,
   }) async {
-    // If it has multiple sources (Animepahe), no language selection needed
-    if (streamResult.sources.length > 1 || !streamResult.isM3U8) {
-      return (audioLang: null, subtitleLang: null);
+    // If it has multiple sources (Animepahe), show source picker
+    if (streamResult.sources.length > 1) {
+      if (!context.mounted) return null;
+      
+      StreamSource? selectedSource = streamResult.sources.first;
+      bool confirmed = false;
+      
+      await showModalBottomSheet(
+        context: context,
+        backgroundColor: NivioTheme.netflixDarkGrey,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) {
+          return StatefulBuilder(
+            builder: (ctx, setState) {
+              return SafeArea(
+                child: Container(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Select Quality', style: TextStyle(color: NivioTheme.netflixWhite, fontSize: 20, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 4),
+                      const Text('This selection will be applied to all episodes', style: TextStyle(color: NivioTheme.netflixLightGrey, fontSize: 13)),
+                      const SizedBox(height: 24),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<StreamSource>(
+                            value: selectedSource,
+                            isExpanded: true,
+                            dropdownColor: NivioTheme.netflixDarkGrey,
+                            icon: const Icon(Icons.arrow_drop_down, color: NivioTheme.netflixWhite),
+                            items: streamResult.sources.map((source) {
+                              final label = "${source.quality} ${source.isDub ? '(Dub)' : '(Sub)'}";
+                              return DropdownMenuItem(
+                                value: source,
+                                child: Text(label, style: const TextStyle(color: NivioTheme.netflixWhite)),
+                              );
+                            }).toList(),
+                            onChanged: (val) => setState(() => selectedSource = val),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: NivioTheme.accentColorOf(context),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onPressed: () {
+                            confirmed = true;
+                            Navigator.pop(ctx);
+                          },
+                          child: const Text('Start Downloads', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+      
+      if (!confirmed) return null;
+      return (audioLang: null, subtitleLang: null, selectedSource: selectedSource);
+    }
+
+    if (!streamResult.isM3U8) {
+      return (audioLang: null, subtitleLang: null, selectedSource: null);
     }
 
     // Show loading indicator
@@ -332,7 +407,7 @@ class DownloadPrompt {
 
     // If no tracks found, no language selection needed
     if (audioTracks.isEmpty && subtitleTracks.isEmpty) {
-      return (audioLang: null, subtitleLang: null);
+      return (audioLang: null, subtitleLang: null, selectedSource: null);
     }
 
     // Determine default selection based on global settings
@@ -363,7 +438,7 @@ class DownloadPrompt {
     if (!context.mounted) return null;
 
     // Show language picker
-    ({String? audioLang, String? subtitleLang})? result;
+    ({String? audioLang, String? subtitleLang, StreamSource? selectedSource})? result;
 
     await showModalBottomSheet(
       context: context,
@@ -445,7 +520,7 @@ class DownloadPrompt {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
                         onPressed: () {
-                          result = (audioLang: selectedAudio, subtitleLang: selectedSubtitle);
+                          result = (audioLang: selectedAudio, subtitleLang: selectedSubtitle, selectedSource: null);
                           Navigator.pop(ctx);
                         },
                         child: const Text('Start Downloads', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),

@@ -1109,22 +1109,25 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 
     if (langChoice == null) return; // User cancelled
 
+    final preferredQuality = langChoice.selectedSource?.quality;
+    final subDubPreference = langChoice.selectedSource != null ? (langChoice.selectedSource!.isDub ? 'dub' : 'sub') : null;
+
     // Now queue the actual downloads
     if (singleSeason != null) {
-      _downloadSeason(media, providerIndex, singleSeason, langChoice.audioLang, langChoice.subtitleLang);
+      _downloadSeason(media, providerIndex, singleSeason, langChoice.audioLang, langChoice.subtitleLang, preferredQuality: preferredQuality, subDubPreference: subDubPreference);
     } else {
-      _downloadAllSeasons(media, providerIndex, langChoice.audioLang, langChoice.subtitleLang);
+      _downloadAllSeasons(media, providerIndex, langChoice.audioLang, langChoice.subtitleLang, preferredQuality: preferredQuality, subDubPreference: subDubPreference);
     }
   }
 
-  Future<void> _downloadSeason(SearchResult media, int providerIndex, int season, String? audioLang, String? subtitleLang) async {
+  Future<void> _downloadSeason(SearchResult media, int providerIndex, int season, String? audioLang, String? subtitleLang, {String? preferredQuality, String? subDubPreference}) async {
     final seriesInfoAsync = ref.read(seriesInfoProvider(media.id));
     seriesInfoAsync.whenData((seriesInfo) async {
        final seasonData = await ref.read(seasonDataProvider((showId: media.id, seasonNumber: season)).future);
        int count = 0;
        for (final ep in seasonData.episodes) {
              if (ep.airDate != null && DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) == true) {
-                _downloadEpisode(media, season, ep.episodeNumber, ep.episodeName ?? 'Episode', ep.stillPath, providerIndex, audioLang, subtitleLang);
+                _downloadEpisode(media, season, ep.episodeNumber, ep.episodeName ?? 'Episode', ep.stillPath, providerIndex, audioLang, subtitleLang, preferredQuality: preferredQuality, subDubPreference: subDubPreference);
                 count++;
              }
        }
@@ -1136,7 +1139,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     });
   }
 
-  Future<void> _downloadAllSeasons(SearchResult media, int providerIndex, String? audioLang, String? subtitleLang) async {
+  Future<void> _downloadAllSeasons(SearchResult media, int providerIndex, String? audioLang, String? subtitleLang, {String? preferredQuality, String? subDubPreference}) async {
     final seriesInfoAsync = ref.read(seriesInfoProvider(media.id));
     seriesInfoAsync.whenData((seriesInfo) async {
        int count = 0;
@@ -1145,7 +1148,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           final seasonData = await ref.read(seasonDataProvider((showId: media.id, seasonNumber: s.seasonNumber)).future);
           for (final ep in seasonData.episodes) {
             if (ep.airDate != null && DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) == true) {
-               _downloadEpisode(media, s.seasonNumber, ep.episodeNumber, ep.episodeName ?? 'Episode', ep.stillPath, providerIndex, audioLang, subtitleLang);
+               _downloadEpisode(media, s.seasonNumber, ep.episodeNumber, ep.episodeName ?? 'Episode', ep.stillPath, providerIndex, audioLang, subtitleLang, preferredQuality: preferredQuality, subDubPreference: subDubPreference);
                count++;
             }
           }
@@ -1158,13 +1161,15 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     });
   }
 
-  Future<void> _downloadEpisode(SearchResult media, int season, int episode, String episodeName, String? stillPath, int providerIndex, String? audioLang, String? subtitleLang) async {
+  Future<void> _downloadEpisode(SearchResult media, int season, int episode, String episodeName, String? stillPath, int providerIndex, String? audioLang, String? subtitleLang, {String? preferredQuality, String? subDubPreference}) async {
     final streamingService = ref.read(streamingServiceProvider);
     final result = await streamingService.fetchStreamUrl(
       media: media,
       season: season,
       episode: episode,
       providerIndex: providerIndex,
+      preferredQuality: preferredQuality,
+      subDubPreference: subDubPreference ?? 'sub',
     );
     
     if (result != null && result.url.isNotEmpty) {

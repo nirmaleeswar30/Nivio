@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## Nivio-v2.1.0
 
 ### ✨ New Features & Enhancements
+*   ⚡ **Parallel Better Downloads:** Completely revamped the download engine to support significantly faster, highly reliable parallel downloading!
 *   🎉 **Watch Party Chats & Reactions:** The ultimate watch party experience is here! You can now chat in real-time and send live emoji reactions while watching movies perfectly synced with your friends!
 *   📱 **Picture-in-Picture (PiP) Support:** The highly anticipated PiP mode is here! Watch movies in a floating window while multitasking. What's even better? Watch Party sync works flawlessly while in PiP mode!
 *   🔗 **Cloudstream-Style Deep Link Sharing:** Say goodbye to broken share links! Sharing a movie or show now generates an elegant web-redirect link that works perfectly across all social apps and deep-links directly into the exact movie inside Nivio!
