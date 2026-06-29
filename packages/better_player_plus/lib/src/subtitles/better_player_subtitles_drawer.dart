@@ -134,7 +134,7 @@ class _BetterPlayerSubtitlesDrawerState extends State<BetterPlayerSubtitlesDrawe
       return null;
     }
 
-    final Duration position = _latestValue!.position;
+    final Duration position = _latestValue!.position - Duration(milliseconds: widget.betterPlayerController.subtitleDelay);
     for (final BetterPlayerSubtitle subtitle in widget.betterPlayerController.subtitlesLines) {
       if (subtitle.start! <= position && subtitle.end! >= position) {
         return subtitle;

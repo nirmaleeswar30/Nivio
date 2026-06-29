@@ -20,6 +20,7 @@ class KwikNativePlayer extends StatefulWidget {
   final VoidCallback? onEpisodes;
   final Function(bool isPlaying)? onPlayingChanged;
   final bool isPipMode;
+  final int initialSubtitleDelayMs;
 
   const KwikNativePlayer({
     super.key,
@@ -37,6 +38,7 @@ class KwikNativePlayer extends StatefulWidget {
     this.onEpisodes,
     this.onPlayingChanged,
     this.isPipMode = false,
+    this.initialSubtitleDelayMs = 0,
   });
 
   @override
@@ -152,6 +154,11 @@ class KwikNativePlayerState extends State<KwikNativePlayer> {
 
   Future<void> pause() async {
     await player.pause();
+  }
+  
+  Future<void> setSubtitleDelay(int delayMs) async {
+    // sub-delay is in seconds in mpv, but media_kit doesn't expose setProperty yet.
+    // We will just do nothing for the native player since it's only a fallback player.
   }
   // ---------------------------------------
 

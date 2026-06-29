@@ -14,6 +14,8 @@ import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/screens/player/widgets/custom_player_controls.dart';
 import 'package:nivio/models/search_result.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/media_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
@@ -68,7 +70,30 @@ class PlayerScreen extends ConsumerStatefulWidget {
   ConsumerState<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends ConsumerState<PlayerScreen> {
+class _PlayerScreenState extends ConsumerState<PlayerScreen>
+    with WidgetsBindingObserver, TickerProviderStateMixin {
+
+  Future<void> _loadSubtitleDelay() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _subtitleDelayMs = prefs.getInt('subtitle_delay_${widget.mediaId}') ?? 0;
+    });
+  }
+
+  void _updateSubtitleDelay(int change) async {
+    setState(() {
+      _subtitleDelayMs += change;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('subtitle_delay_${widget.mediaId}', _subtitleDelayMs);
+    
+    if (_useNativePlayer) {
+      _kwikPlayerKey.currentState?.setSubtitleDelay(_subtitleDelayMs);
+    } else {
+      _betterPlayerController?.setSubtitleDelay(_subtitleDelayMs);
+    }
+  }
+
   static const List<String> _displayFitOrder = [
     'bestFit',
     'fitScreen',
@@ -139,6 +164,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _NextEpState(show: false, countdown: null),
   );
   OverlayEntry? _nextEpOverlayEntry;
+  
+  int _subtitleDelayMs = 0;
 
   SeasonData? _currentSeasonData;
   WatchPartyServiceSupabase? _watchPartyService;
@@ -179,6 +206,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    _loadSubtitleDelay();
+    
     const MethodChannel('com.nivio/gesture_exclusion').invokeMethod('setCanEnterPip', {'value': true});
     try {
       () async {
@@ -2977,6 +3006,73 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                       ],
                                     ),
                                   ),
+                                  Theme(
+                                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                                    child: ExpansionTile(
+                                      iconColor: Theme.of(context).primaryColor,
+                                      collapsedIconColor: Colors.white54,
+                                      leading: const Icon(Icons.sync),
+                                      title: const Text('SUBTITLE SYNC', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  IconButton(
+                                                    onPressed: () {
+                                                      _updateSubtitleDelay(-250);
+                                                      setDialogState(() {});
+                                                    },
+                                                    icon: const Icon(Icons.fast_rewind, color: Colors.white70),
+                                                    tooltip: '-250ms',
+                                                  ),
+                                                  IconButton(
+                                                    onPressed: () {
+                                                      _updateSubtitleDelay(-50);
+                                                      setDialogState(() {});
+                                                    },
+                                                    icon: const Icon(Icons.remove_circle_outline, color: Colors.white),
+                                                  ),
+                                                ],
+                                              ),
+                                              Text(
+                                                '${_subtitleDelayMs > 0 ? '+' : ''}$_subtitleDelayMs ms',
+                                                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                              ),
+                                              Row(
+                                                children: [
+                                                  IconButton(
+                                                    onPressed: () {
+                                                      _updateSubtitleDelay(50);
+                                                      setDialogState(() {});
+                                                    },
+                                                    icon: const Icon(Icons.add_circle_outline, color: Colors.white),
+                                                  ),
+                                                  IconButton(
+                                                    onPressed: () {
+                                                      _updateSubtitleDelay(250);
+                                                      setDialogState(() {});
+                                                    },
+                                                    icon: const Icon(Icons.fast_forward, color: Colors.white70),
+                                                    tooltip: '+250ms',
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const Padding(
+                                          padding: EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+                                          child: Text('Negative values show subtitles earlier, positive values show them later.',
+                                            style: TextStyle(color: Colors.white38, fontSize: 12), textAlign: TextAlign.center,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -3320,6 +3416,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       url: _nativeUrl!,
       headers: _nativeHeaders ?? {},
       startAt: _nativeStartAt,
+      initialSubtitleDelayMs: _subtitleDelayMs,
       title: title,
       subtitle: subtitle,
       providerName: _currentProvider,

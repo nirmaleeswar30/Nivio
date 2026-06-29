@@ -119,6 +119,13 @@ class BetterPlayerController {
   ///Currently selected player track. Used only for HLS / DASH.
   BetterPlayerAsmsTrack? get betterPlayerAsmsTrack => _betterPlayerAsmsTrack;
 
+  ///Delay for subtitles in milliseconds. Positive value delays subtitles, negative value advances them.
+  int subtitleDelay = 0;
+
+  ///Stream controller which broadcasts events about Better Player.
+  final StreamController<BetterPlayerEvent> _eventStreamController =
+      StreamController.broadcast();
+
   ///Timer for next video. Used in playlist.
   Timer? _nextVideoTimer;
 
@@ -392,6 +399,14 @@ class BetterPlayerController {
   ///currently displayed subtitles.
   void setSubtitlesFontSize(double fontSize) {
     subtitlesFontSizeOverride = fontSize;
+    if (!_disposed) {
+      _postControllerEvent(BetterPlayerControllerEvent.changeSubtitles);
+    }
+  }
+
+  ///Sets the subtitle delay in milliseconds. Positive values delay the subtitles.
+  void setSubtitleDelay(int delayMs) {
+    subtitleDelay = delayMs;
     if (!_disposed) {
       _postControllerEvent(BetterPlayerControllerEvent.changeSubtitles);
     }
