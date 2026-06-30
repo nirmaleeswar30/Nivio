@@ -14,7 +14,7 @@ All notable changes to this project will be documented in this file.
 ### 🛠️ UI Tweaks & Improvements
 *   **Share Icon Repositioning:** Moved the share icon to a more convenient location alongside the other media action buttons for easier access.
 
-### 🐛 Bug Fixes
+*   **Anime Mapping Fix:** Fixed an issue where slight punctuation differences between TMDB and AniList (such as "Journey's End" vs "Journey’s End" in Frieren) would cause the scraper to fetch an obscure mini-spin-off instead of the massively popular main series. The AniList scraper now strictly prioritizes search matches by popularity.
 *   **Anime Batch Download Quality Selector:** Fixed a bug where batch downloading a full season of anime would skip the quality/language selector. It now correctly prompts you to choose your preferred resolution and Sub/Dub variation!
 *   **Parallel Download Merge Fix:** Fixed an issue where "Normal Series" videos would get stuck indefinitely on the "Merging files..." phase due to unnecessary audio transcoding. The app now intelligently distinguishes between Anime and Normal series, applying the instant direct-copy merging to normal series while preserving the timestamp-fixing audio transcode for Animepahe downloads.
 *   **Premature Download Merge Fix:** Fixed a major bug where unstable networks would cause the parallel downloader to silently drop connections and prematurely merge incomplete files. The engine now features strict byte-verification and dynamically adjusts HTTP Range headers to seamlessly resume from the exact failed byte without corrupting the file!

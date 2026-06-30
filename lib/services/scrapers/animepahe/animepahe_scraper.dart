@@ -49,7 +49,7 @@ class AnimepaheScraperService {
           Uri.parse('https://graphql.anilist.co'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
-            'query': 'query { Media(search: "$queryTitle", type: ANIME) { id idMal title { romaji english } } }'
+            'query': 'query { Media(search: "$queryTitle", type: ANIME, sort: POPULARITY_DESC) { id idMal title { romaji english } } }'
           }),
         ).timeout(const Duration(seconds: 5));
 
