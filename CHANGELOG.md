@@ -17,6 +17,10 @@ All notable changes to this project will be documented in this file.
 ### 🐛 Bug Fixes
 *   **Anime Batch Download Quality Selector:** Fixed a bug where batch downloading a full season of anime would skip the quality/language selector. It now correctly prompts you to choose your preferred resolution and Sub/Dub variation!
 *   **Parallel Download Corruption Fix:** Fixed a critical bug where anime episodes downloaded via the new parallel engine would sometimes be corrupted or unplayable due to missing FFmpeg packet-fixing flags. The parallel engine is now just as bulletproof as the sequential one.
+*   **Premature Download Merge Fix:** Fixed a major bug where unstable networks would cause the parallel downloader to silently drop connections and prematurely merge incomplete files. The engine now features strict byte-verification and dynamically adjusts HTTP Range headers to seamlessly resume from the exact failed byte without corrupting the file!
+*   **Audio Track Reversion Bug:** Fixed a bug where resuming HLS streams would occasionally cause the player to abandon your preferred audio language and switch to an unnamed track. The player is now fully aware of dynamic chunk loading and strictly enforces your preferred track at all times.
+*   **Player Exit Crash Fix:** Fixed a "Bad state" crash that occurred when backing out of the video player, caused by attempting to read Riverpod providers while the widget was unmounting.
+*   **Video Player UI Crash Fix:** Fixed a layout rendering exception in the custom player controls that caused a solid white error overlay to appear instead of the video.
 *   **Auto-PiP Glitch Fixed:** Fixed an extremely annoying bug where the app would mistakenly enter Picture-in-Picture mode even after you fully backed out of the player and went to the home screen. PiP will now strictly only trigger if the video player is actually open!
 *   **System UI Navigation Fix:** Fixed a UI glitch where swiping back from the video player would cause the Android bottom navigation bar to permanently stick on the screen. The app now properly re-applies immersive mode to stay full-screen!
 

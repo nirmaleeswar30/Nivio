@@ -210,11 +210,11 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                 ],
               )
             else if (item.status == DownloadStatus.extracting)
-              const Row(
+              Row(
                 children: [
-                  SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
-                  SizedBox(width: 8),
-                  Text('Extracting video link...', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
+                  const SizedBox(width: 8),
+                  Text(item.progress >= 1.0 || (item.downloadedBytes ?? 0) > 0 ? 'Merging files...' : 'Extracting video link...', style: const TextStyle(color: Colors.white70, fontSize: 12)),
                 ],
               )
             else if (isFailed)

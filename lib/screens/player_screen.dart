@@ -27,6 +27,7 @@ import 'package:nivio/services/streaming_service.dart';
 import 'package:nivio/services/watch_party/watch_party_models.dart';
 import 'package:nivio/services/watch_party/watch_party_service_supabase.dart';
 import 'package:nivio/models/watch_history.dart';
+import 'package:nivio/services/watch_history_service.dart';
 
 import 'dart:async';
 import 'dart:io';
@@ -72,6 +73,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen>
     with WidgetsBindingObserver, TickerProviderStateMixin {
+  WatchHistoryService? _cachedHistoryService;
+  SearchResult? _cachedMedia;
 
   Future<void> _loadSubtitleDelay() async {
     final prefs = await SharedPreferences.getInstance();
@@ -912,15 +915,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   bool _hasAppliedGlobalTracks = false;
+  int _lastAudioTrackCount = 0;
+  int _lastSubtitleTrackCount = 0;
 
   void _applyTrackPreferences() {
-    if (_hasAppliedGlobalTracks) return;
-    
     final audioTracks = _betterPlayerController?.betterPlayerAsmsAudioTracks ?? [];
     final subtitleTracks = _betterPlayerController?.betterPlayerSubtitlesSourceList ?? [];
     
     // If tracks haven't been parsed yet from the stream, wait for the next event
     if (audioTracks.isEmpty && subtitleTracks.isEmpty) return;
+    
+    // Only skip if we already applied preferences AND no new tracks were dynamically parsed by the player
+    if (_hasAppliedGlobalTracks && 
+        audioTracks.length == _lastAudioTrackCount && 
+        subtitleTracks.length == _lastSubtitleTrackCount) {
+      return;
+    }
+    
+    _lastAudioTrackCount = audioTracks.length;
+    _lastSubtitleTrackCount = subtitleTracks.length;
 
     // 1. Determine Preferred Audio
     // Priority: Saved History -> Global Settings
@@ -2452,10 +2465,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     // Prevent division by zero crash in JSON encoding when duration is missing
     if (duration.inSeconds <= 0) return;
-
-    final media = ref.read(selectedMediaProvider);
+    
+    // Cache providers safely if we are still mounted
+    if (mounted) {
+      _cachedHistoryService ??= ref.read(watchHistoryServiceProvider);
+      _cachedMedia ??= ref.read(selectedMediaProvider);
+    }
+    
+    final media = _cachedMedia ?? (mounted ? ref.read(selectedMediaProvider) : null);
     if (media == null) return;
-    final historyService = ref.read(watchHistoryServiceProvider);
+    
+    final historyService = _cachedHistoryService ?? (mounted ? ref.read(watchHistoryServiceProvider) : null);
+    if (historyService == null) return;
     
     // Attempt to get total seasons if available
     int totalSeasons = 1;

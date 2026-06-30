@@ -248,7 +248,7 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
         if (constraints.maxWidth < 250 || constraints.maxHeight < 200) {
           return const SizedBox.shrink();
         }
-        return Positioned.fill(
+        return SizedBox.expand(
           child: Stack(
             children: [
               // 1. Background (Darken when controls are shown)

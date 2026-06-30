@@ -438,7 +438,11 @@ class DownloadService {
               sink = null;
               
               if (!cancelToken.isCancelled) {
-                 chunkSuccess = true;
+                 if (existingLength + receivedThisSession == expectedChunkLength) {
+                   chunkSuccess = true;
+                 } else {
+                   throw Exception('Chunk stream closed prematurely! (Got ${existingLength + receivedThisSession} / $expectedChunkLength)');
+                 }
               }
             } catch (e) {
               if (sink != null) await sink.close();
@@ -447,6 +451,11 @@ class DownloadService {
                 appDebugLog('❌ Direct Chunk failed after 5 retries: $e');
                 rethrow;
               } else {
+                if (partFile.existsSync()) {
+                  existingLength = partFile.lengthSync();
+                  start = (i * chunkSize) + existingLength;
+                  chunkHeaders['Range'] = 'bytes=$start-$end';
+                }
                 await Future.delayed(Duration(seconds: 2 * retries)); // Exponential backoff
               }
             }
@@ -461,6 +470,7 @@ class DownloadService {
 
       // 3. Merge chunks
       appDebugLog('🎬 Direct: Merging $chunkCount chunks...');
+      
       _updateStatus(item, DownloadStatus.extracting);
       await box.put(item.id, item);
       
@@ -724,6 +734,7 @@ class DownloadService {
 
       // 4. Mux using FFmpeg from local M3U8
       appDebugLog('🎬 HLS: Segments downloaded. Muxing locally via FFmpeg...');
+      
       _updateStatus(item, DownloadStatus.extracting);
       await box.put(item.id, item);
 
@@ -978,7 +989,7 @@ class DownloadService {
       await _notifications.show(
         item.id.hashCode,
         title,
-        'Extracting video link...',
+        item.progress >= 1.0 || (item.downloadedBytes ?? 0) > 0 ? 'Merging files...' : 'Extracting video link...',
         details,
         payload: 'open_downloads',
       );
