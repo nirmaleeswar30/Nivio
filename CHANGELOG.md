@@ -15,6 +15,8 @@ All notable changes to this project will be documented in this file.
 *   **Share Icon Repositioning:** Moved the share icon to a more convenient location alongside the other media action buttons for easier access.
 
 ### 🐛 Bug Fixes
+*   **Anime Batch Download Quality Selector:** Fixed a bug where batch downloading a full season of anime would skip the quality/language selector. It now correctly prompts you to choose your preferred resolution and Sub/Dub variation!
+*   **Parallel Download Corruption Fix:** Fixed a critical bug where anime episodes downloaded via the new parallel engine would sometimes be corrupted or unplayable due to missing FFmpeg packet-fixing flags. The parallel engine is now just as bulletproof as the sequential one.
 *   **Auto-PiP Glitch Fixed:** Fixed an extremely annoying bug where the app would mistakenly enter Picture-in-Picture mode even after you fully backed out of the player and went to the home screen. PiP will now strictly only trigger if the video player is actually open!
 *   **System UI Navigation Fix:** Fixed a UI glitch where swiping back from the video player would cause the Android bottom navigation bar to permanently stick on the screen. The app now properly re-applies immersive mode to stay full-screen!
 

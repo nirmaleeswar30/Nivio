@@ -727,14 +727,27 @@ class DownloadService {
       _updateStatus(item, DownloadStatus.extracting);
       await box.put(item.id, item);
 
-      final ffmpegArgs = ['-loglevel', 'error', '-allowed_extensions', 'ALL', '-i', localVideoM3u8];
+      final ffmpegArgs = [
+        '-loglevel', 'error', 
+        '-allowed_extensions', 'ALL', 
+        '-fflags', '+genpts+igndts+discardcorrupt', 
+        '-i', localVideoM3u8
+      ];
       if (localAudioM3u8 != null) {
         ffmpegArgs.addAll(['-allowed_extensions', 'ALL', '-i', localAudioM3u8]);
         ffmpegArgs.addAll(['-map', '0:v:0', '-map', '1:a:0']);
       } else {
         ffmpegArgs.addAll(['-map', '0']);
       }
-      ffmpegArgs.addAll(['-c', 'copy', filePath]);
+      
+      // Copy video, but transcode audio to fresh AAC to guarantee valid headers for MediaCodec
+      ffmpegArgs.addAll(['-c:v', 'copy']);
+      ffmpegArgs.addAll(['-c:a', 'aac', '-b:a', '128k']);
+      
+      // Add output-specific muxing flags
+      ffmpegArgs.addAll(['-max_muxing_queue_size', '9999']);
+      
+      ffmpegArgs.add(filePath);
 
       final session = await FFmpegKit.executeWithArguments(ffmpegArgs);
       final returnCode = await session.getReturnCode();
