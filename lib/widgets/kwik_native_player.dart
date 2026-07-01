@@ -88,22 +88,22 @@ class KwikNativePlayerState extends State<KwikNativePlayer> {
 
     _subscriptions.addAll([
       player.stream.playing.listen((playing) {
-        if (mounted) {
+        if (!_disposed && mounted) {
           setState(() => _isPlaying = playing);
           widget.onPlayingChanged?.call(playing);
         }
       }),
       player.stream.position.listen((position) {
-        if (mounted) {
+        if (!_disposed && mounted) {
           setState(() => _position = position);
           widget.onProgress?.call(_position, _duration);
         }
       }),
       player.stream.duration.listen((duration) {
-        if (mounted) setState(() => _duration = duration);
+        if (!_disposed && mounted) setState(() => _duration = duration);
       }),
       player.stream.completed.listen((completed) {
-        if (completed && mounted) {
+        if (completed && !_disposed && mounted) {
           widget.onEnded?.call();
         }
       }),
@@ -129,18 +129,30 @@ class KwikNativePlayerState extends State<KwikNativePlayer> {
     _initHardwareLevels();
     _startHideTimer();
   }
+  bool _disposed = false;
 
   @override
   void dispose() {
-    // Save final progress
-    widget.onProgress?.call(player.state.position, player.state.duration);
+    _disposed = true;
+    // Save final progress - wrap in try-catch to ensure we always dispose the player
+    // even if the parent widget throws an exception (e.g. during unmount)
+    try {
+      widget.onProgress?.call(player.state.position, player.state.duration);
+    } catch (e) {
+      debugPrint('Error in onProgress during dispose: $e');
+    }
+    // Cancel all stream subscriptions FIRST to prevent setState on defunct element
     for (final s in _subscriptions) {
       s.cancel();
     }
+    _subscriptions.clear();
+    // Stop playback before disposing to prevent audio bleed
+    player.stop();
     player.dispose();
     FlutterVolumeController.removeListener();
     _hideControlsTimer?.cancel();
     _hideIndicatorTimer?.cancel();
+    _seekAccumulationTimer?.cancel();
     super.dispose();
   }
 

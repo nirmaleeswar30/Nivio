@@ -400,9 +400,9 @@ class DownloadConcurrencyNotifier extends StateNotifier<int> {
     state = prefs.getInt('download_concurrency') ?? 6;
   }
 
-  Future<void> setPreference(int concurrency) async {
-    state = concurrency;
+  Future<void> setPreference(int value) async {
+    state = value;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('download_concurrency', concurrency);
+    await prefs.setInt('download_concurrency', value);
   }
 }

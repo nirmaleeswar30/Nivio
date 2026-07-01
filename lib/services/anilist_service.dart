@@ -2,6 +2,13 @@ import 'package:dio/dio.dart';
 
 import 'package:nivio/core/debug_log.dart';
 
+class AniListResult {
+  final int id;
+  final int? idMal;
+
+  AniListResult({required this.id, this.idMal});
+}
+
 /// Service for interacting with AniList API
 /// Converts TMDB IDs to AniList IDs for anime content
 class AniListService {
@@ -19,7 +26,7 @@ class AniListService {
 
   /// Search for anime by title and year to find AniList ID
   /// Returns null if no match found
-  Future<int?> getAniListIdFromTMDB({
+  Future<AniListResult?> getAniListIdFromTMDB({
     required String title,
     String? year,
     int? tmdbId,
@@ -60,8 +67,9 @@ class AniListService {
       if (response.statusCode == 200 &&
           response.data['data']['Media'] != null) {
         final anilistId = response.data['data']['Media']['id'] as int;
-        appDebugLog('✅ Found AniList ID: $anilistId for $title');
-        return anilistId;
+        final idMal = response.data['data']['Media']['idMal'] as int?;
+        appDebugLog('✅ Found AniList ID: $anilistId, MAL ID: $idMal for $title');
+        return AniListResult(id: anilistId, idMal: idMal);
       }
 
       appDebugLog('❌ No AniList match found for: $title');
@@ -77,7 +85,7 @@ class AniListService {
 
   /// Check if a title is likely anime by searching AniList
   Future<bool> isAnime(String title, String? year) async {
-    final id = await getAniListIdFromTMDB(title: title, year: year);
-    return id != null;
+    final result = await getAniListIdFromTMDB(title: title, year: year);
+    return result != null;
   }
 }

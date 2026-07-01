@@ -706,7 +706,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
   }
-  
+
   void _showAnimeAudioDialog() {
     final prefs = ref.read(languagePreferencesProvider);
     showDialog(

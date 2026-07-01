@@ -39,6 +39,10 @@ import 'package:nivio/widgets/kwik_native_player.dart';
 import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_service.dart';
 import 'package:nivio/services/scrapers/animepahe/kwik_extractor_service.dart';
 import 'package:nivio/services/hls_proxy_service.dart';
+import 'package:nivio/services/anilist_service.dart';
+import 'package:nivio/services/aniskip_service.dart';
+import 'package:nivio/services/theintrodb_service.dart';
+import 'package:nivio/services/skip_times_models.dart';
 import 'dart:math' as math;
 
 class PlayerScreen extends ConsumerStatefulWidget {
@@ -135,6 +139,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   final Map<int, StreamResult> _prefetchedStreams = {};
   bool _isPrefetching = false;
   bool _isDirectStream = false;
+  List<SkipTime> _skipTimes = [];
+  bool _isFetchingSkipTimes = false;
+  bool _isInIntroSegment = false;
+  bool _isInOutroSegment = false;
   int _currentEpisode = 0;
   bool _isInFullscreen = false;
   Duration? _resumePosition;
@@ -357,7 +365,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Player initialization ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+  Future<void> _fetchSkipTimes(SearchResult media, int episode) async {
+    if (_isFetchingSkipTimes) return;
+    _isFetchingSkipTimes = true;
+    _skipTimes.clear();
+    
+    try {
+      if (media.mediaType == 'tv' && _isAnimeMedia(media)) {
+        // Anime - AniSkip
+        final anilistService = AniListService();
+        final result = await anilistService.getAniListIdFromTMDB(title: media.title ?? media.name ?? '', year: media.firstAirDate?.split('-').first, tmdbId: media.id);
+        if (result?.idMal != null) {
+          final times = await AniSkipService.getSkipTimes(result!.idMal!, episode);
+          if (mounted) setState(() { _skipTimes = times; });
+        }
+      } else if (media.mediaType == 'tv') {
+        // Normal show - TheIntroDB (v3 public API)
+        final times = await TheIntroDBService.getSkipTimes(media.id, widget.season, episode);
+        if (mounted) setState(() { _skipTimes = times; });
+      }
+    } finally {
+      if (mounted) _isFetchingSkipTimes = false;
+    }
+  }
+
+  // ├────────────────────────────────────────────────────────────────────────────────────────── Player initialization ──────────────────────────────────────────────────────────────────────────────────────────
   Future<void> _initializePlayer() async {
     _autoFullscreenTriggeredForCurrentLoad = false;
     _useNativePlayer = false;
@@ -414,6 +446,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       if (media?.mediaType == 'tv') {
         _fetchSeasonData();
+      }
+      
+      if (media != null && !_isFetchingSkipTimes) {
+        _fetchSkipTimes(media, _currentEpisode);
       }
 
       setState(() => _currentProvider = 'Fetching stream...');
@@ -1662,26 +1698,70 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _checkNextEpisode() {
-    if (_betterPlayerController?.isVideoInitialized() != true) return;
-    final vpc = _betterPlayerController!.videoPlayerController!;
+    late Duration position;
+    Duration? duration;
 
-    final position = vpc.value.position;
-    final duration = vpc.value.duration;
-    if (duration != null && duration.inSeconds > 0) {
-      final progress = position.inSeconds / duration.inSeconds;
-      if (progress >= 0.90 &&
-          !_showNextEpisodeButton &&
-          !_nextEpisodeDismissed &&
-          _hasNextEpisode()) {
+    if (_useNativePlayer) {
+      position = _nativePosition;
+      duration = _nativeDuration;
+    } else {
+      if (_betterPlayerController?.isVideoInitialized() != true) return;
+      final vpc = _betterPlayerController!.videoPlayerController!;
+      position = vpc.value.position;
+      duration = vpc.value.duration;
+    }
+
+    if (duration == null || duration.inSeconds <= 0) return;
+    if (_isLoading) return;
+
+    // --- Skip Intro/Outro tracking ---
+    final opSkip = _skipTimes.where((s) => s.type == 'op' || s.type == 'mixed-op').firstOrNull;
+    final isInIntro = opSkip != null && position >= opSkip.startTime && position < opSkip.endTime;
+    if (isInIntro != _isInIntroSegment) {
+      setState(() { _isInIntroSegment = isInIntro; });
+    }
+
+    final edSkip = _skipTimes.where((s) => s.type == 'ed' || s.type == 'mixed-ed').firstOrNull;
+    final isInOutro = edSkip != null && position >= edSkip.startTime && position < edSkip.endTime;
+    if (isInOutro != _isInOutroSegment) {
+      setState(() { _isInOutroSegment = isInOutro; });
+    }
+
+    // --- Next Episode (trigger 15s before the actual end of the video) ---
+    if (!_showNextEpisodeButton && !_nextEpisodeDismissed && _hasNextEpisode()) {
+      final remaining = duration.inSeconds - position.inSeconds;
+      if (remaining <= 15) {
         _showNextEpisodePopup();
       }
     }
 
-    if (duration != null &&
-        position >= duration - const Duration(seconds: 10) &&
-        duration.inSeconds > 0) {
+    if (position >= duration - const Duration(seconds: 10) && duration.inSeconds > 0) {
       _markAsCompleted();
     }
+  }
+
+  void _skipIntro() {
+    final opSkip = _skipTimes.where((s) => s.type == 'op' || s.type == 'mixed-op').firstOrNull;
+    if (opSkip == null) return;
+
+    if (_useNativePlayer) {
+      _kwikPlayerKey.currentState?.seekTo(opSkip.endTime);
+    } else {
+      _betterPlayerController?.seekTo(opSkip.endTime);
+    }
+    setState(() { _isInIntroSegment = false; });
+  }
+
+  void _skipOutro() {
+    final edSkip = _skipTimes.where((s) => s.type == 'ed' || s.type == 'mixed-ed').firstOrNull;
+    if (edSkip == null) return;
+
+    if (_useNativePlayer) {
+      _kwikPlayerKey.currentState?.seekTo(edSkip.endTime);
+    } else {
+      _betterPlayerController?.seekTo(edSkip.endTime);
+    }
+    setState(() { _isInOutroSegment = false; });
   }
 
   Future<void> _prefetchNextEpisode() async {
@@ -1740,7 +1820,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // —————————————————————————————————————————————————————————————————————————————————————————— Next episode popup ——————————————————————————————————————————————————————————————————————————————————————————
   void _showNextEpisodePopup() {
-    if (_showNextEpisodeButton) return;
+    if (!mounted || _showNextEpisodeButton || _nextEpisodeDismissed || _nextEpisodeCountdown != null) return;
     setState(() {
       _showNextEpisodeButton = true;
       _nextEpisodeCountdown = 15;
@@ -1820,6 +1900,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (wasFullScreen) {
       _betterPlayerController?.exitFullScreen();
     }
+    // Pause native player immediately to prevent audio bleed during delay
+    if (_useNativePlayer) {
+      _kwikPlayerKey.currentState?.pause();
+    }
 
     // Delay to let the fullscreen route fully pop before disposing
     Future.delayed(Duration(milliseconds: wasFullScreen ? 300 : 50), () {
@@ -1836,6 +1920,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _retryCount = 0;
         _streamResult = null;
         _betterPlayerController = null;
+        _nativePosition = Duration.zero;
+        _nativeDuration = Duration.zero;
+        _skipTimes = [];
+        _isInIntroSegment = false;
+        _isInOutroSegment = false;
+        _isFetchingSkipTimes = false;
       });
       // Dispose after the widget tree has rebuilt without the controller
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -3488,11 +3578,109 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       children: [
         Expanded(
           child: SizedBox.expand(
-            child: _useNativePlayer 
-                ? _buildNativePlayer(isPipMode: isPipMode)
-                : (!_isDirectStream && _streamResult != null) 
-                    ? _buildWebViewPlayer() 
-                    : _buildVideoPlayer(isPipMode: isPipMode),
+            child: Stack(
+              children: [
+                _useNativePlayer 
+                    ? _buildNativePlayer(isPipMode: isPipMode)
+                    : (!_isDirectStream && _streamResult != null) 
+                        ? _buildWebViewPlayer() 
+                        : _buildVideoPlayer(isPipMode: isPipMode),
+                // Skip Intro button
+                if (_isInIntroSegment && !isPipMode)
+                  Positioned(
+                    right: 24,
+                    bottom: 80,
+                    child: AnimatedOpacity(
+                      opacity: 1.0,
+                      duration: const Duration(milliseconds: 300),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: _skipIntro,
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.95),
+                              borderRadius: BorderRadius.circular(4),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.3),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.skip_next_rounded, color: Colors.black87, size: 22),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Skip Intro',
+                                  style: TextStyle(
+                                    color: Colors.black87,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                // Skip Outro button
+                if (_isInOutroSegment && !isPipMode)
+                  Positioned(
+                    right: 24,
+                    bottom: 80,
+                    child: AnimatedOpacity(
+                      opacity: 1.0,
+                      duration: const Duration(milliseconds: 300),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: _skipOutro,
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.95),
+                              borderRadius: BorderRadius.circular(4),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.3),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.skip_next_rounded, color: Colors.black87, size: 22),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Skip Outro',
+                                  style: TextStyle(
+                                    color: Colors.black87,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ],
@@ -3526,9 +3714,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       onProgress: (pos, dur) {
         _nativePosition = pos;
         _nativeDuration = dur;
+        _checkNextEpisode();
       },
       onPlayingChanged: (playing) {
         _isNativePlaying = playing;
+        if (playing) {
+          // Pre-fetch the next episode stream in the background if not done already
+          _prefetchNextEpisode();
+        }
       },
       onEnded: () {
         _markAsCompleted();
