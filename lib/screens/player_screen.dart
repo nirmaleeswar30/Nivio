@@ -1,7 +1,4 @@
 import 'package:better_player_plus/better_player_plus.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:simple_pip_mode/pip_widget.dart';
-import 'package:simple_pip_mode/actions/pip_action.dart';
 import 'package:simple_pip_mode/actions/pip_actions_layout.dart';
 import 'package:simple_pip_mode/simple_pip.dart';
 import 'dart:ui';
@@ -15,7 +12,7 @@ import 'package:nivio/core/theme.dart';
 import 'package:nivio/screens/player/widgets/custom_player_controls.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:path_provider/path_provider.dart';
+
 import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/media_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
@@ -33,10 +30,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:nivio/services/download_service.dart';
 import 'package:nivio/widgets/webview_player.dart';
-import 'package:nivio/widgets/watch_party_chat_overlay.dart';
-import 'package:nivio/widgets/watch_party_reactions_overlay.dart';
 import 'package:nivio/widgets/kwik_native_player.dart';
-import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_service.dart';
 import 'package:nivio/services/scrapers/animepahe/kwik_extractor_service.dart';
 import 'package:nivio/services/hls_proxy_service.dart';
 import 'package:nivio/services/anilist_service.dart';

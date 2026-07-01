@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## Nivio-v2.2.0
+
+### ✨ New Features & Enhancements
+*   ⏩ **Upgraded Skip Intro/Outro UI:** The "Skip Intro" and "Skip Outro" buttons have been completely redesigned with a much thicker, bolder white background for a premium, highly visible OTT experience.
+*   📦 **Massive APK Size Reduction:** Reduced the primary GitHub Release APK size from ~300MB down to a lightning-fast ~90MB! We introduced a custom Python stripper script to automatically generate Shorebird-compatible `arm64-v8a` APKs out of the universal `.aab` file.
+
+### 🛠️ Bug Fixes & Improvements
+*   **AnimePahe Native Stream Proxy Fix:** Fixed a critical issue where direct `.m3u8` streams extracted from Kwik (AnimePahe) were failing to play on the native `media_kit` player due to strict CORS and referer policies. Implemented a robust local `HlsProxyService` to securely proxy the master playlist and dynamically rewrite segment URLs with the correct headers, allowing native stream playback!
+*   **"Lock Upp" Series Split-Season Fix:** Fixed a major metadata mapping bug where highly popular split-season Indian shows (like *Lock Upp*) would fail to play because TMDB grouped their episodes entirely differently than source providers. The scraper now intelligently falls back and cross-references "Season 1" entries!
+*   **Kwik Embed Provider Stability:** Fixed a bug where viewing an Anime via the Kwik Embed player would mistakenly trigger a "Provider Failed" error and switch sources if a background Kwik analytics script failed. The engine now ignores harmless background HTTP 404s so the video plays flawlessly!
+*   **Outro Skipping Edge Case Fixed:** Fixed a bug where skipping the Outro would accidentally skip vital post-credits scenes in anime.
+*   **Massive Codebase Cleanup:** Purged a variety of dead code, unused providers, and redundant null-aware expressions across the `downloads_screen`, `media_detail_screen`, and `download_service`. `dart analyze` now reports 0 issues!
+
+
 ## Nivio-v2.1.0
 
 ### ✨ New Features & Enhancements

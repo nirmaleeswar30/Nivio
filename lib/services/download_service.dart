@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:convert';
+
 import 'dart:io';
 import 'dart:ui';
 import 'package:dio/dio.dart';
@@ -19,7 +19,6 @@ import 'package:nivio/models/download_item.dart';
 import 'package:nivio/services/m3u8_parser.dart';
 import 'package:nivio/services/scrapers/animepahe/kwik_extractor_service.dart';
 import 'package:nivio/services/hls_proxy_service.dart';
-import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_service.dart' as nivio;
 import 'package:nivio/main.dart';
 
 @pragma('vm:entry-point')
@@ -317,7 +316,7 @@ class DownloadService {
       int lastProgressUpdate = 0;
 
       // Ensure directory exists for parts
-      final dir = File(filePath).parent.path;
+
 
       // 2. Spawn parallel chunks
       for (int i = 0; i < chunkCount; i++) {
@@ -542,27 +541,7 @@ class DownloadService {
         }
       }
 
-      // Helper to download a list of segments
-      Future<bool> downloadSegments(List<M3u8Segment> segments, String prefix) async {
-        final pool = <Future<void>>[];
-        bool failed = false;
 
-        for (int i = 0; i < segments.length; i++) {
-          if (cancelToken.isCancelled || failed) break;
-          
-          final seg = segments[i];
-          final segPath = '${tempDir.path}/${prefix}_$i.ts';
-          
-          while (pool.length >= concurrency) {
-            await Future.any(pool);
-            pool.removeWhere((f) => true); // In Dart we can't easily check future status, so we use a simpler queue
-            // Better parallel queue:
-            break; 
-          }
-          // We will use a proper queue approach below.
-        }
-        return !failed;
-      }
 
       // 1. Download all keys
       final Set<String> keyUrls = {};
@@ -963,7 +942,7 @@ class DownloadService {
       await _notifications.show(
         item.id.hashCode,
         title,
-        item.progress >= 1.0 || (item.downloadedBytes ?? 0) > 0 ? 'Merging files...' : 'Extracting video link...',
+        item.progress >= 1.0 || item.downloadedBytes > 0 ? 'Merging files...' : 'Extracting video link...',
         details,
         payload: 'open_downloads',
       );

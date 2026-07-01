@@ -422,16 +422,22 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
             
             if (statusCode != null && statusCode >= 400) {
               final isMain = request.isForMainFrame ?? false;
+              final isKwik = widget.streamUrl.toLowerCase().contains('kwik');
+              
+              if (isKwik && !isMain) {
+                debugPrint("🚨 Ignoring background HTTP Error for Kwik embed: " + statusCode.toString() + " on " + url);
+                return;
+              }
               
               if (isMain || url.contains('.m3u8') || url.contains('.mp4') || url.contains('playlist') || url.contains('/api/')) {
-                debugPrint("Ã°Å¸Å¡Â¨ Critical HTTP Error detected: " + statusCode.toString() + " on " + url);
+                debugPrint("🚨 Critical HTTP Error detected: " + statusCode.toString() + " on " + url);
                 widget.onError?.call("HTTP Error: " + statusCode.toString());
               } else {
                 // If it's a long encrypted URL returning 404 (common when server has no sources)
                 if (url.length > 50 && !url.endsWith('.png') && !url.endsWith('.jpg') && !url.endsWith('.css') && !url.endsWith('.js')) {
                   _internalErrorCount++;
                   if (_internalErrorCount >= 4) {
-                    debugPrint("Ã°Å¸Å¡Â¨ Multiple internal 404s detected! Server is likely dead.");
+                    debugPrint("🚨 Multiple internal 404s detected! Server is likely dead.");
                     widget.onError?.call("Multiple Internal HTTP Errors");
                   }
                 }

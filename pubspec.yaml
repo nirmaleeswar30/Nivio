@@ -1,7 +1,7 @@
 name: nivio
 description: "A beautiful, all-in-one streaming application for Movies, TV Shows, Anime, and Live IPTV, featuring real-time Watch Parties and offline downloads."
 publish_to: 'none'
-version: 2.1.0
+version: 2.2.0
 
 platforms:
   android:

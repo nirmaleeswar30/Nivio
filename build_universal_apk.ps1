@@ -118,70 +118,7 @@ if (Test-Path $keystorePath) {
     exit 1
 }
 
-# Build APK set
-Write-Host ""
-Write-Host "Building APK set (universal mode)..." -ForegroundColor Yellow
-$buildArgs = @(
-    "-jar", $bundletoolPath,
-    "build-apks",
-    "--bundle=$aabPath",
-    "--output=$apksPath",
-    "--mode=universal",
-    "--ks=$keystorePath",
-    "--ks-key-alias=$keyAlias",
-    "--ks-pass=pass:$keystorePassword",
-    "--key-pass=pass:$keyPassword",
-    "--overwrite"
-)
-
-$buildStdOut = [System.IO.Path]::GetTempFileName()
-$buildStdErr = [System.IO.Path]::GetTempFileName()
-$buildProcess = Start-Process `
-    -FilePath $javaExe `
-    -ArgumentList $buildArgs `
-    -NoNewWindow `
-    -Wait `
-    -PassThru `
-    -RedirectStandardOutput $buildStdOut `
-    -RedirectStandardError $buildStdErr
-
-if ($buildProcess.ExitCode -ne 0) {
-    Write-Host "  --- bundletool output ---" -ForegroundColor DarkYellow
-    Get-Content $buildStdOut -ErrorAction SilentlyContinue
-    Get-Content $buildStdErr -ErrorAction SilentlyContinue
-    Remove-Item -Path $buildStdOut, $buildStdErr -Force -ErrorAction SilentlyContinue
-    Write-Host "  ERROR: Failed to build APK set" -ForegroundColor Red
-    exit 1
-}
-Remove-Item -Path $buildStdOut, $buildStdErr -Force -ErrorAction SilentlyContinue
-Write-Host "  APK set created: $apksPath" -ForegroundColor Green
-
-# Extract universal APK
-Write-Host ""
-Write-Host "Extracting universal APK..." -ForegroundColor Yellow
-
-if (Test-Path $outputDir) {
-    Remove-Item -Path $outputDir -Recurse -Force
-}
-
-New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
-
-# .apks is a ZIP file, rename and extract
-$tempZip = "$apksPath.zip"
-Copy-Item $apksPath $tempZip -Force
-Expand-Archive -Path $tempZip -DestinationPath $outputDir -Force
-Remove-Item $tempZip
-
-$universalApk = Join-Path $outputDir "universal.apk"
-if (Test-Path $universalApk) {
-    $apkSize = [math]::Round((Get-Item $universalApk).Length / 1MB, 2)
-    Write-Host "  Extracted: $universalApk ($apkSize MB)" -ForegroundColor Green
-} else {
-    Write-Host "  ERROR: universal.apk not found in extracted files" -ForegroundColor Red
-    exit 1
-}
-
-# Create a versioned copy for release uploads.
+# Extract version
 $version = "unknown"
 if (Test-Path $pubspecPath) {
     $versionLine = Select-String -Path $pubspecPath -Pattern "^version:\s*(.+)$" | Select-Object -First 1
@@ -189,16 +126,65 @@ if (Test-Path $pubspecPath) {
         $version = $versionLine.Matches[0].Groups[1].Value.Trim()
     }
 }
-
 $versionSafe = $version -replace "[^0-9A-Za-z\.\+\-]", "_"
-$versionedApk = Join-Path $outputDir "nivio-$versionSafe-universal.apk"
-Copy-Item -Path $universalApk -Destination $versionedApk -Force
 
-# Done
-Write-Host ""
-Write-Host "=== SUCCESS ===" -ForegroundColor Green
-Write-Host "Universal APK: $universalApk" -ForegroundColor Cyan
-Write-Host "Versioned APK: $versionedApk" -ForegroundColor Cyan
-Write-Host "Size: $apkSize MB" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "Upload the APK to GitHub Releases for Shorebird distribution." -ForegroundColor White
+# Prepare output directory
+if (Test-Path $outputDir) { Remove-Item -Path $outputDir -Recurse -Force }
+New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+
+function Run-Bundletool {
+    param([string]$mode, [string]$outFile)
+    
+    $argsList = @("-jar", $bundletoolPath, "build-apks", "--bundle=$aabPath", "--output=$outFile", "--ks=$keystorePath", "--ks-key-alias=$keyAlias", "--ks-pass=pass:$keystorePassword", "--key-pass=pass:$keyPassword", "--overwrite")
+    if ($mode -ne "") { $argsList += "--mode=$mode" }
+    
+    $outTmp = [System.IO.Path]::GetTempFileName()
+    $errTmp = [System.IO.Path]::GetTempFileName()
+    $proc = Start-Process -FilePath $javaExe -ArgumentList $argsList -NoNewWindow -Wait -PassThru -RedirectStandardOutput $outTmp -RedirectStandardError $errTmp
+    if ($proc.ExitCode -ne 0) {
+        Write-Host "  ERROR: Failed to build APKs" -ForegroundColor Red
+        Get-Content $errTmp -ErrorAction SilentlyContinue
+        exit 1
+    }
+    Remove-Item -Path $outTmp, $errTmp -Force -ErrorAction SilentlyContinue
+}
+
+# Build Universal APK set
+Write-Host "`nBuilding APK set (universal mode)..." -ForegroundColor Yellow
+Run-Bundletool -mode "universal" -outFile "$outputDir\universal.apks"
+
+# Build Split APK set
+Write-Host "`nBuilding APK set (split mode)..." -ForegroundColor Yellow
+Run-Bundletool -mode "" -outFile "$outputDir\split.apks"
+
+# Extract Universal APK
+Write-Host "`nExtracting Universal APK..." -ForegroundColor Yellow
+Expand-Archive -Path "$outputDir\universal.apks" -DestinationPath "$outputDir\universal_temp" -Force
+Copy-Item "$outputDir\universal_temp\universal.apk" "$outputDir\nivio-$versionSafe-universal.apk" -Force
+Remove-Item "$outputDir\universal_temp" -Recurse -Force
+Remove-Item "$outputDir\universal.apks" -Force
+
+# Extract Split APKs
+Write-Host "Extracting Standalone Split APKs..." -ForegroundColor Yellow
+Expand-Archive -Path "$outputDir\split.apks" -DestinationPath "$outputDir\split_temp" -Force
+
+$splits = Get-ChildItem "$outputDir\split_temp\standalones\*.apk"
+foreach ($split in $splits) {
+    if ($split.Name -match "arm64_v8a") {
+        Copy-Item $split.FullName "$outputDir\nivio-$versionSafe.apk" -Force
+    } elseif ($split.Name -match "armeabi_v7a") {
+        Copy-Item $split.FullName "$outputDir\nivio-$versionSafe-armeabi-v7a.apk" -Force
+    } elseif ($split.Name -match "x86_64") {
+        Copy-Item $split.FullName "$outputDir\nivio-$versionSafe-x86_64.apk" -Force
+    }
+}
+Remove-Item "$outputDir\split_temp" -Recurse -Force
+Remove-Item "$outputDir\split.apks" -Force
+
+Write-Host "`n=== SUCCESS ===" -ForegroundColor Green
+Write-Host "Generated APKs in: $outputDir" -ForegroundColor Cyan
+Get-ChildItem $outputDir -Filter "*.apk" | ForEach-Object {
+    $size = [math]::Round($_.Length / 1MB, 2)
+    Write-Host "  $($_.Name) ($size MB)"
+}
+Write-Host "`nUpload the APKs to GitHub Releases for Shorebird distribution." -ForegroundColor White

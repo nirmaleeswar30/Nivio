@@ -70,49 +70,63 @@ else
     exit 1
 fi
 
-# Build APK set
+# Create output directory
+rm -rf "$OUTPUT_DIR"
+mkdir -p "$OUTPUT_DIR"
+
+# Extract Version
+VERSION="unknown"
+if [ -f "$PUBSPEC_PATH" ]; then
+    VERSION=$(grep -E '^version:\s*(.+)$' "$PUBSPEC_PATH" | head -n 1 | sed -E 's/^version:\s*(.+)$/\1/' | tr -d '\r' | tr -d ' ')
+fi
+VERSION_SAFE=$(echo "$VERSION" | sed -E 's/[^a-zA-Z0-9.\+-]/_/g')
+
+# Build Universal APK set
 echo -e "\n\033[0;33mBuilding APK set (universal mode)...\033[0m"
 "$JAVA_EXE" -jar "$BUNDLETOOL_PATH" build-apks \
     --bundle="$AAB_PATH" \
-    --output="$APKS_PATH" \
+    --output="$OUTPUT_DIR/universal.apks" \
     --mode=universal \
     --ks="$KEYSTORE_PATH" \
     --ks-key-alias="$KEY_ALIAS" \
     --ks-pass="pass:$KEYSTORE_PASSWORD" \
     --key-pass="pass:$KEY_PASSWORD" \
-    --overwrite || { echo -e "\033[0;31m  ERROR: Failed to build APK set\033[0m"; exit 1; }
+    --overwrite || { echo -e "\033[0;31m  ERROR: Failed to build universal APK set\033[0m"; exit 1; }
 
-echo -e "\033[0;32m  APK set created: $APKS_PATH\033[0m"
+# Extract Universal APK
+echo -e "\n\033[0;33mExtracting Universal APK...\033[0m"
+unzip -q "$OUTPUT_DIR/universal.apks" -d "$OUTPUT_DIR/universal_temp"
+cp "$OUTPUT_DIR/universal_temp/universal.apk" "$OUTPUT_DIR/nivio-$VERSION_SAFE-universal.apk"
+rm -rf "$OUTPUT_DIR/universal_temp" "$OUTPUT_DIR/universal.apks"
 
-# Extract universal APK
-echo -e "\n\033[0;33mExtracting universal APK...\033[0m"
-rm -rf "$OUTPUT_DIR"
-mkdir -p "$OUTPUT_DIR"
+# Find Android Build Tools
+echo -e "\n\033[0;33mLocating Android Build Tools...\033[0m"
+BUILD_TOOLS_DIR=$(ls -d $HOME/Android/Sdk/build-tools/* | sort -V | tail -n 1)
+ZIPALIGN="$BUILD_TOOLS_DIR/zipalign"
+APKSIGNER="$BUILD_TOOLS_DIR/apksigner"
 
-unzip -q "$APKS_PATH" -d "$OUTPUT_DIR"
-
-UNIVERSAL_APK="$OUTPUT_DIR/universal.apk"
-if [ -f "$UNIVERSAL_APK" ]; then
-    APK_SIZE=$(du -m "$UNIVERSAL_APK" | cut -f1)
-    echo -e "\033[0;32m  Extracted: $UNIVERSAL_APK (${APK_SIZE}MB)\033[0m"
-else
-    echo -e "\033[0;31m  ERROR: universal.apk not found in extracted files\033[0m"
+if [ ! -f "$ZIPALIGN" ] || [ ! -f "$APKSIGNER" ]; then
+    echo -e "\033[0;31m  ERROR: zipalign or apksigner not found in $BUILD_TOOLS_DIR\033[0m"
     exit 1
 fi
+echo -e "\033[0;32m  Found: $BUILD_TOOLS_DIR\033[0m"
 
-# Create versioned copy
-VERSION="unknown"
-if [ -f "$PUBSPEC_PATH" ]; then
-    VERSION=$(grep -E '^version:\s*(.+)$' "$PUBSPEC_PATH" | head -n 1 | sed -E 's/^version:\s*(.+)$/\1/' | tr -d '\r' | tr -d ' ')
-fi
+# Build Standalone arm64-v8a APK using Python stripper
+echo -e "\n\033[0;33mBuilding Standalone arm64-v8a APK (Shorebird compatible)...\033[0m"
+STRIPPED_APK="$OUTPUT_DIR/nivio-$VERSION_SAFE-unaligned.apk"
+FINAL_ARM64_APK="$OUTPUT_DIR/nivio-$VERSION_SAFE.apk"
 
-VERSION_SAFE=$(echo "$VERSION" | sed -E 's/[^a-zA-Z0-9.\+-]/_/g')
-VERSIONED_APK="$OUTPUT_DIR/nivio-$VERSION_SAFE-universal.apk"
+python3 "$REPO_ROOT/scripts/strip_apk.py" "$OUTPUT_DIR/nivio-$VERSION_SAFE-universal.apk" "$STRIPPED_APK" "arm64-v8a"
 
-cp "$UNIVERSAL_APK" "$VERSIONED_APK"
+echo -e "  \033[0;33mAligning APK...\033[0m"
+"$ZIPALIGN" -f -p 4 "$STRIPPED_APK" "$FINAL_ARM64_APK"
+
+echo -e "  \033[0;33mSigning APK...\033[0m"
+"$APKSIGNER" sign --ks "$KEYSTORE_PATH" --ks-key-alias "$KEY_ALIAS" --ks-pass "pass:$KEYSTORE_PASSWORD" --key-pass "pass:$KEY_PASSWORD" "$FINAL_ARM64_APK"
+
+rm -f "$STRIPPED_APK"
 
 echo -e "\n\033[0;32m=== SUCCESS ===\033[0m"
-echo -e "\033[0;36mUniversal APK: $UNIVERSAL_APK\033[0m"
-echo -e "\033[0;36mVersioned APK: $VERSIONED_APK\033[0m"
-echo -e "\033[0;36mSize: ${APK_SIZE}MB\033[0m\n"
-echo -e "\033[0;37mUpload the APK to GitHub Releases for Shorebird distribution.\033[0m"
+echo -e "\033[0;36mGenerated APKs in: $OUTPUT_DIR\033[0m\n"
+ls -lh "$OUTPUT_DIR" | grep ".apk" | awk '{print "  " $9 " (" $5 ")"}'
+echo -e "\n\033[0;37mUpload the APKs to GitHub Releases for Shorebird distribution.\033[0m"

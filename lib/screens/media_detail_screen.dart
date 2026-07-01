@@ -960,7 +960,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     final title = media.title ?? media.name ?? 'this title';
     
     // Create the deep link URL
-    final mediaType = media.mediaType ?? 'movie';
+    final mediaType = media.mediaType;
     final deepLink = 'nivio://open/media/${media.id}?type=$mediaType';
     
     // Encode the deep link into Base64

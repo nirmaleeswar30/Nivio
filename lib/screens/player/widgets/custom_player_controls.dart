@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:simple_pip_mode/simple_pip.dart';
+
 import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/widgets/watch_party_chat_overlay.dart';
 import 'package:nivio/widgets/watch_party_reactions_overlay.dart';
