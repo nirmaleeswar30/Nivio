@@ -130,7 +130,7 @@ class NewTvScraperService {
       }
 
       appDebugLog('NewTvScraper: Searching candidates for "$cleanTitle"');
-      final candidates = await _searchCandidates(cleanTitle, sessionCookie, _defaultUserAgent);
+      final candidates = await _searchCandidates(cleanTitle, sessionCookie, _defaultUserAgent, season);
       if (candidates.isEmpty) {
         appDebugLog('NewTvScraper: No search match for "$cleanTitle"');
         return null;
@@ -169,8 +169,10 @@ class NewTvScraperService {
     String title,
     String cookie,
     String userAgent,
+    int season,
   ) async {
     final variants = <String>{
+      if (season > 1) '$title Season $season',
       title,
       _stripTrailingYear(title),
       title.replaceAll(':', ' '),
@@ -266,12 +268,23 @@ class NewTvScraperService {
         return null;
       }
 
+      bool isSplitSeasonEntry = false;
+      final candidateNorm = _normalize(candidate.title);
+      if (candidateNorm.contains('season $season') || candidateNorm.contains('s$season')) {
+        isSplitSeasonEntry = true;
+      }
+
       final queryYear = year != null ? int.tryParse(year) : null;
       if (queryYear != null && postData.year != null) {
         final diff = (queryYear - postData.year!).abs();
         if (diff > 1) {
-          appDebugLog('NewTvScraper: skipping ${candidate.id} due to year mismatch');
-          return null;
+          if (postData.isTv && season > 1) {
+            appDebugLog('NewTvScraper: year mismatch ($diff) but it is TV Season $season, treating as split season entry');
+            isSplitSeasonEntry = true;
+          } else {
+            appDebugLog('NewTvScraper: skipping ${candidate.id} due to year mismatch');
+            return null;
+          }
         }
       }
 
@@ -287,6 +300,7 @@ class NewTvScraperService {
         episode: episode,
         sessionCookie: sessionCookie,
         userAgent: userAgent,
+        isSplitSeasonEntry: isSplitSeasonEntry,
       );
       if (episodeId == null) {
         appDebugLog('NewTvScraper: _resolveEpisodeId returned null for ${candidate.id} S${season}E${episode}');
@@ -450,6 +464,7 @@ class NewTvScraperService {
     required int episode,
     required String sessionCookie,
     required String userAgent,
+    required bool isSplitSeasonEntry,
   }) async {
     for (final row in postData.episodes) {
       if (row.season == season && row.episode == episode) {
@@ -457,8 +472,22 @@ class NewTvScraperService {
       }
     }
 
+    int effectiveSeason = season;
+    if (season > 1 && isSplitSeasonEntry) {
+      final hasOnlySeason1 = postData.seasons.length <= 1; // 0 or 1
+      if (hasOnlySeason1) {
+        appDebugLog('NewTvScraper: Fallback - split season entry detected, trying S1 E$episode');
+        for (final row in postData.episodes) {
+          if ((row.season == 1 || row.season == null) && row.episode == episode) {
+            return row.id;
+          }
+        }
+        effectiveSeason = 1;
+      }
+    }
+
     final seasonEntry = postData.seasons.firstWhere(
-      (row) => row.season == season,
+      (row) => row.season == effectiveSeason,
       orElse: () => const _SeasonInfo(id: '', season: null),
     );
     if (seasonEntry.id.isEmpty) {
@@ -498,7 +527,7 @@ class NewTvScraperService {
 
         final seasonNum = _extractNumber(row['s']?.toString());
         final episodeNum = _extractNumber(row['ep']?.toString());
-        if (seasonNum == season && episodeNum == episode) {
+        if (seasonNum == effectiveSeason && episodeNum == episode) {
           return episodeId;
         }
       }
