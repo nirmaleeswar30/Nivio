@@ -37,6 +37,8 @@ import 'package:nivio/widgets/watch_party_chat_overlay.dart';
 import 'package:nivio/widgets/watch_party_reactions_overlay.dart';
 import 'package:nivio/widgets/kwik_native_player.dart';
 import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_service.dart';
+import 'package:nivio/services/scrapers/animepahe/kwik_extractor_service.dart';
+import 'package:nivio/services/hls_proxy_service.dart';
 import 'dart:math' as math;
 
 class PlayerScreen extends ConsumerStatefulWidget {
@@ -565,24 +567,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _resumePosition = startAt;
       }
 
-      if (_isDirectStream && result.url.contains('kwik.cx')) {
-        final rawUrl = await CloudflareBypassService.instance.extractKwikVideoUrl(result.url);
-        if (rawUrl != null) {
-          _useNativePlayer = true;
-          _nativeUrl = rawUrl;
-          _nativeHeaders = _buildPlaybackHeaders(result.headers);
-          _nativeStartAt = startAt;
-          setState(() {
-            _isLoading = false;
-            _retryCount = 0;
-          });
-          _updateWatchPartyHostSyncTimer();
-          _startProgressTracking();
-          _maybeAutoEnterFullscreenOnce();
-          return;
-        } else {
-          _isDirectStream = false;
-        }
+      if (_isDirectStream && _isAnimeMedia(media)) {
+        _useNativePlayer = true;
+        _nativeUrl = result.url;
+        _nativeHeaders = _buildPlaybackHeaders(result.headers);
+        _nativeStartAt = startAt;
+        setState(() {
+          _isLoading = false;
+          _retryCount = 0;
+        });
+        _updateWatchPartyHostSyncTimer();
+        _startProgressTracking();
+        _maybeAutoEnterFullscreenOnce();
+        return;
       }
 
       // —————————————————————————————————————————————————————————————————————————————————————————— Build subtitle sources ——————————————————————————————————————————————————————————————————————————————————————————
@@ -2790,22 +2787,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _useNativePlayer = false; // Temporarily hide KwikNativePlayer
     });
 
-    final rawUrl = await CloudflareBypassService.instance.extractKwikVideoUrl(source.url);
-    if (rawUrl != null) {
+    if (source.url.contains('kwik.cx')) {
+      final extraction = await KwikExtractorService.extract(source.url);
+      if (extraction != null) {
+        final proxy = HlsProxyService.instance;
+        await proxy.start();
+        final proxiedUrl = proxy.getProxyUrl(extraction.m3u8Url, extraction.userAgent, extraction.cookies, referer: source.url);
+        _useNativePlayer = true;
+        _nativeUrl = proxiedUrl;
+        _nativeStartAt = currentPos;
+        _streamResult = _streamResult!.copyWith(url: source.url);
+        setState(() {
+          _isLoading = false;
+        });
+        _startProgressTracking();
+      } else {
+        setState(() {
+          _error = "Failed to extract video stream";
+          _isLoading = false;
+        });
+      }
+    } else {
       _useNativePlayer = true;
-      _nativeUrl = rawUrl;
+      _nativeUrl = source.url;
       _nativeStartAt = currentPos;
-      // Update _streamResult url to reflect current selection so we know which one is active
       _streamResult = _streamResult!.copyWith(url: source.url);
       setState(() {
         _isLoading = false;
       });
       _startProgressTracking();
-    } else {
-      setState(() {
-        _error = "Failed to extract video stream";
-        _isLoading = false;
-      });
     }
   }
 

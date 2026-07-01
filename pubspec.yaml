@@ -73,6 +73,7 @@ dependencies:
   marquee: ^2.3.0
   simple_pip_mode: ^1.1.0
   share_plus: ^12.0.2
+  cronet_http: ^1.9.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

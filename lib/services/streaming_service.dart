@@ -5,6 +5,8 @@ import 'package:nivio/services/scrapers/animepahe/animepahe_scraper.dart';
 import 'package:nivio/services/scrapers/newtv/newtv_scraper.dart';
 
 import 'package:nivio/services/tmdb_service.dart';
+import 'package:nivio/services/scrapers/animepahe/kwik_extractor_service.dart';
+import 'package:nivio/services/hls_proxy_service.dart';
 
 class StreamingService {
   final TmdbService tmdbService;
@@ -80,6 +82,26 @@ class StreamingService {
           subDub: subDubPreference,
           onStatusUpdate: onStatusUpdate,
         );
+        
+        if (streamResult != null && streamResult.url.contains('kwik.cx')) {
+          onStatusUpdate?.call('Bypassing Cloudflare... (This takes a few seconds)');
+          final extraction = await KwikExtractorService.extract(streamResult.url);
+          if (extraction != null) {
+            final proxy = HlsProxyService.instance;
+            await proxy.start();
+            final proxiedUrl = proxy.getProxyUrl(extraction.m3u8Url, extraction.userAgent, extraction.cookies, referer: streamResult.url);
+            appDebugLog('🛡️ Kwik Proxy URL initialized: $proxiedUrl');
+            
+            return streamResult.copyWith(
+              url: proxiedUrl,
+              headers: {}, // Proxy handles headers internally via cronet
+              isM3U8: true,
+            );
+          } else {
+            appDebugLog('❌ Failed to extract Kwik stream via WebView');
+            return null; // Extraction failed
+          }
+        }
         
         return streamResult; // AnimepaheScraper natively returns StreamResult
       }

@@ -17,6 +17,8 @@ import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import '../core/debug_log.dart';
 import 'package:nivio/models/download_item.dart';
 import 'package:nivio/services/m3u8_parser.dart';
+import 'package:nivio/services/scrapers/animepahe/kwik_extractor_service.dart';
+import 'package:nivio/services/hls_proxy_service.dart';
 import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_service.dart' as nivio;
 import 'package:nivio/main.dart';
 
@@ -237,67 +239,21 @@ class DownloadService {
       if (streamUrl.contains('kwik.cx/e/')) {
         _updateStatus(item, DownloadStatus.extracting);
         appDebugLog('🛡️ Animepahe Kwik link detected. Extracting raw video URL from: $streamUrl');
-        final bypassService = nivio.CloudflareBypassService.instance; // Use prefix if needed, or import directly
-        final rawUrl = await bypassService.extractKwikVideoUrl(streamUrl);
-        if (rawUrl != null) {
-          if (rawUrl.startsWith('{')) {
-            try {
-              final Map<String, dynamic> data = jsonDecode(rawUrl);
-              if (data['type'] == 'form') {
-                final action = data['action'];
-                final token = data['token'];
-                appDebugLog('🛡️ Kwik form detected. Action: $action, Token: $token');
-                
-                // Get the cookies from the bypass service
-                final cookies = bypassService.cookieString;
-                
-                // We need to fetch the form action to get the actual download redirect
-                final dioRedirect = Dio(BaseOptions(
-                  followRedirects: false,
-                  validateStatus: (status) => status != null && status < 500,
-                  headers: {
-                    'Cookie': cookies,
-                    'Referer': streamUrl,
-                    'User-Agent': bypassService.userAgent,
-                  }
-                ));
-                
-                final response = await dioRedirect.post(action, data: {
-                  '_token': token
-                }, options: Options(
-                  contentType: Headers.formUrlEncodedContentType
-                ));
-                
-                if (response.statusCode == 302 || response.statusCode == 301) {
-                  streamUrl = response.headers.value('location')!;
-                  appDebugLog('🛡️ Kwik form redirected to: $streamUrl');
-                } else if (response.statusCode == 200) {
-                   // Sometimes it might not redirect if it's a direct stream
-                   streamUrl = action; 
-                } else {
-                  throw Exception("Failed to get redirect from Kwik form: \${response.statusCode}");
-                }
-              } else if (data['type'] == 'link') {
-                streamUrl = data['href'];
-              } else if (data['type'] == 'm3u8') {
-                streamUrl = data['url'];
-              }
-            } catch (e) {
-               appDebugLog('🛡️ Failed to parse Kwik JSON: $e. Falling back to raw string.');
-               streamUrl = rawUrl;
-            }
-          } else {
-            streamUrl = rawUrl;
-          }
+        final extraction = await KwikExtractorService.extract(streamUrl);
+        if (extraction != null) {
+          final proxy = HlsProxyService.instance;
+          await proxy.start();
+          streamUrl = proxy.getProxyUrl(extraction.m3u8Url, extraction.userAgent, extraction.cookies, referer: streamUrl);
+          appDebugLog('🛡️ Kwik Download redirected to HTTP/2 proxy: $streamUrl');
         } else {
-          throw Exception("Failed to extract Kwik video URL");
+          throw Exception("Failed to extract Kwik video URL or bypass Cloudflare");
         }
       }
 
       _updateStatus(item, DownloadStatus.downloading);
 
       // No need to change the extension to mkv, FFmpeg can mux HLS directly into mp4
-      if (streamUrl.contains('.m3u8')) {
+      if (streamUrl.contains('.m3u8') || streamUrl.contains('/proxy?url=')) {
         appDebugLog('🎬 Downloading via FFmpeg (HLS)');
         await _downloadM3u8(item, item.savePath, cancelToken, streamUrlOverride: streamUrl);
       } else {
@@ -773,9 +729,16 @@ class DownloadService {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
 
       if (ReturnCode.isSuccess(returnCode)) {
-        if (subtitleUrl != null) {
+        try {
           final String srtFilePath = filePath.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '.srt');
-          await FFmpegKit.execute('-y -i "$subtitleUrl" -c:s srt "$srtFilePath"');
+          if (subtitleUrl != null) {
+            await FFmpegKit.execute('-y -i "$subtitleUrl" -c:s srt "$srtFilePath"');
+          } else {
+            // Extract embedded subtitle
+            await FFmpegKit.execute('-y -i "$filePath" -map 0:s:0? -c:s srt "$srtFilePath"');
+          }
+        } catch (e) {
+          appDebugLog("Failed to extract SRT post-download: $e");
         }
         return true;
       } else {
