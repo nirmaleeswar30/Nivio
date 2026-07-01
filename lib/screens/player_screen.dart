@@ -130,6 +130,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _nextEpisodeDismissed = false;
   Timer? _nextEpisodeTimer;
   int? _nextEpisodeCountdown;
+  final Map<int, StreamResult> _prefetchedStreams = {};
+  bool _isPrefetching = false;
   bool _isDirectStream = false;
   int _currentEpisode = 0;
   bool _isInFullscreen = false;
@@ -485,6 +487,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           headers: {},
           subtitles: hasSrt ? [SubtitleTrack(lang: subLang, url: srtPath)] : [],
         );
+      } else if (_prefetchedStreams.containsKey(_currentEpisode)) {
+        // Use the silently prefetched stream to eliminate loading delays!
+        result = _prefetchedStreams.remove(_currentEpisode);
       } else {
         result = await streamingService.fetchStreamUrl(
           media: media!,
@@ -630,8 +635,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         bufferingConfiguration: const BetterPlayerBufferingConfiguration(
           minBufferMs: 120000, // 2 minutes minimum buffer
           maxBufferMs: 900000, // 15 minutes max buffer
-          bufferForPlaybackMs: 2500, // Start playing after 2.5s
-          bufferForPlaybackAfterRebufferMs: 5000, // Resume after 5s
+          bufferForPlaybackMs: 250, // Start playing instantly (250ms)
+          bufferForPlaybackAfterRebufferMs: 1500, // Resume quickly after buffering (1.5s)
         ),
       );
 
@@ -992,6 +997,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
         _applyDisplaySettings(refreshUi: false);
         _maybeAutoEnterFullscreenOnce();
+        
+        // Start prefetching next episode stream silently in background
+        _prefetchNextEpisode();
+        
         // Refresh action menus after ASMS tracks are parsed.
         setState(() {});
         // Show resume snackbar
@@ -1678,6 +1687,44 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  Future<void> _prefetchNextEpisode() async {
+    if (_isPrefetching) return;
+    if (!_hasNextEpisode()) return;
+    
+    final nextEp = _currentEpisode + 1;
+    if (_prefetchedStreams.containsKey(nextEp)) return;
+
+    final media = ref.read(selectedMediaProvider);
+    if (media == null || media.mediaType != 'tv') return;
+
+    _isPrefetching = true;
+    try {
+      final streamingService = ref.read(streamingServiceProvider);
+      final settingsQuality = ref.read(videoQualityProvider);
+      final manualQuality = ref.read(selectedQualityProvider);
+      final preferredQuality = manualQuality ?? (settingsQuality == 'auto' ? null : settingsQuality);
+      final subDubPref = ref.read(languagePreferencesProvider).animePreferredAudio;
+
+      final result = await streamingService.fetchStreamUrl(
+        media: media,
+        season: widget.season,
+        episode: nextEp,
+        preferredQuality: preferredQuality,
+        providerIndex: _currentProviderIndex,
+        subDubPreference: subDubPref,
+        onStatusUpdate: null, // Silently fetch
+      );
+      
+      if (result != null && mounted) {
+        _prefetchedStreams[nextEp] = result;
+      }
+    } catch (_) {
+      // Ignore prefetch errors silently
+    } finally {
+      if (mounted) _isPrefetching = false;
+    }
+  }
+
   // —————————————————————————————————————————————————————————————————————————————————————————— Season data fetch ——————————————————————————————————————————————————————————————————————————————————————————
   Future<void> _fetchSeasonData() async {
     try {
@@ -1759,8 +1806,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _playNextEpisode() {
+    _playEpisode(_currentEpisode + 1);
+  }
+
+  void _playEpisode(int episodeNumber) {
+    if (_currentEpisode == episodeNumber) return;
     _nextEpisodeTimer?.cancel();
     _removeOverlayEntry();
+    
     final media = ref.read(selectedMediaProvider);
     if (media == null || media.mediaType != 'tv') return;
 
@@ -1777,7 +1830,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final oldController = _betterPlayerController;
       _progressTimer?.cancel();
       setState(() {
-        _currentEpisode = _currentEpisode + 1;
+        _currentEpisode = episodeNumber;
         _showNextEpisodeButton = false;
         _nextEpisodeDismissed = false;
         _nextEpisodeCountdown = null;
@@ -1813,6 +1866,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         watchPartyCode: widget.watchPartyCode,
         watchPartyRole: widget.watchPartyRole,
         providerIndex: _currentProviderIndex,
+        onEpisodeSelected: (episodeNum) {
+          _playEpisode(episodeNum);
+        },
       ),
     ).whenComplete(() {
       if (mounted && !_isPipMode) {
@@ -4141,11 +4197,13 @@ class _EpisodePickerSheet extends ConsumerStatefulWidget {
   final String? watchPartyCode;
   final WatchPartyRole? watchPartyRole;
   final int providerIndex;
+  final void Function(int) onEpisodeSelected;
 
   const _EpisodePickerSheet({
     required this.mediaId,
     required this.currentSeason,
     required this.currentEpisode,
+    required this.onEpisodeSelected,
     this.mediaType,
     this.watchPartyCode,
     this.watchPartyRole,
@@ -4340,28 +4398,7 @@ class _EpisodePickerSheetState extends ConsumerState<_EpisodePickerSheet> {
                                 onTap: () {
                                   Navigator.pop(context);
                                   if (!isCurrent) {
-                                    final query = <String, String>{
-                                      'season': '${widget.currentSeason}',
-                                      'episode': '${episode.episodeNumber}',
-                                      'providerIndex': '${widget.providerIndex}',
-                                      if ((widget.mediaType ?? '').isNotEmpty)
-                                        'type': widget.mediaType!,
-                                      if ((widget.watchPartyCode ?? '')
-                                          .trim()
-                                          .isNotEmpty)
-                                        'partyCode': widget.watchPartyCode!
-                                            .trim()
-                                            .toUpperCase(),
-                                      if (widget.watchPartyRole != null)
-                                        'partyRole':
-                                            widget.watchPartyRole!.queryValue,
-                                    };
-                                    this.context.pushReplacement(
-                                      Uri(
-                                        path: '/player/${widget.mediaId}',
-                                        queryParameters: query,
-                                      ).toString(),
-                                    );
+                                    widget.onEpisodeSelected(episode.episodeNumber);
                                   }
                                 },
                                 child: Container(
