@@ -562,10 +562,11 @@ class DownloadService {
       bool failed = false;
       final allTasks = <Future<void>>[];
       
-      Future<void> worker(List<M3u8Segment> queue, String prefix) async {
+      Future<void> worker(List<MapEntry<int, M3u8Segment>> queue, String prefix) async {
         while (queue.isNotEmpty && !cancelToken.isCancelled && !failed) {
-          final seg = queue.removeAt(0);
-          final index = seg.url.hashCode; // unique identifier
+          final entry = queue.removeAt(0);
+          final index = entry.key; // unique identifier
+          final seg = entry.value;
           final segPath = '${tempDir.path}/${prefix}_$index.ts';
           
           if (File(segPath).existsSync()) {
@@ -616,10 +617,10 @@ class DownloadService {
         }
       }
 
-      final vQueue = List<M3u8Segment>.from(videoSegments);
+      final vQueue = videoSegments.asMap().entries.toList();
       for (int i = 0; i < concurrency; i++) allTasks.add(worker(vQueue, 'v'));
       
-      final aQueue = List<M3u8Segment>.from(audioSegments);
+      final aQueue = audioSegments.asMap().entries.toList();
       if (aQueue.isNotEmpty) {
         for (int i = 0; i < concurrency; i++) allTasks.add(worker(aQueue, 'a'));
       }
@@ -640,7 +641,8 @@ class DownloadService {
         sb.writeln('#EXT-X-TARGETDURATION:${segs.map((s) => s.duration).reduce((a, b) => a > b ? a : b).ceil()}');
         
         M3u8EncryptionKey? lastKey;
-        for (final seg in segs) {
+        for (int i = 0; i < segs.length; i++) {
+          final seg = segs[i];
           if (seg.encryptionKey != lastKey) {
             if (seg.encryptionKey != null) {
               final localKey = localKeys[seg.encryptionKey!.uri];
@@ -652,7 +654,7 @@ class DownloadService {
             lastKey = seg.encryptionKey;
           }
           sb.writeln('#EXTINF:${seg.duration},');
-          sb.writeln('${prefix}_${seg.url.hashCode}.ts');
+          sb.writeln('${prefix}_$i.ts');
         }
         sb.writeln('#EXT-X-ENDLIST');
         return sb.toString();

@@ -51,7 +51,6 @@ dependencies:
   workmanager: ^0.9.0
   flutter_local_notifications: ^18.0.1
   connectivity_plus: ^6.1.1
-  palette_generator: ^0.3.3+7
   better_player_plus:
     path: packages/better_player_plus
   shorebird_code_push: ^2.0.5
@@ -69,11 +68,11 @@ dependencies:
   media_kit_libs_video: ^1.0.7
   flutter_markdown: ^0.7.7+1
   flutter_cache_manager: any
-  http: any
-  marquee: ^2.3.0
+  http: ^1.6.0
   simple_pip_mode: ^1.1.0
   share_plus: ^12.0.2
   cronet_http: ^1.9.0
+  flutter_colorpicker: ^1.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

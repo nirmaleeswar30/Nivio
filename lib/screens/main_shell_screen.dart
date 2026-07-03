@@ -9,6 +9,7 @@ import 'package:nivio/services/github_release_update_service.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
 
 import 'package:nivio/providers/watchlist_provider.dart';
+import 'package:nivio/services/schedule_api_service.dart';
 
 class MainShellScreen extends ConsumerStatefulWidget {
   final StatefulNavigationShell navigationShell;
@@ -29,7 +30,13 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForUpdatesOnStartup();
       _syncWatchlistFromCloud();
+      _prefetchSchedule();
     });
+  }
+
+  void _prefetchSchedule() {
+    // Fire and forget: Pre-fetch today's schedule into cache for instant load later
+    ScheduleApiService.fetchScheduleForDate(DateTime.now(), watchlistOnly: true);
   }
 
   Future<void> _syncWatchlistFromCloud() async {

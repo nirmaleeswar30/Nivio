@@ -16,6 +16,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/media_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
+import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/providers/watch_party_provider.dart';
@@ -1120,7 +1121,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         break;
       case BetterPlayerEventType.finished:
         _markAsCompleted();
-        if (_hasNextEpisode()) _showNextEpisodePopup();
+        if (_hasNextEpisode()) {
+          _showNextEpisodePopup();
+        } else {
+          _promptWatchlistRemovalIfNeeded();
+        }
         break;
       default:
         break;
@@ -1869,11 +1874,63 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   bool _hasNextEpisode() {
     final media = ref.read(selectedMediaProvider);
-    if (media == null || media.mediaType != 'tv') return false;
+    if (media == null) return false;
+    if (media.mediaType != 'tv' && media.mediaType != 'anime') return false; // Movies return false
+    
     if (_currentSeasonData != null) {
       return _currentEpisode < _currentSeasonData!.episodes.length;
     }
-    return true;
+    
+    // For anime without season data, we can't be sure, but we shouldn't prompt removal if there might be more.
+    // However, if we don't know, it's safer to just return false so it prompts or ends gracefully.
+    return false;
+  }
+
+  Future<void> _promptWatchlistRemovalIfNeeded() async {
+    final media = ref.read(selectedMediaProvider);
+    if (media == null) return;
+    
+    final watchlistService = ref.read(watchlistServiceProvider);
+    final items = watchlistService.getAllItems();
+    
+    final mediaTitle = (media.title ?? media.name ?? '').toLowerCase();
+    final match = items.where((w) => 
+      w.id == widget.mediaId || 
+      w.title.toLowerCase() == mediaTitle
+    ).firstOrNull;
+
+    if (match != null) {
+      final shouldRemove = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: NivioTheme.netflixDarkGrey,
+          title: const Text('Finished Watching?', style: TextStyle(color: Colors.white)),
+          content: Text(
+            'You have reached the end of ${match.title}. Would you like to remove it from your watchlist?',
+            style: const TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Keep', style: TextStyle(color: Colors.white54)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text('Remove', style: TextStyle(color: NivioTheme.accentColorOf(ctx))),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldRemove == true) {
+        await watchlistService.removeFromWatchlist(match.id);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Removed ${match.title} from watchlist')),
+          );
+        }
+      }
+    }
   }
 
   void _playNextEpisode() {

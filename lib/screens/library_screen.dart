@@ -105,7 +105,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                           fontSize: 13,
                         ),
                         tabs: const [
-                          Tab(text: 'New Episodes'),
+                          Tab(text: 'Schedule'),
                           Tab(text: 'Watchlist'),
                           Tab(text: 'Downloads'),
                         ],

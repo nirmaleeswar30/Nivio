@@ -14,7 +14,6 @@ import 'package:nivio/widgets/content_row.dart';
 import 'package:nivio/widgets/search_result_card.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
-import 'package:palette_generator/palette_generator.dart';
 
 class ProviderContentScreen extends ConsumerStatefulWidget {
   final int providerId;
@@ -222,9 +221,8 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
     
     try {
       final provider = CachedNetworkImageProvider('$tmdbImageBaseUrl/w200$posterPath');
-      final palette = await PaletteGenerator.fromImageProvider(provider);
-      
-      final color = palette.darkVibrantColor?.color ?? palette.dominantColor?.color ?? const Color(0xFF0D0F14);
+      final colorScheme = await ColorScheme.fromImageProvider(provider: provider, brightness: Brightness.dark);
+      final color = colorScheme.primary;
       
       if (mounted) {
         setState(() {

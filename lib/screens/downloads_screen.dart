@@ -73,12 +73,15 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     final posterParts = firstItem.posterPath?.split('|||') ?? [];
     final seriesPoster = posterParts.isNotEmpty ? posterParts.first : null;
     
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-      ),
+    return Material(
+      type: MaterialType.transparency,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: Material(
+          color: Colors.white.withValues(alpha: 0.05),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -102,6 +105,8 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           subtitle: Text('${group.length} Episodes', style: const TextStyle(color: Colors.white70)),
           children: group.map((item) => _buildDownloadItem(item, isGrouped: true)).toList(),
         ),
+      ),
+      ),
       ),
     );
   }
@@ -133,12 +138,15 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     final posterParts = item.posterPath?.split('|||') ?? [];
     final String? itemPoster = posterParts.length > 1 ? posterParts.last : (posterParts.isNotEmpty ? posterParts.first : null);
 
-    return Container(
-      margin: isGrouped ? EdgeInsets.zero : const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: isGrouped ? Colors.transparent : Colors.white.withValues(alpha: 0.05),
-        borderRadius: isGrouped ? BorderRadius.zero : BorderRadius.circular(12),
-      ),
+    return Material(
+      type: MaterialType.transparency,
+      child: Container(
+        margin: isGrouped ? EdgeInsets.zero : const EdgeInsets.only(bottom: 12),
+        child: Material(
+          color: isGrouped ? Colors.transparent : Colors.white.withValues(alpha: 0.05),
+          shape: RoundedRectangleBorder(
+            borderRadius: isGrouped ? BorderRadius.zero : BorderRadius.circular(12),
+          ),
       child: ListTile(
         contentPadding: const EdgeInsets.all(12),
         leading: ClipRRect(
@@ -260,6 +268,8 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
             ),
           ],
         ),
+      ),
+      ),
       ),
     );
   }

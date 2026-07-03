@@ -24,6 +24,7 @@ class _ContinueWatchingCardState extends ConsumerState<ContinueWatchingCard>
 
   EpisodeData? _episodeData;
   int? _totalEpisodesInSeason;
+  bool _showRemoveOverlay = false;
 
   @override
   void initState() {
@@ -107,12 +108,19 @@ class _ContinueWatchingCardState extends ConsumerState<ContinueWatchingCard>
       onExit: (_) => _animationController.reverse(),
       child: GestureDetector(
         onTap: () {
+          if (_showRemoveOverlay) {
+            setState(() => _showRemoveOverlay = false);
+            return;
+          }
           context.push(
             '/player/${widget.history.tmdbId}'
             '?season=${widget.history.currentSeason}'
             '&episode=${widget.history.currentEpisode}'
             '&type=${widget.history.mediaType}',
           );
+        },
+        onLongPress: () {
+          setState(() => _showRemoveOverlay = true);
         },
         child: AnimatedBuilder(
           animation: _animationController,
@@ -216,6 +224,35 @@ class _ContinueWatchingCardState extends ConsumerState<ContinueWatchingCard>
                               ),
                             ),
                           ),
+                          // Remove Overlay
+                          if (_showRemoveOverlay)
+                            Positioned.fill(
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.7),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Center(
+                                  child: IconButton(
+                                    iconSize: 48,
+                                    icon: const Icon(Icons.delete_forever_rounded, color: Colors.white),
+                                    onPressed: () async {
+                                      setState(() => _showRemoveOverlay = false);
+                                      final service = ref.read(watchHistoryServiceProvider);
+                                      await service.deleteHistory(widget.history.tmdbId);
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Removed ${widget.history.title}'),
+                                            behavior: SnackBarBehavior.floating,
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -272,4 +309,5 @@ class _ContinueWatchingCardState extends ConsumerState<ContinueWatchingCard>
       ),
     );
   }
+
 }

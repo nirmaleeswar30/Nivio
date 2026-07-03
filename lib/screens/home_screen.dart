@@ -27,7 +27,7 @@ import 'package:nivio/widgets/content_row.dart';
 import 'package:nivio/widgets/continue_watching_row.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
-import 'package:palette_generator/palette_generator.dart';
+
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -111,9 +111,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     
     try {
       final provider = CachedNetworkImageProvider('$tmdbImageBaseUrl/w200$posterPath');
-      final palette = await PaletteGenerator.fromImageProvider(provider);
-      
-      final color = palette.darkVibrantColor?.color ?? palette.dominantColor?.color ?? const Color(0xFF0D0F14);
+      final colorScheme = await ColorScheme.fromImageProvider(provider: provider, brightness: Brightness.dark);
+      final color = colorScheme.primary;
       
       if (mounted) {
         setState(() {

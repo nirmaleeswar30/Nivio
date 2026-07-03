@@ -1121,15 +1121,24 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   }
 
   Future<void> _downloadSeason(SearchResult media, int providerIndex, int season, String? audioLang, String? subtitleLang, {String? preferredQuality, String? subDubPreference}) async {
+    final streamingService = ref.read(streamingServiceProvider);
     final seriesInfoAsync = ref.read(seriesInfoProvider(media.id));
     seriesInfoAsync.whenData((seriesInfo) async {
        final seasonData = await ref.read(seasonDataProvider((showId: media.id, seasonNumber: season)).future);
+       
+       final validEpisodes = seasonData.episodes.where((ep) => ep.airDate != null && DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) == true).toList();
+       if (validEpisodes.isEmpty) return;
+
+       if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Preparing ${validEpisodes.length} episodes for download...')),
+          );
+       }
+
        int count = 0;
-       for (final ep in seasonData.episodes) {
-             if (ep.airDate != null && DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) == true) {
-                _downloadEpisode(media, season, ep.episodeNumber, ep.episodeName ?? 'Episode', ep.stillPath, providerIndex, audioLang, subtitleLang, preferredQuality: preferredQuality, subDubPreference: subDubPreference);
-                count++;
-             }
+       for (final ep in validEpisodes) {
+          await _downloadEpisode(streamingService, media, season, ep.episodeNumber, ep.episodeName ?? 'Episode', ep.stillPath, providerIndex, audioLang, subtitleLang, preferredQuality: preferredQuality, subDubPreference: subDubPreference);
+          count++;
        }
        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1140,20 +1149,28 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   }
 
   Future<void> _downloadAllSeasons(SearchResult media, int providerIndex, String? audioLang, String? subtitleLang, {String? preferredQuality, String? subDubPreference}) async {
+    final streamingService = ref.read(streamingServiceProvider);
     final seriesInfoAsync = ref.read(seriesInfoProvider(media.id));
     seriesInfoAsync.whenData((seriesInfo) async {
+       if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Preparing all seasons for download. This may take a while...')),
+          );
+       }
+
        int count = 0;
        for (final s in seriesInfo.seasons) {
           if (s.seasonNumber == 0) continue;
           final seasonData = await ref.read(seasonDataProvider((showId: media.id, seasonNumber: s.seasonNumber)).future);
-          for (final ep in seasonData.episodes) {
-            if (ep.airDate != null && DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) == true) {
-               _downloadEpisode(media, s.seasonNumber, ep.episodeNumber, ep.episodeName ?? 'Episode', ep.stillPath, providerIndex, audioLang, subtitleLang, preferredQuality: preferredQuality, subDubPreference: subDubPreference);
-               count++;
-            }
+          
+          final validEpisodes = seasonData.episodes.where((ep) => ep.airDate != null && DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) == true).toList();
+          
+          for (final ep in validEpisodes) {
+             await _downloadEpisode(streamingService, media, s.seasonNumber, ep.episodeNumber, ep.episodeName ?? 'Episode', ep.stillPath, providerIndex, audioLang, subtitleLang, preferredQuality: preferredQuality, subDubPreference: subDubPreference);
+             count++;
           }
        }
-       if (mounted) {
+       if (mounted && count > 0) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Queued $count episodes for download!')),
           );
@@ -1161,9 +1178,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     });
   }
 
-  Future<void> _downloadEpisode(SearchResult media, int season, int episode, String episodeName, String? stillPath, int providerIndex, String? audioLang, String? subtitleLang, {String? preferredQuality, String? subDubPreference}) async {
-    final streamingService = ref.read(streamingServiceProvider);
-    final result = await streamingService.fetchStreamUrl(
+  Future<void> _downloadEpisode(StreamingService streamingService, SearchResult media, int season, int episode, String episodeName, String? stillPath, int providerIndex, String? audioLang, String? subtitleLang, {String? preferredQuality, String? subDubPreference}) async {
+    try {
+      final result = await streamingService.fetchStreamUrl(
       media: media,
       season: season,
       episode: episode,
@@ -1185,6 +1202,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         selectedAudioLanguage: audioLang,
         selectedSubtitleLanguage: subtitleLang,
       );
+    }
+    } catch (e) {
+      debugPrint('Error queueing download for episode $episode: $e');
     }
   }
 

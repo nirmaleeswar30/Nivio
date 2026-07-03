@@ -15,7 +15,6 @@ import 'package:nivio/core/debug_log.dart';
 /// Service for checking new episodes of watchlist TV shows
 /// Uses WorkManager for battery-efficient background tasks (Android/iOS only)
 class EpisodeCheckService {
-  static const String _taskName = 'episodeCheckTask';
   static const String _boxName = 'new_episodes';
   static const String _lastCheckKey = 'last_episode_check';
   static const String _frequencyKey = 'episode_check_frequency';
@@ -33,9 +32,6 @@ class EpisodeCheckService {
     ),
   );
 
-  /// Android always supports background tasks
-  static bool get _supportsBackgroundTasks => true;
-
   /// Initialize the service and notifications
   static Future<void> init() async {
     // Initialize notifications (supported on most platforms)
@@ -46,25 +42,38 @@ class EpisodeCheckService {
       await Hive.openBox<NewEpisode>(_boxName);
     }
 
-    // WorkManager only works on Android and iOS
-    if (_supportsBackgroundTasks) {
-      // Initialize WorkManager
-      await Workmanager().initialize(
-        episodeCheckCallbackDispatcher,
-        isInDebugMode: false, // Set to true for debugging
-      );
+    // Run silent check on app launch
+    _runAppLaunchCheck();
 
-      // Register periodic task if enabled
+    appDebugLog('📺 EpisodeCheckService initialized (app launch check enabled)');
+  }
+
+  static Future<void> _runAppLaunchCheck() async {
+    try {
       final prefs = await SharedPreferences.getInstance();
       final enabled = prefs.getBool(_enabledKey) ?? true;
-      if (enabled) {
-        await registerPeriodicTask();
-      }
-    }
+      if (!enabled) return;
 
-    appDebugLog(
-      '📺 EpisodeCheckService initialized${_supportsBackgroundTasks ? '' : ' (background tasks not supported on this platform)'}',
-    );
+      final frequencyHours = prefs.getInt(_frequencyKey) ?? 24;
+      final lastCheckTimestamp = prefs.getInt(_lastCheckKey);
+      
+      if (lastCheckTimestamp != null) {
+        final lastCheck = DateTime.fromMillisecondsSinceEpoch(lastCheckTimestamp);
+        final nextCheck = lastCheck.add(Duration(hours: frequencyHours));
+        
+        // If it hasn't been long enough, don't check
+        if (DateTime.now().isBefore(nextCheck)) {
+          appDebugLog('⏳ Episode check not needed yet (next check at $nextCheck)');
+          return;
+        }
+      }
+      
+      // Give the app some time to fully launch and render UI before stressing the network
+      await Future.delayed(const Duration(seconds: 5));
+      await _performEpisodeCheck();
+    } catch (e) {
+      appDebugLog('⚠️ Failed to run app launch episode check: $e');
+    }
   }
 
   /// Initialize local notifications
@@ -98,42 +107,14 @@ class EpisodeCheckService {
     appDebugLog('🔔 Notification tapped: ${response.payload}');
   }
 
-  /// Register the periodic background task
+  /// Register the periodic background task (DEPRECATED: Now handled on app launch)
   static Future<void> registerPeriodicTask() async {
-    if (!_supportsBackgroundTasks) return;
-
-    final prefs = await SharedPreferences.getInstance();
-    final frequencyHours = prefs.getInt(_frequencyKey) ?? 24;
-
-    // Cancel existing task first
-    await Workmanager().cancelByUniqueName(_taskName);
-
-    // Register new task with updated frequency
-    await Workmanager().registerPeriodicTask(
-      _taskName,
-      _taskName,
-      frequency: Duration(hours: frequencyHours),
-      constraints: Constraints(
-        networkType: NetworkType.unmetered, // Wi-Fi only
-        requiresBatteryNotLow: true, // Don't run on low battery
-        requiresCharging: false, // Don't require charging (user preference)
-      ),
-      existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
-      backoffPolicy: BackoffPolicy.exponential,
-      backoffPolicyDelay: const Duration(minutes: 10),
-    );
-
-    appDebugLog(
-      '📅 Registered periodic task with frequency: ${frequencyHours}h',
-    );
+    // Deprecated in favor of _runAppLaunchCheck
   }
 
-  /// Cancel the periodic task
+  /// Cancel the periodic task (DEPRECATED)
   static Future<void> cancelPeriodicTask() async {
-    if (!_supportsBackgroundTasks) return;
-
-    await Workmanager().cancelByUniqueName(_taskName);
-    appDebugLog('❌ Cancelled periodic episode check task');
+    // Deprecated
   }
 
   /// Get check frequency in hours

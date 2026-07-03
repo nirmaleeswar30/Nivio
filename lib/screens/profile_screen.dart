@@ -116,7 +116,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final preferredAudio = ref.watch(preferredAudioLanguageProvider);
     final preferredSubtitle = ref.watch(preferredSubtitleLanguageProvider);
     final episodeCheckEnabled = ref.watch(episodeCheckEnabledProvider);
-    final episodeFrequency = ref.watch(episodeCheckFrequencyProvider);
+
     final appAccentKey = ref.watch(appAccentColorProvider);
 
     return Scaffold(
@@ -189,7 +189,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       preferredAudio: preferredAudio,
                       preferredSubtitle: preferredSubtitle,
                       episodeCheckEnabled: episodeCheckEnabled,
-                      episodeFrequency: episodeFrequency,
+
                       appAccentKey: appAccentKey,
                     ),
                   ),
@@ -388,14 +388,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                   .setEnabled(value);
                             },
                           ),
-                        if (episodeCheckEnabled &&
-                            _matches('frequency check schedule'))
-                          _buildActionTile(
-                            icon: Icons.schedule_rounded,
-                            title: 'Check Frequency',
-                            subtitle: _frequencyLabel(episodeFrequency),
-                            onTap: _showFrequencyDialog,
-                          ),
+
                         if (_matches('new episodes inbox'))
                           _buildActionTile(
                             icon: Icons.notifications_none_rounded,
@@ -770,11 +763,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
           ),
         ),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.04),
+        Material(
+          color: Colors.white.withValues(alpha: 0.04),
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -793,7 +786,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     required String preferredAudio,
     required String preferredSubtitle,
     required bool episodeCheckEnabled,
-    required int episodeFrequency,
+
     required String appAccentKey,
   }) {
     final results = <Widget>[];
@@ -954,16 +947,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
       );
     }
-    if (_matches('frequency check schedule') && episodeCheckEnabled) {
-      results.add(
-        _buildActionTile(
-          icon: Icons.schedule_rounded,
-          title: 'Check Frequency',
-          subtitle: _frequencyLabel(episodeFrequency),
-          onTap: _showFrequencyDialog,
-        ),
-      );
-    }
+
     if (_matches('check now refresh')) {
       results.add(
         _buildActionTile(
@@ -1307,17 +1291,71 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
-  String _frequencyLabel(int value) {
-    switch (value) {
-      case 12:
-        return 'Every 12 hours';
-      case 24:
-        return 'Daily';
-      case 48:
-        return 'Every 2 days';
-      default:
-        return 'Every $value hours';
-    }
+
+
+  Future<void> _showCustomHexDialog() async {
+    final current = ref.read(appAccentColorProvider);
+    String currentHex = current.startsWith('#') ? current.substring(1) : '';
+    final TextEditingController hexController =
+        TextEditingController(text: currentHex);
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: NivioTheme.netflixDarkGrey,
+          title: const Text(
+            'Custom Hex Color',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: TextField(
+            controller: hexController,
+            style: const TextStyle(color: Colors.white),
+            decoration: const InputDecoration(
+              prefixText: '#',
+              prefixStyle: TextStyle(color: Colors.white70),
+              hintText: 'RRGGBB',
+              hintStyle: TextStyle(color: Colors.white38),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Colors.white24),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: NivioTheme.netflixWhite),
+              ),
+            ),
+            maxLength: 6,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
+            TextButton(
+              onPressed: () async {
+                final hex = hexController.text.trim().toUpperCase();
+                if (hex.length == 6) {
+                  // Basic validation
+                  final RegExp hexRegex = RegExp(r'^[0-9A-F]{6}$');
+                  if (hexRegex.hasMatch(hex)) {
+                    await ref
+                        .read(appAccentColorProvider.notifier)
+                        .setAccentColor('#$hex');
+                    if (context.mounted) Navigator.pop(context);
+                  }
+                }
+              },
+              child: const Text(
+                'Save',
+                style: TextStyle(color: NivioTheme.netflixWhite),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _showPlaybackSpeedDialog() async {
@@ -1418,56 +1456,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  Future<void> _showFrequencyDialog() async {
-    const values = [12, 24, 48];
-    final current = ref.read(episodeCheckFrequencyProvider);
 
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              const ListTile(
-                title: Text(
-                  'Episode Check Frequency',
-                  style: TextStyle(
-                    color: NivioTheme.netflixWhite,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              ...values.map((value) {
-                final isSelected = value == current;
-                return ListTile(
-                  leading: Icon(
-                    isSelected
-                        ? Icons.check_circle_rounded
-                        : Icons.radio_button_unchecked_rounded,
-                    color: isSelected
-                        ? NivioTheme.accentColorOf(context)
-                        : NivioTheme.netflixGrey,
-                  ),
-                  title: Text(
-                    _frequencyLabel(value),
-                    style: TextStyle(color: NivioTheme.netflixWhite),
-                  ),
-                  onTap: () {
-                    ref
-                        .read(episodeCheckFrequencyProvider.notifier)
-                        .setFrequency(value);
-                    Navigator.pop(sheetContext);
-                  },
-                );
-              }),
-            ],
-          ),
-        );
-      },
-    );
-  }
 
   Future<void> _showThemeColorDialog() async {
     final current = ref.read(appAccentColorProvider);
@@ -1526,6 +1515,38 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   },
                 );
               }),
+              ListTile(
+                leading: Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: current.startsWith('#')
+                        ? appAccentColorFromKey(current)
+                        : Colors.grey[800],
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: current.startsWith('#')
+                          ? NivioTheme.netflixWhite
+                          : Colors.white24,
+                      width: current.startsWith('#') ? 2 : 1,
+                    ),
+                  ),
+                ),
+                title: const Text(
+                  'Custom Hex...',
+                  style: TextStyle(color: NivioTheme.netflixWhite),
+                ),
+                trailing: current.startsWith('#')
+                    ? Icon(
+                        Icons.check_circle_rounded,
+                        color: NivioTheme.accentColorOf(context),
+                      )
+                    : null,
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showCustomHexDialog();
+                },
+              ),
             ],
           ),
         );
@@ -1740,36 +1761,190 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Future<void> _showAppVersionDialog() async {
-    final details = await _getAppVersionLabel();
-    String patchLine = 'Patch updates are not available in this build.';
-    if (ShorebirdUpdateService.isAvailable) {
-      final patch = await ShorebirdUpdateService.currentPatchNumber();
-      patchLine = patch == null
-          ? 'Current patch: base release'
-          : 'Current patch: $patch';
-    }
+    final packageInfo = await PackageInfo.fromPlatform();
+    final String version = packageInfo.version;
+    final String buildNumber = packageInfo.buildNumber;
+    
+    int? currentPatch;
+    ShorebirdUpdateResult? updateCheck;
+    bool isChecking = ShorebirdUpdateService.isAvailable;
 
     if (!mounted) return;
 
     await showDialog<void>(
       context: context,
+      barrierDismissible: true,
       builder: (ctx) {
-        return AlertDialog(
-          backgroundColor: NivioTheme.netflixDarkGrey,
-          title: const Text(
-            'App Version',
-            style: TextStyle(color: NivioTheme.netflixWhite),
-          ),
-          content: Text(
-            'Installed: $details\n$patchLine',
-            style: TextStyle(color: NivioTheme.netflixLightGrey),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Close'),
-            ),
-          ],
+        return StatefulBuilder(
+          builder: (context, setState) {
+            if (isChecking) {
+              isChecking = false;
+              ShorebirdUpdateService.currentPatchNumber().then((patch) {
+                currentPatch = patch;
+                return ShorebirdUpdateService.checkAndUpdate();
+              }).then((result) {
+                if (mounted && context.mounted) {
+                  setState(() {
+                    updateCheck = result;
+                  });
+                }
+              }).catchError((_) {
+                if (mounted && context.mounted) {
+                  setState(() {
+                    updateCheck = const ShorebirdUpdateResult(
+                      action: ShorebirdUpdateAction.failed,
+                      message: 'Could not check for patch updates.',
+                    );
+                  });
+                }
+              });
+            }
+
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: NivioTheme.netflixDarkGrey,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.white12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.5),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // App Logo
+                    Container(
+                      width: 140,
+                      height: 140,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: NivioTheme.accentColorOf(context).withOpacity(0.3),
+                            blurRadius: 18,
+                            offset: const Offset(0, 6),
+                          )
+                        ],
+                        image: const DecorationImage(
+                          image: AssetImage('assets/images/app-icon.png'),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Nivio',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        'Version $version ($buildNumber)',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    const Divider(color: Colors.white12),
+                    const SizedBox(height: 16),
+                    
+                    if (updateCheck == null && ShorebirdUpdateService.isAvailable)
+                      Column(
+                        children: [
+                          SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: NivioTheme.accentColorOf(context),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'Checking for patch updates...',
+                            style: TextStyle(color: Colors.white60, fontSize: 13),
+                          ),
+                        ],
+                      )
+                    else ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            currentPatch != null ? Icons.verified_rounded : Icons.info_outline_rounded,
+                            color: currentPatch != null ? Colors.greenAccent : Colors.white54,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            currentPatch != null 
+                              ? 'Active Patch: #$currentPatch' 
+                              : 'Active Patch: Base Release',
+                            style: TextStyle(
+                              color: currentPatch != null ? Colors.white : Colors.white70,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      if (updateCheck != null)
+                        Text(
+                          updateCheck!.message,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: updateCheck!.action == ShorebirdUpdateAction.downloaded || 
+                                   updateCheck!.action == ShorebirdUpdateAction.restartRequired
+                                ? NivioTheme.accentColorOf(context)
+                                : Colors.white54,
+                            fontSize: 13,
+                          ),
+                        ),
+                    ],
+                    
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white10,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 0,
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Close', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
         );
       },
     );

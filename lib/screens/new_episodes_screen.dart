@@ -1,91 +1,80 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/theme.dart';
-import 'package:nivio/models/new_episode.dart';
+import 'package:nivio/services/schedule_api_service.dart';
 import 'package:nivio/services/episode_check_service.dart';
+import 'package:nivio/widgets/countdown_timer_widget.dart';
 
-final newEpisodesProvider = StateProvider<List<NewEpisode>>((ref) {
-  return EpisodeCheckService.getNewEpisodes();
-});
 
-final unreadEpisodeCountProvider = StateProvider<int>((ref) {
-  return EpisodeCheckService.getUnreadCount();
-});
-
-enum _EpisodeFilter { all, unread, read }
-
-class NewEpisodesScreen extends ConsumerStatefulWidget {
+class NewEpisodesScreen extends StatefulWidget {
   final bool embedded;
 
   const NewEpisodesScreen({super.key, this.embedded = false});
 
   @override
-  ConsumerState<NewEpisodesScreen> createState() => _NewEpisodesScreenState();
+  State<NewEpisodesScreen> createState() => _NewEpisodesScreenState();
 }
 
-class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
-  _EpisodeFilter _filter = _EpisodeFilter.all;
-  String _query = '';
-  final TextEditingController _searchController = TextEditingController();
+class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
+  DateTime _focusedDay = DateTime.now();
+  DateTime? _selectedDay;
+  bool _watchlistOnly = true;
+  bool _isLoading = false;
+  List<ScheduleItem> _schedules = [];
+  
+  late final PageController _pageController;
+  final int _initialPage = 500;
 
   @override
   void initState() {
     super.initState();
-    Future.microtask(_refreshEpisodes);
+    _pageController = PageController(initialPage: _initialPage);
+    _selectedDay = _focusedDay;
+    _fetchSchedule();
+    
+    // Clear notification indicator on home screen
+    EpisodeCheckService.markAllAsRead();
   }
 
   @override
   void dispose() {
-    _searchController.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
-  Future<void> _refreshEpisodes() async {
-    if (!mounted) return;
-    ref.read(newEpisodesProvider.notifier).state =
-        EpisodeCheckService.getNewEpisodes();
-    ref.read(unreadEpisodeCountProvider.notifier).state =
-        EpisodeCheckService.getUnreadCount();
+  bool isSameDay(DateTime? a, DateTime? b) {
+    if (a == null || b == null) return false;
+    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
-  Future<void> _markAllAsRead() async {
-    await EpisodeCheckService.markAllAsRead();
-    await _refreshEpisodes();
+  DateTime _getStartOfWeek(DateTime date) {
+    return date.subtract(Duration(days: date.weekday - 1));
   }
 
-  Future<void> _clearAll() async {
-    await EpisodeCheckService.clearAll();
-    await _refreshEpisodes();
-  }
-
-  Future<void> _checkNow() async {
-    final count = await EpisodeCheckService.checkNow();
-    await _refreshEpisodes();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          count > 0
-              ? 'Found $count new episode${count > 1 ? 's' : ''}'
-              : 'No new episodes found',
-        ),
-        backgroundColor: NivioTheme.accentColorOf(context),
-      ),
+  Future<void> _fetchSchedule() async {
+    if (_selectedDay == null) return;
+    setState(() => _isLoading = true);
+    
+    final items = await ScheduleApiService.fetchScheduleForDate(
+      _selectedDay!, 
+      watchlistOnly: _watchlistOnly,
     );
+    
+    if (mounted) {
+      setState(() {
+        _schedules = items;
+        _isLoading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final episodes = ref.watch(newEpisodesProvider);
-    final unreadCount = ref.watch(unreadEpisodeCountProvider);
-    final grouped = _buildGroupedEpisodes(episodes);
-
-    final content = Container(
-      decoration: BoxDecoration(
+    return Container(
+      decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
@@ -96,548 +85,444 @@ class _NewEpisodesScreenState extends ConsumerState<NewEpisodesScreen> {
         top: !widget.embedded,
         child: CustomScrollView(
           slivers: [
-            if (!widget.embedded)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: _buildTopBar(),
-                ),
-              ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  widget.embedded ? 10 : 14,
-                  16,
-                  0,
-                ),
-                child: _buildSummaryCard(
-                  totalCount: episodes.length,
-                  unreadCount: unreadCount,
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                child: _buildSearchAndFilters(),
-              ),
-            ),
-            if (grouped.isEmpty)
+            if (!widget.embedded) SliverToBoxAdapter(child: _buildHeader()),
+            SliverToBoxAdapter(child: _buildCalendar()),
+            SliverToBoxAdapter(child: _buildFilters()),
+            if (_isLoading)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(child: CircularProgressIndicator(color: Colors.white)),
+              )
+            else if (_schedules.isEmpty)
               SliverFillRemaining(
                 hasScrollBody: false,
                 child: _buildEmptyState(),
               )
             else
-              SliverList.builder(
-                itemCount: grouped.length,
-                itemBuilder: (context, index) {
-                  final showId = grouped.keys.elementAt(index);
-                  final showEpisodes = grouped[showId]!;
-                  return Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      index == 0 ? 16 : 10,
-                      16,
-                      index == grouped.length - 1 ? 24 : 0,
-                    ),
-                    child: _buildShowCard(showId, showEpisodes),
-                  );
-                },
+              SliverPadding(
+                padding: const EdgeInsets.only(top: 8, bottom: 80),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      return _buildScheduleItem(_schedules[index]);
+                    },
+                    childCount: _schedules.length,
+                  ),
+                ),
               ),
           ],
         ),
       ),
     );
-
-    if (widget.embedded) {
-      return content;
-    }
-
-    return Scaffold(backgroundColor: NivioTheme.netflixBlack, body: content);
   }
 
-  Widget _buildTopBar() {
-    return Row(
-      children: [
-        IconButton(
-          onPressed: () {
-            if (context.canPop()) {
-              context.pop();
-              return;
-            }
-            context.go('/home');
-          },
-          icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-        ),
-        const SizedBox(width: 4),
-        const Text(
-          'New Episodes',
-          style: TextStyle(
-            color: NivioTheme.netflixWhite,
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const Spacer(),
-        PopupMenuButton<String>(
-          color: NivioTheme.netflixDarkGrey,
-          icon: Icon(Icons.more_horiz, color: NivioTheme.netflixWhite),
-          onSelected: (value) async {
-            if (value == 'mark_read') {
-              await _markAllAsRead();
-              return;
-            }
-            if (value == 'clear') {
-              await _clearAll();
-            }
-          },
-          itemBuilder: (context) => const [
-            PopupMenuItem(
-              value: 'mark_read',
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.done_all,
-                    color: NivioTheme.netflixWhite,
-                    size: 20,
-                  ),
-                  SizedBox(width: 10),
-                  Text('Mark all as read'),
-                ],
-              ),
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Row(
+        children: const [
+          Icon(Icons.calendar_month_rounded, color: Colors.white, size: 28),
+          SizedBox(width: 12),
+          Text(
+            'Release Calendar',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
             ),
-            PopupMenuItem(
-              value: 'clear',
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.delete_outline_rounded,
-                    color: NivioTheme.netflixWhite,
-                    size: 20,
-                  ),
-                  SizedBox(width: 10),
-                  Text('Clear all'),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSummaryCard({
-    required int totalCount,
-    required int unreadCount,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              _buildMetric('Unread', unreadCount.toString()),
-              const SizedBox(width: 10),
-              _buildMetric('Total', totalCount.toString()),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _markAllAsRead,
-                  icon: Icon(Icons.done_all_rounded, size: 18),
-                  label: const Text('Mark Read'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: BorderSide(
-                      color: Colors.white.withValues(alpha: 0.2),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _checkNow,
-                  icon: Icon(Icons.sync_rounded, size: 18),
-                  label: const Text('Check Now'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: NivioTheme.accentColorOf(context),
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ),
-            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildMetric(String label, String value) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                color: NivioTheme.netflixLightGrey,
-                fontSize: 12,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              value,
-              style: TextStyle(
-                color: NivioTheme.netflixWhite,
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSearchAndFilters() {
-    return Column(
-      children: [
-        TextField(
-          controller: _searchController,
-          onChanged: (value) => setState(() => _query = value.trim()),
-          style: TextStyle(color: NivioTheme.netflixWhite, fontSize: 14),
-          decoration: InputDecoration(
-            hintText: 'Search shows or episode names...',
-            prefixIcon: Icon(
-              Icons.search_rounded,
-              color: Colors.white.withValues(alpha: 0.7),
-            ),
-            suffixIcon: _query.isEmpty
-                ? null
-                : IconButton(
-                    onPressed: () {
-                      _searchController.clear();
-                      setState(() => _query = '');
-                    },
-                    icon: Icon(
-                      Icons.close_rounded,
-                      color: Colors.white.withValues(alpha: 0.8),
-                    ),
-                  ),
-            filled: true,
-            fillColor: Colors.white.withValues(alpha: 0.06),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(
-                color: Colors.white.withValues(alpha: 0.1),
-              ),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(
-                color: Colors.white.withValues(alpha: 0.1),
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: NivioTheme.accentColorOf(context)),
+  Future<void> _showMonthPicker() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _focusedDay,
+      firstDate: DateTime(2020, 1, 1),
+      lastDate: DateTime(2030, 12, 31),
+      initialDatePickerMode: DatePickerMode.year,
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: ColorScheme.dark(
+              primary: NivioTheme.accentColorOf(context),
+              onPrimary: Colors.white,
+              surface: const Color(0xFF1E1E1E),
+              onSurface: Colors.white,
             ),
           ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      final nowStart = _getStartOfWeek(DateTime.now());
+      final pickedStart = _getStartOfWeek(picked);
+      final differenceInWeeks = pickedStart.difference(nowStart).inDays ~/ 7;
+      final targetPage = _initialPage + differenceInWeeks;
+      
+      _pageController.animateToPage(
+        targetPage,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+      );
+      setState(() {
+        _focusedDay = picked;
+        _selectedDay = picked;
+      });
+      _fetchSchedule();
+    }
+  }
+
+  Widget _buildCalendar() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left, color: Colors.white),
+                onPressed: () {
+                  _pageController.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+                },
+              ),
+              InkWell(
+                onTap: _showMonthPicker,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        DateFormat.yMMMM().format(_focusedDay),
+                        style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right, color: Colors.white),
+                onPressed: () {
+                  _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+                },
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            _buildFilterChip('All', _EpisodeFilter.all),
-            const SizedBox(width: 8),
-            _buildFilterChip('Unread', _EpisodeFilter.unread),
-            const SizedBox(width: 8),
-            _buildFilterChip('Read', _EpisodeFilter.read),
-          ],
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) {
+              final isWeekend = d == 'Sat' || d == 'Sun';
+              return SizedBox(
+                width: 32,
+                child: Text(
+                  d,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: isWeekend ? Colors.white54 : Colors.white70, fontSize: 12),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        SizedBox(
+          height: 50,
+          child: PageView.builder(
+            controller: _pageController,
+            onPageChanged: (index) {
+              final startOfWeek = _getStartOfWeek(DateTime.now()).add(Duration(days: (index - _initialPage) * 7));
+              setState(() {
+                _focusedDay = startOfWeek;
+              });
+            },
+            itemBuilder: (context, index) {
+              final startOfWeek = _getStartOfWeek(DateTime.now()).add(Duration(days: (index - _initialPage) * 7));
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: List.generate(7, (i) {
+                    final date = startOfWeek.add(Duration(days: i));
+                    final isSelected = isSameDay(_selectedDay, date);
+                    final isToday = isSameDay(DateTime.now(), date);
+                    final isWeekend = date.weekday == 6 || date.weekday == 7;
+
+                    Color bgColor = Colors.transparent;
+                    if (isSelected) bgColor = NivioTheme.accentColorOf(context);
+                    else if (isToday) bgColor = NivioTheme.accentColorOf(context).withValues(alpha: 0.3);
+
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedDay = date;
+                          _focusedDay = date;
+                        });
+                        _fetchSchedule();
+                      },
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: bgColor,
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '${date.day}',
+                          style: TextStyle(
+                            color: isSelected || isToday ? Colors.white : (isWeekend ? Colors.white70 : Colors.white),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              );
+            },
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildFilterChip(String label, _EpisodeFilter filterValue) {
-    final isActive = _filter == filterValue;
-    return InkWell(
-      onTap: () => setState(() => _filter = filterValue),
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isActive
-              ? NivioTheme.accentColorOf(context).withValues(alpha: 0.22)
-              : Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: isActive
-                ? NivioTheme.accentColorOf(context).withValues(alpha: 0.65)
-                : Colors.white.withValues(alpha: 0.12),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 12,
-            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildShowCard(int showId, List<NewEpisode> episodes) {
-    final first = episodes.first;
-    final hasUnread = episodes.any((episode) => !episode.isRead);
-    final posterUrl = first.posterPath != null
-        ? '$tmdbImageBaseUrl/$posterSize${first.posterPath}'
-        : '';
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () async {
-          for (final episode in episodes.where((episode) => !episode.isRead)) {
-            await EpisodeCheckService.markAsRead(episode.key);
-          }
-          await _refreshEpisodes();
-          if (!mounted) return;
-          context.push('/media/$showId?type=tv');
-        },
-        child: Ink(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: hasUnread
-                  ? NivioTheme.accentColorOf(context).withValues(alpha: 0.35)
-                  : Colors.white.withValues(alpha: 0.1),
+  Widget _buildFilters() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          ChoiceChip(
+            label: const Text('My Watchlist'),
+            selected: _watchlistOnly,
+            onSelected: (val) {
+              if (val) {
+                setState(() => _watchlistOnly = true);
+                _fetchSchedule();
+              }
+            },
+            selectedColor: NivioTheme.accentColorOf(context).withValues(alpha: 0.2),
+            labelStyle: TextStyle(
+              color: _watchlistOnly ? NivioTheme.accentColorOf(context) : Colors.white70,
+              fontWeight: _watchlistOnly ? FontWeight.bold : FontWeight.normal,
+            ),
+            backgroundColor: Colors.white10,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: const BorderSide(color: Colors.transparent),
             ),
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: posterUrl.isEmpty
-                    ? _buildPosterPlaceholder()
-                    : CachedNetworkImage(
-                        imageUrl: posterUrl,
-                        width: 72,
-                        height: 108,
-                        fit: BoxFit.cover,
-                        placeholder: (context, url) =>
-                            _buildPosterPlaceholder(),
-                        errorWidget: (context, url, error) =>
-                            _buildPosterPlaceholder(),
-                      ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            first.showName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: NivioTheme.netflixWhite,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        if (hasUnread)
-                          Container(
-                            width: 8,
-                            height: 8,
-                            margin: const EdgeInsets.only(left: 8),
-                            decoration: BoxDecoration(
-                              color: NivioTheme.accentColorOf(context),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        _metaPill(
-                          episodes.length == 1
-                              ? 'S${first.seasonNumber}E${first.episodeNumber}'
-                              : '${episodes.length} new episodes',
-                        ),
-                        _metaPill(DateFormat.yMMMd().format(first.airDate)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      episodes.length == 1
-                          ? first.episodeName
-                          : episodes
-                                    .take(3)
-                                    .map(
-                                      (episode) =>
-                                          'S${episode.seasonNumber}E${episode.episodeNumber}',
-                                    )
-                                    .join(', ') +
-                                (episodes.length > 3 ? '...' : ''),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: NivioTheme.netflixLightGrey,
-                        fontSize: 13,
-                        height: 1.35,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Row(
-                      children: [
-                        Icon(
-                          Icons.arrow_forward_ios_rounded,
-                          size: 14,
-                          color: NivioTheme.netflixGrey,
-                        ),
-                        SizedBox(width: 4),
-                        Text(
-                          'Open show',
-                          style: TextStyle(
-                            color: NivioTheme.netflixGrey,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          const SizedBox(width: 12),
+          ChoiceChip(
+            label: const Text('Discover'),
+            selected: !_watchlistOnly,
+            onSelected: (val) {
+              if (val) {
+                setState(() => _watchlistOnly = false);
+                _fetchSchedule();
+              }
+            },
+            selectedColor: NivioTheme.accentColorOf(context).withValues(alpha: 0.2),
+            labelStyle: TextStyle(
+              color: !_watchlistOnly ? NivioTheme.accentColorOf(context) : Colors.white70,
+              fontWeight: !_watchlistOnly ? FontWeight.bold : FontWeight.normal,
+            ),
+            backgroundColor: Colors.white10,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: const BorderSide(color: Colors.transparent),
+            ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPosterPlaceholder() {
-    return Container(
-      width: 72,
-      height: 108,
-      color: NivioTheme.netflixDarkGrey,
-      child: Icon(Icons.tv_rounded, color: NivioTheme.netflixGrey),
-    );
-  }
-
-  Widget _metaPill(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: NivioTheme.netflixWhite,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-        ),
+        ],
       ),
     );
   }
 
   Widget _buildEmptyState() {
-    final message = switch (_filter) {
-      _EpisodeFilter.unread => 'No unread episodes',
-      _EpisodeFilter.read => 'No read episodes',
-      _EpisodeFilter.all => 'No new episodes',
-    };
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.calendar_today_outlined, size: 64, color: Colors.white.withValues(alpha: 0.2)),
+        const SizedBox(height: 16),
+        Text(
+          _watchlistOnly 
+            ? 'No releases in your watchlist today'
+            : 'No upcoming releases found today',
+          style: const TextStyle(color: Colors.white70, fontSize: 16),
+        ),
+      ],
+    );
+  }
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.notifications_none_rounded,
-              size: 72,
-              color: Colors.white.withValues(alpha: 0.32),
+
+
+  Widget _buildScheduleItem(ScheduleItem item) {
+    final now = DateTime.now();
+    final isToday = item.releaseDate.year == now.year && 
+                    item.releaseDate.month == now.month && 
+                    item.releaseDate.day == now.day;
+    final isPast = item.releaseDate.isBefore(now);
+    
+    String statusText;
+    if (isToday) {
+      statusText = (item.hasPreciseTime && isPast) ? 'Aired Today' : 'Airing Today';
+    } else if (item.releaseDate.isBefore(DateTime(now.year, now.month, now.day))) {
+      statusText = 'Aired';
+    } else {
+      statusText = 'Upcoming';
+    }
+    
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+             if (item.id == -1) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Details unavailable. Please search for this show.')),
+                );
+                return;
+             }
+             final type = item.mediaType == 'anime' ? 'tv' : item.mediaType;
+             final season = item.seasonNumber ?? 1;
+             final episode = item.episodeNumber ?? 1;
+             context.push('/player/${item.id}?type=$type&season=$season&episode=$episode');
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Poster
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: item.posterPath != null
+                      ? CachedNetworkImage(
+                          imageUrl: item.posterPath!.startsWith('http') 
+                              ? item.posterPath! 
+                              : '$tmdbImageBaseUrl/$posterSize${item.posterPath}',
+                          width: 70,
+                          height: 105,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => _buildPlaceholder(),
+                        )
+                      : _buildPlaceholder(),
+                ),
+                const SizedBox(width: 16),
+                
+                // Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: NivioTheme.accentColorOf(context).withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              item.mediaType.toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: NivioTheme.accentColorOf(context),
+                              ),
+                            ),
+                          ),
+                          if (item.episodeNumber != null) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              'Episode ${item.episodeNumber}',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        item.title,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 8),
+                      
+                      // Timing
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.access_time_rounded, 
+                            size: 14, 
+                            color: isPast ? Colors.white54 : NivioTheme.accentColorOf(context),
+                          ),
+                          const SizedBox(width: 4),
+                          if (item.hasPreciseTime) ...[
+                            CountdownTimerWidget(
+                              targetDate: item.releaseDate,
+                              textStyle: TextStyle(
+                                color: isPast ? Colors.white54 : NivioTheme.accentColorOf(context),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '• ${DateFormat('h:mm a').format(item.releaseDate)}',
+                              style: const TextStyle(color: Colors.white54, fontSize: 12),
+                            ),
+                          ] else ...[
+                            Text(
+                              statusText,
+                              style: TextStyle(
+                                color: isPast ? Colors.white54 : NivioTheme.accentColorOf(context),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 14),
-            Text(
-              message,
-              style: TextStyle(
-                color: NivioTheme.netflixWhite,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Episodes from your watchlist will appear here.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: NivioTheme.netflixGrey),
-            ),
-            const SizedBox(height: 18),
-            ElevatedButton.icon(
-              onPressed: _checkNow,
-              icon: Icon(Icons.sync_rounded),
-              label: const Text('Check Now'),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Map<int, List<NewEpisode>> _buildGroupedEpisodes(List<NewEpisode> episodes) {
-    final filtered = episodes.where((episode) {
-      final matchesFilter = switch (_filter) {
-        _EpisodeFilter.all => true,
-        _EpisodeFilter.unread => !episode.isRead,
-        _EpisodeFilter.read => episode.isRead,
-      };
-
-      if (!matchesFilter) return false;
-      if (_query.isEmpty) return true;
-
-      final normalized = _query.toLowerCase();
-      return episode.showName.toLowerCase().contains(normalized) ||
-          episode.episodeName.toLowerCase().contains(normalized);
-    }).toList();
-
-    final grouped = <int, List<NewEpisode>>{};
-    for (final episode in filtered) {
-      grouped.putIfAbsent(episode.showId, () => []).add(episode);
-    }
-    return grouped;
+  Widget _buildPlaceholder() {
+    return Container(
+      width: 70,
+      height: 105,
+      color: Colors.white10,
+      child: const Icon(Icons.movie_creation_outlined, color: Colors.white54),
+    );
   }
 }

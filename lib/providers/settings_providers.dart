@@ -22,6 +22,10 @@ const List<AppAccentOption> appAccentOptions = [
   AppAccentOption(key: 'green', label: 'Green', color: Color(0xFF22C55E)),
   AppAccentOption(key: 'orange', label: 'Orange', color: Color(0xFFF97316)),
   AppAccentOption(key: 'pink', label: 'Pink', color: Color(0xFFEC4899)),
+  AppAccentOption(key: 'purple', label: 'Purple', color: Color(0xFFA855F7)),
+  AppAccentOption(key: 'teal', label: 'Teal', color: Color(0xFF14B8A6)),
+  AppAccentOption(key: 'yellow', label: 'Yellow', color: Color(0xFFEAB308)),
+  AppAccentOption(key: 'cyan', label: 'Cyan', color: Color(0xFF06B6D4)),
 ];
 
 String appAccentLabelFromKey(String key) {
@@ -29,6 +33,9 @@ String appAccentLabelFromKey(String key) {
     if (option.key == key) {
       return option.label;
     }
+  }
+  if (key.startsWith('#')) {
+    return 'Custom ($key)';
   }
   return appAccentOptions.first.label;
 }
@@ -38,6 +45,14 @@ Color appAccentColorFromKey(String key) {
     if (option.key == key) {
       return option.color;
     }
+  }
+  if (key.startsWith('#')) {
+    try {
+      final hexString = key.substring(1);
+      if (hexString.length == 6) {
+        return Color(int.parse(hexString, radix: 16) | 0xFF000000);
+      }
+    } catch (_) {}
   }
   return appAccentOptions.first.color;
 }
@@ -73,6 +88,7 @@ class AppAccentColorNotifier extends StateNotifier<String> {
         return key;
       }
     }
+    if (key.startsWith('#')) return key;
     return appAccentOptions.first.key;
   }
 }
@@ -350,39 +366,6 @@ class EpisodeCheckEnabledNotifier extends StateNotifier<bool> {
   }
 }
 
-// Episode Check Frequency Provider
-final episodeCheckFrequencyProvider =
-    StateNotifierProvider<EpisodeCheckFrequencyNotifier, int>((ref) {
-      return EpisodeCheckFrequencyNotifier();
-    });
-
-class EpisodeCheckFrequencyNotifier extends StateNotifier<int> {
-  EpisodeCheckFrequencyNotifier() : super(24) {
-    _loadSetting();
-  }
-
-  Future<void> _loadSetting() async {
-    state = await EpisodeCheckService.getFrequency();
-  }
-
-  Future<void> setFrequency(int hours) async {
-    state = hours;
-    await EpisodeCheckService.setFrequency(hours);
-  }
-
-  String get displayName {
-    switch (state) {
-      case 12:
-        return 'Every 12 hours';
-      case 24:
-        return 'Daily';
-      case 48:
-        return 'Every 2 days';
-      default:
-        return 'Every $state hours';
-    }
-  }
-}
 
 // Download Concurrency Provider
 final downloadConcurrencyProvider =

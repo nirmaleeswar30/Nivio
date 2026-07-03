@@ -129,6 +129,27 @@ class KwikNativePlayerState extends State<KwikNativePlayer> {
     _initHardwareLevels();
     _startHideTimer();
   }
+
+  @override
+  void didUpdateWidget(KwikNativePlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isPipMode && !oldWidget.isPipMode) {
+      setState(() {
+        _showControls = false;
+        _isLocked = false;
+      });
+    }
+    if (widget.url != oldWidget.url || widget.headers != oldWidget.headers) {
+      player.open(
+        Media(widget.url, httpHeaders: widget.headers),
+        play: true,
+      );
+      if (widget.startAt != null) {
+        player.seek(widget.startAt!);
+      }
+    }
+  }
+
   bool _disposed = false;
 
   @override
@@ -507,7 +528,11 @@ class KwikNativePlayerState extends State<KwikNativePlayer> {
           Positioned.fill(
             child: Stack(
               children: [
-                Container(color: Colors.black.withValues(alpha: 0.5)),
+                GestureDetector(
+                  onTap: _toggleControls,
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(color: Colors.black.withValues(alpha: 0.5)),
+                ),
                 // Top Bar
                 Positioned(
                   top: 0,
