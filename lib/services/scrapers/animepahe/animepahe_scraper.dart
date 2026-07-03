@@ -260,6 +260,27 @@ class AnimepaheScraperService {
                 return itemTitle.contains(firstWord);
               }).toList();
               
+              bool isPlausibleSeasonMatch(String t, int s) {
+                if (s <= 1) return true;
+                final lt = t.toLowerCase();
+                if (lt.contains('season $s') || lt.contains('${s}nd season') || lt.contains('${s}rd season') || lt.contains('${s}th season') || lt.contains('part $s')) return true;
+                final romans = ['', 'i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix'];
+                if (s > 1 && s < romans.length) {
+                  final r = romans[s];
+                  if (lt.endsWith(' $r') || lt.contains(' $r ') || lt.endsWith(':$r') || lt.endsWith('-$r')) return true;
+                }
+                return false;
+              }
+
+              // Prioritize candidates that actually mention the season number/roman numeral!
+              relevantCandidates.sort((a, b) {
+                final aMatch = isPlausibleSeasonMatch(a['title'] as String, season);
+                final bMatch = isPlausibleSeasonMatch(b['title'] as String, season);
+                if (aMatch && !bMatch) return -1;
+                if (!aMatch && bMatch) return 1;
+                return 0;
+              });
+              
               // Check up to top 15 related sessions
               for (int i = 0; i < relevantCandidates.length && i < 15; i++) {
                 final candidateSession = relevantCandidates[i]['session'] as String;

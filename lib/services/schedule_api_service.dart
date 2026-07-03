@@ -142,11 +142,33 @@ class ScheduleApiService {
         bool isInWatchlist = false;
 
         if (watchlistOnly) {
-           final match = watchlist.where((w) => 
-               w.mediaType == 'tv' && 
-               (w.title.toLowerCase() == title.toLowerCase() || 
-                (media['title']['romaji'] != null && w.title.toLowerCase() == media['title']['romaji'].toString().toLowerCase()))
-           ).firstOrNull;
+           final String englishTitle = title.toLowerCase();
+           final String? romajiTitle = media['title']['romaji']?.toString().toLowerCase();
+           
+           final match = watchlist.where((w) {
+             if (w.mediaType != 'tv') return false;
+             final wTitle = w.title.toLowerCase();
+             bool isMatch(String name1, String name2) {
+               if (name1 == name2) return true;
+               if (name2.startsWith(name1 + ' ') || name1.startsWith(name2 + ' ')) return true;
+               return false;
+             }
+             
+             if (isMatch(wTitle, englishTitle)) return true;
+             if (romajiTitle != null && isMatch(wTitle, romajiTitle)) return true;
+             
+             // Try matching just the first part before a colon or hyphen
+             final wBase = wTitle.split(RegExp(r'[:\-]')).first.trim();
+             final englishBase = englishTitle.split(RegExp(r'[:\-]')).first.trim();
+             if (wBase.isNotEmpty && englishBase.isNotEmpty && isMatch(wBase, englishBase)) return true;
+             
+             if (romajiTitle != null) {
+                final romajiBase = romajiTitle.split(RegExp(r'[:\-]')).first.trim();
+                if (wBase.isNotEmpty && romajiBase.isNotEmpty && isMatch(wBase, romajiBase)) return true;
+             }
+             
+             return false;
+           }).firstOrNull;
 
            if (match != null) {
              isInWatchlist = true;
