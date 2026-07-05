@@ -123,9 +123,35 @@ class TmdbService {
       if (item is! Map) continue;
       final json = item.map((key, value) => MapEntry(key.toString(), value));
       json['media_type'] = mediaType;
+      
+      if (mediaType == 'tv') {
+        final isJa = json['original_language'] == 'ja' || (json['origin_country'] is List && json['origin_country'].contains('JP'));
+        final genreIds = (json['genre_ids'] as List?)?.cast<int>() ?? [];
+        if (isJa && genreIds.contains(16)) continue;
+      }
+      
       parsed.add(json);
     }
     return parsed;
+  }
+
+  List<dynamic> _filterAndMapResults(List<dynamic>? results, {String? defaultMediaType}) {
+    if (results == null) return [];
+    return results.where((item) {
+      if (item is! Map) return false;
+      final type = item['media_type'] ?? defaultMediaType;
+      if (type == 'tv') {
+        final isJa = item['original_language'] == 'ja' || (item['origin_country'] is List && item['origin_country'].contains('JP'));
+        final genreIds = (item['genre_ids'] as List?)?.cast<int>() ?? [];
+        if (isJa && genreIds.contains(16)) return false;
+      }
+      return true;
+    }).map((item) {
+      if (item is Map && defaultMediaType != null && item['media_type'] == null) {
+        return {...item, 'media_type': defaultMediaType};
+      }
+      return item;
+    }).toList();
   }
 
   Future<List<Map<String, dynamic>>> _postProcessSearchResultMaps(
@@ -403,6 +429,7 @@ class TmdbService {
     if (posterPath == null || posterPath.isEmpty) {
       return '';
     }
+    if (posterPath.startsWith('http')) return posterPath;
     return '$tmdbImageBaseUrl/$size$posterPath';
   }
 
@@ -411,6 +438,7 @@ class TmdbService {
     if (backdropPath == null || backdropPath.isEmpty) {
       return '';
     }
+    if (backdropPath.startsWith('http')) return backdropPath;
     return '$tmdbImageBaseUrl/$size$backdropPath';
   }
 
@@ -429,7 +457,7 @@ class TmdbService {
         },
       );
       if (response.statusCode == 200) {
-        return (response.data['results'] as List<dynamic>?) ?? [];
+        return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: 'tv');
       }
       return [];
     } catch (e) {
@@ -450,7 +478,7 @@ class TmdbService {
         },
       );
       if (response.statusCode == 200) {
-        return (response.data['results'] as List<dynamic>?) ?? [];
+        return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: 'tv');
       }
       return [];
     } catch (e) {
@@ -478,7 +506,7 @@ class TmdbService {
 
     // Return stale data immediately if available
     if (staleCache != null) {
-      return (staleCache['results'] as List<dynamic>?) ?? [];
+      return _filterAndMapResults(staleCache['results'] as List<dynamic>?, defaultMediaType: 'tv');
     }
 
     // Only if no cache at all, wait for network
@@ -488,7 +516,7 @@ class TmdbService {
         queryParameters: {'language': 'en'},
       );
       await _cache.set(cacheKey, response.data, ttl: CacheService.shortCache);
-      return (response.data['results'] as List<dynamic>?) ?? [];
+      return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: 'tv');
     } catch (e) {
       throw Exception('Failed to get trending: $e');
     }
@@ -514,7 +542,7 @@ class TmdbService {
 
     // Return stale data immediately if available
     if (staleCache != null) {
-      return (staleCache['results'] as List<dynamic>?) ?? [];
+      return _filterAndMapResults(staleCache['results'] as List<dynamic>?, defaultMediaType: 'tv');
     }
 
     // Only if no cache at all, wait for network
@@ -524,7 +552,7 @@ class TmdbService {
         queryParameters: {'language': 'en', 'page': 1},
       );
       await _cache.set(cacheKey, response.data, ttl: CacheService.shortCache);
-      return (response.data['results'] as List<dynamic>?) ?? [];
+      return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: 'tv');
     } catch (e) {
       throw Exception('Failed to get popular: $e');
     }
@@ -550,7 +578,7 @@ class TmdbService {
 
     // Return stale data immediately if available
     if (staleCache != null) {
-      return (staleCache['results'] as List<dynamic>?) ?? [];
+      return _filterAndMapResults(staleCache['results'] as List<dynamic>?, defaultMediaType: 'tv');
     }
 
     // Only if no cache at all, wait for network
@@ -560,7 +588,7 @@ class TmdbService {
         queryParameters: {'language': 'en', 'page': 1},
       );
       await _cache.set(cacheKey, response.data, ttl: CacheService.mediumCache);
-      return (response.data['results'] as List<dynamic>?) ?? [];
+      return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: 'tv');
     } catch (e) {
       throw Exception('Failed to get top rated: $e');
     }
@@ -594,7 +622,7 @@ class TmdbService {
       // Cache the response with short TTL since it's date-based
       await _cache.set(cacheKey, response.data, ttl: CacheService.shortCache);
 
-      return (response.data['results'] as List<dynamic>?) ?? [];
+      return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: 'movie');
     } catch (e) {
       throw Exception('Failed to get latest Tamil OTT releases: $e');
     }
@@ -624,7 +652,7 @@ class TmdbService {
       // Cache the response
       await _cache.set(cacheKey, response.data, ttl: CacheService.mediumCache);
 
-      return (response.data['results'] as List<dynamic>?) ?? [];
+      return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: 'tv');
     } catch (e) {
       throw Exception('Failed to get content by language: $e');
     }
@@ -662,7 +690,7 @@ class TmdbService {
 
     // Return stale data immediately if available
     if (staleCache != null) {
-      return (staleCache['results'] as List<dynamic>?) ?? [];
+      return _filterAndMapResults(staleCache['results'] as List<dynamic>?, defaultMediaType: 'tv');
     }
 
     // Only if no cache at all, wait for network
@@ -681,7 +709,7 @@ class TmdbService {
         },
       );
       await _cache.set(cacheKey, response.data, ttl: CacheService.shortCache);
-      return (response.data['results'] as List<dynamic>?) ?? [];
+      return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: 'tv');
     } catch (e) {
       throw Exception('Failed to get trending by language: $e');
     }
@@ -712,7 +740,7 @@ class TmdbService {
       // Cache the response
       await _cache.set(cacheKey, response.data, ttl: CacheService.mediumCache);
 
-      return (response.data['results'] as List<dynamic>?) ?? [];
+      return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: 'tv');
     } catch (e) {
       throw Exception('Failed to get anime: $e');
     }
@@ -749,7 +777,7 @@ class TmdbService {
 
     // Return stale data immediately if available
     if (staleCache != null) {
-      return (staleCache['results'] as List<dynamic>?) ?? [];
+      return _filterAndMapResults(staleCache['results'] as List<dynamic>?, defaultMediaType: 'tv');
     }
 
     // Only if no cache at all, wait for network
@@ -770,7 +798,7 @@ class TmdbService {
         },
       );
       await _cache.set(cacheKey, response.data, ttl: CacheService.shortCache);
-      return (response.data['results'] as List<dynamic>?) ?? [];
+      return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: 'tv');
     } catch (e) {
       throw Exception('Failed to get trending anime: $e');
     }

@@ -3,6 +3,8 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/models/stream_result.dart';
+import 'package:nivio/models/search_result.dart';
+import 'package:nivio/services/anilist_service.dart';
 import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_service.dart';
 import 'package:nivio/services/tmdb_service.dart';
 import 'package:nivio/providers/service_providers.dart';
@@ -20,7 +22,7 @@ class AnimepaheScraperService {
 
 
   /// Scrapes the direct native .m3u8 or Kwik link from Animepahe
-  Future<StreamResult?> fetchStreamUrl(String title, int season, int episode, {String? tmdbId, String subDub = 'sub', void Function(String)? onStatusUpdate}) async {
+  Future<StreamResult?> fetchStreamUrl(String title, int season, int episode, {String? tmdbId, SearchResult? media, String subDub = 'sub', void Function(String)? onStatusUpdate}) async {
     try {
       // 1. Wait for Cloudflare bypass to complete if it hasn't
       onStatusUpdate?.call('Warming up Animepahe bypass...');
@@ -43,23 +45,18 @@ class AnimepaheScraperService {
 
       // --- 1. MAPPING PHASE (Prioritized to resolve absolute episode number & exact session) ---
       try {
-        onStatusUpdate?.call('Mapping: Querying AniList for "$queryTitle"...');
+        int? idMal = media?.malId;
+        int? idAni = media?.mediaType == 'anime' ? media?.id : null;
         
-        final aniListReq = await http.post(
-          Uri.parse('https://graphql.anilist.co'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'query': 'query { Media(search: "$queryTitle", type: ANIME, sort: POPULARITY_DESC) { id idMal title { romaji english } } }'
-          }),
-        ).timeout(const Duration(seconds: 5));
+        if ((idAni == null || idMal == null) && media != null) {
+           onStatusUpdate?.call('Mapping: Querying AniList for legacy TMDB entry...');
+           final anilistService = AniListService();
+           final result = await anilistService.getAniListIdFromTMDB(title: queryTitle, year: media.firstAirDate?.split('-').first, tmdbId: media.id);
+           idAni ??= result?.id;
+           idMal ??= result?.idMal;
+        }
 
-        if (aniListReq.statusCode == 200) {
-          final aniData = jsonDecode(aniListReq.body);
-          final media = aniData['data']?['Media'];
-          if (media != null) {
-            final int? idMal = media['idMal'];
-            final int? idAni = media['id'];
-            
+        if (true) { // keep indentation
             if (idMal != null) {
               onStatusUpdate?.call('Mapping: Resolving Session via MAL-Sync...');
               final malReq = await http.get(
@@ -98,22 +95,17 @@ class AnimepaheScraperService {
                 final zipData = jsonDecode(zipReq.body);
                 final episodesMap = zipData['episodes'] as Map<String, dynamic>?;
                 if (episodesMap != null) {
-                  for (var ep in episodesMap.values) {
-                    if (ep is Map) {
-                      final s = ep['seasonNumber'];
-                      final e = ep['episodeNumber'];
-                      if (s == season && e == episode) {
-                        absoluteEpisodeNumber = ep['absoluteEpisodeNumber'] as int?;
-                        appDebugLog('🎌 Animepahe: Resolved absolute episode number $absoluteEpisodeNumber via AniZip.');
-                        break;
-                      }
+                  final ep = episodesMap[episode.toString()];
+                  if (ep is Map) {
+                    absoluteEpisodeNumber = ep['absoluteEpisodeNumber'] as int?;
+                    if (absoluteEpisodeNumber != null) {
+                      appDebugLog('🎌 Animepahe: Resolved absolute episode number $absoluteEpisodeNumber via AniZip.');
                     }
                   }
                 }
               }
             }
           }
-        }
       } catch (e) {
         appDebugLog('🎌 Animepahe: Mapping failed. Error: $e');
       }

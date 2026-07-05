@@ -204,6 +204,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   bool _isAnimeMedia(SearchResult? media) {
     if (media == null) return false;
+    if (media.mediaType == 'anime') return true;
     final language = (media.originalLanguage ?? '').toLowerCase();
     return media.mediaType == 'tv' && language == 'ja';
   }
@@ -366,12 +367,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _skipTimes.clear();
     
     try {
-      if (media.mediaType == 'tv' && _isAnimeMedia(media)) {
+      if (_isAnimeMedia(media)) {
         // Anime - AniSkip
-        final anilistService = AniListService();
-        final result = await anilistService.getAniListIdFromTMDB(title: media.title ?? media.name ?? '', year: media.firstAirDate?.split('-').first, tmdbId: media.id);
-        if (result?.idMal != null) {
-          final times = await AniSkipService.getSkipTimes(result!.idMal!, episode);
+        int? malId = media.malId;
+        
+        // Fallback for older Watchlist/History items that don't have malId
+        if (malId == null) {
+          final anilistService = AniListService();
+          if (media.mediaType == 'anime') {
+            // New architecture: media.id is the AniList ID
+            final details = await anilistService.getAnimeDetails(media.id);
+            malId = details.malId;
+          } else if (media.mediaType == 'tv') {
+            // Old architecture: media.id is the TMDB ID
+            final result = await anilistService.getAniListIdFromTMDB(title: media.title ?? media.name ?? '', year: media.firstAirDate?.split('-').first, tmdbId: media.id);
+            malId = result?.idMal;
+          }
+        }
+        
+        if (malId != null) {
+          final times = await AniSkipService.getSkipTimes(malId, episode);
           if (mounted) setState(() { _skipTimes = times; });
         }
       } else if (media.mediaType == 'tv') {

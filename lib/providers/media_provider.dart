@@ -20,6 +20,23 @@ final seriesInfoProvider = FutureProvider.family<SeriesInfo, int>((
   ref,
   showId,
 ) async {
+  final selectedMedia = ref.watch(selectedMediaProvider);
+  final isAnime = selectedMedia?.mediaType == 'anime' || (selectedMedia?.mediaType == 'tv' && selectedMedia?.originalLanguage == 'ja');
+
+  if (isAnime) {
+    final anilist = ref.watch(aniListServiceProvider);
+    int targetId = showId;
+    if (selectedMedia?.mediaType == 'tv') {
+      final title = selectedMedia?.title ?? selectedMedia?.name ?? '';
+      final year = selectedMedia?.firstAirDate?.split('-').first;
+      final result = await anilist.getAniListIdFromTMDB(title: title, year: year, tmdbId: targetId);
+      if (result != null) {
+        targetId = result.id;
+      }
+    }
+    return await anilist.getAnimeSeriesInfo(targetId);
+  }
+
   final tmdb = ref.watch(tmdbServiceProvider);
   return await tmdb.getSeriesInfo(showId);
 });
@@ -30,6 +47,23 @@ final seasonDataProvider =
       ref,
       params,
     ) async {
+      final selectedMedia = ref.watch(selectedMediaProvider);
+      final isAnime = selectedMedia?.mediaType == 'anime' || (selectedMedia?.mediaType == 'tv' && selectedMedia?.originalLanguage == 'ja');
+
+      if (isAnime) {
+        final anilist = ref.watch(aniListServiceProvider);
+        int targetId = params.showId;
+        if (selectedMedia?.mediaType == 'tv') {
+          final title = selectedMedia?.title ?? selectedMedia?.name ?? '';
+          final year = selectedMedia?.firstAirDate?.split('-').first;
+          final result = await anilist.getAniListIdFromTMDB(title: title, year: year, tmdbId: targetId);
+          if (result != null) {
+            targetId = result.id;
+          }
+        }
+        return await anilist.getAnimeSeasonData(targetId);
+      }
+
       final tmdb = ref.watch(tmdbServiceProvider);
       return await tmdb.getSeasonInfo(params.showId, params.seasonNumber);
     });

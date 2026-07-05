@@ -164,18 +164,60 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 
     try {
       final tmdbService = ref.read(tmdbServiceProvider);
+      final anilistService = ref.read(aniListServiceProvider);
+      
+      SearchResult? mediaDetails;
+      _TrailerSource? trailerSource;
+      List<dynamic> castData = [];
+      List<String> genres = [];
       Map<String, dynamic>? detailsWithVideos;
 
-      int retries = 3;
-      Duration delay = const Duration(milliseconds: 500);
+      if (widget.mediaType == 'anime') {
+        final extras = await anilistService.getAnimeDetailsWithExtras(widget.mediaId);
+        mediaDetails = anilistService.mapToSearchResult(extras);
 
-      for (int attempt = 0; attempt < retries; attempt++) {
-        try {
-          if (widget.mediaType == 'movie') {
-            detailsWithVideos = await tmdbService.getMovieDetailsWithVideos(
-              widget.mediaId,
-            );
-            detailsWithVideos['media_type'] = 'movie';
+        if (extras['trailer'] != null && extras['trailer']['site'] == 'youtube') {
+          trailerSource = _TrailerSource(
+            site: 'YouTube',
+            key: extras['trailer']['id'],
+            type: 'Trailer',
+          );
+        } else {
+          trailerSource = null;
+        }
+
+        final characters = extras['characters']?['edges'] as List<dynamic>? ?? [];
+        castData = characters.map((char) {
+          final node = char['node'] is Map ? char['node'] : {};
+          final voiceActors = char['voiceActors'] is List ? char['voiceActors'] as List : [];
+          final voiceActor = voiceActors.isNotEmpty && voiceActors.first is Map ? voiceActors.first : null;
+          
+          final nodeName = node['name'] is Map ? node['name']['full'] : null;
+          final voiceActorName = voiceActor != null && voiceActor['name'] is Map ? voiceActor['name']['full'] : null;
+          final nodeImage = node['image'] is Map ? node['image']['large'] : null;
+          final voiceActorImage = voiceActor != null && voiceActor['image'] is Map ? voiceActor['image']['large'] : null;
+
+          return {
+            'id': node['id'] ?? 0,
+            'name': voiceActorName ?? nodeName,
+            'character': nodeName ?? char['role'],
+            'profile_path': voiceActorImage ?? nodeImage,
+            'is_anilist': true,
+          };
+        }).toList();
+
+        genres = ['Animation', 'Anime'];
+      } else {
+        int retries = 3;
+        Duration delay = const Duration(milliseconds: 500);
+
+        for (int attempt = 0; attempt < retries; attempt++) {
+          try {
+            if (widget.mediaType == 'movie') {
+              detailsWithVideos = await tmdbService.getMovieDetailsWithVideos(
+                widget.mediaId,
+              );
+              detailsWithVideos['media_type'] = 'movie';
           } else if (widget.mediaType == 'tv') {
             detailsWithVideos = await tmdbService.getTVShowDetailsWithVideos(
               widget.mediaId,
@@ -202,15 +244,19 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         }
       }
 
-      final mediaDetails = SearchResult.fromJson(detailsWithVideos!);
+      }
+      
+      if (widget.mediaType != 'anime') {
+        mediaDetails = SearchResult.fromJson(detailsWithVideos!);
+        trailerSource = _extractTrailerSource(detailsWithVideos['videos']);
+        castData = detailsWithVideos['credits']?['cast'] as List<dynamic>? ?? [];
+        genres = (detailsWithVideos['genres'] as List<dynamic>? ?? [])
+            .map((genre) => (genre as Map<String, dynamic>)['name'] as String?)
+            .whereType<String>()
+            .toList();
+      }
+      
       ref.read(selectedMediaProvider.notifier).state = mediaDetails;
-
-      final trailerSource = _extractTrailerSource(detailsWithVideos['videos']);
-      final castData = detailsWithVideos['credits']?['cast'] as List<dynamic>? ?? [];
-      final genres = (detailsWithVideos['genres'] as List<dynamic>? ?? [])
-          .map((genre) => (genre as Map<String, dynamic>)['name'] as String?)
-          .whereType<String>()
-          .toList();
 
       setState(() {
         _media = mediaDetails;
@@ -268,7 +314,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   }
 
   void _openWatchPartyHub(SearchResult media) {
-    final season = media.mediaType == 'tv'
+    final season = (media.mediaType == 'tv' || media.mediaType == 'anime')
         ? ref.read(selectedSeasonProvider)
         : 1;
     context.go(
@@ -555,7 +601,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                           ? 'Play'
                                           : 'Play all episodes',
                                       onTap: () {
-                                        final season = media.mediaType == 'tv'
+                                        final season = (media.mediaType == 'tv' || media.mediaType == 'anime')
                                             ? ref.read(selectedSeasonProvider)
                                             : 1;
                                         context.push(
@@ -691,7 +737,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                               ),
                               if (_cast.isNotEmpty) _buildCastRow(),
                               const SizedBox(height: 26),
-                              if (media.mediaType == 'tv')
+                              if (media.mediaType == 'tv' || media.mediaType == 'anime')
                                 _buildTVControls(context, media, colors),
                             ],
                           ),
@@ -882,7 +928,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                           color: NivioTheme.netflixDarkGrey,
                           child: profilePath != null
                               ? CachedNetworkImage(
-                                  imageUrl: tmdbService.getPosterUrl(profilePath),
+                                  imageUrl: (actor['is_anilist'] == true || profilePath.startsWith('http'))
+                                      ? profilePath
+                                      : tmdbService.getPosterUrl(profilePath),
                                   fit: BoxFit.cover,
                                 )
                               : const Icon(Icons.person, color: Colors.white54, size: 40),

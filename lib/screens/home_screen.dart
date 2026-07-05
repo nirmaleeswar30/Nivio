@@ -11,10 +11,12 @@ import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/providers_data.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/watchlist_item.dart';
+import 'package:nivio/models/search_result.dart';
 import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/changelog_provider.dart';
 import 'package:nivio/providers/home_providers.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
+import 'package:nivio/providers/home_layout_provider.dart';
 import 'package:nivio/providers/recommendations_provider.dart';
 
 import 'package:nivio/providers/watch_history_provider.dart';
@@ -22,6 +24,7 @@ import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_service.dart';
 import 'package:nivio/services/scrapers/newtv/newtv_bypass_service.dart';
+import 'package:nivio/services/api_status_service.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
 import 'package:nivio/widgets/content_row.dart';
 import 'package:nivio/widgets/continue_watching_row.dart';
@@ -106,11 +109,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (_ambientColors.containsKey(index)) return;
     
     final content = items[index];
-    final posterPath = content['poster_path'] ?? content['backdrop_path'];
+    String? posterPath;
+    if (content is SearchResult) {
+      posterPath = content.posterPath ?? content.backdropPath;
+    } else if (content is Map) {
+      posterPath = content['poster_path'] ?? content['backdrop_path'];
+    }
     if (posterPath == null) return;
     
     try {
-      final provider = CachedNetworkImageProvider('$tmdbImageBaseUrl/w200$posterPath');
+      final url = posterPath.startsWith('http') 
+          ? posterPath 
+          : '$tmdbImageBaseUrl/w200$posterPath';
+      final provider = CachedNetworkImageProvider(url);
       final colorScheme = await ColorScheme.fromImageProvider(provider: provider, brightness: Brightness.dark);
       final color = colorScheme.primary;
       
@@ -152,6 +163,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     final featuredContent = ref.watch(featuredContentProvider);
     final languagePreferences = ref.watch(languagePreferencesProvider);
+    final homeLayout = ref.watch(homeLayoutProvider);
+
+    final List<Widget> dynamicSections = [];
+    for (final sectionId in homeLayout) {
+      switch (sectionId) {
+        case 'popular_movies':
+          dynamicSections.add(_buildRowSection('All Time Popular', popularMoviesProvider));
+          break;
+        case 'trending_movies':
+          dynamicSections.add(_buildRowSection('Trending Now', trendingMoviesProvider));
+          break;
+        case 'top_rated_movies':
+          dynamicSections.add(_buildRowSection('Top Rated Movies', topRatedMoviesProvider));
+          break;
+        case 'popular_tv':
+          dynamicSections.add(_buildRowSection('Popular TV Shows', popularTVShowsProvider));
+          break;
+        case 'trending_tv':
+          dynamicSections.add(_buildRowSection('Trending TV Shows', trendingTVShowsProvider));
+          break;
+        case 'popular_anime':
+          if (languagePreferences.showAnime) dynamicSections.add(_buildRowSection('Popular Anime', animeProvider));
+          break;
+        case 'trending_anime':
+          if (languagePreferences.showAnime) dynamicSections.add(_buildRowSection('Trending Anime', trendingAnimeProvider));
+          break;
+        case 'tamil':
+          if (languagePreferences.showTamil) dynamicSections.add(_buildRowSection('Tamil Picks', tamilMoviesProvider));
+          break;
+        case 'telugu':
+          if (languagePreferences.showTelugu) dynamicSections.add(_buildRowSection('Telugu Picks', teluguMoviesProvider));
+          break;
+        case 'hindi':
+          if (languagePreferences.showHindi) dynamicSections.add(_buildRowSection('Hindi Picks', hindiMoviesProvider));
+          break;
+        case 'korean':
+          if (languagePreferences.showKorean) dynamicSections.add(_buildRowSection('Korean Dramas', koreanDramasProvider));
+          break;
+        case 'malayalam':
+          if (languagePreferences.showMalayalam) dynamicSections.add(_buildRowSection('Malayalam Picks', malayalamMoviesProvider));
+          break;
+      }
+    }
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -323,23 +377,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               },
             ),
           ),
-          _buildRowSection('All Time Popular', popularMoviesProvider),
-          _buildRowSection('Trending Now', trendingMoviesProvider),
-          _buildRowSection('Top Rated Movies', topRatedMoviesProvider),
-          _buildRowSection('Popular TV Shows', popularTVShowsProvider),
-          _buildRowSection('Trending TV Shows', trendingTVShowsProvider),
-          if (languagePreferences.showAnime)
-            _buildRowSection('Popular Anime', animeProvider),
-          if (languagePreferences.showAnime)
-            _buildRowSection('Trending Anime', trendingAnimeProvider),
-          if (languagePreferences.showTamil)
-            _buildRowSection('Tamil Picks', tamilMoviesProvider),
-          if (languagePreferences.showTelugu)
-            _buildRowSection('Telugu Picks', teluguMoviesProvider),
-          if (languagePreferences.showHindi)
-            _buildRowSection('Hindi Picks', hindiMoviesProvider),
-          if (languagePreferences.showKorean)
-            _buildRowSection('Korean Dramas', koreanDramasProvider),
+          ...dynamicSections,
           const SliverToBoxAdapter(child: SizedBox(height: 50)),
         ],
       ),
@@ -352,6 +390,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     FutureProvider<List<dynamic>> provider,
   ) {
     return SliverToBoxAdapter(
+      key: ValueKey(title),
       child: Consumer(
         builder: (context, ref, child) {
           final asyncItems = ref.watch(provider);
@@ -503,35 +542,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         },
         itemBuilder: (context, index) {
           final content = items[index == items.length ? 0 : index];
-          final tmdbId = _parseMediaId(content['id']);
-          final isInWatchlist = tmdbId != null
+          
+          int tmdbId = 0;
+          String mediaType = 'movie';
+          String title = 'Featured';
+          String? backdropPath;
+          double? voteAverage;
+          String year = '';
+          List<String> genreIds = [];
+
+          if (content is SearchResult) {
+            tmdbId = content.id;
+            mediaType = content.mediaType;
+            title = content.title ?? content.name ?? 'Featured';
+            backdropPath = content.posterPath ?? content.backdropPath;
+            voteAverage = content.voteAverage;
+            year = content.firstAirDate?.split('-').first ?? '';
+            // AniList doesn't map genres to TMDB genre IDs in the same way, so we'll skip for now or use a generic one
+          } else if (content is Map) {
+            tmdbId = _parseMediaId(content['id']) ?? 0;
+            mediaType = (content['media_type'] ?? (content['title'] != null ? 'movie' : 'tv')).toString();
+            title = (content['title'] ?? content['name'] ?? 'Featured').toString();
+            backdropPath = (content['poster_path'] ?? content['backdrop_path'])?.toString();
+            voteAverage = (content['vote_average'] as num?)?.toDouble();
+            year = ((content['first_air_date'] ?? content['release_date'])?.toString().split('-').first ?? '').trim();
+            genreIds = (content['genre_ids'] as List<dynamic>? ?? [])
+                .whereType<num>()
+                .map((genreId) => _genreMap[genreId.toInt()])
+                .whereType<String>()
+                .take(3)
+                .toList();
+          }
+
+          final isInWatchlist = tmdbId != 0
               ? (_pendingWatchlistState[tmdbId] ??
                     watchlistIds.contains(tmdbId))
               : false;
-          final mediaType =
-              (content['media_type'] ??
-                      (content['title'] != null ? 'movie' : 'tv'))
-                  .toString();
-          final title = (content['title'] ?? content['name'] ?? 'Featured')
-              .toString();
 
-          final backdropPath =
-              (content['poster_path'] ?? content['backdrop_path'])?.toString();
-          final backdropUrl = _tmdbImageUrl(backdropPath, backdropSize);
-          final voteAverage = (content['vote_average'] as num?)?.toDouble();
-          final year =
-              ((content['first_air_date'] ?? content['release_date'])
-                          ?.toString()
-                          .split('-')
-                          .first ??
-                      '')
-                  .trim();
-          final genreIds = (content['genre_ids'] as List<dynamic>? ?? [])
-              .whereType<num>()
-              .map((genreId) => _genreMap[genreId.toInt()])
-              .whereType<String>()
-              .take(3)
-              .toList();
+          final backdropUrl = (backdropPath != null && backdropPath.startsWith('http')) 
+              ? backdropPath 
+              : _tmdbImageUrl(backdropPath, backdropSize);
 
           final meta = <String>[
             if (genreIds.isNotEmpty) genreIds.join(' / '),
@@ -738,13 +788,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       builder: (context, ref, child) {
         final cfBypass = ref.watch(cloudflareBypassProvider);
         final newTvBypass = ref.watch(newTvBypassProvider);
+        final apiStatus = ref.watch(apiStatusProvider);
         
         final isBypassing = cfBypass.isBypassing || newTvBypass.isBypassing;
         final isReady = cfBypass.isReady && newTvBypass.isReady;
+        final isApiDown = apiStatus.anilistStatus == ApiServiceStatus.offline || apiStatus.newTvStatus == ApiServiceStatus.offline;
         
         Widget icon;
         String tooltip;
-        if (isBypassing) {
+        
+        if (isApiDown) {
+           icon = const PhosphorIcon(PhosphorIconsFill.warningCircle, color: Colors.red, size: 22);
+           if (apiStatus.anilistStatus == ApiServiceStatus.offline && apiStatus.newTvStatus == ApiServiceStatus.offline) {
+             tooltip = 'Both AniList & NewTV APIs are Offline';
+           } else if (apiStatus.anilistStatus == ApiServiceStatus.offline) {
+             tooltip = 'AniList API is Offline';
+           } else {
+             tooltip = 'NewTV API is Offline';
+           }
+        } else if (isBypassing) {
            icon = SizedBox(
              width: 18, height: 18,
              child: CircularProgressIndicator(strokeWidth: 2, color: NivioTheme.accentColorOf(context)),
@@ -752,7 +814,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
            tooltip = 'Bypassing Protections...';
         } else if (isReady) {
            icon = const PhosphorIcon(PhosphorIconsFill.shieldCheck, color: Colors.green, size: 22);
-           tooltip = 'All Protections Bypassed';
+           tooltip = 'All Protections Bypassed & APIs Online';
         } else {
            icon = const PhosphorIcon(PhosphorIconsRegular.shieldWarning, color: Colors.amber, size: 22);
            tooltip = 'Protection Bypass Pending';
@@ -794,14 +856,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ],
                 ),
               ),
-              const PopupMenuDivider(),
               PopupMenuItem(
                 value: 2,
                 child: Row(
                   children: [
+                    apiStatus.anilistStatus == ApiServiceStatus.checking
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : apiStatus.anilistStatus == ApiServiceStatus.online
+                        ? const PhosphorIcon(PhosphorIconsFill.checkCircle, color: Colors.green, size: 20)
+                        : const PhosphorIcon(PhosphorIconsFill.warningCircle, color: Colors.red, size: 20),
+                    const SizedBox(width: 12),
+                    const Text('AniList API', style: TextStyle(color: Colors.white)),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
+              PopupMenuItem(
+                value: 3,
+                child: Row(
+                  children: [
                     const PhosphorIcon(PhosphorIconsRegular.arrowsClockwise, size: 20, color: Colors.white),
                     const SizedBox(width: 12),
-                    const Text('Refresh Both', style: TextStyle(color: Colors.white)),
+                    const Text('Refresh All', style: TextStyle(color: Colors.white)),
                   ],
                 ),
               ),
@@ -814,9 +890,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 newTvBypass.forceRefresh();
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Retrying NewTV Bypass...')));
               } else if (value == 2) {
+                ref.read(apiStatusProvider.notifier).checkAll();
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Retrying AniList API...')));
+              } else if (value == 3) {
                 cfBypass.forceRefresh();
                 newTvBypass.forceRefresh();
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Retrying All Bypasses...')));
+                ref.read(apiStatusProvider.notifier).checkAll();
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Retrying All Services...')));
               }
             },
           ),

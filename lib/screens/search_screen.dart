@@ -69,15 +69,24 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       final language = ref.read(searchLanguageFilterProvider);
       final sortBy = ref.read(searchSortProvider);
       final tmdb = ref.read(tmdbServiceProvider);
+      final anilist = ref.read(aniListServiceProvider);
 
       // Fetch next page in background
       final nextPage = _currentPage + 1;
-      final results = await tmdb.search(
-        query,
-        page: nextPage,
-        language: language,
-        sortBy: sortBy,
-      );
+      
+      final responses = await Future.wait([
+        tmdb.search(
+          query,
+          page: nextPage,
+          language: language,
+          sortBy: sortBy,
+        ),
+        anilist.searchAnime(query, page: nextPage),
+      ]);
+
+      final tmdbResults = responses[0];
+      final anilistResults = responses[1];
+      final newResults = <SearchResult>[...tmdbResults.results, ...anilistResults.results];
 
       if (mounted) {
         final activeQuery = ref.read(searchQueryProvider);
@@ -87,13 +96,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         }
 
         setState(() {
-          _allResults = _mergeUniqueResults(_allResults, results.results);
+          _allResults = _mergeUniqueResults(_allResults, newResults);
           _currentPage = nextPage;
           _isLoadingMore = false;
         });
 
         // If this page is sparse, auto-load one more page.
-        if (results.results.length < 10 && _currentPage < _totalPages) {
+        if (newResults.length < 10 && _currentPage < _totalPages) {
           Future.delayed(const Duration(milliseconds: 100), _loadMoreResults);
         }
       }
@@ -153,23 +162,42 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       final language = ref.read(searchLanguageFilterProvider);
       final sortBy = ref.read(searchSortProvider);
       final tmdb = ref.read(tmdbServiceProvider);
+      final anilist = ref.read(aniListServiceProvider);
 
-      final results = await tmdb.search(
-        query,
-        page: 1,
-        language: language,
-        sortBy: sortBy,
-      );
+      final responses = await Future.wait([
+        tmdb.search(
+          query,
+          page: 1,
+          language: language,
+          sortBy: sortBy,
+        ),
+        anilist.searchAnime(query, page: 1),
+      ]);
+
+      final tmdbResults = responses[0];
+      final anilistResults = responses[1];
+      
+      final interleaved = <SearchResult>[];
+      final maxLength = tmdbResults.results.length > anilistResults.results.length 
+          ? tmdbResults.results.length 
+          : anilistResults.results.length;
+          
+      for (int i = 0; i < maxLength; i++) {
+        if (i < anilistResults.results.length) interleaved.add(anilistResults.results[i]);
+        if (i < tmdbResults.results.length) interleaved.add(tmdbResults.results[i]);
+      }
+      
+      final maxTotalPages = tmdbResults.totalPages > anilistResults.totalPages ? tmdbResults.totalPages : anilistResults.totalPages;
 
       if (mounted && requestId == _searchRequestId) {
         setState(() {
-          _allResults = List.from(results.results);
+          _allResults = interleaved;
           _currentPage = 1;
-          _totalPages = results.totalPages;
+          _totalPages = maxTotalPages;
           _isInitialLoading = false;
         });
 
-        if (results.results.length < 10 && _totalPages > 1) {
+        if (interleaved.length < 10 && _totalPages > 1) {
           Future.delayed(const Duration(milliseconds: 100), _loadMoreResults);
         }
       }

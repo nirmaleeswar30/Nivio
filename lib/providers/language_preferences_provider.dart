@@ -8,6 +8,7 @@ class LanguagePreferences {
   final bool showTelugu;
   final bool showHindi;
   final bool showKorean;
+  final bool showMalayalam;
   final String animePreferredAudio; // 'sub' or 'dub'
 
   const LanguagePreferences({
@@ -16,6 +17,7 @@ class LanguagePreferences {
     this.showTelugu = true,
     this.showHindi = true,
     this.showKorean = true,
+    this.showMalayalam = true,
     this.animePreferredAudio = 'sub',
   });
 
@@ -25,6 +27,7 @@ class LanguagePreferences {
     bool? showTelugu,
     bool? showHindi,
     bool? showKorean,
+    bool? showMalayalam,
     String? animePreferredAudio,
   }) {
     return LanguagePreferences(
@@ -33,6 +36,7 @@ class LanguagePreferences {
       showTelugu: showTelugu ?? this.showTelugu,
       showHindi: showHindi ?? this.showHindi,
       showKorean: showKorean ?? this.showKorean,
+      showMalayalam: showMalayalam ?? this.showMalayalam,
       animePreferredAudio: animePreferredAudio ?? this.animePreferredAudio,
     );
   }
@@ -44,6 +48,7 @@ class LanguagePreferences {
       'showTelugu': showTelugu,
       'showHindi': showHindi,
       'showKorean': showKorean,
+      'showMalayalam': showMalayalam,
       'animePreferredAudio': animePreferredAudio,
     };
   }
@@ -55,6 +60,7 @@ class LanguagePreferences {
       showTelugu: json['showTelugu'] ?? true,
       showHindi: json['showHindi'] ?? true,
       showKorean: json['showKorean'] ?? true,
+      showMalayalam: json['showMalayalam'] ?? true,
       animePreferredAudio: json['animePreferredAudio'] ?? 'sub',
     );
   }
@@ -73,6 +79,7 @@ class LanguagePreferencesNotifier extends StateNotifier<LanguagePreferences> {
     final showTelugu = prefs.getBool('showTelugu') ?? true;
     final showHindi = prefs.getBool('showHindi') ?? true;
     final showKorean = prefs.getBool('showKorean') ?? true;
+    final showMalayalam = prefs.getBool('showMalayalam') ?? true;
     final animePreferredAudio = prefs.getString('animePreferredAudio') ?? 'sub';
 
     state = LanguagePreferences(
@@ -81,6 +88,7 @@ class LanguagePreferencesNotifier extends StateNotifier<LanguagePreferences> {
       showTelugu: showTelugu,
       showHindi: showHindi,
       showKorean: showKorean,
+      showMalayalam: showMalayalam,
       animePreferredAudio: animePreferredAudio,
     );
   }
@@ -113,6 +121,12 @@ class LanguagePreferencesNotifier extends StateNotifier<LanguagePreferences> {
     state = state.copyWith(showKorean: value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('showKorean', value);
+  }
+
+  Future<void> toggleMalayalam(bool value) async {
+    state = state.copyWith(showMalayalam: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('showMalayalam', value);
   }
   
   Future<void> setAnimePreferredAudio(String audio) async {

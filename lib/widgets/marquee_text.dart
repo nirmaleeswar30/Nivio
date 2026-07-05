@@ -58,7 +58,7 @@ class _MarqueeTextState extends State<MarqueeText> {
           curve: Curves.linear,
         );
         
-        if (!_isScrolling || !mounted) break;
+        if (!_isScrolling || !mounted || !_scrollController.hasClients) break;
         
         // Jump back to start immediately for continuous effect
         _scrollController.jumpTo(0.0);

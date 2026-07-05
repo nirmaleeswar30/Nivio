@@ -5,6 +5,7 @@ import 'package:nivio/services/streaming_service.dart';
 import 'package:nivio/services/watch_history_service.dart';
 import 'package:nivio/services/cache_service.dart';
 import 'package:nivio/services/scrapers/newtv/newtv_scraper.dart';
+import 'package:nivio/services/anilist_service.dart';
 
 // Cache service provider
 final cacheServiceProvider = Provider((ref) {
@@ -18,6 +19,8 @@ final tmdbServiceProvider = Provider((ref) {
   final cache = ref.watch(cacheServiceProvider);
   return TmdbService(cache);
 });
+
+final aniListServiceProvider = Provider((ref) => AniListService());
 
 
 // Streaming service provider (direct primary, embed fallback)

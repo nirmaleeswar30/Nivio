@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
+import 'package:nivio/models/search_result.dart';
 
 class ContentRow extends StatelessWidget {
   final String title;
@@ -42,11 +43,22 @@ class ContentRow extends StatelessWidget {
               cacheExtent: 200,
               itemBuilder: (context, index) {
                 final item = items[index];
-                final posterPath = item['poster_path'];
-                final tmdbId = item['id'];
-                final mediaType =
-                    item['media_type'] ??
-                    (item['title'] != null ? 'movie' : 'tv');
+                String? posterPath;
+                int tmdbId = 0;
+                String mediaType = 'movie';
+                String title = '';
+
+                if (item is SearchResult) {
+                  posterPath = item.posterPath;
+                  tmdbId = item.id;
+                  mediaType = item.mediaType;
+                  title = item.title ?? item.name ?? '';
+                } else if (item is Map) {
+                  posterPath = item['poster_path'];
+                  tmdbId = item['id'];
+                  mediaType = item['media_type'] ?? (item['title'] != null ? 'movie' : 'tv');
+                  title = (item['title'] ?? item['name'] ?? '').toString();
+                }
 
                 return RepaintBoundary(
                   child: Padding(
@@ -55,6 +67,7 @@ class ContentRow extends StatelessWidget {
                       posterPath: posterPath,
                       tmdbId: tmdbId,
                       mediaType: mediaType,
+                      title: title,
                     ),
                   ),
                 );
@@ -71,11 +84,13 @@ class _AnimatedPosterCard extends ConsumerStatefulWidget {
   final String? posterPath;
   final int tmdbId;
   final String mediaType;
+  final String title;
 
   const _AnimatedPosterCard({
     required this.posterPath,
     required this.tmdbId,
     required this.mediaType,
+    required this.title,
   });
 
   @override
@@ -118,7 +133,9 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
 
     final staticImageContent = widget.posterPath != null
         ? CachedNetworkImage(
-            imageUrl: '$tmdbImageBaseUrl/$posterSize${widget.posterPath}',
+            imageUrl: widget.posterPath!.startsWith('http') 
+                ? widget.posterPath! 
+                : '$tmdbImageBaseUrl/$posterSize${widget.posterPath}',
             fit: BoxFit.cover,
             width: double.infinity,
             height: double.infinity,
@@ -146,6 +163,45 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
             color: Colors.white30,
             size: 40,
           );
+
+    final imageWithTitle = Stack(
+      fit: StackFit.expand,
+      children: [
+        staticImageContent,
+        if (widget.title.isNotEmpty && widget.mediaType == 'anime')
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.8),
+                    Colors.black,
+                  ],
+                ),
+              ),
+              child: Text(
+                widget.title,
+                textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  shadows: [Shadow(color: Colors.black, blurRadius: 4)],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
 
     return MouseRegion(
       onEnter: (_) {
@@ -237,7 +293,7 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
               ),
             );
           },
-          child: staticImageContent,
+          child: imageWithTitle,
         ),
       ),
     );

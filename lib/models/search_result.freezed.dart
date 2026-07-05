@@ -39,6 +39,8 @@ mixin _$SearchResult {
   String? get overview => throw _privateConstructorUsedError;
   @JsonKey(name: 'vote_average')
   double? get voteAverage => throw _privateConstructorUsedError;
+  @JsonKey(name: 'mal_id')
+  int? get malId => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
@@ -64,7 +66,8 @@ abstract class $SearchResultCopyWith<$Res> {
       @JsonKey(name: 'poster_path') String? posterPath,
       @JsonKey(name: 'backdrop_path') String? backdropPath,
       String? overview,
-      @JsonKey(name: 'vote_average') double? voteAverage});
+      @JsonKey(name: 'vote_average') double? voteAverage,
+      @JsonKey(name: 'mal_id') int? malId});
 }
 
 /// @nodoc
@@ -92,6 +95,7 @@ class _$SearchResultCopyWithImpl<$Res, $Val extends SearchResult>
     Object? backdropPath = freezed,
     Object? overview = freezed,
     Object? voteAverage = freezed,
+    Object? malId = freezed,
   }) {
     return _then(_value.copyWith(
       adult: null == adult
@@ -142,6 +146,10 @@ class _$SearchResultCopyWithImpl<$Res, $Val extends SearchResult>
           ? _value.voteAverage
           : voteAverage // ignore: cast_nullable_to_non_nullable
               as double?,
+      malId: freezed == malId
+          ? _value.malId
+          : malId // ignore: cast_nullable_to_non_nullable
+              as int?,
     ) as $Val);
   }
 }
@@ -166,7 +174,8 @@ abstract class _$$SearchResultImplCopyWith<$Res>
       @JsonKey(name: 'poster_path') String? posterPath,
       @JsonKey(name: 'backdrop_path') String? backdropPath,
       String? overview,
-      @JsonKey(name: 'vote_average') double? voteAverage});
+      @JsonKey(name: 'vote_average') double? voteAverage,
+      @JsonKey(name: 'mal_id') int? malId});
 }
 
 /// @nodoc
@@ -192,6 +201,7 @@ class __$$SearchResultImplCopyWithImpl<$Res>
     Object? backdropPath = freezed,
     Object? overview = freezed,
     Object? voteAverage = freezed,
+    Object? malId = freezed,
   }) {
     return _then(_$SearchResultImpl(
       adult: null == adult
@@ -242,6 +252,10 @@ class __$$SearchResultImplCopyWithImpl<$Res>
           ? _value.voteAverage
           : voteAverage // ignore: cast_nullable_to_non_nullable
               as double?,
+      malId: freezed == malId
+          ? _value.malId
+          : malId // ignore: cast_nullable_to_non_nullable
+              as int?,
     ));
   }
 }
@@ -261,7 +275,8 @@ class _$SearchResultImpl implements _SearchResult {
       @JsonKey(name: 'poster_path') this.posterPath,
       @JsonKey(name: 'backdrop_path') this.backdropPath,
       this.overview,
-      @JsonKey(name: 'vote_average') this.voteAverage});
+      @JsonKey(name: 'vote_average') this.voteAverage,
+      @JsonKey(name: 'mal_id') this.malId});
 
   factory _$SearchResultImpl.fromJson(Map<String, dynamic> json) =>
       _$$SearchResultImplFromJson(json);
@@ -298,10 +313,13 @@ class _$SearchResultImpl implements _SearchResult {
   @override
   @JsonKey(name: 'vote_average')
   final double? voteAverage;
+  @override
+  @JsonKey(name: 'mal_id')
+  final int? malId;
 
   @override
   String toString() {
-    return 'SearchResult(adult: $adult, id: $id, name: $name, title: $title, originalLanguage: $originalLanguage, mediaType: $mediaType, releaseDate: $releaseDate, firstAirDate: $firstAirDate, posterPath: $posterPath, backdropPath: $backdropPath, overview: $overview, voteAverage: $voteAverage)';
+    return 'SearchResult(adult: $adult, id: $id, name: $name, title: $title, originalLanguage: $originalLanguage, mediaType: $mediaType, releaseDate: $releaseDate, firstAirDate: $firstAirDate, posterPath: $posterPath, backdropPath: $backdropPath, overview: $overview, voteAverage: $voteAverage, malId: $malId)';
   }
 
   @override
@@ -328,7 +346,8 @@ class _$SearchResultImpl implements _SearchResult {
             (identical(other.overview, overview) ||
                 other.overview == overview) &&
             (identical(other.voteAverage, voteAverage) ||
-                other.voteAverage == voteAverage));
+                other.voteAverage == voteAverage) &&
+            (identical(other.malId, malId) || other.malId == malId));
   }
 
   @JsonKey(ignore: true)
@@ -346,7 +365,8 @@ class _$SearchResultImpl implements _SearchResult {
       posterPath,
       backdropPath,
       overview,
-      voteAverage);
+      voteAverage,
+      malId);
 
   @JsonKey(ignore: true)
   @override
@@ -364,19 +384,19 @@ class _$SearchResultImpl implements _SearchResult {
 
 abstract class _SearchResult implements SearchResult {
   const factory _SearchResult(
-          {final bool adult,
-          required final int id,
-          final String? name,
-          final String? title,
-          @JsonKey(name: 'original_language') final String? originalLanguage,
-          @JsonKey(name: 'media_type') required final String mediaType,
-          @JsonKey(name: 'release_date') final String? releaseDate,
-          @JsonKey(name: 'first_air_date') final String? firstAirDate,
-          @JsonKey(name: 'poster_path') final String? posterPath,
-          @JsonKey(name: 'backdrop_path') final String? backdropPath,
-          final String? overview,
-          @JsonKey(name: 'vote_average') final double? voteAverage}) =
-      _$SearchResultImpl;
+      {final bool adult,
+      required final int id,
+      final String? name,
+      final String? title,
+      @JsonKey(name: 'original_language') final String? originalLanguage,
+      @JsonKey(name: 'media_type') required final String mediaType,
+      @JsonKey(name: 'release_date') final String? releaseDate,
+      @JsonKey(name: 'first_air_date') final String? firstAirDate,
+      @JsonKey(name: 'poster_path') final String? posterPath,
+      @JsonKey(name: 'backdrop_path') final String? backdropPath,
+      final String? overview,
+      @JsonKey(name: 'vote_average') final double? voteAverage,
+      @JsonKey(name: 'mal_id') final int? malId}) = _$SearchResultImpl;
 
   factory _SearchResult.fromJson(Map<String, dynamic> json) =
       _$SearchResultImpl.fromJson;
@@ -412,6 +432,9 @@ abstract class _SearchResult implements SearchResult {
   @override
   @JsonKey(name: 'vote_average')
   double? get voteAverage;
+  @override
+  @JsonKey(name: 'mal_id')
+  int? get malId;
   @override
   @JsonKey(ignore: true)
   _$$SearchResultImplCopyWith<_$SearchResultImpl> get copyWith =>

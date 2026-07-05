@@ -59,3 +59,4 @@ app.*.map.json
 lib/core/api_keys.dart
 /scratch/
 .claude/
+.agents/

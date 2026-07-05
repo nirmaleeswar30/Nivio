@@ -79,6 +79,7 @@ class StreamingService {
           season, 
           episode,
           tmdbId: media.id.toString(),
+          media: media,
           subDub: subDubPreference,
           onStatusUpdate: onStatusUpdate,
         );
@@ -225,7 +226,8 @@ class StreamingService {
   }
   
   static bool _isAnimeMedia(SearchResult media) {
-    if (media.originalLanguage == 'ja') return true;
+    if (media.mediaType == 'anime') return true;
+    if (media.mediaType == 'tv' && media.originalLanguage == 'ja') return true;
     return false;
   }
 

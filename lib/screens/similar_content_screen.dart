@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/providers/service_providers.dart';
+import 'package:nivio/services/anilist_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class SimilarContentScreen extends ConsumerWidget {
@@ -45,7 +46,9 @@ class SimilarContentScreen extends ConsumerWidget {
           ),
           SafeArea(
             child: FutureBuilder<List<SearchResult>>(
-              future: ref.read(tmdbServiceProvider).getRecommendations(mediaId, mediaType),
+              future: mediaType == 'anime' 
+                  ? AniListService().getAnimeRecommendations(mediaId)
+                  : ref.read(tmdbServiceProvider).getRecommendations(mediaId, mediaType),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return Center(

@@ -47,27 +47,58 @@ final searchResultsProvider = FutureProvider<SearchResults>((ref) async {
   final sortBy = ref.watch(searchSortProvider);
 
   final tmdb = ref.watch(tmdbServiceProvider);
-  final results = await tmdb.search(
-    query,
-    page: page,
-    language: language,
-    sortBy: sortBy,
-  );
+  final anilist = ref.watch(aniListServiceProvider);
+
+  // Run both searches concurrently
+  final responses = await Future.wait([
+    tmdb.search(
+      query,
+      page: page,
+      language: language,
+      sortBy: sortBy,
+    ),
+    anilist.searchAnime(query, page: page),
+  ]);
+
+  final tmdbResults = responses[0];
+  final anilistResults = responses[1];
+
+  // Sort merged results by vote average (popularity proxy) or just keep TMDB first. We'll append AniList to the end or interleave them.
+  // Interleaving is better for discovery.
+  final interleaved = <SearchResult>[];
+  final maxLength = tmdbResults.results.length > anilistResults.results.length 
+      ? tmdbResults.results.length 
+      : anilistResults.results.length;
+      
+  for (int i = 0; i < maxLength; i++) {
+    if (i < anilistResults.results.length) interleaved.add(anilistResults.results[i]);
+    if (i < tmdbResults.results.length) interleaved.add(tmdbResults.results[i]);
+  }
+
+  final maxTotalPages = tmdbResults.totalPages > anilistResults.totalPages ? tmdbResults.totalPages : anilistResults.totalPages;
+  final totalResultsCombined = tmdbResults.totalResults + anilistResults.totalResults;
 
   // Update metadata
   ref.read(searchMetadataProvider.notifier).state = (
-    totalPages: results.totalPages,
-    totalResults: results.totalResults,
+    totalPages: maxTotalPages,
+    totalResults: totalResultsCombined,
+  );
+
+  final mergedData = SearchResults(
+    page: page,
+    results: interleaved,
+    totalPages: maxTotalPages,
+    totalResults: totalResultsCombined,
   );
 
   // Accumulate results for infinite scroll
   if (page == 1) {
-    ref.read(accumulatedSearchResultsProvider.notifier).state = results.results;
+    ref.read(accumulatedSearchResultsProvider.notifier).state = mergedData.results;
   } else {
     final accumulated = ref.read(accumulatedSearchResultsProvider);
     ref.read(accumulatedSearchResultsProvider.notifier).state = [
       ...accumulated,
-      ...results.results,
+      ...mergedData.results,
     ];
   }
 
@@ -75,7 +106,7 @@ final searchResultsProvider = FutureProvider<SearchResults>((ref) async {
   return SearchResults(
     page: page,
     results: accumulated,
-    totalPages: results.totalPages,
-    totalResults: results.totalResults,
+    totalPages: mergedData.totalPages,
+    totalResults: mergedData.totalResults,
   );
 });

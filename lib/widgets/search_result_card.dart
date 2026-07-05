@@ -143,12 +143,13 @@ class SearchResultCard extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
               child: Text(
                 title,
-                maxLines: 2,
+                maxLines: 3,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
-                  height: 1.22,
+                  fontSize: 12.5,
+                  height: 1.25,
                 ),
               ),
             ),

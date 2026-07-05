@@ -20,6 +20,7 @@ _$SearchResultImpl _$$SearchResultImplFromJson(Map<String, dynamic> json) =>
       backdropPath: json['backdrop_path'] as String?,
       overview: json['overview'] as String?,
       voteAverage: (json['vote_average'] as num?)?.toDouble(),
+      malId: (json['mal_id'] as num?)?.toInt(),
     );
 
 Map<String, dynamic> _$$SearchResultImplToJson(_$SearchResultImpl instance) =>
@@ -36,6 +37,7 @@ Map<String, dynamic> _$$SearchResultImplToJson(_$SearchResultImpl instance) =>
       'backdrop_path': instance.backdropPath,
       'overview': instance.overview,
       'vote_average': instance.voteAverage,
+      'mal_id': instance.malId,
     };
 
 _$SearchResultsImpl _$$SearchResultsImplFromJson(Map<String, dynamic> json) =>

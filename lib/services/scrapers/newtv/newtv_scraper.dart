@@ -352,7 +352,7 @@ class NewTvScraperService {
     final videoLink = data?['video_link']?.toString().trim();
     final referer = data?['referer']?.toString().trim() ?? apiBase;
 
-    if (status != 'ok' || videoLink == null || videoLink.isEmpty) {
+    if ((status != 'ok' && status != 'otp') || videoLink == null || videoLink.isEmpty) {
       appDebugLog('NewTvScraper: NewTV API returned invalid response: $data');
       return null;
     }

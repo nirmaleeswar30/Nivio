@@ -18,6 +18,7 @@ class SearchResult with _$SearchResult {
     @JsonKey(name: 'backdrop_path') String? backdropPath,
     String? overview,
     @JsonKey(name: 'vote_average') double? voteAverage,
+    @JsonKey(name: 'mal_id') int? malId,
   }) = _SearchResult;
 
   factory SearchResult.fromJson(Map<String, dynamic> json) =>

@@ -17,10 +17,12 @@ import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
 import 'package:nivio/providers/changelog_provider.dart';
+import 'package:nivio/providers/home_layout_provider.dart';
 import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/github_release_update_service.dart';
 import 'package:nivio/services/scrapers/animepahe/cloudflare_bypass_service.dart';
 import 'package:nivio/services/scrapers/newtv/newtv_bypass_service.dart';
+import 'package:nivio/services/api_status_service.dart';
 import 'package:nivio/services/shorebird_update_service.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -295,6 +297,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     title: 'Content Feed',
                     child: Column(
                       children: [
+                        if (_matches('customize home layout order arrange shelves'))
+                          _buildActionTile(
+                            icon: Icons.dashboard_customize_rounded,
+                            title: 'Customize Home Layout',
+                            subtitle: 'Rearrange the order of shelves on the home screen',
+                            onTap: () => _showHomeLayoutDialog(context),
+                          ),
                         if (_matches('anime language audio sub dub subbed dubbed')) ...[
                           _buildActionTile(
                             icon: Icons.record_voice_over_rounded,
@@ -360,6 +369,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               ref
                                   .read(languagePreferencesProvider.notifier)
                                   .toggleKorean(value);
+                            },
+                          ),
+                        if (_matches('malayalam language'))
+                          _buildSwitchTile(
+                            icon: Icons.movie_outlined,
+                            title: 'Malayalam',
+                            subtitle: 'Show Malayalam rows on home',
+                            value: languagePrefs.showMalayalam,
+                            onChanged: (value) {
+                              ref
+                                  .read(languagePreferencesProvider.notifier)
+                                  .toggleMalayalam(value);
                             },
                           ),
                       ],
@@ -566,14 +587,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             builder: (context, ref, _) {
               final cfBypass = ref.watch(cloudflareBypassProvider);
               final newTvBypass = ref.watch(newTvBypassProvider);
+              final apiStatus = ref.watch(apiStatusProvider);
               
               final isBypassing = cfBypass.isBypassing || newTvBypass.isBypassing;
               final isReady = cfBypass.isReady && newTvBypass.isReady;
+              final isApiDown = apiStatus.anilistStatus == ApiServiceStatus.offline || apiStatus.newTvStatus == ApiServiceStatus.offline;
               
               Color dotColor = Colors.grey;
               String statusText = 'Disconnected';
               
-              if (isBypassing) {
+              if (isApiDown) {
+                dotColor = Colors.redAccent;
+                if (apiStatus.anilistStatus == ApiServiceStatus.offline && apiStatus.newTvStatus == ApiServiceStatus.offline) {
+                  statusText = 'AniList & NewTV Offline';
+                } else if (apiStatus.anilistStatus == ApiServiceStatus.offline) {
+                  statusText = 'AniList Offline';
+                } else {
+                  statusText = 'NewTV Offline';
+                }
+              } else if (isBypassing) {
                 dotColor = Colors.orangeAccent;
                 statusText = 'Bypassing Cloudflare...';
               } else if (isReady) {
@@ -930,6 +962,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           value: languagePrefs.showKorean,
           onChanged: (value) {
             ref.read(languagePreferencesProvider.notifier).toggleKorean(value);
+          },
+        ),
+      );
+    }
+    if (_matches('malayalam language')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.movie_outlined,
+          title: 'Malayalam',
+          subtitle: 'Show Malayalam rows on home',
+          value: languagePrefs.showMalayalam,
+          onChanged: (value) {
+            ref.read(languagePreferencesProvider.notifier).toggleMalayalam(value);
           },
         ),
       );
@@ -1353,6 +1398,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  void _showHomeLayoutDialog(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: NivioTheme.netflixDarkGrey,
+      builder: (sheetContext) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.8,
+          maxChildSize: 0.95,
+          minChildSize: 0.5,
+          expand: false,
+          builder: (_, scrollController) => _HomeLayoutBottomSheet(scrollController: scrollController),
         );
       },
     );
@@ -2424,5 +2486,110 @@ class _BlinkingDotState extends State<_BlinkingDot> with SingleTickerProviderSta
     );
   }
 }
+
+class _HomeLayoutBottomSheet extends ConsumerStatefulWidget {
+  final ScrollController scrollController;
+  const _HomeLayoutBottomSheet({required this.scrollController});
+
+  @override
+  ConsumerState<_HomeLayoutBottomSheet> createState() => _HomeLayoutBottomSheetState();
+}
+
+class _HomeLayoutBottomSheetState extends ConsumerState<_HomeLayoutBottomSheet> {
+  late List<String> _currentOrder;
+  
+  final Map<String, String> _sectionNames = {
+    'popular_movies': 'All Time Popular',
+    'trending_movies': 'Trending Now',
+    'top_rated_movies': 'Top Rated Movies',
+    'popular_tv': 'Popular TV Shows',
+    'trending_tv': 'Trending TV Shows',
+    'popular_anime': 'Popular Anime',
+    'trending_anime': 'Trending Anime',
+    'tamil': 'Tamil Picks',
+    'telugu': 'Telugu Picks',
+    'hindi': 'Hindi Picks',
+    'korean': 'Korean Dramas',
+    'malayalam': 'Malayalam Picks',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    // Read the current order from provider immediately
+    _currentOrder = List.from(ref.read(homeLayoutProvider));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Customize Layout',
+                style: TextStyle(
+                  color: NivioTheme.netflixWhite,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  ref.read(homeLayoutProvider.notifier).updateOrder(_currentOrder);
+                  Navigator.pop(context);
+                },
+                child: const Text('Done', style: TextStyle(color: NivioTheme.netflixRed)),
+              ),
+            ],
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: Text(
+            'Drag and drop to reorder the content shelves on your home screen.',
+            style: TextStyle(color: Colors.white70),
+          ),
+        ),
+        Expanded(
+          child: ReorderableListView.builder(
+            scrollController: widget.scrollController,
+            buildDefaultDragHandles: false, // We provide our own larger drag handle
+            itemCount: _currentOrder.length,
+            onReorder: (oldIndex, newIndex) {
+              setState(() {
+                if (newIndex > oldIndex) newIndex -= 1;
+                final item = _currentOrder.removeAt(oldIndex);
+                _currentOrder.insert(newIndex, item);
+              });
+            },
+            itemBuilder: (context, index) {
+              final sectionKey = _currentOrder[index];
+              return ListTile(
+                key: ValueKey(sectionKey),
+                title: Text(
+                  _sectionNames[sectionKey] ?? sectionKey,
+                  style: const TextStyle(color: NivioTheme.netflixWhite),
+                ),
+                trailing: ReorderableDragStartListener(
+                  index: index,
+                  child: Container(
+                    padding: const EdgeInsets.all(0.0),
+                    color: Colors.transparent, // expand hit area
+                    child: const Icon(Icons.drag_handle_rounded, color: Colors.white54, size: 28),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 
 
