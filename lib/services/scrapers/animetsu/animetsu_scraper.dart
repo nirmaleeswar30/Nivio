@@ -102,7 +102,7 @@ class AnimetsuScraperService {
       for (final src in sourcesData) {
         final srcUrl = src['url'] as String? ?? '';
         final quality = src['quality'] as String? ?? 'auto';
-        final isM3U8 = srcUrl.contains('.m3u8') || src['type'] == 'hls';
+        final isM3U8 = srcUrl.contains('.m3u8') || src['type'] == 'hls' || src['type'] == 'video/mpegurl' || src['type'] == 'application/x-mpegURL' || src['type'] == 'application/vnd.apple.mpegurl';
         final needProxy = src['need_proxy'] == true;
         
         // HLS playlists might be relative or point to swiftstream.top

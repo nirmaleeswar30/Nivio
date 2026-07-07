@@ -185,7 +185,6 @@ class StreamingService {
   static bool isDirectStream(int providerIndex, {required bool isAnime}) {
     final providerName = getProviderName(providerIndex, isAnime: isAnime);
     if (providerName == 'NetMirror') return true;
-    if (providerName == 'Kwik') return true;
     if (providerName == 'Animetsu') return true;
     return false; // All other providers use WebView fallback
   }
@@ -195,9 +194,6 @@ class StreamingService {
     // NewTV provides M3U8 streams which our custom downloader can parse and concatenate
     if (providerName == 'NetMirror') return true;
     if (providerName == 'Animetsu') return true;
-    
-    // Animepahe returns Kwik embed URLs which we can extract via WebView
-    if (providerName == 'Kwik') return true;
     
     // Iframe providers cannot be natively downloaded because we don't have the raw stream URL
     return false;

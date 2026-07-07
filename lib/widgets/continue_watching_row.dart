@@ -46,7 +46,11 @@ class ContinueWatchingRow extends ConsumerWidget {
             scrollDirection: Axis.horizontal,
             itemCount: items.length,
             itemBuilder: (context, index) {
-              return ContinueWatchingCard(history: items[index]);
+              final history = items[index];
+              return ContinueWatchingCard(
+                key: ValueKey('${history.tmdbId}_${history.currentSeason}_${history.currentEpisode}'),
+                history: history,
+              );
             },
           ),
         );

@@ -42,28 +42,57 @@ class _ContinueWatchingCardState extends ConsumerState<ContinueWatchingCard>
       CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
     );
 
-    if (widget.history.mediaType == 'tv') {
+    if (widget.history.mediaType == 'tv' || widget.history.mediaType == 'anime') {
       _fetchEpisodeData();
+    }
+  }
+
+  @override
+  void didUpdateWidget(ContinueWatchingCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.history.tmdbId != widget.history.tmdbId ||
+        oldWidget.history.currentEpisode != widget.history.currentEpisode ||
+        oldWidget.history.currentSeason != widget.history.currentSeason) {
+      if (widget.history.mediaType == 'tv' || widget.history.mediaType == 'anime') {
+        _episodeData = null;
+        _fetchEpisodeData();
+      }
     }
   }
 
   Future<void> _fetchEpisodeData() async {
     try {
-      final tmdbService = ref.read(tmdbServiceProvider);
-      final seasonData = await tmdbService.getSeasonInfo(
-          widget.history.tmdbId, widget.history.currentSeason);
-      if (mounted) {
-        setState(() {
-          _totalEpisodesInSeason = seasonData.episodes.length;
-          final idx = seasonData.episodes.indexWhere(
-              (e) => e.episodeNumber == widget.history.currentEpisode);
-          if (idx != -1) {
-            _episodeData = seasonData.episodes[idx];
-          } else {
-             // Fallback if not found
-            _episodeData = EpisodeData(episodeNumber: widget.history.currentEpisode);
-          }
-        });
+      if (widget.history.mediaType == 'anime') {
+        final anilistService = ref.read(aniListServiceProvider);
+        final seasonData = await anilistService.getAnimeSeasonData(widget.history.tmdbId);
+        if (mounted) {
+          setState(() {
+            _totalEpisodesInSeason = seasonData.episodes.length;
+            final idx = seasonData.episodes.indexWhere(
+                (e) => e.episodeNumber == widget.history.currentEpisode);
+            if (idx != -1) {
+              _episodeData = seasonData.episodes[idx];
+            } else {
+              _episodeData = EpisodeData(episodeNumber: widget.history.currentEpisode);
+            }
+          });
+        }
+      } else {
+        final tmdbService = ref.read(tmdbServiceProvider);
+        final seasonData = await tmdbService.getSeasonInfo(
+            widget.history.tmdbId, widget.history.currentSeason);
+        if (mounted) {
+          setState(() {
+            _totalEpisodesInSeason = seasonData.episodes.length;
+            final idx = seasonData.episodes.indexWhere(
+                (e) => e.episodeNumber == widget.history.currentEpisode);
+            if (idx != -1) {
+              _episodeData = seasonData.episodes[idx];
+            } else {
+              _episodeData = EpisodeData(episodeNumber: widget.history.currentEpisode);
+            }
+          });
+        }
       }
     } catch (e) {
       // ignore
@@ -84,19 +113,32 @@ class _ContinueWatchingCardState extends ConsumerState<ContinueWatchingCard>
     String topTitle = widget.history.title;
     String subtitle = 'Movie';
 
-    if (widget.history.mediaType == 'tv') {
+    if (widget.history.mediaType == 'tv' || widget.history.mediaType == 'anime') {
+      final total = _totalEpisodesInSeason ?? widget.history.totalEpisodes ?? 0;
+      final totalStr = total > 0 ? '/$total' : '';
+      
+      String prefix;
+      if (widget.history.mediaType == 'tv') {
+        prefix = 'S${widget.history.currentSeason} E${widget.history.currentEpisode}';
+      } else {
+        prefix = 'Episode ${widget.history.currentEpisode}$totalStr';
+      }
+
       if (_episodeData != null) {
+        final epName = _episodeData!.episodeName;
         if (_episodeData!.stillPath != null && _episodeData!.stillPath!.isNotEmpty) {
           imageUrl = tmdbService.getBackdropUrl(_episodeData!.stillPath);
         }
-        if (_episodeData!.episodeName != null && _episodeData!.episodeName!.isNotEmpty) {
-          topTitle = _episodeData!.episodeName!;
+        
+        // Avoid redundancy if TMDB just returned "Episode X" as the name
+        if (epName != null && epName.isNotEmpty && !epName.toLowerCase().startsWith('episode ${widget.history.currentEpisode}')) {
+          subtitle = '$prefix - $epName';
+        } else {
+          subtitle = prefix;
         }
-        final total = _totalEpisodesInSeason ?? widget.history.totalEpisodes ?? 0;
-        final totalStr = total > 0 ? '/$total' : '';
-        subtitle = 'Episode ${widget.history.currentEpisode}$totalStr - ${widget.history.title}';
       } else {
-        subtitle = 'Episode ${widget.history.currentEpisode} - ${widget.history.title}';
+        // While loading or if no episode data is available
+        subtitle = prefix;
       }
     }
 

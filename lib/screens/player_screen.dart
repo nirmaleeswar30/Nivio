@@ -205,7 +205,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (media == null) return false;
     if (media.mediaType == 'anime') return true;
     final language = (media.originalLanguage ?? '').toLowerCase();
-    return media.mediaType == 'tv' && language == 'ja';
+    return (media.mediaType == 'tv' || media.mediaType == 'anime') && language == 'ja';
   }
 
   int get _maxProviders {
@@ -289,7 +289,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     bool needsUpdate = false;
     if (existing == null || existing.progressPercent <= 0) {
       needsUpdate = true;
-    } else if (media.mediaType == 'tv' && (existing.currentSeason != widget.season || existing.currentEpisode != _currentEpisode)) {
+    } else if ((media.mediaType == 'tv' || media.mediaType == 'anime') && (existing.currentSeason != widget.season || existing.currentEpisode != _currentEpisode)) {
       needsUpdate = true;
     }
 
@@ -377,7 +377,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             // New architecture: media.id is the AniList ID
             final details = await anilistService.getAnimeDetails(media.id);
             malId = details.malId;
-          } else if (media.mediaType == 'tv') {
+          } else if ((media.mediaType == 'tv' || media.mediaType == 'anime')) {
             // Old architecture: media.id is the TMDB ID
             final result = await anilistService.getAniListIdFromTMDB(title: media.title ?? media.name ?? '', year: media.firstAirDate?.split('-').first, tmdbId: media.id);
             malId = result?.idMal;
@@ -388,7 +388,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           final times = await AniSkipService.getSkipTimes(malId, episode);
           if (mounted) setState(() { _skipTimes = times; });
         }
-      } else if (media.mediaType == 'tv') {
+      } else if ((media.mediaType == 'tv' || media.mediaType == 'anime')) {
         // Normal show - TheIntroDB (v3 public API)
         final times = await TheIntroDBService.getSkipTimes(media.id, widget.season, episode);
         if (mounted) setState(() { _skipTimes = times; });
@@ -440,7 +440,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       } else if (!hasMatchingSelectedMedia) {
         setState(() => _currentProvider = 'Loading media details...');
         final tmdbService = ref.read(tmdbServiceProvider);
-        if (widget.mediaType == 'tv') {
+        if (widget.mediaType == 'anime') {
+          final anilistService = ref.read(aniListServiceProvider);
+          media = await anilistService.getAnimeDetails(widget.mediaId);
+        } else if (widget.mediaType == 'tv') {
           media = await tmdbService.getTVShowDetails(widget.mediaId);
         } else if (widget.mediaType == 'movie') {
           media = await tmdbService.getMovieDetails(widget.mediaId);
@@ -454,7 +457,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ref.read(selectedMediaProvider.notifier).state = media;
       }
 
-      if (media?.mediaType == 'tv') {
+      if ((media?.mediaType == 'tv' || media?.mediaType == 'anime')) {
         _fetchSeasonData();
       }
       
@@ -625,29 +628,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _resumePosition = startAt;
       }
 
-      if (_isDirectStream && _isAnimeMedia(media)) {
-        _useNativePlayer = true;
-        _nativeUrl = result.url;
-        _nativeHeaders = _buildPlaybackHeaders(result.headers);
-        _nativeStartAt = startAt;
-        setState(() {
-          _isLoading = false;
-          _retryCount = 0;
-        });
-        _updateWatchPartyHostSyncTimer();
-        _startProgressTracking();
-        _maybeAutoEnterFullscreenOnce();
-        return;
-      }
-
+      // The direct stream natively falls through to BetterPlayer
       // —————————————————————————————————————————————————————————————————————————————————————————— Build subtitle sources ——————————————————————————————————————————————————————————————————————————————————————————
-      final subtitleSources = result.subtitles.map((sub) {
+      final headers = _buildPlaybackHeaders(result.headers);
+      final subsList = result.subtitles;
+
+      final subtitleSources = subsList.asMap().entries.map((entry) {
+        final index = entry.key;
+        final sub = entry.value;
+        final isDefault = sub.lang.toLowerCase() == 'english' || (index == 0 && subsList.every((s) => s.lang.toLowerCase() != 'english'));
         return BetterPlayerSubtitlesSource(
           type: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty 
               ? BetterPlayerSubtitlesSourceType.file 
               : BetterPlayerSubtitlesSourceType.network,
           name: sub.lang,
           urls: [sub.url],
+          headers: headers,
+          selectedByDefault: isDefault,
         );
       }).toList();
 
@@ -666,9 +663,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
       final cacheConfiguration = _buildCacheConfiguration(result);
 
-      // —————————————————————————————————————————————————————————————————————————————————————————— Headers ——————————————————————————————————————————————————————————————————————————————————————————
-      final headers = _buildPlaybackHeaders(result.headers);
-
       // —————————————————————————————————————————————————————————————————————————————————————————— Data source ——————————————————————————————————————————————————————————————————————————————————————————
       final dataSource = BetterPlayerDataSource(
         _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty 
@@ -682,7 +676,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ? BetterPlayerVideoFormat.hls
                 : BetterPlayerVideoFormat.other),
         useAsmsTracks: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty ? false : result.isM3U8,
-        useAsmsSubtitles: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty ? false : result.isM3U8,
+        useAsmsSubtitles: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty ? false : (subtitleSources.isEmpty ? result.isM3U8 : false),
         useAsmsAudioTracks: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty ? false : result.isM3U8,
         subtitles: subtitleSources.isNotEmpty ? subtitleSources : null,
         resolutions: resolutions,
@@ -745,7 +739,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             customControlsBuilder: (controller, onPlayerVisibilityChanged, controlsConfiguration) {
               final media = ref.read(selectedMediaProvider);
               String? subtitle;
-              if (media?.mediaType == 'tv') {
+              if ((media?.mediaType == 'tv' || media?.mediaType == 'anime')) {
                 String? episodeName;
                 if (_currentSeasonData != null) {
                   for (final episode in _currentSeasonData!.episodes) {
@@ -779,7 +773,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 onSettings: () {
                   _showSettingsOverlayPanel();
                 },
-                onEpisodes: (media?.mediaType == 'tv') ? () {
+                onEpisodes: ((media?.mediaType == 'tv' || media?.mediaType == 'anime')) ? () {
                   _showEpisodesBottomSheet();
                 } : null,
               );
@@ -791,7 +785,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   'Display',
                   _showDisplaySelectionBottomSheet,
                 ),
-              if (media?.mediaType == 'tv')
+              if ((media?.mediaType == 'tv' || media?.mediaType == 'anime'))
                 BetterPlayerOverflowMenuItem(
                   Icons.list,
                   'Episodes',
@@ -1017,7 +1011,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // Apply Subtitle Language
     if (preferredSubtitle == 'Off') {
       _betterPlayerController?.setupSubtitleSource(BetterPlayerSubtitlesSource(type: BetterPlayerSubtitlesSourceType.none));
-    } else if (preferredSubtitle != 'Auto' && preferredSubtitle.isNotEmpty) {
+    } else if (preferredSubtitle == 'Auto' || preferredSubtitle.isEmpty) {
+      if (subtitleTracks.isNotEmpty) {
+        final defaultTrack = subtitleTracks.firstWhere((track) => track.selectedByDefault == true, orElse: () => subtitleTracks.first);
+        if (defaultTrack.type != BetterPlayerSubtitlesSourceType.none) {
+          _betterPlayerController?.setupSubtitleSource(defaultTrack);
+        }
+      }
+    } else {
       for (final track in subtitleTracks) {
         if (track.name == preferredSubtitle || _isLanguageMatch(track.name ?? '', preferredSubtitle)) {
           _betterPlayerController?.setupSubtitleSource(track);
@@ -1797,7 +1798,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_prefetchedStreams.containsKey(nextEp)) return;
 
     final media = ref.read(selectedMediaProvider);
-    if (media == null || media.mediaType != 'tv') return;
+    if (media == null || (media.mediaType != 'tv' && media.mediaType != 'anime')) return;
 
     _isPrefetching = true;
     try {
@@ -1830,6 +1831,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // —————————————————————————————————————————————————————————————————————————————————————————— Season data fetch ——————————————————————————————————————————————————————————————————————————————————————————
   Future<void> _fetchSeasonData() async {
     try {
+      final media = ref.read(selectedMediaProvider);
+      if (media?.mediaType == 'anime') {
+        final anilistService = ref.read(aniListServiceProvider);
+        final seasonData = await anilistService.getAnimeSeasonData(widget.mediaId);
+        if (mounted) {
+          setState(() {
+            _currentSeasonData = seasonData;
+          });
+        }
+        return;
+      }
+
       final tmdbService = ref.read(tmdbServiceProvider);
       final seasonData = await tmdbService.getSeasonInfo(
         widget.mediaId,
@@ -1903,12 +1916,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (media == null) return false;
     if (media.mediaType != 'tv' && media.mediaType != 'anime') return false; // Movies return false
     
+    if (_prefetchedStreams.containsKey(_currentEpisode + 1)) return true;
+    
     if (_currentSeasonData != null) {
       return _currentEpisode < _currentSeasonData!.episodes.length;
     }
     
-    // For anime without season data, we can't be sure, but we shouldn't prompt removal if there might be more.
-    // However, if we don't know, it's safer to just return false so it prompts or ends gracefully.
+
+    
     return false;
   }
 
@@ -1969,7 +1984,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _removeOverlayEntry();
     
     final media = ref.read(selectedMediaProvider);
-    if (media == null || media.mediaType != 'tv') return;
+    if (media == null || (media.mediaType != 'tv' && media.mediaType != 'anime')) return;
 
     // Exit fullscreen first so BetterPlayer's route is popped
     // before we dispose the controller
@@ -2017,7 +2032,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _showEpisodesBottomSheet() {
     final media = ref.read(selectedMediaProvider);
-    if (media == null || media.mediaType != 'tv') return;
+    if (media == null || (media.mediaType != 'tv' && media.mediaType != 'anime')) return;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -3125,9 +3140,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                           ],
                                           if (resolutions.isNotEmpty) ...[
                                             ...resolutions.entries.map((entry) {
+                                              final isCurrent = _betterPlayerController?.betterPlayerDataSource?.url == entry.value;
                                               return ListTile(
                                                 contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                title: Text(entry.key, style: const TextStyle(color: Colors.white)),
+                                                title: Text(entry.key, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
+                                                trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
                                                 onTap: () {
                                                   _betterPlayerController?.setResolution(entry.value);
                                                   setDialogState(() {});
@@ -3615,7 +3632,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _broadcastWatchPartyPlayback(force: false);
 
       final media = ref.read(selectedMediaProvider);
-      if (media != null && media.mediaType == 'tv') {
+      if (media != null && (media.mediaType == 'tv' || media.mediaType == 'anime')) {
         if (_hasNextEpisode()) {
           final remaining = duration - currentTime;
           if (duration > 0 && remaining <= 15 && !_showNextEpisodeButton) {
@@ -3626,7 +3643,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } else if (event == 'ended') {
       _markAsCompleted();
       final media = ref.read(selectedMediaProvider);
-      if (media != null && media.mediaType == 'tv' && _hasNextEpisode()) {
+      if (media != null && (media.mediaType == 'tv' || media.mediaType == 'anime') && _hasNextEpisode()) {
          _playNextEpisode();
       }
     }
@@ -3749,9 +3766,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   Widget _buildNativePlayer({bool isPipMode = false}) {
     final media = ref.read(selectedMediaProvider);
-    String? subtitle = media?.mediaType == 'tv' ? 'S${widget.season} E$_currentEpisode' : null;
+    String? subtitle = (media?.mediaType == 'tv' || media?.mediaType == 'anime') ? 'S${widget.season} E$_currentEpisode' : null;
     
-    if (media?.mediaType == 'tv' && _currentSeasonData != null) {
+    if ((media?.mediaType == 'tv' || media?.mediaType == 'anime') && _currentSeasonData != null) {
       try {
         final episode = _currentSeasonData!.episodes.firstWhere((e) => e.episodeNumber == _currentEpisode);
         if (episode.episodeName != null && episode.episodeName!.isNotEmpty && !episode.episodeName!.startsWith('Episode')) {
@@ -4007,7 +4024,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   String _buildFullscreenSubtitle() {
     final media = ref.read(selectedMediaProvider);
-    if (media?.mediaType != 'tv') {
+    if (media?.mediaType != 'tv' && media?.mediaType != 'anime') {
       return _streamResult?.provider.toUpperCase() ?? '';
     }
 
@@ -4218,7 +4235,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     ),
                   ),
                 const SizedBox(height: 8),
-                if (media?.mediaType == 'tv')
+                if ((media?.mediaType == 'tv' || media?.mediaType == 'anime'))
                   Text(
                     'S${widget.season} E$_currentEpisode',
                     style: TextStyle(color: Colors.white54, fontSize: 13),
