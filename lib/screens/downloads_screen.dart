@@ -90,7 +90,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
             borderRadius: BorderRadius.circular(8),
             child: seriesPoster != null
                 ? CachedNetworkImage(
-                    imageUrl: 'https://image.tmdb.org/t/p/w200$seriesPoster',
+                    imageUrl: seriesPoster.startsWith('http') ? seriesPoster : 'https://image.tmdb.org/t/p/w200$seriesPoster',
                     width: 50,
                     height: 75,
                     fit: BoxFit.cover,
@@ -153,7 +153,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           borderRadius: BorderRadius.circular(8),
           child: itemPoster != null
               ? CachedNetworkImage(
-                  imageUrl: 'https://image.tmdb.org/t/p/w200$itemPoster',
+                  imageUrl: itemPoster.startsWith('http') ? itemPoster : 'https://image.tmdb.org/t/p/w200$itemPoster',
                   width: item.season != null ? 80 : 50,
                   height: item.season != null ? 45 : 75,
                   fit: BoxFit.cover,

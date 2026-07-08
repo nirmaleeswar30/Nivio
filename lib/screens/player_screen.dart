@@ -12,6 +12,8 @@ import 'package:nivio/core/theme.dart';
 import 'package:nivio/screens/player/widgets/custom_player_controls.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'package:nivio/core/debug_log.dart';
 
 import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/media_provider.dart';
@@ -210,7 +212,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   int get _maxProviders {
     final media = ref.read(selectedMediaProvider);
-    return StreamingService.totalProvidersFor(isAnime: _isAnimeMedia(media));
+    final streamingService = ref.read(streamingServiceProvider);
+    return streamingService.totalProvidersFor(isAnime: _isAnimeMedia(media));
   }
 
   @override
@@ -298,7 +301,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         tmdbId: widget.mediaId,
         mediaType: media.mediaType,
         title: media.title ?? media.name ?? 'Unknown',
-        posterPath: media.backdropPath ?? media.posterPath,
+        posterPath: media.posterPath ?? media.backdropPath,
         currentSeason: widget.season,
         currentEpisode: _currentEpisode,
         totalSeasons: 1,
@@ -465,14 +468,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _fetchSkipTimes(media, _currentEpisode);
       }
 
+      final streamingService = ref.read(streamingServiceProvider);
+
+      String subDubPref = ref.read(languagePreferencesProvider).animePreferredAudio;
+      if (_selectedAudioOverride != null && _selectedAudioOverride!.isNotEmpty) {
+        subDubPref = _selectedAudioOverride!.toLowerCase().contains('dub') ? 'dub' : 'sub';
+      }
+      
+      if (media != null) {
+        setState(() => _currentProvider = 'Preparing servers...');
+        await streamingService.prepareProviders(
+          media: media,
+          season: widget.season,
+          episode: _currentEpisode,
+          subDubPreference: subDubPref,
+        );
+        
+        if (_maxProviders > 0 && _currentProviderIndex >= _maxProviders) {
+          _currentProviderIndex = 0;
+        }
+      }
+
       setState(() => _currentProvider = 'Fetching stream...');
 
-      final streamingService = ref.read(streamingServiceProvider);
       final settingsQuality = ref.read(videoQualityProvider);
-      final manualQuality = ref.read(selectedQualityProvider);
+      var manualQuality = ref.read(selectedQualityProvider);
+      if (manualQuality == null && _currentHistory?.preferredResolution != null && _currentHistory!.preferredResolution!.isNotEmpty) {
+        manualQuality = _currentHistory!.preferredResolution;
+      }
       final preferredQuality =
           manualQuality ?? (settingsQuality == 'auto' ? null : settingsQuality);
-      final subDubPref = ref.read(languagePreferencesProvider).animePreferredAudio;
+      // using the subDubPref defined above
 
       StreamResult? result;
 
@@ -565,6 +591,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         );
       }
 
+      if (result != null && result!.sources.isNotEmpty && preferredQuality != null) {
+        final isDubTarget = result!.selectedAudio.toLowerCase() == 'dub' || result!.selectedAudio.toLowerCase().contains('english');
+        final normalizedTarget = _normalizeQualityLabel(preferredQuality);
+        
+        StreamSource? bestMatch;
+        if (normalizedTarget == 'auto') {
+           bestMatch = result!.sources.firstWhere(
+             (s) => s.isDub == isDubTarget,
+             orElse: () => result!.sources.first,
+           );
+        } else {
+           bestMatch = result!.sources.firstWhere(
+             (s) => _normalizeQualityLabel(s.quality) == normalizedTarget && s.isDub == isDubTarget,
+             orElse: () => result!.sources.firstWhere(
+               (s) => _normalizeQualityLabel(s.quality) == normalizedTarget,
+               orElse: () => result!.sources.first,
+             ),
+           );
+        }
+        result = result!.copyWith(url: bestMatch.url, quality: bestMatch.quality);
+      }
+
       if (result == null) {
         if (_currentProviderIndex < _maxProviders - 1) {
           _currentProviderIndex++;
@@ -581,10 +629,54 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // A local downloaded file is always played directly (never via WebView).
       _isDirectStream = (widget.directStreamUrl != null || (_effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty))
           ? true
-          : StreamingService.isDirectStream(
+          : ref.read(streamingServiceProvider).isDirectStream(
               _currentProviderIndex,
               isAnime: _isAnimeMedia(media),
             );
+
+      // Pre-verify the stream URL if it's a direct stream to instantly fallback without player errors
+      if (_isDirectStream && result.url.startsWith('http')) {
+        try {
+          if (mounted) setState(() => _loadingMessage = 'Verifying stream connection...');
+          
+          final request = http.Request('GET', Uri.parse(result.url));
+          request.headers.addAll(result.headers ?? {});
+          final client = http.Client();
+          final streamedResponse = await client.send(request).timeout(const Duration(seconds: 8));
+          final status = streamedResponse.statusCode;
+          client.close(); // Abort immediately to prevent downloading the video file
+
+          if (status >= 400) {
+            appDebugLog('❌ Stream pre-verification failed with status: $status');
+            if (_currentProviderIndex < _maxProviders - 1) {
+              _currentProviderIndex++;
+              setState(() => _error = 'Stream returned $status, trying next...');
+              await Future.delayed(const Duration(milliseconds: 500));
+              _initializePlayer(isRetry: true);
+              return;
+            } else {
+              throw Exception('Stream link is dead (HTTP $status)');
+            }
+          } else {
+             appDebugLog('✅ Stream pre-verification passed with status: $status');
+          }
+        } catch (e) {
+          appDebugLog('❌ Stream pre-verification error: $e');
+          if (e.toString().contains('dead') || e.toString().contains('Exception')) {
+             // Let it throw to the outer catch block
+             rethrow;
+          }
+          if (_currentProviderIndex < _maxProviders - 1) {
+            _currentProviderIndex++;
+            setState(() => _error = 'Stream verification timeout, trying next...');
+            await Future.delayed(const Duration(milliseconds: 500));
+            _initializePlayer(isRetry: true);
+            return;
+          } else {
+            throw Exception('Stream verification failed: $e');
+          }
+        }
+      }
       
       _trackInitialPlay();
 
@@ -672,12 +764,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         headers: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty ? null : headers,
         videoFormat: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty 
             ? BetterPlayerVideoFormat.other
-            : (result.isM3U8
-                ? BetterPlayerVideoFormat.hls
-                : BetterPlayerVideoFormat.other),
-        useAsmsTracks: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty ? false : result.isM3U8,
-        useAsmsSubtitles: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty ? false : (subtitleSources.isEmpty ? result.isM3U8 : false),
-        useAsmsAudioTracks: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty ? false : result.isM3U8,
+            : (result.url.contains('.mpd')
+                ? BetterPlayerVideoFormat.dash
+                : (result.isM3U8 || result.url.contains('.m3u8')
+                    ? BetterPlayerVideoFormat.hls
+                    : BetterPlayerVideoFormat.other)),
+        useAsmsTracks: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty ? false : (result.isM3U8 || result.url.contains('.mpd')),
+        useAsmsSubtitles: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty ? false : (subtitleSources.isEmpty ? (result.isM3U8 || result.url.contains('.mpd')) : false),
+        useAsmsAudioTracks: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty ? false : (result.isM3U8 || result.url.contains('.mpd')),
         subtitles: subtitleSources.isNotEmpty ? subtitleSources : null,
         resolutions: resolutions,
         cacheConfiguration: _effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty ? const BetterPlayerCacheConfiguration(useCache: false) : cacheConfiguration,
@@ -693,6 +787,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         BetterPlayerConfiguration(
           autoPlay: true,
           looping: false,
+          allowedScreenSleep: false,
           fullScreenByDefault: false,
           subtitlesConfiguration: BetterPlayerSubtitlesConfiguration(
             fontSize: ref.read(subtitleFontSizeProvider),
@@ -1899,7 +1994,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       tmdbId: widget.mediaId,
       mediaType: media.mediaType,
       title: media.title ?? media.name ?? 'Unknown',
-      posterPath: media.backdropPath ?? media.posterPath,
+      posterPath: media.posterPath ?? media.backdropPath,
       currentSeason: widget.season,
       currentEpisode: _currentEpisode,
       totalSeasons: 1,
@@ -2090,7 +2185,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   String _providerSelectorLabel(int index) {
     final media = ref.read(selectedMediaProvider);
-    return StreamingService.getProviderName(
+    return ref.read(streamingServiceProvider).getProviderName(
       index,
       isAnime: _isAnimeMedia(media),
     );
@@ -2344,6 +2439,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     ref.read(selectedQualityProvider.notifier).state =
         normalizedTarget == 'auto' ? null : normalizedTarget;
+    ref.read(watchHistoryServiceProvider).saveTrackPreferences(widget.mediaId, resolution: normalizedTarget);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2357,6 +2453,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       );
     }
     
+    if (_isDirectStream && _betterPlayerController != null) {
+      if (normalizedTarget == 'auto') {
+        _betterPlayerController!.setTrack(BetterPlayerAsmsTrack.defaultTrack());
+        return;
+      }
+      final asmsTracks = _betterPlayerController!.betterPlayerAsmsTracks;
+      for (final track in asmsTracks) {
+        final heightLabel = track.height != null && track.height! > 0 ? '${track.height}p' : '';
+        if (heightLabel.isNotEmpty && _normalizeQualityLabel(heightLabel) == normalizedTarget) {
+          _betterPlayerController!.setTrack(track);
+          return;
+        }
+      }
+    }
+
     if (!_isDirectStream && _streamResult != null && _streamResult!.sources.isNotEmpty) {
       final isDubTarget = _streamResult!.selectedAudio.toLowerCase() == 'dub';
       
@@ -2545,10 +2656,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   Widget _buildSingleProviderTile(int index, SearchResult? media) {
     final isCurrent = index == _currentProviderIndex;
-    String providerName = StreamingService.getProviderName(index, isAnime: _isAnimeMedia(media));
+    String providerName = ref.read(streamingServiceProvider).getProviderName(index, isAnime: _isAnimeMedia(media));
     
-    if (providerName.startsWith('Nivio-anime (')) {
-      providerName = providerName.replaceAll('Nivio-anime (', '').replaceAll(')', '');
+    if (providerName.startsWith('Animetsu (')) {
+      providerName = providerName.substring('Animetsu ('.length);
+      if (providerName.endsWith(')')) providerName = providerName.substring(0, providerName.length - 1);
+    } else if (providerName.startsWith('Miruro (')) {
+      providerName = providerName.substring('Miruro ('.length);
+      if (providerName.endsWith(')')) providerName = providerName.substring(0, providerName.length - 1);
+    } else if (providerName.startsWith('Animex (')) {
+      providerName = providerName.substring('Animex ('.length);
+      if (providerName.endsWith(')')) providerName = providerName.substring(0, providerName.length - 1);
     }
     
     return Padding(
@@ -2576,9 +2694,53 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   List<Widget> _buildProviderListTiles(SearchResult? media) {
     final List<Widget> widgets = [];
+    final bool isAnime = _isAnimeMedia(media);
 
-    for (int i = 0; i < _maxProviders; i++) {
-      widgets.add(_buildSingleProviderTile(i, media));
+    if (isAnime) {
+      final Map<String, List<int>> groups = {};
+      for (int i = 0; i < _maxProviders; i++) {
+        final name = ref.read(streamingServiceProvider).getProviderName(i, isAnime: true);
+        String groupName = name;
+        if (name.startsWith('Animetsu')) groupName = 'Animetsu';
+        else if (name.startsWith('Miruro')) groupName = 'Miruro';
+        else if (name.startsWith('Animex')) groupName = 'Animex';
+        
+        groups.putIfAbsent(groupName, () => []).add(i);
+      }
+
+      for (final entry in groups.entries) {
+        final groupName = entry.key;
+        final indices = entry.value;
+
+        if (indices.length == 1) {
+          widgets.add(_buildSingleProviderTile(indices.first, media));
+        } else {
+          bool containsCurrent = indices.contains(_currentProviderIndex);
+          widgets.add(
+            Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                initiallyExpanded: containsCurrent,
+                iconColor: Theme.of(context).primaryColor,
+                collapsedIconColor: Colors.white70,
+                title: Text(
+                  groupName,
+                  style: TextStyle(
+                    color: containsCurrent ? Theme.of(context).primaryColor : Colors.white,
+                    fontWeight: containsCurrent ? FontWeight.bold : FontWeight.w600,
+                    fontSize: 16,
+                  ),
+                ),
+                children: indices.map((i) => _buildSingleProviderTile(i, media)).toList(),
+              ),
+            ),
+          );
+        }
+      }
+    } else {
+      for (int i = 0; i < _maxProviders; i++) {
+        widgets.add(_buildSingleProviderTile(i, media));
+      }
     }
 
     return widgets;
@@ -2658,7 +2820,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       tmdbId: widget.mediaId,
       mediaType: media.mediaType,
       title: media.title ?? media.name ?? 'Unknown',
-      posterPath: media.backdropPath ?? media.posterPath,
+      posterPath: media.posterPath ?? media.backdropPath,
       currentSeason: widget.season,
       currentEpisode: _currentEpisode,
       totalSeasons: totalSeasons,

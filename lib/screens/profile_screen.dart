@@ -302,6 +302,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             subtitle: 'Rearrange the order of shelves on the home screen',
                             onTap: () => _showHomeLayoutDialog(context),
                           ),
+                        if (_matches('preferred anime source server provider'))
+                          _buildActionTile(
+                            icon: Icons.source_rounded,
+                            title: 'Preferred Anime Source',
+                            subtitle: ref.watch(preferredAnimeSourceProvider),
+                            onTap: _showPreferredAnimeSourceDialog,
+                          ),
                         if (_matches('anime language audio sub dub subbed dubbed')) ...[
                           _buildActionTile(
                             icon: Icons.record_voice_over_rounded,
@@ -1403,6 +1410,55 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           minChildSize: 0.5,
           expand: false,
           builder: (_, scrollController) => _HomeLayoutBottomSheet(scrollController: scrollController),
+        );
+      },
+    );
+  }
+
+  Future<void> _showPreferredAnimeSourceDialog() async {
+    final currentSource = ref.read(preferredAnimeSourceProvider);
+    final sources = ['Miruro', 'Animex', 'Animetsu'];
+    
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: NivioTheme.netflixDarkGrey,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const ListTile(
+                title: Text(
+                  'Preferred Anime Source',
+                  style: TextStyle(
+                    color: NivioTheme.netflixWhite,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              ...sources.map((source) {
+                final isSelected = source == currentSource;
+                return ListTile(
+                  leading: Icon(
+                    isSelected
+                        ? Icons.check_circle_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                    color: isSelected
+                        ? NivioTheme.accentColorOf(context)
+                        : NivioTheme.netflixGrey,
+                  ),
+                  title: Text(
+                    source,
+                    style: TextStyle(color: NivioTheme.netflixWhite),
+                  ),
+                  onTap: () {
+                    ref.read(preferredAnimeSourceProvider.notifier).setPreference(source);
+                    Navigator.pop(sheetContext);
+                  },
+                );
+              }),
+            ],
+          ),
         );
       },
     );

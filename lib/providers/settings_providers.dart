@@ -340,6 +340,28 @@ class AnimeSubDubNotifier extends StateNotifier<String> {
 }
 
 
+// Anime Source Preference Provider
+final preferredAnimeSourceProvider = StateNotifierProvider<PreferredAnimeSourceNotifier, String>((ref) {
+  return PreferredAnimeSourceNotifier();
+});
+
+class PreferredAnimeSourceNotifier extends StateNotifier<String> {
+  PreferredAnimeSourceNotifier() : super('Miruro') {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getString('preferred_anime_source') ?? 'Miruro';
+  }
+
+  Future<void> setPreference(String preference) async {
+    state = preference;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('preferred_anime_source', preference);
+  }
+}
+
 // Episode Check Enabled Provider
 final episodeCheckEnabledProvider =
     StateNotifierProvider<EpisodeCheckEnabledNotifier, bool>((ref) {

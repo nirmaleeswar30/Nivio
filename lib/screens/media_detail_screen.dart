@@ -13,6 +13,7 @@ import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
+import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/models/watchlist_item.dart';
 import 'package:nivio/models/download_item.dart';
 import 'package:nivio/providers/dynamic_colors_provider.dart';
@@ -21,6 +22,7 @@ import 'package:nivio/providers/media_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
+import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/widgets/episode_list.dart';
 import 'package:nivio/services/download_service.dart';
 import 'package:nivio/services/streaming_service.dart';
@@ -1028,12 +1030,27 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 
   Future<void> _handleDownload(SearchResult media) async {
     final streamingService = ref.read(streamingServiceProvider);
-    final isAnime = media.originalLanguage == 'ja';
+    final isAnime = StreamingService.isAnimeMedia(media);
+    
+    if (isAnime) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Preparing servers...')),
+        );
+      }
+      final subDubPref = ref.read(languagePreferencesProvider).animePreferredAudio;
+      await streamingService.prepareProviders(
+        media: media,
+        season: 1,
+        episode: 1,
+        subDubPreference: subDubPref,
+      );
+    }
     
     // Auto-select provider for downloads
     final providerIndex = 0; 
     
-    if (!StreamingService.isDownloadable(providerIndex, isAnime: isAnime)) {
+    if (!streamingService.isDownloadable(providerIndex, isAnime: isAnime)) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Selected provider does not support downloading.')),
@@ -1058,8 +1075,10 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           streamResult: result,
           mediaId: media.id,
           title: media.title ?? media.name ?? 'Movie',
-          mediaType: media.mediaType,
+          mediaType: isAnime ? 'anime' : media.mediaType,
           posterPath: media.posterPath,
+          media: media,
+          providerIndex: providerIndex,
         );
       } else {
         if (mounted) {
@@ -1110,7 +1129,23 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   /// Probes the first episode to discover available languages, shows the language picker,
   /// then queues all episodes with the selected languages.
   Future<void> _startBatchDownload(SearchResult media, int providerIndex, {int? singleSeason}) async {
+    final isAnime = StreamingService.isAnimeMedia(media);
     final streamingService = ref.read(streamingServiceProvider);
+    
+    if (isAnime) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Preparing servers...')),
+        );
+      }
+      final subDubPref = ref.read(languagePreferencesProvider).animePreferredAudio;
+      await streamingService.prepareProviders(
+        media: media,
+        season: singleSeason ?? 1,
+        episode: 1,
+        subDubPreference: subDubPref,
+      );
+    }
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1153,18 +1188,28 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       context: context,
       ref: ref,
       streamResult: probeResult,
+      media: media,
+      season: singleSeason ?? 1,
+      episode: 1,
+      providerIndex: providerIndex,
+      isAnime: media.originalLanguage == 'ja',
     );
 
     if (langChoice == null) return; // User cancelled
 
     final preferredQuality = langChoice.selectedSource?.quality;
-    final subDubPreference = langChoice.selectedSource != null ? (langChoice.selectedSource!.isDub ? 'dub' : 'sub') : null;
+    String? subDubPreference = langChoice.selectedSource != null ? (langChoice.selectedSource!.isDub ? 'dub' : 'sub') : null;
+    if (subDubPreference == null && langChoice.audioLang != null) {
+      subDubPreference = langChoice.audioLang!.toLowerCase().contains('dub') ? 'dub' : 'sub';
+    }
+
+    final usedProviderIndex = langChoice.finalProviderIndex ?? providerIndex;
 
     // Now queue the actual downloads
     if (singleSeason != null) {
-      _downloadSeason(media, providerIndex, singleSeason, langChoice.audioLang, langChoice.subtitleLang, preferredQuality: preferredQuality, subDubPreference: subDubPreference);
+      _downloadSeason(media, usedProviderIndex, singleSeason, langChoice.audioLang, langChoice.subtitleLang, preferredQuality: preferredQuality, subDubPreference: subDubPreference);
     } else {
-      _downloadAllSeasons(media, providerIndex, langChoice.audioLang, langChoice.subtitleLang, preferredQuality: preferredQuality, subDubPreference: subDubPreference);
+      _downloadAllSeasons(media, usedProviderIndex, langChoice.audioLang, langChoice.subtitleLang, preferredQuality: preferredQuality, subDubPreference: subDubPreference);
     }
   }
 
@@ -1226,22 +1271,39 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     });
   }
 
-  Future<void> _downloadEpisode(StreamingService streamingService, SearchResult media, int season, int episode, String episodeName, String? stillPath, int providerIndex, String? audioLang, String? subtitleLang, {String? preferredQuality, String? subDubPreference}) async {
-    try {
-      final result = await streamingService.fetchStreamUrl(
-      media: media,
-      season: season,
-      episode: episode,
-      providerIndex: providerIndex,
-      preferredQuality: preferredQuality,
-      subDubPreference: subDubPreference ?? 'sub',
-    );
+  Future<void> _downloadEpisode(StreamingService streamingService, SearchResult media, int season, int episode, String episodeName, String? stillPath, int initialProviderIndex, String? audioLang, String? subtitleLang, {String? preferredQuality, String? subDubPreference}) async {
+    final isAnime = StreamingService.isAnimeMedia(media);
+    final maxProviders = streamingService.totalProvidersFor(isAnime: isAnime);
+    
+    StreamResult? result;
+    // For Season/All Seasons download, we start at the passed initialProviderIndex and loop from there to try and find a working provider. 
+    // Wait, let's just loop from 0 to maxProviders because the user's preferred provider is at index 0.
+    for (int providerIndex = 0; providerIndex < maxProviders; providerIndex++) {
+       if (!streamingService.isDownloadable(providerIndex, isAnime: isAnime)) continue;
+
+       try {
+         result = await streamingService.fetchStreamUrl(
+           media: media,
+           season: season,
+           episode: episode,
+           providerIndex: providerIndex,
+           preferredQuality: preferredQuality,
+           subDubPreference: subDubPreference ?? 'sub',
+         );
+       } catch (e) {
+         debugPrint('Download probe failed for episode $episode on provider $providerIndex: $e');
+       }
+
+       if (result != null && result.url.isNotEmpty) {
+         break;
+       }
+    }
     
     if (result != null && result.url.isNotEmpty) {
       await DownloadService.queueDownload(
         mediaId: media.id,
         title: '${media.title ?? media.name ?? 'Episode'}|||$episodeName',
-        mediaType: media.mediaType,
+        mediaType: isAnime ? 'anime' : media.mediaType,
         season: season,
         episode: episode,
         posterPath: '${media.posterPath}|||${stillPath ?? media.posterPath}',
@@ -1250,9 +1312,8 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         selectedAudioLanguage: audioLang,
         selectedSubtitleLanguage: subtitleLang,
       );
-    }
-    } catch (e) {
-      debugPrint('Error queueing download for episode $episode: $e');
+    } else {
+      debugPrint('Failed to queue download for episode $episode: No working provider found.');
     }
   }
 

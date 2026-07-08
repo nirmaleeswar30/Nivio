@@ -668,7 +668,7 @@ class DownloadService {
         ffmpegArgs.addAll(['-allowed_extensions', 'ALL', '-i', localAudioM3u8]);
         ffmpegArgs.addAll(['-map', '0:v:0', '-map', '1:a:0']);
       } else {
-        ffmpegArgs.addAll(['-map', '0']);
+        ffmpegArgs.addAll(['-map', '0:v?', '-map', '0:a?', '-map', '0:s?']);
       }
       
       final isAnimepahe = item.headers?['Referer']?.contains('kwik') == true;

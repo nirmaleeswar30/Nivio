@@ -146,11 +146,15 @@ class ScheduleApiService {
            final String? romajiTitle = media['title']['romaji']?.toString().toLowerCase();
            
            final match = watchlist.where((w) {
+             if (w.mediaType == 'anime' && w.id == media['id']) return true;
              if (w.mediaType != 'tv') return false;
              final wTitle = w.title.toLowerCase();
              bool isMatch(String name1, String name2) {
                if (name1 == name2) return true;
-               if (name2.startsWith(name1 + ' ') || name1.startsWith(name2 + ' ')) return true;
+               if (name1.length > 4) {
+                 if (name2.startsWith(name1 + ' ') || name1.startsWith(name2 + ' ')) return true;
+                 if (name2.startsWith(name1 + ':') || name1.startsWith(name2 + ':')) return true;
+               }
                return false;
              }
              
@@ -158,13 +162,15 @@ class ScheduleApiService {
              if (romajiTitle != null && isMatch(wTitle, romajiTitle)) return true;
              
              // Try matching just the first part before a colon or hyphen
-             final wBase = wTitle.split(RegExp(r'[:\-]')).first.trim();
-             final englishBase = englishTitle.split(RegExp(r'[:\-]')).first.trim();
-             if (wBase.isNotEmpty && englishBase.isNotEmpty && isMatch(wBase, englishBase)) return true;
-             
-             if (romajiTitle != null) {
-                final romajiBase = romajiTitle.split(RegExp(r'[:\-]')).first.trim();
-                if (wBase.isNotEmpty && romajiBase.isNotEmpty && isMatch(wBase, romajiBase)) return true;
+             if (wTitle.length > 4) {
+               final wBase = wTitle.split(RegExp(r'[:\-]')).first.trim();
+               final englishBase = englishTitle.split(RegExp(r'[:\-]')).first.trim();
+               if (wBase.isNotEmpty && englishBase.isNotEmpty && isMatch(wBase, englishBase)) return true;
+               
+               if (romajiTitle != null) {
+                  final romajiBase = romajiTitle.split(RegExp(r'[:\-]')).first.trim();
+                  if (wBase.isNotEmpty && romajiBase.isNotEmpty && isMatch(wBase, romajiBase)) return true;
+               }
              }
              
              return false;

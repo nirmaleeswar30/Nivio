@@ -41,6 +41,7 @@ import 'package:nivio/screens/iptv_screen.dart';
 import 'package:nivio/services/watch_party/watch_party_models.dart';
 import 'package:nivio/services/watch_party/watch_party_supabase_config.dart';
 import 'package:nivio/services/download_service.dart';
+import 'package:nivio/services/hls_proxy_service.dart';
 
 void main() async {
   try {
@@ -71,6 +72,9 @@ void main() async {
   // Initialize cache service
   final cacheService = CacheService();
   await cacheService.init();
+
+  // Start background HLS proxy server for Cloudflare bypasses
+  await HlsProxyService.instance.start();
 
   // Initialize episode check service (background notifications)
   await EpisodeCheckService.init();

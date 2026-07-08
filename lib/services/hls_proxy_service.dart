@@ -35,7 +35,7 @@ class HlsProxyService {
 
   int get port => _server?.port ?? 0;
 
-  String getProxyUrl(String targetUrl, String userAgent, Map<String, String> cookies, {String? referer}) {
+  String getProxyUrl(String targetUrl, String userAgent, Map<String, String> cookies, {String? referer, String? origin, String? extension}) {
     if (_server == null) throw Exception('HlsProxyService is not running');
     // Remove padding to keep URL clean, we add it back during decode
     String trimBase64(String str) => str.replaceAll('=', '');
@@ -45,8 +45,10 @@ class HlsProxyService {
     final base64Cookie = trimBase64(base64Url.encode(utf8.encode(cookieString)));
     final base64Ua = trimBase64(base64Url.encode(utf8.encode(userAgent)));
     final base64Ref = referer != null ? trimBase64(base64Url.encode(utf8.encode(referer))) : '';
+    final base64Origin = origin != null ? trimBase64(base64Url.encode(utf8.encode(origin))) : '';
     
-    return 'http://127.0.0.1:${_server!.port}/proxy?url=$base64UrlParam&cookie=$base64Cookie&ua=$base64Ua&ref=$base64Ref';
+    final extParam = extension != null ? '&ext=$extension' : '&ext=.m3u8';
+    return 'http://127.0.0.1:${_server!.port}/proxy?url=$base64UrlParam&cookie=$base64Cookie&ua=$base64Ua&ref=$base64Ref&origin=$base64Origin$extParam';
   }
 
   Future<void> _handleRequest(HttpRequest request) async {
@@ -63,6 +65,7 @@ class HlsProxyService {
       final base64Cookie = request.uri.queryParameters['cookie'];
       final base64Ua = request.uri.queryParameters['ua'];
       final base64Ref = request.uri.queryParameters['ref'];
+      final base64OriginParam = request.uri.queryParameters['origin'];
 
       if (base64UrlParam == null) {
         request.response
@@ -79,13 +82,13 @@ class HlsProxyService {
       final targetUrl = utf8.decode(base64Url.decode(padBase64(base64UrlParam)));
       final userAgent = base64Ua != null && base64Ua.isNotEmpty ? utf8.decode(base64Url.decode(padBase64(base64Ua))) : '';
       final referer = base64Ref != null && base64Ref.isNotEmpty ? utf8.decode(base64Url.decode(padBase64(base64Ref))) : 'https://kwik.cx/';
+      final origin = base64OriginParam != null && base64OriginParam.isNotEmpty ? utf8.decode(base64Url.decode(padBase64(base64OriginParam))) : 'https://kwik.cx';
 
-      // Do NOT send kwik.cx cookies to the CDN domain (owocdn.top) - Cloudflare will flag it!
       final headers = {
         'Referer': referer,
         'User-Agent': userAgent,
         'Accept': '*/*',
-        'Origin': 'https://kwik.cx',
+        'Origin': origin,
         'Sec-Fetch-Site': 'cross-site',
         'Sec-Fetch-Mode': 'cors',
         'Sec-Fetch-Dest': 'empty',
@@ -99,9 +102,14 @@ class HlsProxyService {
 
       request.response.statusCode = response.statusCode;
       response.headers.forEach((key, value) {
+        final lowerKey = key.toLowerCase();
         // Do not forward chunked encoding, we will handle it
-        if (key.toLowerCase() == 'transfer-encoding') return;
-        // Do not forward content-length if we are rewriting m3u8
+        if (lowerKey == 'transfer-encoding') return;
+        // Do not forward content-encoding since dart/cronet automatically decompressed it
+        if (lowerKey == 'content-encoding') return;
+        // Do not forward content-length since decompressed length differs
+        if (lowerKey == 'content-length') return;
+        
         request.response.headers.set(key, value);
       });
 
@@ -140,7 +148,7 @@ class HlsProxyService {
                   absoluteUri = Uri.parse(targetUrl).resolve(originalUri).toString();
                 }
                 final newBase64Url = trimBase64(base64Url.encode(utf8.encode(absoluteUri)));
-                final newUrl = 'http://127.0.0.1:${_server!.port}/proxy?url=$newBase64Url&cookie=${base64Cookie ?? ''}&ua=${base64Ua ?? ''}&ref=${base64Ref ?? ''}';
+                final newUrl = 'http://127.0.0.1:${_server!.port}/proxy?url=$newBase64Url&cookie=${base64Cookie ?? ''}&ua=${base64Ua ?? ''}&ref=${base64Ref ?? ''}&origin=${base64OriginParam ?? ''}&ext=.key';
                 final replacedLine = trimmed.replaceAll('URI="$originalUri"', 'URI="$newUrl"');
                 modifiedLines.add(replacedLine);
                 continue;
@@ -156,7 +164,8 @@ class HlsProxyService {
             }
             
             final newBase64Url = trimBase64(base64Url.encode(utf8.encode(absoluteUrl)));
-            final newUrl = 'http://127.0.0.1:${_server!.port}/proxy?url=$newBase64Url&cookie=${base64Cookie ?? ''}&ua=${base64Ua ?? ''}&ref=${base64Ref ?? ''}';
+            final isSegmentM3u8 = absoluteUrl.contains('.m3u8');
+            final newUrl = 'http://127.0.0.1:${_server!.port}/proxy?url=$newBase64Url&cookie=${base64Cookie ?? ''}&ua=${base64Ua ?? ''}&ref=${base64Ref ?? ''}&origin=${base64OriginParam ?? ''}&ext=${isSegmentM3u8 ? '.m3u8' : '.ts'}';
             modifiedLines.add(newUrl);
           }
         }
