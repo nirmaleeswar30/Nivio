@@ -23,7 +23,6 @@ import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/models/stream_result.dart';
-import 'package:nivio/services/streaming_service.dart';
 import 'package:nivio/services/watch_party/watch_party_models.dart';
 import 'package:nivio/services/watch_party/watch_party_service_supabase.dart';
 import 'package:nivio/models/watch_history.dart';
@@ -146,8 +145,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   
   bool _useNativePlayer = false;
   String? _nativeUrl;
-  Map<String, String>? _nativeHeaders;
-  Duration? _nativeStartAt;
   Duration _nativePosition = Duration.zero;
   Duration _nativeDuration = Duration.zero;
   bool _isNativePlaying = true;
@@ -206,8 +203,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _isAnimeMedia(SearchResult? media) {
     if (media == null) return false;
     if (media.mediaType == 'anime') return true;
-    final language = (media.originalLanguage ?? '').toLowerCase();
-    return (media.mediaType == 'tv' || media.mediaType == 'anime') && language == 'ja';
+    return false;
   }
 
   int get _maxProviders {
@@ -406,8 +402,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _autoFullscreenTriggeredForCurrentLoad = false;
     _useNativePlayer = false;
     _nativeUrl = null;
-    _nativeHeaders = null;
-    _nativeStartAt = null;
     _nativePosition = Duration.zero;
     _nativeDuration = Duration.zero;
     setState(() {
@@ -591,26 +585,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         );
       }
 
-      if (result != null && result!.sources.isNotEmpty && preferredQuality != null) {
-        final isDubTarget = result!.selectedAudio.toLowerCase() == 'dub' || result!.selectedAudio.toLowerCase().contains('english');
+      final res = result;
+      if (res != null && res.sources.isNotEmpty && preferredQuality != null) {
+        final isDubTarget = res.selectedAudio.toLowerCase() == 'dub' || res.selectedAudio.toLowerCase().contains('english');
         final normalizedTarget = _normalizeQualityLabel(preferredQuality);
         
         StreamSource? bestMatch;
         if (normalizedTarget == 'auto') {
-           bestMatch = result!.sources.firstWhere(
+           bestMatch = res.sources.firstWhere(
              (s) => s.isDub == isDubTarget,
-             orElse: () => result!.sources.first,
+             orElse: () => res.sources.first,
            );
         } else {
-           bestMatch = result!.sources.firstWhere(
+           bestMatch = res.sources.firstWhere(
              (s) => _normalizeQualityLabel(s.quality) == normalizedTarget && s.isDub == isDubTarget,
-             orElse: () => result!.sources.firstWhere(
+             orElse: () => res.sources.firstWhere(
                (s) => _normalizeQualityLabel(s.quality) == normalizedTarget,
-               orElse: () => result!.sources.first,
+               orElse: () => res.sources.first,
              ),
            );
         }
-        result = result!.copyWith(url: bestMatch.url, quality: bestMatch.quality);
+        result = res.copyWith(url: bestMatch.url, quality: bestMatch.quality);
       }
 
       if (result == null) {
@@ -640,7 +635,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           if (mounted) setState(() => _loadingMessage = 'Verifying stream connection...');
           
           final request = http.Request('GET', Uri.parse(result.url));
-          request.headers.addAll(result.headers ?? {});
+          request.headers.addAll(result.headers);
           final client = http.Client();
           final streamedResponse = await client.send(request).timeout(const Duration(seconds: 8));
           final status = streamedResponse.statusCode;
@@ -3061,7 +3056,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Future<void> _switchNativeStreamSource(StreamSource source) async {
-    final currentPos = _nativePosition;
     Navigator.of(context).pop(); // Close settings panel
     setState(() {
       _isLoading = true;
@@ -3076,7 +3070,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         final proxiedUrl = proxy.getProxyUrl(extraction.m3u8Url, extraction.userAgent, extraction.cookies, referer: source.url);
         _useNativePlayer = true;
         _nativeUrl = proxiedUrl;
-        _nativeStartAt = currentPos;
         _streamResult = _streamResult!.copyWith(url: source.url);
         setState(() {
           _isLoading = false;
@@ -3091,7 +3084,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } else {
       _useNativePlayer = true;
       _nativeUrl = source.url;
-      _nativeStartAt = currentPos;
       _streamResult = _streamResult!.copyWith(url: source.url);
       setState(() {
         _isLoading = false;
@@ -3897,7 +3889,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       } catch (e) {}
     }
     
-    final title = media?.title ?? media?.name ?? 'Playing';
     return const SizedBox.shrink();
   }
 

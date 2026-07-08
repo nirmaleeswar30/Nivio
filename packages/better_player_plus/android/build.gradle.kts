@@ -1,6 +1,5 @@
 plugins {
     id("com.android.library")
-    id("org.jetbrains.kotlin.android")
 }
 
 group = "uz.shs.better_player_plus"
@@ -18,7 +17,6 @@ buildscript {
     }
     dependencies {
         classpath("com.android.tools.build:gradle:8.13.0")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.20")
     }
 }
 

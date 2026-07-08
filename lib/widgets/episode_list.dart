@@ -262,7 +262,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
   }
 
   Widget _buildEpisodeCard(int index, EpisodeData episode) {
-    final stillPath = episode.stillPath;
+    final stillPath = episode.stillPath ?? widget.media.backdropPath ?? widget.media.posterPath;
     final stillUrl = stillPath == null || stillPath.isEmpty
         ? ''
         : stillPath.startsWith('http://') || stillPath.startsWith('https://')
@@ -446,7 +446,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
   }
 
   bool _isUnaired(String? airDate) {
-    if (airDate == null || airDate.isEmpty) return true;
+    if (airDate == null || airDate.isEmpty) return false;
     try {
       final date = DateTime.parse(airDate);
       final today = DateTime(

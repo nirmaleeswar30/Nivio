@@ -45,7 +45,9 @@ class EpisodeCheckService {
     // Run silent check on app launch
     _runAppLaunchCheck();
 
-    appDebugLog('📺 EpisodeCheckService initialized (app launch check enabled)');
+    appDebugLog(
+      '📺 EpisodeCheckService initialized (app launch check enabled)',
+    );
   }
 
   static Future<void> _runAppLaunchCheck() async {
@@ -56,18 +58,22 @@ class EpisodeCheckService {
 
       final frequencyHours = prefs.getInt(_frequencyKey) ?? 24;
       final lastCheckTimestamp = prefs.getInt(_lastCheckKey);
-      
+
       if (lastCheckTimestamp != null) {
-        final lastCheck = DateTime.fromMillisecondsSinceEpoch(lastCheckTimestamp);
+        final lastCheck = DateTime.fromMillisecondsSinceEpoch(
+          lastCheckTimestamp,
+        );
         final nextCheck = lastCheck.add(Duration(hours: frequencyHours));
-        
+
         // If it hasn't been long enough, don't check
         if (DateTime.now().isBefore(nextCheck)) {
-          appDebugLog('⏳ Episode check not needed yet (next check at $nextCheck)');
+          appDebugLog(
+            '⏳ Episode check not needed yet (next check at $nextCheck)',
+          );
           return;
         }
       }
-      
+
       // Give the app some time to fully launch and render UI before stressing the network
       await Future.delayed(const Duration(seconds: 5));
       await _performEpisodeCheck();
@@ -85,7 +91,7 @@ class EpisodeCheckService {
       const initSettings = InitializationSettings(android: androidSettings);
 
       await _notifications.initialize(
-        initSettings,
+        settings: initSettings,
         onDidReceiveNotificationResponse: _onNotificationTap,
       );
 
@@ -414,10 +420,11 @@ class EpisodeCheckService {
     if (episodes.length == 1) {
       final episode = episodes.first;
       await _notifications.show(
-        episode.hashCode,
-        '📺 New Episode Available!',
-        '${episode.showName} S${episode.seasonNumber}E${episode.episodeNumber}: ${episode.episodeName}',
-        details,
+        id: episode.hashCode,
+        title: '📺 New Episode Available!',
+        body:
+            '${episode.showName} S${episode.seasonNumber}E${episode.episodeNumber}: ${episode.episodeName}',
+        notificationDetails: details,
         payload: '${episode.showId}',
       );
     } else {
@@ -431,10 +438,10 @@ class EpisodeCheckService {
           : 'New episodes from ${showNames.take(3).join(", ")}${showNames.length > 3 ? " and more" : ""}';
 
       await _notifications.show(
-        DateTime.now().millisecondsSinceEpoch ~/ 1000,
-        title,
-        body,
-        details,
+        id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        title: title,
+        body: body,
+        notificationDetails: details,
       );
     }
   }

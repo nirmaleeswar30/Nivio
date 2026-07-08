@@ -6,7 +6,8 @@ import 'package:nivio/core/debug_log.dart';
 /// Service for handling Firebase Authentication
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
+  Future<void>? _googleSignInInit;
 
   /// Get current user
   User? get currentUser => _auth.currentUser;
@@ -17,28 +18,33 @@ class AuthService {
   /// Check if user is signed in
   bool get isSignedIn => currentUser != null;
 
+  Future<void> _ensureGoogleSignInInitialized() {
+    return _googleSignInInit ??= _googleSignIn.initialize();
+  }
+
   /// Sign in with Google
   Future<UserCredential?> signInWithGoogle() async {
     try {
       appDebugLog('🔐 Starting Google Sign-In...');
+      await _ensureGoogleSignInInitialized();
 
       // Trigger the authentication flow
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-
-      if (googleUser == null) {
-        appDebugLog('❌ Google Sign-In cancelled by user');
-        return null; // User cancelled the sign-in
-      }
+      final GoogleSignInAccount googleUser = await _googleSignIn.authenticate();
 
       appDebugLog('✅ Google account selected: ${googleUser.email}');
 
       // Obtain the auth details from the request
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth = googleUser.authentication;
+
+      if (googleAuth.idToken == null) {
+        throw FirebaseAuthException(
+          code: 'missing-google-id-token',
+          message: 'Google Sign-In did not return an ID token.',
+        );
+      }
 
       // Create a new credential
       final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
@@ -52,6 +58,13 @@ class AuthService {
       );
 
       return userCredential;
+    } on GoogleSignInException catch (e) {
+      if (e.code == GoogleSignInExceptionCode.canceled) {
+        appDebugLog('❌ Google Sign-In cancelled by user');
+        return null;
+      }
+      appDebugLog('❌ Error signing in with Google: $e');
+      rethrow;
     } catch (e) {
       appDebugLog('❌ Error signing in with Google: $e');
       rethrow;
@@ -75,6 +88,7 @@ class AuthService {
   Future<void> signOut() async {
     try {
       appDebugLog('🚪 Signing out...');
+      await _ensureGoogleSignInInitialized();
       await Future.wait([_auth.signOut(), _googleSignIn.signOut()]);
       appDebugLog('✅ Sign-out successful');
     } catch (e) {

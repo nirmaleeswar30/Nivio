@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:nivio/core/theme.dart';
 
@@ -47,9 +47,13 @@ class ChangelogDialog extends StatelessWidget {
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 color: NivioTheme.accentColorOf(context).withValues(alpha: 0.1),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
                 border: Border(
-                  bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
+                  bottom: BorderSide(
+                    color: Colors.white.withValues(alpha: 0.05),
+                  ),
                 ),
               ),
               child: Column(
@@ -70,7 +74,9 @@ class ChangelogDialog extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    isUpdatePrompt ? 'Version $version is here' : 'Version $version',
+                    isUpdatePrompt
+                        ? 'Version $version is here'
+                        : 'Version $version',
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.6),
                       fontSize: 16,
@@ -79,7 +85,7 @@ class ChangelogDialog extends StatelessWidget {
                 ],
               ),
             ),
-            
+
             // Content
             Flexible(
               child: Markdown(
@@ -87,10 +93,26 @@ class ChangelogDialog extends StatelessWidget {
                 shrinkWrap: true,
                 padding: const EdgeInsets.all(24),
                 styleSheet: MarkdownStyleSheet(
-                  p: const TextStyle(color: Colors.white70, fontSize: 15, height: 1.5),
-                  h1: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-                  h2: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                  h3: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  p: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 15,
+                    height: 1.5,
+                  ),
+                  h1: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  h2: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  h3: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                   listBullet: const TextStyle(color: Colors.white70),
                   code: TextStyle(
                     backgroundColor: Colors.black26,
@@ -103,7 +125,10 @@ class ChangelogDialog extends StatelessWidget {
                   ),
                   blockquoteDecoration: BoxDecoration(
                     border: Border(
-                      left: BorderSide(color: NivioTheme.accentColorOf(context), width: 4),
+                      left: BorderSide(
+                        color: NivioTheme.accentColorOf(context),
+                        width: 4,
+                      ),
                     ),
                   ),
                 ),
@@ -111,7 +136,10 @@ class ChangelogDialog extends StatelessWidget {
                   if (href != null) {
                     final uri = Uri.tryParse(href);
                     if (uri != null && await canLaunchUrl(uri)) {
-                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      await launchUrl(
+                        uri,
+                        mode: LaunchMode.externalApplication,
+                      );
                     }
                   }
                 },
@@ -122,70 +150,83 @@ class ChangelogDialog extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.all(24),
               child: isUpdatePrompt
-                ? Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () {
-                            onDismiss();
-                            Navigator.of(context).pop();
-                          },
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                  ? Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {
+                              onDismiss();
+                              Navigator.of(context).pop();
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: BorderSide(
+                                color: Colors.white.withValues(alpha: 0.2),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: const Text(
+                              'Later',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                          child: const Text(
-                            'Later',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: () {
-                            if (onInstall != null) onInstall!();
-                            onDismiss();
-                            Navigator.of(context).pop();
-                          },
-                          style: FilledButton.styleFrom(
-                            backgroundColor: NivioTheme.accentColorOf(context),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () {
+                              if (onInstall != null) onInstall!();
+                              onDismiss();
+                              Navigator.of(context).pop();
+                            },
+                            style: FilledButton.styleFrom(
+                              backgroundColor: NivioTheme.accentColorOf(
+                                context,
+                              ),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: const Text(
+                              'Install',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                          child: const Text(
-                            'Install',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
+                        ),
+                      ],
+                    )
+                  : FilledButton(
+                      onPressed: () {
+                        onDismiss();
+                        Navigator.of(context).pop();
+                      },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: NivioTheme.accentColorOf(context),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                    ],
-                  )
-                : FilledButton(
-                    onPressed: () {
-                      onDismiss();
-                      Navigator.of(context).pop();
-                    },
-                    style: FilledButton.styleFrom(
-                      backgroundColor: NivioTheme.accentColorOf(context),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                      child: const Text(
+                        'Awesome!',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                    child: const Text(
-                      'Awesome!',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                  ),
             ),
           ],
         ),

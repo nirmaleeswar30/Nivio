@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -167,7 +168,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     try {
       final tmdbService = ref.read(tmdbServiceProvider);
       final anilistService = ref.read(aniListServiceProvider);
-      
+
       SearchResult? mediaDetails;
       _TrailerSource? trailerSource;
       List<dynamic> castData = [];
@@ -175,10 +176,13 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       Map<String, dynamic>? detailsWithVideos;
 
       if (widget.mediaType == 'anime') {
-        final extras = await anilistService.getAnimeDetailsWithExtras(widget.mediaId);
+        final extras = await anilistService.getAnimeDetailsWithExtras(
+          widget.mediaId,
+        );
         mediaDetails = anilistService.mapToSearchResult(extras);
 
-        if (extras['trailer'] != null && extras['trailer']['site'] == 'youtube') {
+        if (extras['trailer'] != null &&
+            extras['trailer']['site'] == 'youtube') {
           trailerSource = _TrailerSource(
             site: 'YouTube',
             key: extras['trailer']['id'],
@@ -188,16 +192,28 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           trailerSource = null;
         }
 
-        final characters = extras['characters']?['edges'] as List<dynamic>? ?? [];
+        final characters =
+            extras['characters']?['edges'] as List<dynamic>? ?? [];
         castData = characters.map((char) {
           final node = char['node'] is Map ? char['node'] : {};
-          final voiceActors = char['voiceActors'] is List ? char['voiceActors'] as List : [];
-          final voiceActor = voiceActors.isNotEmpty && voiceActors.first is Map ? voiceActors.first : null;
-          
+          final voiceActors = char['voiceActors'] is List
+              ? char['voiceActors'] as List
+              : [];
+          final voiceActor = voiceActors.isNotEmpty && voiceActors.first is Map
+              ? voiceActors.first
+              : null;
+
           final nodeName = node['name'] is Map ? node['name']['full'] : null;
-          final voiceActorName = voiceActor != null && voiceActor['name'] is Map ? voiceActor['name']['full'] : null;
-          final nodeImage = node['image'] is Map ? node['image']['large'] : null;
-          final voiceActorImage = voiceActor != null && voiceActor['image'] is Map ? voiceActor['image']['large'] : null;
+          final voiceActorName = voiceActor != null && voiceActor['name'] is Map
+              ? voiceActor['name']['full']
+              : null;
+          final nodeImage = node['image'] is Map
+              ? node['image']['large']
+              : null;
+          final voiceActorImage =
+              voiceActor != null && voiceActor['image'] is Map
+              ? voiceActor['image']['large']
+              : null;
 
           return {
             'id': node['id'] ?? 0,
@@ -220,44 +236,43 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                 widget.mediaId,
               );
               detailsWithVideos['media_type'] = 'movie';
-          } else if (widget.mediaType == 'tv') {
-            detailsWithVideos = await tmdbService.getTVShowDetailsWithVideos(
-              widget.mediaId,
-            );
-            detailsWithVideos['media_type'] = 'tv';
-          } else {
-            try {
-              detailsWithVideos = await tmdbService.getMovieDetailsWithVideos(
-                widget.mediaId,
-              );
-              detailsWithVideos['media_type'] = 'movie';
-            } catch (_) {
+            } else if (widget.mediaType == 'tv') {
               detailsWithVideos = await tmdbService.getTVShowDetailsWithVideos(
                 widget.mediaId,
               );
               detailsWithVideos['media_type'] = 'tv';
+            } else {
+              try {
+                detailsWithVideos = await tmdbService.getMovieDetailsWithVideos(
+                  widget.mediaId,
+                );
+                detailsWithVideos['media_type'] = 'movie';
+              } catch (_) {
+                detailsWithVideos = await tmdbService
+                    .getTVShowDetailsWithVideos(widget.mediaId);
+                detailsWithVideos['media_type'] = 'tv';
+              }
             }
+            break;
+          } catch (e) {
+            if (attempt == retries - 1) rethrow;
+            await Future.delayed(delay);
+            delay *= 2;
           }
-          break;
-        } catch (e) {
-          if (attempt == retries - 1) rethrow;
-          await Future.delayed(delay);
-          delay *= 2;
         }
       }
 
-      }
-      
       if (widget.mediaType != 'anime') {
         mediaDetails = SearchResult.fromJson(detailsWithVideos!);
         trailerSource = _extractTrailerSource(detailsWithVideos['videos']);
-        castData = detailsWithVideos['credits']?['cast'] as List<dynamic>? ?? [];
+        castData =
+            detailsWithVideos['credits']?['cast'] as List<dynamic>? ?? [];
         genres = (detailsWithVideos['genres'] as List<dynamic>? ?? [])
             .map((genre) => (genre as Map<String, dynamic>)['name'] as String?)
             .whereType<String>()
             .toList();
       }
-      
+
       ref.read(selectedMediaProvider.notifier).state = mediaDetails;
 
       setState(() {
@@ -603,7 +618,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                           ? 'Play'
                                           : 'Play all episodes',
                                       onTap: () {
-                                        final season = (media.mediaType == 'tv' || media.mediaType == 'anime')
+                                        final season =
+                                            (media.mediaType == 'tv' ||
+                                                media.mediaType == 'anime')
                                             ? ref.read(selectedSeasonProvider)
                                             : 1;
                                         context.push(
@@ -636,17 +653,49 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                   ),
                                   const SizedBox(width: 6),
                                   ValueListenableBuilder<Box<DownloadItem>>(
-                                    valueListenable: DownloadService.box.listenable(),
+                                    valueListenable: DownloadService.box
+                                        .listenable(),
                                     builder: (context, box, _) {
-                                      final downloads = box.values.where((item) => item.mediaId == media.id).toList();
-                                      final isDownloading = downloads.any((item) => item.status == DownloadStatus.downloading || item.status == DownloadStatus.pending || item.status == DownloadStatus.extracting);
-                                      final allCompleted = downloads.isNotEmpty && downloads.every((item) => item.status == DownloadStatus.completed);
-                                      
+                                      final downloads = box.values
+                                          .where(
+                                            (item) => item.mediaId == media.id,
+                                          )
+                                          .toList();
+                                      final isDownloading = downloads.any(
+                                        (item) =>
+                                            item.status ==
+                                                DownloadStatus.downloading ||
+                                            item.status ==
+                                                DownloadStatus.pending ||
+                                            item.status ==
+                                                DownloadStatus.extracting,
+                                      );
+                                      final allCompleted =
+                                          downloads.isNotEmpty &&
+                                          downloads.every(
+                                            (item) =>
+                                                item.status ==
+                                                DownloadStatus.completed,
+                                          );
+
                                       if (isDownloading) {
-                                        final downloadingItems = downloads.where((item) => item.status == DownloadStatus.downloading || item.status == DownloadStatus.extracting).toList();
+                                        final downloadingItems = downloads
+                                            .where(
+                                              (item) =>
+                                                  item.status ==
+                                                      DownloadStatus
+                                                          .downloading ||
+                                                  item.status ==
+                                                      DownloadStatus.extracting,
+                                            )
+                                            .toList();
                                         double progress = 0;
                                         if (downloadingItems.isNotEmpty) {
-                                          progress = downloadingItems.map((e) => e.progress).reduce((a, b) => a + b) / downloadingItems.length;
+                                          progress =
+                                              downloadingItems
+                                                  .map((e) => e.progress)
+                                                  .reduce((a, b) => a + b) /
+                                              downloadingItems.length;
                                         }
                                         return SizedBox(
                                           width: 40,
@@ -654,18 +703,33 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                           child: Padding(
                                             padding: const EdgeInsets.all(8.0),
                                             child: CircularProgressIndicator(
-                                              value: progress > 0 ? progress : null,
+                                              value: progress > 0
+                                                  ? progress
+                                                  : null,
                                               strokeWidth: 3,
-                                              valueColor: AlwaysStoppedAnimation<Color>(NivioTheme.accentColorOf(context)),
+                                              valueColor:
+                                                  AlwaysStoppedAnimation<Color>(
+                                                    NivioTheme.accentColorOf(
+                                                      context,
+                                                    ),
+                                                  ),
                                             ),
                                           ),
                                         );
                                       }
-                                      
+
                                       return _plainIconButton(
                                         icon: Icon(
-                                          allCompleted ? Icons.download_done_rounded : (media.mediaType == 'movie' ? Icons.download_rounded : Icons.file_download),
-                                          color: allCompleted ? NivioTheme.accentColorOf(context) : NivioTheme.netflixWhite,
+                                          allCompleted
+                                              ? Icons.download_done_rounded
+                                              : (media.mediaType == 'movie'
+                                                    ? Icons.download_rounded
+                                                    : Icons.file_download),
+                                          color: allCompleted
+                                              ? NivioTheme.accentColorOf(
+                                                  context,
+                                                )
+                                              : NivioTheme.netflixWhite,
                                           size: 24,
                                         ),
                                         iconColor: NivioTheme.netflixWhite,
@@ -687,11 +751,13 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                               ),
                               const SizedBox(height: 12),
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   if (_trailerSource != null)
                                     TextButton.icon(
-                                      onPressed: () => _showTrailerPlayer(context),
+                                      onPressed: () =>
+                                          _showTrailerPlayer(context),
                                       icon: Icon(
                                         Icons.play_circle_outline,
                                         size: 17,
@@ -706,8 +772,12 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                     const SizedBox.shrink(),
                                   TextButton.icon(
                                     onPressed: () {
-                                      final title = Uri.encodeComponent(media.title ?? media.name ?? '');
-                                      context.push('/similar/${media.id}?type=${media.mediaType}&title=$title');
+                                      final title = Uri.encodeComponent(
+                                        media.title ?? media.name ?? '',
+                                      );
+                                      context.push(
+                                        '/similar/${media.id}?type=${media.mediaType}&title=$title',
+                                      );
                                     },
                                     icon: PhosphorIcon(
                                       PhosphorIconsRegular.magicWand,
@@ -739,7 +809,8 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                               ),
                               if (_cast.isNotEmpty) _buildCastRow(),
                               const SizedBox(height: 26),
-                              if (media.mediaType == 'tv' || media.mediaType == 'anime')
+                              if (media.mediaType == 'tv' ||
+                                  media.mediaType == 'anime')
                                 _buildTVControls(context, media, colors),
                             ],
                           ),
@@ -899,9 +970,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         Text(
           'Cast',
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: NivioTheme.netflixWhite,
-                fontWeight: FontWeight.w700,
-              ),
+            color: NivioTheme.netflixWhite,
+            fontWeight: FontWeight.w700,
+          ),
         ),
         const SizedBox(height: 12),
         SizedBox(
@@ -930,12 +1001,18 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                           color: NivioTheme.netflixDarkGrey,
                           child: profilePath != null
                               ? CachedNetworkImage(
-                                  imageUrl: (actor['is_anilist'] == true || profilePath.startsWith('http'))
+                                  imageUrl:
+                                      (actor['is_anilist'] == true ||
+                                          profilePath.startsWith('http'))
                                       ? profilePath
                                       : tmdbService.getPosterUrl(profilePath),
                                   fit: BoxFit.cover,
                                 )
-                              : const Icon(Icons.person, color: Colors.white54, size: 40),
+                              : const Icon(
+                                  Icons.person,
+                                  color: Colors.white54,
+                                  size: 40,
+                                ),
                         ),
                       ),
                     ),
@@ -999,7 +1076,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-        content: Text('Added to watchlist'),
+          content: Text('Added to watchlist'),
           duration: Duration(seconds: 2),
         ),
       );
@@ -1008,37 +1085,42 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 
   void _shareMedia(SearchResult media) {
     final title = media.title ?? media.name ?? 'this title';
-    
+
     // Create the deep link URL
     final mediaType = media.mediaType;
     final deepLink = 'nivio://open/media/${media.id}?type=$mediaType';
-    
+
     // Encode the deep link into Base64
     final bytes = utf8.encode(deepLink);
     final base64DeepLink = base64.encode(bytes);
-    
+
     // Build the redirect URL using our hosted HTML file
-    final baseUrl = dotenv.env['SHARE_REDIRECT_URL'] ?? 'https://nirmaleeswar30.github.io/Nivio/redirect.html';
+    final baseUrl =
+        dotenv.env['SHARE_REDIRECT_URL'] ??
+        'https://nirmaleeswar30.github.io/Nivio/redirect.html';
     final redirectUrl = '$baseUrl?url=$base64DeepLink';
-    
-    final overview = media.overview != null && media.overview!.isNotEmpty 
-        ? '\n\n${media.overview}' 
+
+    final overview = media.overview != null && media.overview!.isNotEmpty
+        ? '\n\n${media.overview}'
         : '';
-    final shareText = 'Check out "$title"!$overview\n\nWatch here: $redirectUrl';
+    final shareText =
+        'Check out "$title"!$overview\n\nWatch here: $redirectUrl';
     Share.share(shareText, subject: title);
   }
 
   Future<void> _handleDownload(SearchResult media) async {
     final streamingService = ref.read(streamingServiceProvider);
     final isAnime = StreamingService.isAnimeMedia(media);
-    
+
     if (isAnime) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Preparing servers...')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Preparing servers...')));
       }
-      final subDubPref = ref.read(languagePreferencesProvider).animePreferredAudio;
+      final subDubPref = ref
+          .read(languagePreferencesProvider)
+          .animePreferredAudio;
       await streamingService.prepareProviders(
         media: media,
         season: 1,
@@ -1046,14 +1128,16 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         subDubPreference: subDubPref,
       );
     }
-    
+
     // Auto-select provider for downloads
-    final providerIndex = 0; 
-    
+    final providerIndex = 0;
+
     if (!streamingService.isDownloadable(providerIndex, isAnime: isAnime)) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selected provider does not support downloading.')),
+        const SnackBar(
+          content: Text('Selected provider does not support downloading.'),
+        ),
       );
       return;
     }
@@ -1062,12 +1146,12 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Preparing movie download...')),
       );
-      
+
       final result = await streamingService.fetchStreamUrl(
         media: media,
         providerIndex: providerIndex,
       );
-      
+
       if (result != null && result.url.isNotEmpty) {
         await DownloadPrompt.showAndQueue(
           context: context,
@@ -1083,7 +1167,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to find downloadable stream.')),
+            const SnackBar(
+              content: Text('Failed to find downloadable stream.'),
+            ),
           );
         }
       }
@@ -1099,8 +1185,14 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       builder: (context) {
         return AlertDialog(
           backgroundColor: NivioTheme.netflixDarkGrey,
-          title: const Text('Download Episodes', style: TextStyle(color: Colors.white)),
-          content: const Text('Do you want to download all episodes in this season, or all seasons?', style: TextStyle(color: Colors.white70)),
+          title: const Text(
+            'Download Episodes',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: const Text(
+            'Do you want to download all episodes in this season, or all seasons?',
+            style: TextStyle(color: Colors.white70),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
@@ -1109,7 +1201,11 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
             TextButton(
               onPressed: () {
                 Navigator.pop(context);
-                _startBatchDownload(media, providerIndex, singleSeason: ref.read(selectedSeasonProvider));
+                _startBatchDownload(
+                  media,
+                  providerIndex,
+                  singleSeason: ref.read(selectedSeasonProvider),
+                );
               },
               child: const Text('This Season'),
             ),
@@ -1122,23 +1218,29 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
             ),
           ],
         );
-      }
+      },
     );
   }
 
   /// Probes the first episode to discover available languages, shows the language picker,
   /// then queues all episodes with the selected languages.
-  Future<void> _startBatchDownload(SearchResult media, int providerIndex, {int? singleSeason}) async {
+  Future<void> _startBatchDownload(
+    SearchResult media,
+    int providerIndex, {
+    int? singleSeason,
+  }) async {
     final isAnime = StreamingService.isAnimeMedia(media);
     final streamingService = ref.read(streamingServiceProvider);
-    
+
     if (isAnime) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Preparing servers...')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Preparing servers...')));
       }
-      final subDubPref = ref.read(languagePreferencesProvider).animePreferredAudio;
+      final subDubPref = ref
+          .read(languagePreferencesProvider)
+          .animePreferredAudio;
       await streamingService.prepareProviders(
         media: media,
         season: singleSeason ?? 1,
@@ -1149,7 +1251,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Probing first episode for language options...')),
+      const SnackBar(
+        content: Text('Probing first episode for language options...'),
+      ),
     );
 
     // Probe the first episode to discover available audio/subtitle tracks
@@ -1158,10 +1262,21 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     if (seriesInfo == null) return;
 
     // Find the first valid episode to probe
-    int probeSeason = singleSeason ?? seriesInfo.seasons.firstWhere((s) => s.seasonNumber > 0, orElse: () => seriesInfo.seasons.first).seasonNumber;
-    final probeSeasonData = await ref.read(seasonDataProvider((showId: media.id, seasonNumber: probeSeason)).future);
+    int probeSeason =
+        singleSeason ??
+        seriesInfo.seasons
+            .firstWhere(
+              (s) => s.seasonNumber > 0,
+              orElse: () => seriesInfo.seasons.first,
+            )
+            .seasonNumber;
+    final probeSeasonData = await ref.read(
+      seasonDataProvider((showId: media.id, seasonNumber: probeSeason)).future,
+    );
     final probeEpisode = probeSeasonData.episodes.firstWhere(
-      (ep) => ep.airDate != null && DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) == true,
+      (ep) =>
+          ep.airDate != null &&
+          DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) == true,
       orElse: () => probeSeasonData.episodes.first,
     );
 
@@ -1175,7 +1290,11 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     if (probeResult == null || probeResult.url.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to probe first episode. Cannot determine languages.')),
+          const SnackBar(
+            content: Text(
+              'Failed to probe first episode. Cannot determine languages.',
+            ),
+          ),
         );
       }
       return;
@@ -1192,113 +1311,215 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       season: singleSeason ?? 1,
       episode: 1,
       providerIndex: providerIndex,
-      isAnime: media.originalLanguage == 'ja',
+      isAnime: media.mediaType == 'anime',
     );
 
     if (langChoice == null) return; // User cancelled
 
     final preferredQuality = langChoice.selectedSource?.quality;
-    String? subDubPreference = langChoice.selectedSource != null ? (langChoice.selectedSource!.isDub ? 'dub' : 'sub') : null;
+    String? subDubPreference = langChoice.selectedSource != null
+        ? (langChoice.selectedSource!.isDub ? 'dub' : 'sub')
+        : null;
     if (subDubPreference == null && langChoice.audioLang != null) {
-      subDubPreference = langChoice.audioLang!.toLowerCase().contains('dub') ? 'dub' : 'sub';
+      subDubPreference = langChoice.audioLang!.toLowerCase().contains('dub')
+          ? 'dub'
+          : 'sub';
     }
 
     final usedProviderIndex = langChoice.finalProviderIndex ?? providerIndex;
 
     // Now queue the actual downloads
     if (singleSeason != null) {
-      _downloadSeason(media, usedProviderIndex, singleSeason, langChoice.audioLang, langChoice.subtitleLang, preferredQuality: preferredQuality, subDubPreference: subDubPreference);
+      _downloadSeason(
+        media,
+        usedProviderIndex,
+        singleSeason,
+        langChoice.audioLang,
+        langChoice.subtitleLang,
+        preferredQuality: preferredQuality,
+        subDubPreference: subDubPreference,
+      );
     } else {
-      _downloadAllSeasons(media, usedProviderIndex, langChoice.audioLang, langChoice.subtitleLang, preferredQuality: preferredQuality, subDubPreference: subDubPreference);
+      _downloadAllSeasons(
+        media,
+        usedProviderIndex,
+        langChoice.audioLang,
+        langChoice.subtitleLang,
+        preferredQuality: preferredQuality,
+        subDubPreference: subDubPreference,
+      );
     }
   }
 
-  Future<void> _downloadSeason(SearchResult media, int providerIndex, int season, String? audioLang, String? subtitleLang, {String? preferredQuality, String? subDubPreference}) async {
+  Future<void> _downloadSeason(
+    SearchResult media,
+    int providerIndex,
+    int season,
+    String? audioLang,
+    String? subtitleLang, {
+    String? preferredQuality,
+    String? subDubPreference,
+  }) async {
     final streamingService = ref.read(streamingServiceProvider);
     final seriesInfoAsync = ref.read(seriesInfoProvider(media.id));
     seriesInfoAsync.whenData((seriesInfo) async {
-       final seasonData = await ref.read(seasonDataProvider((showId: media.id, seasonNumber: season)).future);
-       
-       final validEpisodes = seasonData.episodes.where((ep) => ep.airDate != null && DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) == true).toList();
-       if (validEpisodes.isEmpty) return;
+      final seasonData = await ref.read(
+        seasonDataProvider((showId: media.id, seasonNumber: season)).future,
+      );
 
-       if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Preparing ${validEpisodes.length} episodes for download...')),
+      final validEpisodes = seasonData.episodes
+          .where(
+            (ep) =>
+                ep.airDate != null &&
+                DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) ==
+                    true,
+          )
+          .toList();
+      if (validEpisodes.isEmpty) return;
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Preparing ${validEpisodes.length} episodes for download...',
+            ),
+          ),
+        );
+      }
+
+      int count = 0;
+      for (final ep in validEpisodes) {
+        await _downloadEpisode(
+          streamingService,
+          media,
+          season,
+          ep.episodeNumber,
+          ep.episodeName ?? 'Episode',
+          ep.stillPath,
+          providerIndex,
+          audioLang,
+          subtitleLang,
+          preferredQuality: preferredQuality,
+          subDubPreference: subDubPreference,
+        );
+        count++;
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Queued $count episodes for download!')),
+        );
+      }
+    });
+  }
+
+  Future<void> _downloadAllSeasons(
+    SearchResult media,
+    int providerIndex,
+    String? audioLang,
+    String? subtitleLang, {
+    String? preferredQuality,
+    String? subDubPreference,
+  }) async {
+    final streamingService = ref.read(streamingServiceProvider);
+    final seriesInfoAsync = ref.read(seriesInfoProvider(media.id));
+    seriesInfoAsync.whenData((seriesInfo) async {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Preparing all seasons for download. This may take a while...',
+            ),
+          ),
+        );
+      }
+
+      int count = 0;
+      for (final s in seriesInfo.seasons) {
+        if (s.seasonNumber == 0) continue;
+        final seasonData = await ref.read(
+          seasonDataProvider((
+            showId: media.id,
+            seasonNumber: s.seasonNumber,
+          )).future,
+        );
+
+        final validEpisodes = seasonData.episodes
+            .where(
+              (ep) =>
+                  ep.airDate != null &&
+                  DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) ==
+                      true,
+            )
+            .toList();
+
+        for (final ep in validEpisodes) {
+          await _downloadEpisode(
+            streamingService,
+            media,
+            s.seasonNumber,
+            ep.episodeNumber,
+            ep.episodeName ?? 'Episode',
+            ep.stillPath,
+            providerIndex,
+            audioLang,
+            subtitleLang,
+            preferredQuality: preferredQuality,
+            subDubPreference: subDubPreference,
           );
-       }
-
-       int count = 0;
-       for (final ep in validEpisodes) {
-          await _downloadEpisode(streamingService, media, season, ep.episodeNumber, ep.episodeName ?? 'Episode', ep.stillPath, providerIndex, audioLang, subtitleLang, preferredQuality: preferredQuality, subDubPreference: subDubPreference);
           count++;
-       }
-       if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Queued $count episodes for download!')),
-          );
-       }
+        }
+      }
+      if (mounted && count > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Queued $count episodes for download!')),
+        );
+      }
     });
   }
 
-  Future<void> _downloadAllSeasons(SearchResult media, int providerIndex, String? audioLang, String? subtitleLang, {String? preferredQuality, String? subDubPreference}) async {
-    final streamingService = ref.read(streamingServiceProvider);
-    final seriesInfoAsync = ref.read(seriesInfoProvider(media.id));
-    seriesInfoAsync.whenData((seriesInfo) async {
-       if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Preparing all seasons for download. This may take a while...')),
-          );
-       }
-
-       int count = 0;
-       for (final s in seriesInfo.seasons) {
-          if (s.seasonNumber == 0) continue;
-          final seasonData = await ref.read(seasonDataProvider((showId: media.id, seasonNumber: s.seasonNumber)).future);
-          
-          final validEpisodes = seasonData.episodes.where((ep) => ep.airDate != null && DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) == true).toList();
-          
-          for (final ep in validEpisodes) {
-             await _downloadEpisode(streamingService, media, s.seasonNumber, ep.episodeNumber, ep.episodeName ?? 'Episode', ep.stillPath, providerIndex, audioLang, subtitleLang, preferredQuality: preferredQuality, subDubPreference: subDubPreference);
-             count++;
-          }
-       }
-       if (mounted && count > 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Queued $count episodes for download!')),
-          );
-       }
-    });
-  }
-
-  Future<void> _downloadEpisode(StreamingService streamingService, SearchResult media, int season, int episode, String episodeName, String? stillPath, int initialProviderIndex, String? audioLang, String? subtitleLang, {String? preferredQuality, String? subDubPreference}) async {
+  Future<void> _downloadEpisode(
+    StreamingService streamingService,
+    SearchResult media,
+    int season,
+    int episode,
+    String episodeName,
+    String? stillPath,
+    int initialProviderIndex,
+    String? audioLang,
+    String? subtitleLang, {
+    String? preferredQuality,
+    String? subDubPreference,
+  }) async {
     final isAnime = StreamingService.isAnimeMedia(media);
     final maxProviders = streamingService.totalProvidersFor(isAnime: isAnime);
-    
+
     StreamResult? result;
-    // For Season/All Seasons download, we start at the passed initialProviderIndex and loop from there to try and find a working provider. 
+    // For Season/All Seasons download, we start at the passed initialProviderIndex and loop from there to try and find a working provider.
     // Wait, let's just loop from 0 to maxProviders because the user's preferred provider is at index 0.
     for (int providerIndex = 0; providerIndex < maxProviders; providerIndex++) {
-       if (!streamingService.isDownloadable(providerIndex, isAnime: isAnime)) continue;
+      if (!streamingService.isDownloadable(providerIndex, isAnime: isAnime))
+        continue;
 
-       try {
-         result = await streamingService.fetchStreamUrl(
-           media: media,
-           season: season,
-           episode: episode,
-           providerIndex: providerIndex,
-           preferredQuality: preferredQuality,
-           subDubPreference: subDubPreference ?? 'sub',
-         );
-       } catch (e) {
-         debugPrint('Download probe failed for episode $episode on provider $providerIndex: $e');
-       }
+      try {
+        result = await streamingService.fetchStreamUrl(
+          media: media,
+          season: season,
+          episode: episode,
+          providerIndex: providerIndex,
+          preferredQuality: preferredQuality,
+          subDubPreference: subDubPreference ?? 'sub',
+        );
+      } catch (e) {
+        debugPrint(
+          'Download probe failed for episode $episode on provider $providerIndex: $e',
+        );
+      }
 
-       if (result != null && result.url.isNotEmpty) {
-         break;
-       }
+      if (result != null && result.url.isNotEmpty) {
+        break;
+      }
     }
-    
+
     if (result != null && result.url.isNotEmpty) {
       await DownloadService.queueDownload(
         mediaId: media.id,
@@ -1313,7 +1534,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         selectedSubtitleLanguage: subtitleLang,
       );
     } else {
-      debugPrint('Failed to queue download for episode $episode: No working provider found.');
+      debugPrint(
+        'Failed to queue download for episode $episode: No working provider found.',
+      );
     }
   }
 
@@ -1492,6 +1715,7 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
   bool _hasError = false;
   String? _errorMessage;
   YoutubePlayerController? _youtubeController;
+  StreamSubscription<YoutubePlayerValue>? _youtubeSubscription;
   String _selectedYoutubeQuality = 'auto';
 
   @override
@@ -1518,25 +1742,25 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
     try {
       final videoId = widget.source.key;
 
-      _youtubeController = YoutubePlayerController(
-        initialVideoId: videoId,
-        flags: const YoutubePlayerFlags(
-          autoPlay: true,
+      final controller = YoutubePlayerController.fromVideoId(
+        videoId: videoId,
+        autoPlay: true,
+        params: const YoutubePlayerParams(
           mute: false,
           enableCaption: false,
-          hideControls: false,
-          forceHD: false,
-          useHybridComposition: true,
+          showControls: true,
+          color: 'red',
         ),
       );
+      _youtubeController = controller;
 
-      _youtubeController!.addListener(() {
+      _youtubeSubscription = controller.stream.listen((value) {
         if (!mounted) return;
-        if (_youtubeController!.value.isReady && _isLoading) {
+        if (value.playerState != PlayerState.unknown && _isLoading) {
           setState(() => _isLoading = false);
-          _applyYoutubeQuality(_selectedYoutubeQuality);
+          unawaited(_applyYoutubeQuality(_selectedYoutubeQuality));
         }
-        if (_youtubeController!.value.hasError && !_hasError) {
+        if (value.hasError && !_hasError) {
           setState(() {
             _hasError = true;
             _errorMessage = 'Failed to load YouTube video';
@@ -1557,7 +1781,11 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
 
   @override
   void dispose() {
-    _youtubeController?.dispose();
+    _youtubeSubscription?.cancel();
+    final youtubeController = _youtubeController;
+    if (youtubeController != null) {
+      unawaited(youtubeController.close());
+    }
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -1586,14 +1814,13 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
     if (widget.source.site.toLowerCase() != 'youtube') return;
 
     final controller = _youtubeController;
-    if (controller == null || !controller.value.isReady) return;
-    final web = controller.value.webViewController;
-    if (web == null) return;
+    if (controller == null ||
+        controller.value.playerState == PlayerState.unknown) {
+      return;
+    }
 
     final target = quality == 'auto' ? 'default' : quality;
-    await web.evaluateJavascript(
-      source:
-          '''
+    await controller.webViewController.runJavaScript('''
       (function() {
         try {
           if (typeof player === 'undefined' || !player) return;
@@ -1605,8 +1832,7 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
           }
         } catch (_) {}
       })();
-      ''',
-    );
+      ''');
   }
 
   Future<void> _showTrailerQualityDialog() async {
@@ -1676,17 +1902,9 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
     if (_youtubeController == null) {
       return const SizedBox.shrink();
     }
-    return YoutubePlayerBuilder(
-      player: YoutubePlayer(
-        controller: _youtubeController!,
-        showVideoProgressIndicator: true,
-        progressIndicatorColor: Colors.red,
-        progressColors: const ProgressBarColors(
-          playedColor: Colors.red,
-          handleColor: Colors.redAccent,
-        ),
-      ),
-      builder: (context, player) => player,
+    return YoutubePlayer(
+      controller: _youtubeController!,
+      backgroundColor: Colors.black,
     );
   }
 

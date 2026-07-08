@@ -21,7 +21,7 @@ final seriesInfoProvider = FutureProvider.family<SeriesInfo, int>((
   showId,
 ) async {
   final selectedMedia = ref.watch(selectedMediaProvider);
-  final isAnime = selectedMedia?.mediaType == 'anime' || (selectedMedia?.mediaType == 'tv' && selectedMedia?.originalLanguage == 'ja');
+  final isAnime = selectedMedia?.mediaType == 'anime';
 
   if (isAnime) {
     final anilist = ref.watch(aniListServiceProvider);
@@ -48,7 +48,7 @@ final seasonDataProvider =
       params,
     ) async {
       final selectedMedia = ref.watch(selectedMediaProvider);
-      final isAnime = selectedMedia?.mediaType == 'anime' || (selectedMedia?.mediaType == 'tv' && selectedMedia?.originalLanguage == 'ja');
+      final isAnime = selectedMedia?.mediaType == 'anime';
 
       if (isAnime) {
         final anilist = ref.watch(aniListServiceProvider);

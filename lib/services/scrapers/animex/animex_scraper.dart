@@ -180,7 +180,6 @@ class AnimexScraperService {
         }
       }
       bestStream ??= sourcesList.firstWhere((s) {
-        final url = s['url']?.toString() ?? '';
         return s['url'] != null;
       }, orElse: () => null);
       

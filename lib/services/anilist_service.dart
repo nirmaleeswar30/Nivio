@@ -456,7 +456,7 @@ class AniListService {
       }
       List<EpisodeData> episodes = [];
       for (int i = 1; i <= totalEpisodes; i++) {
-        episodes.add(EpisodeData(episodeNumber: i, episodeName: 'Episode \$i', airDate: '2020-01-01'));
+        episodes.add(EpisodeData(episodeNumber: i, episodeName: 'Episode $i', airDate: null));
       }
       return SeasonData(episodes: episodes);
     } catch (e) {

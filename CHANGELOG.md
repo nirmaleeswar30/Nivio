@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## Nivio-v2.2.1
+
+### 🚀 New Features & Providers
+*   **Brand New Anime Scrapers:** Added powerful new streaming sources for anime, specifically `Animetsu`, `Animex`, and `Miruro`.
+*   **Miruro Bypass Service:** Implemented a brand new, dedicated Cloudflare bypass service specifically tailored to handle Miruro streams.
+*   **NetMirror Migration:** Successfully ported and upgraded from the old `net11` servers to the brand new `Nivio` (`net27`) servers for improved streaming stability and speed.
+
+### 🗑️ Deprecations & Removals
+*   **Killed AnimePahe:** Completely wiped out the `AnimePahe` scraper, including its complex Cloudflare bypass widgets and `kwik_extractor_service.dart`.
+*   **Removed Kwik Player:** The legacy `kwik_native_player.dart` has been entirely removed from the project as part of the move away from Animepahe.
+*   **NewTV Cleanup:** Stripped down `newtv_scraper.dart`, removing over 700 lines of bloated or legacy scraping logic.
+*   **Media Kit:** Removed `media_kit`, `media_kit_video`, and `media_kit_libs_video` from the dependencies.
+
+### 📦 Massive Dependency Upgrades
+*   **Version Bump:** App version upgraded from `2.2.0` to `2.2.1`.
+*   **Firebase Overhaul:** Major version bumps for `firebase_core` (v3 to v4), `firebase_auth` (v5 to v6), and `cloud_firestore` (v5 to v6).
+*   **Navigation & UI:** Upgraded `go_router` drastically (from v14 to v17.3.0) and swapped out `flutter_markdown` for the actively maintained `flutter_markdown_plus`.
+*   **Core Packages:** Major updates to `youtube_player_flutter`, `flutter_local_notifications` (v18 to v22), `package_info_plus`, and `connectivity_plus`.
+
+### 🐛 Bug Fixes & Logic Improvements
+*   **Strict Anime Classification:** Fixed global bugs where the app mistakenly treated standard Japanese live-action TV shows as anime. The app now strictly relies on the explicit `mediaType == 'anime'` flag from AniList.
+*   **Crunchyroll Provider Page Fix:** Solved the "Empty Crunchyroll page" issue by bypassing TMDB anime filters specifically for Provider pages. Japanese shows launched from TMDB provider pages will now seamlessly play using the robust standard TV scrapers.
+*   **Build Fixes:** Bumped `coreLibraryDesugaring` in Gradle to `2.1.4` to fix strict dependency requirements introduced by the new `flutter_local_notifications` package.
+
+### 🏗️ Major Core Refactors
+*   **Player Screen:** Saw an immense 750+ line refactor primarily to strip out the old Kwik logic, adapt to the new stream result models, and fix provider selection logic.
+*   **Download Engine:** Over 1,000 lines changed across the download service and prompt to stabilize downloads and ensure compatibility with the newly added anime scrapers.
+*   **UI Overhauls:** Both `media_detail_screen.dart` and `watchlist_screen.dart` received 400-600+ lines of refactoring to support the new data flows and clean up the UI layer.
+
 ## Nivio-v2.2.0
 
 ### ✨ New Features & Enhancements

@@ -31,7 +31,7 @@ class DownloadPrompt {
       season: season,
       episode: episode,
       providerIndex: providerIndex,
-      isAnime: mediaType == 'anime' || (media != null && media.originalLanguage == 'ja'),
+      isAnime: mediaType == 'anime',
     );
     if (selection == null) return;
     

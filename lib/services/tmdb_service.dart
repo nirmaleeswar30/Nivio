@@ -135,10 +135,11 @@ class TmdbService {
     return parsed;
   }
 
-  List<dynamic> _filterAndMapResults(List<dynamic>? results, {String? defaultMediaType}) {
+  List<dynamic> _filterAndMapResults(List<dynamic>? results, {String? defaultMediaType, bool bypassAnimeFilter = false}) {
     if (results == null) return [];
     return results.where((item) {
       if (item is! Map) return false;
+      if (bypassAnimeFilter) return true;
       final type = item['media_type'] ?? defaultMediaType;
       if (type == 'tv') {
         final isJa = item['original_language'] == 'ja' || (item['origin_country'] is List && item['origin_country'].contains('JP'));
@@ -457,7 +458,7 @@ class TmdbService {
         },
       );
       if (response.statusCode == 200) {
-        return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: 'tv');
+        return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: 'tv', bypassAnimeFilter: true);
       }
       return [];
     } catch (e) {
@@ -478,7 +479,7 @@ class TmdbService {
         },
       );
       if (response.statusCode == 200) {
-        return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: 'tv');
+        return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: 'tv', bypassAnimeFilter: true);
       }
       return [];
     } catch (e) {

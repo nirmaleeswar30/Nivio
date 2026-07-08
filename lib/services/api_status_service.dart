@@ -52,7 +52,7 @@ class ApiStatusNotifier extends StateNotifier<ApiStatusState> {
       final dio = Dio(BaseOptions(validateStatus: (status) => true, connectTimeout: const Duration(seconds: 5)));
       final response = await dio.post(
         'https://graphql.anilist.co',
-        data: {'query': '{ SiteStatistics { anime { count } } }'},
+        data: {'query': '{ Media(id: 1) { id } }'},
       );
       // Anilist should return 200. If it returns 403, we are blocked and it's effectively offline for us.
       if (response.statusCode == 200) {

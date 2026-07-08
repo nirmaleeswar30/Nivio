@@ -278,7 +278,6 @@ class StreamingService {
   
   static bool isAnimeMedia(SearchResult media) {
     if (media.mediaType == 'anime') return true;
-    if ((media.mediaType == 'tv' || media.mediaType == 'movie') && media.originalLanguage == 'ja') return true;
     return false;
   }
 
