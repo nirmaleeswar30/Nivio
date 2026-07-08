@@ -18,7 +18,7 @@ class StreamingService {
   });
 
   static const List<String> _premiumProviders = [
-    'NetMirror',
+    'Nivio',
     'VidUp (FAST)',
     'VidLink',
     'VidCore (ACTIVE)',
@@ -27,10 +27,13 @@ class StreamingService {
 
   static const List<String> _standardProviders = [];
 
-  // For anime, Animepahe is the primary (index 0) provider
+  // For anime, Nivio-anime (Auto) is the primary (index 0) provider
   static const List<String> _animeProviders = [
-    'Animetsu',
-    ..._premiumProviders,
+    'Nivio-anime (Auto)',
+    'Nivio-anime (Kite)',
+    'Nivio-anime (Dio)',
+    'Nivio-anime (Sage)',
+    'Nivio-anime (Meg)',
   ];
 
   static List<String> get _allProviders => [..._premiumProviders, ..._standardProviders];
@@ -61,8 +64,14 @@ class StreamingService {
 
       final providerName = providersList[providerIndex];
       
-            // Handle Animetsu
-      if (providerName == 'Animetsu') {
+      // Handle Animetsu
+      if (providerName.startsWith('Nivio-anime')) {
+        String server = 'auto';
+        if (providerName.contains('Kite')) server = 'kite';
+        else if (providerName.contains('Dio')) server = 'dio';
+        else if (providerName.contains('Sage')) server = 'sage';
+        else if (providerName.contains('Meg')) server = 'meg';
+
         final streamResult = await animetsuScraper.fetchStreamUrl(
           tmdbId: media.id.toString(), // Anime media ID from Anilist
           title: media.title ?? media.name ?? '',
@@ -71,13 +80,14 @@ class StreamingService {
           season: season,
           episode: episode,
           preferredAudio: preferredAudio ?? (subDubPreference == 'dub' ? 'english' : 'japanese'),
+          server: server,
         );
         return streamResult;
       }
 
       // Handle NewTV
       // Handle NetMirror
-      if (providerName == 'NetMirror') {
+      if (providerName == 'Nivio') {
         final tmdbId = media.id.toString();
         final title = media.title ?? media.name ?? '';
         final type = _isAnimeMedia(media) ? 'tv' : media.mediaType;
@@ -184,16 +194,16 @@ class StreamingService {
 
   static bool isDirectStream(int providerIndex, {required bool isAnime}) {
     final providerName = getProviderName(providerIndex, isAnime: isAnime);
-    if (providerName == 'NetMirror') return true;
-    if (providerName == 'Animetsu') return true;
+    if (providerName == 'Nivio') return true;
+    if (providerName.startsWith('Nivio-anime')) return true;
     return false; // All other providers use WebView fallback
   }
 
   static bool isDownloadable(int providerIndex, {required bool isAnime}) {
     final providerName = getProviderName(providerIndex, isAnime: isAnime);
     // NewTV provides M3U8 streams which our custom downloader can parse and concatenate
-    if (providerName == 'NetMirror') return true;
-    if (providerName == 'Animetsu') return true;
+    if (providerName == 'Nivio') return true;
+    if (providerName.startsWith('Nivio-anime')) return true;
     
     // Iframe providers cannot be natively downloaded because we don't have the raw stream URL
     return false;

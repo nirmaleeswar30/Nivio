@@ -764,7 +764,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 controlsConfiguration: controlsConfiguration,
                 title: title,
                 subtitle: subtitle,
-                providerName: _streamResult?.provider ?? _currentProvider,
+                providerName: null,
                 isLive: widget.isLive,
                 onBack: _handleBackNavigation,
                 onServerChange: () {
@@ -2532,52 +2532,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     await _betterPlayerController!.play();
   }
 
-  List<PopupMenuEntry<int>> _buildProviderMenuItems() {
-    return List.generate(_maxProviders, (index) {
-      final isSelected = index == _currentProviderIndex;
-      return PopupMenuItem(
-        value: index,
-        child: Row(
-          children: [
-            Icon(
-              isSelected ? Icons.check_circle : Icons.circle_outlined,
-              color: isSelected
-                  ? NivioTheme.accentColorOf(context)
-                  : Colors.white70,
-              size: 18,
-            ),
-            const SizedBox(width: 12),
-            Text(
-              _providerSelectorLabel(index),
-              style: TextStyle(
-                color: isSelected
-                    ? NivioTheme.accentColorOf(context)
-                    : Colors.white,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-            if (index == 0)
-              Container(
-                margin: const EdgeInsets.only(left: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'HD',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.green,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      );
-    });
-  }
 
   // —————————————————————————————————————————————————————————————————————————————————————————— Formatting & progress ——————————————————————————————————————————————————————————————————————————————————————————
   String _formatDuration(Duration duration) {
@@ -2589,12 +2543,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return '${twoDigits(m)}:${twoDigits(s)}';
   }
 
-  Widget _buildSingleProviderTile(int index, SearchResult? media, {bool isSubItem = false}) {
+  Widget _buildSingleProviderTile(int index, SearchResult? media) {
     final isCurrent = index == _currentProviderIndex;
-    final providerName = StreamingService.getProviderName(index, isAnime: _isAnimeMedia(media));
+    String providerName = StreamingService.getProviderName(index, isAnime: _isAnimeMedia(media));
+    
+    if (providerName.startsWith('Nivio-anime (')) {
+      providerName = providerName.replaceAll('Nivio-anime (', '').replaceAll(')', '');
+    }
     
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: isSubItem ? 32.0 : 16.0, vertical: 4.0),
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
       child: ListTile(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         tileColor: isCurrent ? Theme.of(context).primaryColor.withOpacity(0.15) : null,
@@ -2602,9 +2560,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         title: Text(
           providerName,
           style: TextStyle(
-            color: isCurrent ? Theme.of(context).primaryColor : (isSubItem ? Colors.white70 : Colors.white),
+            color: isCurrent ? Theme.of(context).primaryColor : Colors.white,
             fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-            fontSize: isSubItem ? 14 : 16,
+            fontSize: 16,
           ),
         ),
         trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
@@ -2620,7 +2578,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final List<Widget> widgets = [];
 
     for (int i = 0; i < _maxProviders; i++) {
-      widgets.add(_buildSingleProviderTile(i, media, isSubItem: false));
+      widgets.add(_buildSingleProviderTile(i, media));
     }
 
     return widgets;
@@ -3947,16 +3905,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                 itemBuilder: _buildQualityMenuItems,
                                 onSelected: _switchQuality,
                               ),
-                            _buildTopActionMenuButton<int>(
-                              menuId: 'fs-server-menu',
+                            IconButton(
+                              tooltip: 'Switch Server',
                               icon: const Icon(
                                 Icons.sync,
                                 color: Colors.white,
                                 size: 20,
                               ),
-                              tooltip: 'Switch Server',
-                              itemBuilder: _buildProviderMenuItems,
-                              onSelected: _switchToProvider,
+                              onPressed: _showServerOverlayPanel,
                             ),
                           ],
                         ),
@@ -4267,9 +4223,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
-                          _loadingMessage ?? (_currentProvider.isNotEmpty
-                              ? _currentProvider
-                              : _providerSelectorLabel(_currentProviderIndex)),
+                          _loadingMessage ?? 'Loading...',
                           style: TextStyle(
                             color: Colors.white60,
                             fontSize: 12,

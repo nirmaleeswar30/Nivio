@@ -3,12 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/models/stream_result.dart';
 
-final netMirrorScraperProvider = Provider((ref) => NetMirrorScraperService(providerName: 'NetMirror'));
+final netMirrorScraperProvider = Provider((ref) => NetMirrorScraperService(providerName: 'Nivio'));
 
 class NetMirrorScraperService {
   final String providerName;
 
-  NetMirrorScraperService({this.providerName = 'NetMirror'});
+  NetMirrorScraperService({this.providerName = 'Nivio'});
 
   final Dio _dio = Dio(
     BaseOptions(
