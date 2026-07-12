@@ -444,10 +444,10 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         .clamp(360.0, isTablet ? 700.0 : 560.0)
         .toDouble();
     const detailsOverlap = 0.0;
-    final year =
-        media.releaseDate?.substring(0, 4) ??
-        media.firstAirDate?.substring(0, 4) ??
-        'Unknown';
+    final rawDate = media.releaseDate ?? media.firstAirDate;
+    final year = (rawDate != null && rawDate.length >= 4)
+        ? rawDate.substring(0, 4)
+        : 'Unknown';
     final mediaName = media.title ?? media.name ?? 'Unknown';
 
     return _withBackGuard(

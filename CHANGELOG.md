@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## Nivio-v2.2.2
+
+### 🚀 New Features & Providers
+*   **Software Volume Boost (Up to 200%):** Rebuilt the native Kotlin playback engine using Android's `LoudnessEnhancer` to support boosting volume up to 200% (+20dB gain) via swiping and D-pad/TV keys, complete with a visual orange-accented HUD.
+*   **Custom Subtitle Loading & Persistence:** Added options in player settings to load subtitles locally from your device (using native file picker) or paste direct URLs from the internet. The app securely remembers and auto-loads your custom subtitles on subsequent playbacks.
+
+### 📦 Massive Dependency Upgrades
+*   **File Picker Integration:** Added `file_picker` (v12.0.0-beta.7) resolving complex win32 version conflicts and Gradle namespace errors.
+
+### 🐛 Bug Fixes & Logic Improvements
+*   **Screen Brightness Restoring:** Fixed a bug where exiting the player left the device locked to the player's brightness level. Brightness now correctly resets back to system default upon exit.
+*   **Downloader Subtitle Extraction:** The direct parallel/sequential downloader now correctly downloads external subtitle tracks or extracts embedded ones into `.srt` format upon download completion.
+*   **Subtitle Storage Auto-Cleanup:** Deleting a downloaded video now automatically deletes its associated `.srt` file from storage, preventing orphan subtitle clutter.
+
 ## Nivio-v2.2.1
 
 ### 🚀 New Features & Providers
@@ -15,7 +29,7 @@ All notable changes to this project will be documented in this file.
 *   **NewTV Cleanup:** Stripped down `newtv_scraper.dart`, removing over 700 lines of bloated or legacy scraping logic.
 *   **Media Kit:** Removed `media_kit`, `media_kit_video`, and `media_kit_libs_video` from the dependencies.
 
-### 📦 Massive Dependency Upgrades
+### 📦 Dependency Upgrades
 *   **Version Bump:** App version upgraded from `2.2.0` to `2.2.1`.
 *   **Firebase Overhaul:** Major version bumps for `firebase_core` (v3 to v4), `firebase_auth` (v5 to v6), and `cloud_firestore` (v5 to v6).
 *   **Navigation & UI:** Upgraded `go_router` drastically (from v14 to v17.3.0) and swapped out `flutter_markdown` for the actively maintained `flutter_markdown_plus`.

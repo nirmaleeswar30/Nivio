@@ -58,6 +58,7 @@ class ContentRow extends StatelessWidget {
                   tmdbId = item['id'];
                   mediaType = item['media_type'] ?? (item['title'] != null ? 'movie' : 'tv');
                   title = (item['title'] ?? item['name'] ?? '').toString();
+                  debugPrint('📋 ContentRow [$title]: id=$tmdbId, media_type=${item['media_type']}, resolved=$mediaType, has_title=${item['title'] != null}, has_name=${item['name'] != null}');
                 }
 
                 return RepaintBoundary(
