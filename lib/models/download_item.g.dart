@@ -34,13 +34,14 @@ class DownloadItemAdapter extends TypeAdapter<DownloadItem> {
       headers: (fields[14] as Map?)?.cast<String, String>(),
       selectedAudioLanguage: fields[15] as String?,
       selectedSubtitleLanguage: fields[16] as String?,
+      subtitleUrl: fields[17] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, DownloadItem obj) {
     writer
-      ..writeByte(17)
+      ..writeByte(18)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -74,7 +75,9 @@ class DownloadItemAdapter extends TypeAdapter<DownloadItem> {
       ..writeByte(15)
       ..write(obj.selectedAudioLanguage)
       ..writeByte(16)
-      ..write(obj.selectedSubtitleLanguage);
+      ..write(obj.selectedSubtitleLanguage)
+      ..writeByte(17)
+      ..write(obj.subtitleUrl);
   }
 
   @override

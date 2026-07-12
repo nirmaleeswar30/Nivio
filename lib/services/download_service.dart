@@ -806,24 +806,6 @@ class DownloadService {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
 
       if (ReturnCode.isSuccess(returnCode)) {
-        try {
-          final String srtFilePath = filePath.replaceAll(
-            RegExp(r'\.[a-zA-Z0-9]+$'),
-            '.srt',
-          );
-          if (subtitleUrl != null) {
-            await FFmpegKit.execute(
-              '-y -i "$subtitleUrl" -c:s srt "$srtFilePath"',
-            );
-          } else {
-            // Extract embedded subtitle
-            await FFmpegKit.execute(
-              '-y -i "$filePath" -map 0:s:0? -c:s srt "$srtFilePath"',
-            );
-          }
-        } catch (e) {
-          appDebugLog("Failed to extract SRT post-download: $e");
-        }
         return true;
       } else {
         final logs = await session.getLogsAsString();
@@ -1046,30 +1028,7 @@ class DownloadService {
 
     await completer.future;
 
-    // Mark as completed FIRST so the UI immediately shows "Completed"
-    // SRT post-processing is non-critical and should never block the status transition
     _completeDownload(item);
-
-    // Post-processing: Extract or download the subtitle into an SRT file
-    // Doing this after the main download prevents FFmpeg from crashing with AVERROR_INVALIDDATA
-    // when trying to multiplex sparse network WebVTT streams with heavy video streams.
-    try {
-      final String srtFilePath = filePath.replaceAll(
-        RegExp(r'\.[a-zA-Z0-9]+$'),
-        '.srt',
-      );
-      if (subtitleUrl != null) {
-        // Download external subtitle directly to SRT
-        await FFmpegKit.execute('-y -i "$subtitleUrl" -c:s srt "$srtFilePath"');
-      } else {
-        // Extract embedded subtitle
-        await FFmpegKit.execute(
-          '-y -i "$filePath" -map 0:s:0? -c:s srt "$srtFilePath"',
-        );
-      }
-    } catch (e) {
-      appDebugLog("Failed to extract SRT post-download: $e");
-    }
   }
 
   static Future<void> _showProgressNotification(DownloadItem item) async {
@@ -1134,6 +1093,28 @@ class DownloadService {
   }
 
   static Future<void> _completeDownload(DownloadItem item) async {
+    // Post-processing: Download external subtitle or extract embedded subtitle
+    try {
+      final String srtFilePath = item.savePath.replaceAll(
+        RegExp(r'\.[a-zA-Z0-9]+$'),
+        '.srt',
+      );
+      if (!await File(srtFilePath).exists()) {
+        final subUrl = item.subtitleUrl;
+        if (subUrl != null && subUrl.isNotEmpty) {
+          appDebugLog('🎬 Downloading external subtitle from $subUrl to $srtFilePath');
+          await FFmpegKit.execute('-y -i "$subUrl" -c:s srt "$srtFilePath"');
+        } else {
+          appDebugLog('🎬 Extracting embedded subtitle from ${item.savePath} to $srtFilePath');
+          await FFmpegKit.execute(
+            '-y -i "${item.savePath}" -map 0:s:0? -c:s srt "$srtFilePath"',
+          );
+        }
+      }
+    } catch (e) {
+      appDebugLog("Failed to extract SRT post-download: $e");
+    }
+
     item.status = DownloadStatus.completed;
     item.progress = 1.0;
     await box.put(item.id, item);
@@ -1196,6 +1177,18 @@ class DownloadService {
         await file.delete();
       }
 
+      // Also delete the associated subtitle (.srt) file if it exists
+      final srtPath = item.savePath.replaceAll(
+        RegExp(r'\.[a-zA-Z0-9]+$'),
+        '.srt',
+      );
+      final srtFile = File(srtPath);
+      if (await srtFile.exists()) {
+        try {
+          await srtFile.delete();
+        } catch (_) {}
+      }
+
       try {
         final dir = file.parent;
         if (dir.existsSync()) {
@@ -1238,6 +1231,7 @@ class DownloadService {
     Map<String, String>? headers,
     String? selectedAudioLanguage,
     String? selectedSubtitleLanguage,
+    String? subtitleUrl,
   }) async {
     final id = '${mediaId}_${season ?? 0}_${episode ?? 0}';
 
@@ -1260,6 +1254,7 @@ class DownloadService {
       headers: headers ?? {},
       selectedAudioLanguage: selectedAudioLanguage,
       selectedSubtitleLanguage: selectedSubtitleLanguage,
+      subtitleUrl: subtitleUrl,
       createdAt: DateTime.now(),
       status: DownloadStatus.pending,
       savePath: '',

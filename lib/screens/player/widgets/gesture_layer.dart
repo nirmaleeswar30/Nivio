@@ -48,6 +48,11 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
   @override
   void dispose() {
     FlutterVolumeController.removeListener();
+    try {
+      ScreenBrightness().resetScreenBrightness();
+    } catch (e) {
+      debugPrint('Error resetting screen brightness: $e');
+    }
     super.dispose();
   }
 
@@ -55,10 +60,21 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
     try {
       _brightness = await ScreenBrightness().current;
       final vol = await FlutterVolumeController.getVolume();
-      if (vol != null) _volume = vol;
+      if (vol != null) {
+        setState(() {
+          _volume = vol;
+        });
+      }
       // Listen to volume button changes
       FlutterVolumeController.addListener((volume) {
-        if (mounted) setState(() => _volume = volume);
+        if (mounted) {
+          setState(() {
+            if (volume < 1.0) {
+              _volume = volume;
+              widget.controller.setVolume(1.0);
+            }
+          });
+        }
       });
     } catch (e) {
       debugPrint('Error getting hardware levels: $e');
@@ -94,10 +110,16 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
         _showVolumeIndicator = false;
         ScreenBrightness().setScreenBrightness(_brightness);
       } else {
-        _volume = (_volume - (delta * sensitivity)).clamp(0.0, 1.0);
+        _volume = (_volume - (delta * sensitivity)).clamp(0.0, 2.0);
         _showVolumeIndicator = true;
         _showBrightnessIndicator = false;
-        FlutterVolumeController.setVolume(_volume);
+        if (_volume <= 1.0) {
+          FlutterVolumeController.setVolume(_volume);
+          widget.controller.setVolume(1.0);
+        } else {
+          FlutterVolumeController.setVolume(1.0);
+          widget.controller.setVolume(_volume);
+        }
       }
     });
   }
@@ -259,17 +281,21 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
             alignment: Alignment.centerRight,
             child: Padding(
               padding: const EdgeInsets.only(right: 32.0),
-              child: _buildVerticalIndicator(Icons.volume_up_rounded, _volume),
+              child: _buildVerticalIndicator(Icons.volume_up_rounded, _volume, isVolume: true),
             ),
           ),
       ],
     );
   }
 
-  Widget _buildVerticalIndicator(IconData icon, double value) {
+  Widget _buildVerticalIndicator(IconData icon, double value, {bool isVolume = false}) {
+    final displayValue = isVolume && value > 1.0 ? value - 1.0 : value;
+    final progressColor = isVolume && value > 1.0 ? Colors.orangeAccent : Colors.white;
+    final pct = (value * 100).round();
+    
     return Container(
-      width: 40,
-      height: 150,
+      width: 42,
+      height: 170,
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(20),
@@ -277,18 +303,31 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Icon(icon, color: Colors.white, size: 20),
+            padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
+            child: Icon(
+              isVolume && value > 1.0 ? Icons.volume_up_rounded : icon,
+              color: progressColor, 
+              size: 20
+            ),
           ),
+          Text(
+            '$pct%',
+            style: TextStyle(
+              color: progressColor,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 6),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(bottom: 12.0, left: 16, right: 16),
               child: RotatedBox(
                 quarterTurns: 3,
                 child: LinearProgressIndicator(
-                  value: value,
+                  value: displayValue,
                   backgroundColor: Colors.white24,
-                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                  valueColor: AlwaysStoppedAnimation<Color>(progressColor),
                 ),
               ),
             ),

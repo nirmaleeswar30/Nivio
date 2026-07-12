@@ -525,10 +525,10 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
 
   /// Sets the audio volume of [this].
   ///
-  /// [volume] indicates a value between 0.0 (silent) and 1.0 (full volume) on a
+  /// [volume] indicates a value between 0.0 (silent) and 2.0 (boosted volume) on a
   /// linear scale.
   Future<void> setVolume(double volume) async {
-    value = value.copyWith(volume: volume.clamp(0.0, 1.0));
+    value = value.copyWith(volume: volume.clamp(0.0, 2.0));
     await _applyVolume();
   }
 

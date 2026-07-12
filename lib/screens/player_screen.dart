@@ -14,6 +14,8 @@ import 'package:nivio/models/search_result.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:nivio/core/debug_log.dart';
+import 'package:file_picker/file_picker.dart';
+import 'dart:convert';
 
 import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/media_provider.dart';
@@ -734,6 +736,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           selectedByDefault: isDefault,
         );
       }).toList();
+
+      // Read custom/manually loaded subtitle if any
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final customSubKey = 'custom_sub_${widget.mediaId}_${widget.season}_$_currentEpisode';
+        final savedSub = prefs.getString(customSubKey);
+        if (savedSub != null) {
+          final data = json.decode(savedSub);
+          final newSource = BetterPlayerSubtitlesSource(
+            type: data['type'] == 'file' 
+                ? BetterPlayerSubtitlesSourceType.file 
+                : BetterPlayerSubtitlesSourceType.network,
+            name: data['name'],
+            urls: [data['url']],
+            selectedByDefault: true,
+          );
+          subtitleSources.add(newSource);
+        }
+      } catch (e) {
+        debugPrint('Error loading custom subtitle preference: $e');
+      }
+
+
 
       // —————————————————————————————————————————————————————————————————————————————————————————— Build resolutions map for non-HLS multi-quality ——————————————————————————————————————————————————————————————————————————————————————————
       Map<String, String>? resolutions;
@@ -2312,6 +2337,128 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }).toList();
   }
 
+  Future<void> _loadSubtitleFromFile(StateSetter setDialogState) async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['srt', 'vtt'],
+      );
+      if (result != null && result.files.single.path != null) {
+        final filePath = result.files.single.path!;
+        final fileName = result.files.single.name;
+        final newSource = BetterPlayerSubtitlesSource(
+          type: BetterPlayerSubtitlesSourceType.file,
+          name: 'Local: $fileName',
+          urls: [filePath],
+        );
+        _betterPlayerController?.betterPlayerSubtitlesSourceList.add(newSource);
+        await _betterPlayerController?.setupSubtitleSource(newSource);
+        
+        // Persist local custom subtitle
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final customSubKey = 'custom_sub_${widget.mediaId}_${widget.season}_$_currentEpisode';
+          await prefs.setString(customSubKey, json.encode({
+            'type': 'file',
+            'name': newSource.name,
+            'url': filePath,
+          }));
+          await ref.read(watchHistoryServiceProvider).saveTrackPreferences(widget.mediaId, subtitleTrack: newSource.name);
+        } catch (e) {
+          debugPrint('Failed to save local custom subtitle: $e');
+        }
+
+        if (mounted) {
+          setDialogState(() {});
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Loaded local subtitle: $fileName')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error picking subtitle file: $e');
+    }
+  }
+
+  Future<void> _loadSubtitleFromUrl(StateSetter setDialogState) async {
+    final textController = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1F1F1F),
+          title: const Text('Load Subtitle from URL', style: TextStyle(color: Colors.white, fontSize: 16)),
+          content: TextField(
+            controller: textController,
+            style: const TextStyle(color: Colors.white),
+            decoration: const InputDecoration(
+              hintText: 'Enter .srt or .vtt link...',
+              hintStyle: TextStyle(color: Colors.white30),
+              enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white30)),
+              focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.redAccent)),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, textController.text.trim()),
+              child: const Text('Load', style: TextStyle(color: Colors.redAccent)),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (url != null && url.isNotEmpty) {
+      Uri? parsedUri = Uri.tryParse(url);
+      if (parsedUri == null || !parsedUri.hasAbsolutePath) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Invalid URL entered.')),
+          );
+        }
+        return;
+      }
+      
+      final String name = parsedUri.pathSegments.isNotEmpty 
+          ? parsedUri.pathSegments.last 
+          : 'Remote Subtitle';
+
+      final newSource = BetterPlayerSubtitlesSource(
+        type: BetterPlayerSubtitlesSourceType.network,
+        name: 'URL: $name',
+        urls: [url],
+      );
+
+      _betterPlayerController?.betterPlayerSubtitlesSourceList.add(newSource);
+      await _betterPlayerController?.setupSubtitleSource(newSource);
+
+      // Persist remote custom subtitle
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final customSubKey = 'custom_sub_${widget.mediaId}_${widget.season}_$_currentEpisode';
+        await prefs.setString(customSubKey, json.encode({
+          'type': 'network',
+          'name': newSource.name,
+          'url': url,
+        }));
+        await ref.read(watchHistoryServiceProvider).saveTrackPreferences(widget.mediaId, subtitleTrack: newSource.name);
+      } catch (e) {
+        debugPrint('Failed to save remote custom subtitle: $e');
+      }
+
+      if (mounted) {
+        setDialogState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Loaded remote subtitle: $name')),
+        );
+      }
+    }
+  }
+
   void _showDisplaySelectionBottomSheet() {
     showModalBottomSheet<void>(
       context: context,
@@ -3368,6 +3515,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                               setDialogState(() {});
                                             },
                                           ),
+                                                ListTile(
+                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                                  leading: const Icon(Icons.folder_open, color: Colors.white70, size: 20),
+                                                  title: const Text('Load from Local File (.srt, .vtt)', style: TextStyle(color: Colors.white70)),
+                                                  onTap: () => _loadSubtitleFromFile(setDialogState),
+                                                ),
+                                                ListTile(
+                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                                  leading: const Icon(Icons.link, color: Colors.white70, size: 20),
+                                                  title: const Text('Load from URL (Internet)', style: TextStyle(color: Colors.white70)),
+                                                  onTap: () => _loadSubtitleFromUrl(setDialogState),
+                                                ),
                                           ...subtitleSources.where((sub) => sub.type != BetterPlayerSubtitlesSourceType.none).map((sub) {
                                             final isCurrent = currentSubtitle == sub;
                                             final label = sub.name ?? 'Subtitle';

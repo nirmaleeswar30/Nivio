@@ -738,11 +738,11 @@ class BetterPlayerController {
     }
   }
 
-  ///Set volume of player. Allows values from 0.0 to 1.0.
+  ///Set volume of player. Allows values from 0.0 to 2.0.
   Future<void> setVolume(double volume) async {
-    if (volume < 0.0 || volume > 1.0) {
-      BetterPlayerUtils.log('Volume must be between 0.0 and 1.0');
-      throw ArgumentError('Volume must be between 0.0 and 1.0');
+    if (volume < 0.0 || volume > 2.0) {
+      BetterPlayerUtils.log('Volume must be between 0.0 and 2.0');
+      throw ArgumentError('Volume must be between 0.0 and 2.0');
     }
     if (videoPlayerController == null) {
       BetterPlayerUtils.log('The data source has not been initialized');

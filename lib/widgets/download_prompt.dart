@@ -80,9 +80,23 @@ class DownloadPrompt {
       }
     }
     
+    String? subtitleUrl;
+    if (selection.subtitleLang != null && selection.subtitleLang != 'Off') {
+      try {
+        final match = finalResult.subtitles.firstWhere(
+          (s) => s.lang.toLowerCase() == selection.subtitleLang!.toLowerCase(),
+          orElse: () => finalResult.subtitles.firstWhere(
+            (s) => s.lang.toLowerCase().contains(selection.subtitleLang!.toLowerCase()),
+            orElse: () => finalResult.subtitles.first,
+          ),
+        );
+        subtitleUrl = match.url;
+      } catch (_) {}
+    }
+
     await _queue(
       mediaId, title, mediaType, season, episode, posterPath, 
-      urlToDownload, finalResult.headers, selection.audioLang, selection.subtitleLang
+      urlToDownload, finalResult.headers, selection.audioLang, selection.subtitleLang, subtitleUrl
     );
     
     if (context.mounted) {
@@ -92,7 +106,7 @@ class DownloadPrompt {
 
   static Future<void> _queue(
     int mediaId, String title, String mediaType, int? season, int? episode, String? posterPath,
-    String url, Map<String, String>? headers, String? audioLang, String? subLang
+    String url, Map<String, String>? headers, String? audioLang, String? subLang, String? subtitleUrl
   ) async {
     await DownloadService.queueDownload(
       mediaId: mediaId,
@@ -105,6 +119,7 @@ class DownloadPrompt {
       headers: headers,
       selectedAudioLanguage: audioLang,
       selectedSubtitleLanguage: subLang,
+      subtitleUrl: subtitleUrl,
     );
   }
 

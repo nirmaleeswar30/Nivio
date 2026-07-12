@@ -71,6 +71,9 @@ class DownloadItem extends HiveObject {
   @HiveField(16)
   String? selectedSubtitleLanguage;
 
+  @HiveField(17)
+  String? subtitleUrl;
+
   DownloadItem({
     required this.id,
     required this.mediaId,
@@ -89,5 +92,6 @@ class DownloadItem extends HiveObject {
     this.headers,
     this.selectedAudioLanguage,
     this.selectedSubtitleLanguage,
+    this.subtitleUrl,
   });
 }

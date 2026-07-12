@@ -15,6 +15,7 @@ import android.os.Looper
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
+import android.media.audiofx.LoudnessEnhancer
 import uz.shs.better_player_plus.DataSourceUtils.getUserAgent
 import uz.shs.better_player_plus.DataSourceUtils.isHTTP
 import uz.shs.better_player_plus.DataSourceUtils.getDataSourceFactory
@@ -103,6 +104,8 @@ internal class BetterPlayer(
     private val customDefaultLoadControl: CustomDefaultLoadControl =
         customDefaultLoadControl ?: CustomDefaultLoadControl()
     private var lastSendBufferedPosition = 0L
+    private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var lastVolume: Double = 1.0
 
     init {
         val loadBuilder = DefaultLoadControl.Builder()
@@ -497,6 +500,18 @@ internal class BetterPlayer(
             override fun onPlayerError(error: PlaybackException) {
                 eventSink.error("VideoError", "Video player had error $error", "")
             }
+
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                if (audioSessionId != C.AUDIO_SESSION_ID_UNSET) {
+                    try {
+                        loudnessEnhancer?.release()
+                        loudnessEnhancer = LoudnessEnhancer(audioSessionId)
+                        applyVolumeAndBoost()
+                    } catch (e: Exception) {
+                        Log.e("BetterPlayer", "Error creating LoudnessEnhancer: $e")
+                    }
+                }
+            }
         })
         val reply: MutableMap<String, Any> = HashMap()
         reply["textureId"] = textureEntry.id()
@@ -538,10 +553,32 @@ internal class BetterPlayer(
         exoPlayer?.repeatMode = if (value) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
     }
 
+    private fun applyVolumeAndBoost() {
+        val playerVol = min(1.0, lastVolume).toFloat()
+        exoPlayer?.volume = playerVol
+
+        val enhancer = loudnessEnhancer
+        if (enhancer != null) {
+            try {
+                if (lastVolume > 1.0) {
+                    val boost = lastVolume - 1.0
+                    // Map 0.0..1.0 boost to 0..2000 mB target gain
+                    val targetGain = (boost * 2000).toInt()
+                    enhancer.setTargetGain(targetGain)
+                    enhancer.enabled = true
+                } else {
+                    enhancer.setTargetGain(0)
+                    enhancer.enabled = false
+                }
+            } catch (e: Exception) {
+                // Ignore enhancer errors
+            }
+        }
+    }
+
     fun setVolume(value: Double) {
-        val bracketedValue = max(0.0, min(1.0, value))
-            .toFloat()
-        exoPlayer?.volume = bracketedValue
+        lastVolume = max(0.0, value)
+        applyVolumeAndBoost()
     }
 
     fun setSpeed(value: Double) {
@@ -796,6 +833,8 @@ internal class BetterPlayer(
     fun dispose() {
         disposeMediaSession()
         disposeRemoteNotifications()
+        loudnessEnhancer?.release()
+        loudnessEnhancer = null
         if (isInitialized) {
             exoPlayer?.stop()
         }

@@ -1521,6 +1521,21 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     }
 
     if (result != null && result.url.isNotEmpty) {
+      final streamResult = result;
+      String? subtitleUrl;
+      if (subtitleLang != null && subtitleLang != 'Off') {
+        try {
+          final match = streamResult.subtitles.firstWhere(
+            (s) => s.lang.toLowerCase() == subtitleLang.toLowerCase(),
+            orElse: () => streamResult.subtitles.firstWhere(
+              (s) => s.lang.toLowerCase().contains(subtitleLang.toLowerCase()),
+              orElse: () => streamResult.subtitles.first,
+            ),
+          );
+          subtitleUrl = match.url;
+        } catch (_) {}
+      }
+
       await DownloadService.queueDownload(
         mediaId: media.id,
         title: '${media.title ?? media.name ?? 'Episode'}|||$episodeName',
@@ -1528,10 +1543,11 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         season: season,
         episode: episode,
         posterPath: '${media.posterPath}|||${stillPath ?? media.posterPath}',
-        streamUrl: result.url,
-        headers: result.headers,
+        streamUrl: streamResult.url,
+        headers: streamResult.headers,
         selectedAudioLanguage: audioLang,
         selectedSubtitleLanguage: subtitleLang,
+        subtitleUrl: subtitleUrl,
       );
     } else {
       debugPrint(
