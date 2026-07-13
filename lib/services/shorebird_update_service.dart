@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
 
@@ -21,7 +22,14 @@ class ShorebirdUpdateService {
 
   static final ShorebirdUpdater _updater = ShorebirdUpdater();
 
-  static bool get isAvailable => _updater.isAvailable;
+  static bool get isAvailable {
+    try {
+      if (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)) return false;
+      return _updater.isAvailable;
+    } catch (_) {
+      return false;
+    }
+  }
 
   static Future<int?> currentPatchNumber() async {
     if (!isAvailable) return null;

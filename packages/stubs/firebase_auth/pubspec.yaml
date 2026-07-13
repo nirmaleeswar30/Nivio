@@ -1,0 +1,12 @@
+name: firebase_auth
+description: Stub & REST Polyfill of firebase_auth for desktop support.
+version: 6.5.4
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core:
+    path: ../firebase_core
+  http: ^1.6.0
+  shared_preferences: ^2.3.3

@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'dart:isolate';
 import 'dart:ui';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -43,13 +45,18 @@ import 'package:nivio/services/download_service.dart';
 import 'package:nivio/services/hls_proxy_service.dart';
 import 'package:media_kit/media_kit.dart';
 
+bool get isFirebaseSupported =>
+    kIsWeb || (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
+
 void main() async {
   try {
     WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
     MediaKit.ensureInitialized();
 
     // Preserve splash screen while initializing
-    FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+    if (Platform.isAndroid || Platform.isIOS) {
+      FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+    }
 
     // Load .env first so downstream services (e.g. watch party Supabase)
     // can read credentials during initialization.
@@ -61,8 +68,9 @@ void main() async {
 
   // Parallelize initialization for faster startup
   await Future.wait([
-    // Initialize Firebase
-    Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
+    // Initialize Firebase (only if supported)
+    if (isFirebaseSupported)
+      Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
     // Initialize Hive in parallel
     _initHive(),
     // Optional: initialize Supabase for watch party if configured
@@ -145,9 +153,11 @@ Future<void> _initHive() async {
 // Auth state notifier for router refresh
 class _AuthStateNotifier extends ChangeNotifier {
   _AuthStateNotifier() {
-    FirebaseAuth.instance.authStateChanges().listen((_) {
-      notifyListeners();
-    });
+    if (isFirebaseSupported) {
+      FirebaseAuth.instance.authStateChanges().listen((_) {
+        notifyListeners();
+      });
+    }
   }
 }
 
@@ -157,6 +167,9 @@ final appRouter = GoRouter(
   // Optimize: Use refreshListenable for auth state instead of checking on every navigation
   refreshListenable: _AuthStateNotifier(),
   redirect: (context, state) {
+    if (!isFirebaseSupported) {
+      return null;
+    }
     final user = FirebaseAuth.instance.currentUser;
     final isAuthRoute = state.matchedLocation == '/auth';
 

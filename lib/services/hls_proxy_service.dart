@@ -16,7 +16,15 @@ class HlsProxyService {
   Future<void> start() async {
     if (_server != null) return;
     
-    _cronetClient = CronetClient.defaultCronetEngine();
+    try {
+      if (Platform.isAndroid || Platform.isIOS) {
+        _cronetClient = CronetClient.defaultCronetEngine();
+      } else {
+        _cronetClient = http.Client();
+      }
+    } catch (_) {
+      _cronetClient = http.Client();
+    }
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     appDebugLog('🚀 HlsProxyService started on port ${_server!.port}');
 

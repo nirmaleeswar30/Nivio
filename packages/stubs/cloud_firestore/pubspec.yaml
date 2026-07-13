@@ -1,0 +1,13 @@
+name: cloud_firestore
+description: Stub & REST Polyfill of cloud_firestore for desktop support.
+version: 6.6.0
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core:
+    path: ../firebase_core
+  firebase_auth:
+    path: ../firebase_auth
+  http: ^1.6.0

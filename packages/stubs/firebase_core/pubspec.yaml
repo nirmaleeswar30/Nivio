@@ -1,0 +1,8 @@
+name: firebase_core
+description: Stub of firebase_core for desktop support.
+version: 4.12.0
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+dependencies:
+  flutter:
+    sdk: flutter
