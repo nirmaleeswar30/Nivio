@@ -3235,143 +3235,184 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                         iconColor: Theme.of(context).primaryColor,
                                         collapsedIconColor: Colors.white54,
                                         leading: const Icon(Icons.subtitles),
-                                        title: const Text('SUBTITLES', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                                        title: const Text('SUBTITLE SETTINGS', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
                                         children: [
-                                          ListTile(
-                                            contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                            title: Text('Off', style: TextStyle(color: activeSubtitleId == 'no' ? Theme.of(context).primaryColor : Colors.white)),
-                                            trailing: activeSubtitleId == 'no' ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                            onTap: () async {
-                                              tempSubtitleTrackId = 'no';
-                                              _player.setSubtitleTrack(SubtitleTrack.no());
-                                              await _updateLocalHistoryPreference(subtitleTrack: 'Off');
-                                              setDialogState(() {});
-                                            },
+                                          // 1. TRACKS
+                                          Theme(
+                                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                                            child: ExpansionTile(
+                                              title: const Text('TRACKS', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                                              children: [
+                                                ListTile(
+                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                                  title: Text('Off', style: TextStyle(color: activeSubtitleId == 'no' ? Theme.of(context).primaryColor : Colors.white)),
+                                                  trailing: activeSubtitleId == 'no' ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                                  onTap: () async {
+                                                    tempSubtitleTrackId = 'no';
+                                                    _player.setSubtitleTrack(SubtitleTrack.no());
+                                                    await _updateLocalHistoryPreference(subtitleTrack: 'Off');
+                                                    setDialogState(() {});
+                                                  },
+                                                ),
+                                                ListTile(
+                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                                  leading: const Icon(Icons.folder_open, color: Colors.white70, size: 20),
+                                                  title: const Text('Load from Local File (.srt, .vtt)', style: TextStyle(color: Colors.white70)),
+                                                  onTap: () => _loadSubtitleFromFile(setDialogState),
+                                                ),
+                                                ListTile(
+                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                                  leading: const Icon(Icons.link, color: Colors.white70, size: 20),
+                                                  title: const Text('Load from URL (Internet)', style: TextStyle(color: Colors.white70)),
+                                                  onTap: () => _loadSubtitleFromUrl(setDialogState),
+                                                ),
+                                                if (_streamResult != null && _streamResult!.subtitles.isNotEmpty) ...[
+                                                  ..._streamResult!.subtitles.map((sub) {
+                                                    final isCurrent = activeSubtitleId == sub.url || 
+                                                        (tempSubtitleTrackId == null && (currentSubtitleTrack.title?.toLowerCase() == sub.lang.toLowerCase() || 
+                                                        currentSubtitleTrack.id.contains(sub.url)));
+                                                    return ListTile(
+                                                      contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                                      title: Text(sub.lang, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
+                                                      trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                                      onTap: () async {
+                                                        tempSubtitleTrackId = sub.url;
+                                                        _player.setSubtitleTrack(SubtitleTrack.uri(sub.url, title: sub.lang));
+                                                        await _updateLocalHistoryPreference(subtitleTrack: sub.lang);
+                                                        setDialogState(() {});
+                                                      },
+                                                    );
+                                                  }),
+                                                ],
+                                                ...subtitleTracks.where((sub) => sub.id != 'auto' && sub.id != 'no').map((sub) {
+                                                  final isCurrent = activeSubtitleId == sub.id;
+                                                  final label = sub.title ?? sub.language ?? 'Subtitle ${sub.id}';
+                                                  if (_streamResult != null && _streamResult!.subtitles.any((s) => s.lang == label)) {
+                                                    return const SizedBox.shrink();
+                                                  }
+                                                  return ListTile(
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                                    title: Text(label, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
+                                                    trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                                    onTap: () async {
+                                                      tempSubtitleTrackId = sub.id;
+                                                      _player.setSubtitleTrack(sub);
+                                                      await _updateLocalHistoryPreference(subtitleTrack: label);
+                                                      setDialogState(() {});
+                                                    },
+                                                  );
+                                                }),
+                                              ],
+                                            ),
                                           ),
-                                          ListTile(
-                                            contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                            leading: const Icon(Icons.folder_open, color: Colors.white70, size: 20),
-                                            title: const Text('Load from Local File (.srt, .vtt)', style: TextStyle(color: Colors.white70)),
-                                            onTap: () => _loadSubtitleFromFile(setDialogState),
+                                          // 2. SIZE
+                                          Theme(
+                                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                                            child: ExpansionTile(
+                                              title: const Text('SIZE', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                                              children: [
+                                                ...subtitleFontSizeOptions.entries.map((entry) {
+                                                  final currentSize = ref.watch(subtitleFontSizeProvider);
+                                                  final isCurrent = currentSize == entry.value;
+                                                  return ListTile(
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                                    title: Text(entry.key, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
+                                                    trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                                    onTap: () async {
+                                                      await ref.read(subtitleFontSizeProvider.notifier).setSize(entry.value);
+                                                      if (_player.platform is NativePlayer) {
+                                                        final scale = entry.value / 18.0;
+                                                        await (_player.platform as NativePlayer).setProperty('sub-scale', '$scale');
+                                                      }
+                                                      setDialogState(() {});
+                                                    },
+                                                  );
+                                                }),
+                                              ],
+                                            ),
                                           ),
-                                          ListTile(
-                                            contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                            leading: const Icon(Icons.link, color: Colors.white70, size: 20),
-                                            title: const Text('Load from URL (Internet)', style: TextStyle(color: Colors.white70)),
-                                            onTap: () => _loadSubtitleFromUrl(setDialogState),
+                                          // 3. BACKGROUND
+                                          Theme(
+                                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                                            child: ExpansionTile(
+                                              title: const Text('BACKGROUND', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                                              children: [
+                                                ...['Transparent', 'Semi-Transparent', 'Solid'].map((bg) {
+                                                  final currentBg = ref.watch(subtitleBackgroundProvider);
+                                                  final isCurrent = currentBg == bg;
+                                                  return ListTile(
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                                    title: Text(bg, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
+                                                    trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                                    onTap: () async {
+                                                      await ref.read(subtitleBackgroundProvider.notifier).setBackground(bg);
+                                                      setDialogState(() {});
+                                                    },
+                                                  );
+                                                }),
+                                              ],
+                                            ),
                                           ),
-                                          if (_streamResult != null && _streamResult!.subtitles.isNotEmpty) ...[
-                                            ..._streamResult!.subtitles.map((sub) {
-                                              final isCurrent = activeSubtitleId == sub.url || 
-                                                  (tempSubtitleTrackId == null && (currentSubtitleTrack.title?.toLowerCase() == sub.lang.toLowerCase() || 
-                                                  currentSubtitleTrack.id.contains(sub.url)));
-                                              return ListTile(
-                                                contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                title: Text(sub.lang, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                                trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                                onTap: () async {
-                                                  tempSubtitleTrackId = sub.url;
-                                                  _player.setSubtitleTrack(SubtitleTrack.uri(sub.url, title: sub.lang));
-                                                  await _updateLocalHistoryPreference(subtitleTrack: sub.lang);
-                                                  setDialogState(() {});
-                                                },
-                                              );
-                                            }),
-                                          ],
-                                          ...subtitleTracks.where((sub) => sub.id != 'auto' && sub.id != 'no').map((sub) {
-                                            final isCurrent = activeSubtitleId == sub.id;
-                                            final label = sub.title ?? sub.language ?? 'Subtitle ${sub.id}';
-                                            if (_streamResult != null && _streamResult!.subtitles.any((s) => s.lang == label)) {
-                                              return const SizedBox.shrink();
-                                            }
-                                            return ListTile(
-                                              contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                              title: Text(label, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                              trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                              onTap: () async {
-                                                tempSubtitleTrackId = sub.id;
-                                                _player.setSubtitleTrack(sub);
-                                                await _updateLocalHistoryPreference(subtitleTrack: label);
-                                                setDialogState(() {});
-                                              },
-                                            );
-                                          }),
-                                        ],
-                                      ),
-                                    ),
-                                    Theme(
-                                      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                                      child: ExpansionTile(
-                                        iconColor: Theme.of(context).primaryColor,
-                                        collapsedIconColor: Colors.white54,
-                                        leading: const Icon(Icons.format_size),
-                                        title: const Text('SUBTITLE SIZE', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                                        children: [
-                                          ...subtitleFontSizeOptions.entries.map((entry) {
-                                            final currentSize = ref.watch(subtitleFontSizeProvider);
-                                            final isCurrent = currentSize == entry.value;
-                                            return ListTile(
-                                              contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                              title: Text(entry.key, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                              trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                              onTap: () async {
-                                                await ref.read(subtitleFontSizeProvider.notifier).setSize(entry.value);
-                                                if (_player.platform is NativePlayer) {
-                                                  final scale = entry.value / 18.0;
-                                                  await (_player.platform as NativePlayer).setProperty('sub-scale', '$scale');
-                                                }
-                                                setDialogState(() {});
-                                              },
-                                            );
-                                          }),
-                                        ],
-                                      ),
-                                    ),
-                                    Theme(
-                                      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                                      child: ExpansionTile(
-                                        iconColor: Theme.of(context).primaryColor,
-                                        collapsedIconColor: Colors.white54,
-                                        leading: const Icon(Icons.picture_in_picture_alt_rounded),
-                                        title: const Text('SUBTITLE BACKGROUND', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                                        children: [
-                                          ...['Transparent', 'Semi-Transparent', 'Solid'].map((bg) {
-                                            final currentBg = ref.watch(subtitleBackgroundProvider);
-                                            final isCurrent = currentBg == bg;
-                                            return ListTile(
-                                              contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                              title: Text(bg, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                              trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                              onTap: () async {
-                                                await ref.read(subtitleBackgroundProvider.notifier).setBackground(bg);
-                                                setDialogState(() {});
-                                              },
-                                            );
-                                          }),
-                                        ],
-                                      ),
-                                    ),
-                                    Theme(
-                                      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                                      child: ExpansionTile(
-                                        iconColor: Theme.of(context).primaryColor,
-                                        collapsedIconColor: Colors.white54,
-                                        leading: const Icon(Icons.text_fields_rounded),
-                                        title: const Text('SUBTITLE TEXT STYLE', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                                        children: [
-                                          ...['None', 'Subtle Shadow', 'Outline'].map((styleOpt) {
-                                            final currentStyle = ref.watch(subtitleOutlineProvider);
-                                            final isCurrent = currentStyle == styleOpt;
-                                            return ListTile(
-                                              contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                              title: Text(styleOpt, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                              trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                              onTap: () async {
-                                                await ref.read(subtitleOutlineProvider.notifier).setOutline(styleOpt);
-                                                setDialogState(() {});
-                                              },
-                                            );
-                                          }),
+                                          // 4. TEXT STYLE
+                                          Theme(
+                                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                                            child: ExpansionTile(
+                                              title: const Text('TEXT STYLE', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                                              children: [
+                                                ...['None', 'Subtle Shadow', 'Outline'].map((styleOpt) {
+                                                  final currentStyle = ref.watch(subtitleOutlineProvider);
+                                                  final isCurrent = currentStyle == styleOpt;
+                                                  return ListTile(
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                                    title: Text(styleOpt, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
+                                                    trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                                    onTap: () async {
+                                                      await ref.read(subtitleOutlineProvider.notifier).setOutline(styleOpt);
+                                                      setDialogState(() {});
+                                                    },
+                                                  );
+                                                }),
+                                              ],
+                                            ),
+                                          ),
+                                          // 5. SYNC
+                                          Theme(
+                                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                                            child: ExpansionTile(
+                                              title: const Text('SYNC', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                                              children: [
+                                                Padding(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+                                                  child: Row(
+                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    children: [
+                                                      IconButton(
+                                                        icon: const Icon(Icons.remove, color: Colors.white),
+                                                        onPressed: () {
+                                                          _updateSubtitleDelay(-250);
+                                                          setDialogState(() {});
+                                                        },
+                                                      ),
+                                                      Text('${_subtitleDelayMs > 0 ? "+" : ""}$_subtitleDelayMs ms', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                                                      IconButton(
+                                                        icon: const Icon(Icons.add, color: Colors.white),
+                                                        onPressed: () {
+                                                          _updateSubtitleDelay(250);
+                                                          setDialogState(() {});
+                                                        },
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                const Padding(
+                                                  padding: EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+                                                  child: Text('Negative values show subtitles earlier, positive values show them later.',
+                                                    style: TextStyle(color: Colors.white38, fontSize: 12), textAlign: TextAlign.center,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
                                         ],
                                       ),
                                     ),
@@ -3396,46 +3437,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                               }
                                               setDialogState(() {});
                                             },
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Theme(
-                                      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                                      child: ExpansionTile(
-                                        iconColor: Theme.of(context).primaryColor,
-                                        collapsedIconColor: Colors.white54,
-                                        leading: const Icon(Icons.sync),
-                                        title: const Text('SUBTITLE SYNC', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                                        children: [
-                                          Padding(
-                                            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
-                                            child: Row(
-                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                              children: [
-                                                IconButton(
-                                                  icon: const Icon(Icons.remove, color: Colors.white),
-                                                  onPressed: () {
-                                                    _updateSubtitleDelay(-250);
-                                                    setDialogState(() {});
-                                                  },
-                                                ),
-                                                Text('${_subtitleDelayMs > 0 ? "+" : ""}$_subtitleDelayMs ms', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                                                IconButton(
-                                                  icon: const Icon(Icons.add, color: Colors.white),
-                                                  onPressed: () {
-                                                    _updateSubtitleDelay(250);
-                                                    setDialogState(() {});
-                                                  },
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          const Padding(
-                                            padding: EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
-                                            child: Text('Negative values show subtitles earlier, positive values show them later.',
-                                              style: TextStyle(color: Colors.white38, fontSize: 12), textAlign: TextAlign.center,
-                                            ),
                                           ),
                                         ],
                                       ),

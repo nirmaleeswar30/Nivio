@@ -117,6 +117,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final preferredSubtitle = ref.watch(preferredSubtitleLanguageProvider);
     final episodeCheckEnabled = ref.watch(episodeCheckEnabledProvider);
     final videoDebanding = ref.watch(videoDebandingProvider);
+    final subtitleFontSize = ref.watch(subtitleFontSizeProvider);
+    final subtitleBackground = ref.watch(subtitleBackgroundProvider);
+    final subtitleOutline = ref.watch(subtitleOutlineProvider);
 
     final appAccentKey = ref.watch(appAccentColorProvider);
 
@@ -260,6 +263,39 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             onChanged: (value) {
                               ref.read(videoDebandingProvider.notifier).setEnabled(value);
                             },
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                  child: _buildSectionCard(
+                    title: 'Subtitle Appearance',
+                    child: Column(
+                      children: [
+                        if (_matches('subtitle size font scale'))
+                          _buildActionTile(
+                            icon: Icons.format_size_rounded,
+                            title: 'Subtitle Font Size',
+                            subtitle: subtitleFontSizeLabel(subtitleFontSize),
+                            onTap: _showSubtitleFontSizeDialog,
+                          ),
+                        if (_matches('subtitle background transparency opacity'))
+                          _buildActionTile(
+                            icon: Icons.picture_in_picture_alt_rounded,
+                            title: 'Subtitle Background',
+                            subtitle: subtitleBackground,
+                            onTap: _showSubtitleBackgroundDialog,
+                          ),
+                        if (_matches('subtitle style text outline shadow'))
+                          _buildActionTile(
+                            icon: Icons.text_fields_rounded,
+                            title: 'Subtitle Text Style',
+                            subtitle: subtitleOutline,
+                            onTap: _showSubtitleOutlineDialog,
                           ),
                       ],
                     ),
@@ -2295,6 +2331,204 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         : null,
                     onTap: () {
                       ref.read(preferredSubtitleLanguageProvider.notifier).setLanguage(option);
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showSubtitleFontSizeDialog() async {
+    final current = ref.read(subtitleFontSizeProvider);
+    final options = subtitleFontSizeOptions.entries.toList();
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: NivioTheme.netflixDarkGrey,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              child: Text(
+                'Subtitle Font Size',
+                style: TextStyle(
+                  color: NivioTheme.netflixWhite,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (context, index) {
+                  final option = options[index];
+                  final isSelected = current == option.value;
+
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                    title: Text(
+                      option.key,
+                      style: TextStyle(
+                        color: isSelected
+                            ? NivioTheme.accentColorOf(context)
+                            : NivioTheme.netflixWhite,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                    trailing: isSelected
+                        ? Icon(Icons.check_circle_rounded,
+                            color: NivioTheme.accentColorOf(context))
+                        : null,
+                    onTap: () {
+                      ref.read(subtitleFontSizeProvider.notifier).setSize(option.value);
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showSubtitleBackgroundDialog() async {
+    final current = ref.read(subtitleBackgroundProvider);
+    final options = ['Transparent', 'Semi-Transparent', 'Solid'];
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: NivioTheme.netflixDarkGrey,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              child: Text(
+                'Subtitle Background',
+                style: TextStyle(
+                  color: NivioTheme.netflixWhite,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (context, index) {
+                  final option = options[index];
+                  final isSelected = current == option;
+
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                    title: Text(
+                      option,
+                      style: TextStyle(
+                        color: isSelected
+                            ? NivioTheme.accentColorOf(context)
+                            : NivioTheme.netflixWhite,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                    trailing: isSelected
+                        ? Icon(Icons.check_circle_rounded,
+                            color: NivioTheme.accentColorOf(context))
+                        : null,
+                    onTap: () {
+                      ref.read(subtitleBackgroundProvider.notifier).setBackground(option);
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showSubtitleOutlineDialog() async {
+    final current = ref.read(subtitleOutlineProvider);
+    final options = ['None', 'Subtle Shadow', 'Outline'];
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: NivioTheme.netflixDarkGrey,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              child: Text(
+                'Subtitle Text Style',
+                style: TextStyle(
+                  color: NivioTheme.netflixWhite,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (context, index) {
+                  final option = options[index];
+                  final isSelected = current == option;
+
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                    title: Text(
+                      option,
+                      style: TextStyle(
+                        color: isSelected
+                            ? NivioTheme.accentColorOf(context)
+                            : NivioTheme.netflixWhite,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                    trailing: isSelected
+                        ? Icon(Icons.check_circle_rounded,
+                            color: NivioTheme.accentColorOf(context))
+                        : null,
+                    onTap: () {
+                      ref.read(subtitleOutlineProvider.notifier).setOutline(option);
                       Navigator.pop(context);
                     },
                   );
