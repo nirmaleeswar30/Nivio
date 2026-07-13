@@ -8,8 +8,54 @@ class M3u8Track {
   M3u8Track({required this.language, required this.name});
 }
 
+class M3u8VideoResolution {
+  final String quality;
+  final String url;
+
+  M3u8VideoResolution({required this.quality, required this.url});
+}
+
 class M3u8Parser {
   static final Dio _dio = Dio();
+
+  static Future<List<M3u8VideoResolution>> parseVideoResolutions(
+      String url, Map<String, String>? headers) async {
+    try {
+      final response = await _dio.get(
+        url,
+        options: Options(headers: headers),
+      );
+
+      final content = response.data.toString();
+      final lines = content.split('\n');
+      final List<M3u8VideoResolution> resolutions = [];
+
+      for (int i = 0; i < lines.length; i++) {
+        final line = lines[i].trim();
+        if (line.startsWith('#EXT-X-STREAM-INF:')) {
+          final resMatch = RegExp(r'RESOLUTION=(\d+)x(\d+)').firstMatch(line);
+          String quality = 'auto';
+          if (resMatch != null) {
+            quality = '${resMatch.group(2)}p';
+          }
+          if (i + 1 < lines.length) {
+            final uri = lines[i + 1].trim();
+            if (uri.isNotEmpty && !uri.startsWith('#')) {
+              final resolvedUrl = _resolveUrl(url, uri);
+              // Avoid duplicates
+              if (!resolutions.any((r) => r.url == resolvedUrl)) {
+                resolutions.add(M3u8VideoResolution(quality: quality, url: resolvedUrl));
+              }
+            }
+          }
+        }
+      }
+      return resolutions;
+    } catch (e) {
+      debugPrint('M3u8Parser parseVideoResolutions Error: $e');
+      return [];
+    }
+  }
 
   static Future<Map<String, List<M3u8Track>>> parseTracks(
       String url, Map<String, String>? headers) async {

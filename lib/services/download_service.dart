@@ -572,6 +572,40 @@ class DownloadService {
     );
   }
 
+  static void _stripPngHeaderFromLocalFile(String filePath) {
+    try {
+      final file = File(filePath);
+      if (!file.existsSync()) return;
+
+      final length = file.lengthSync();
+      if (length < 8) return;
+
+      final raf = file.openSync(mode: FileMode.read);
+      final header = raf.readSync(8);
+      raf.closeSync();
+
+      // Check for PNG magic bytes: 89 50 4E 47 0D 0A 1A 0A
+      if (header[0] == 0x89 &&
+          header[1] == 0x50 &&
+          header[2] == 0x4E &&
+          header[3] == 0x47 &&
+          header[4] == 0x0D &&
+          header[5] == 0x0A &&
+          header[6] == 0x1A &&
+          header[7] == 0x0A) {
+        
+        appDebugLog('📥 Stripping faked PNG header from local segment: $filePath');
+        final bytes = file.readAsBytesSync();
+        if (bytes.length >= 8) {
+          final cleanedBytes = bytes.sublist(8);
+          file.writeAsBytesSync(cleanedBytes);
+        }
+      }
+    } catch (e) {
+      appDebugLog('⚠️ Error stripping PNG header from $filePath: $e');
+    }
+  }
+
   static Future<bool> _downloadM3u8Parallel(
     DownloadItem item,
     String filePath,
@@ -644,6 +678,7 @@ class DownloadService {
           final segPath = '${tempDir.path}/${prefix}_$index.ts';
 
           if (File(segPath).existsSync()) {
+            _stripPngHeaderFromLocalFile(segPath);
             downloadedSegments++;
             continue; // Skip already downloaded segments!
           }
@@ -668,6 +703,9 @@ class DownloadService {
                   sendTimeout: const Duration(seconds: 30),
                 ),
               );
+
+              // Strip PNG header from the part file before renaming it!
+              _stripPngHeaderFromLocalFile(segPartPath);
 
               // Rename upon success to mark it as fully downloaded
               File(segPartPath).renameSync(segPath);

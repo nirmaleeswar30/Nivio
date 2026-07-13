@@ -126,6 +126,16 @@ class DownloadPrompt {
   /// Shows a language picker dialog and returns the selected audio/subtitle languages.
   /// Returns null if the user cancels. Used by batch/seasonal downloads to ask once
   /// and apply the same language selection to all episodes.
+  static int _qualityScore(String quality) {
+    final q = quality.toLowerCase().trim();
+    if (q == 'auto') return -1;
+    final match = RegExp(r'(\d{3,4})p').firstMatch(q);
+    if (match != null) return int.tryParse(match.group(1)!) ?? 0;
+    return 0;
+  }
+
+  /// Shows a download settings dialog and returns the selected audio/subtitle languages and resolved source.
+  /// Returns null if the user cancels.
   static Future<({String? audioLang, String? subtitleLang, StreamSource? selectedSource, int? finalProviderIndex, StreamResult? updatedResult})?> pickLanguages({
     required BuildContext context,
     required WidgetRef ref,
@@ -136,7 +146,6 @@ class DownloadPrompt {
     int? providerIndex,
     bool isAnime = false,
   }) async {
-    StreamSource? selectedSource;
     int? currentProviderIndex = providerIndex;
     StreamResult currentResult = streamResult;
     
@@ -151,11 +160,9 @@ class DownloadPrompt {
     if (media != null && currentProviderIndex != null) {
       final streamingService = ref.read(streamingServiceProvider);
       final max = streamingService.totalProvidersFor(isAnime: isAnimeMedia);
-      debugPrint('DownloadPrompt: isAnimeMedia=$isAnimeMedia, max=$max');
       for (int i = 0; i < max; i++) {
         if (streamingService.isDownloadable(i, isAnime: isAnimeMedia)) {
           final name = streamingService.getProviderName(i, isAnime: isAnimeMedia);
-          debugPrint('DownloadPrompt: downloadable server = $name');
           availableServers.add({
              'index': i,
              'name': name
@@ -163,34 +170,146 @@ class DownloadPrompt {
         }
       }
     }
-    
-    debugPrint('DownloadPrompt: sources=${currentResult.sources.length}, availableServers=${availableServers.length}');
-    // 1. If we have multiple sources (like Animepahe qualities/audios), or we have servers to choose from, prompt first
-    if (currentResult.sources.length > 1 || availableServers.length > 1) {
-      if (!context.mounted) return null;
-      
-      selectedSource = streamResult.sources.first;
-      bool confirmed = false;
-      
-      await showModalBottomSheet(
-        context: context,
-        backgroundColor: NivioTheme.netflixDarkGrey,
-        isScrollControlled: true,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-        builder: (ctx) {
-          bool isLoadingServer = false;
-          return StatefulBuilder(
-            builder: (ctx, setState) {
-              return SafeArea(
+
+    if (!context.mounted) return null;
+
+    ({String? audioLang, String? subtitleLang, StreamSource? selectedSource, int? finalProviderIndex, StreamResult? updatedResult})? finalResultSelection;
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: NivioTheme.netflixDarkGrey,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        bool isLoading = true;
+        List<M3u8VideoResolution> resolvedResolutions = [];
+        M3u8VideoResolution? selectedResolution;
+        StreamSource? selectedSource;
+        List<M3u8Track> audioTracks = [];
+        List<M3u8Track> subtitleTracks = [];
+        String? selectedAudio;
+        String? selectedSubtitle;
+
+        return StatefulBuilder(
+          builder: (ctx, setState) {
+            // Function to load details for a specific URL
+            Future<void> loadDetails(String url, Map<String, String>? headers) async {
+              setState(() {
+                isLoading = true;
+              });
+
+              final isM3u8 = url.toLowerCase().contains('.m3u8') || currentResult.isM3U8;
+              List<M3u8VideoResolution> res = [];
+              List<M3u8Track> audios = [];
+              List<M3u8Track> subs = [];
+
+              if (isM3u8) {
+                res = await M3u8Parser.parseVideoResolutions(url, headers);
+                final tracks = await M3u8Parser.parseTracks(url, headers);
+                audios = tracks['audio'] ?? [];
+                subs = tracks['subtitle'] ?? [];
+              }
+
+              // Fallback/merge scraper-level audios and subtitles
+              for (final audio in currentResult.availableAudios) {
+                if (!audios.any((t) => t.language == audio)) {
+                  audios.add(M3u8Track(language: audio, name: audio));
+                }
+              }
+              for (final sub in currentResult.subtitles) {
+                if (!subs.any((t) => t.language == sub.lang)) {
+                  subs.add(M3u8Track(language: sub.lang, name: sub.lang));
+                }
+              }
+
+              setState(() {
+                resolvedResolutions = res;
+                audioTracks = audios;
+                subtitleTracks = subs;
+
+                // Sort and select highest quality resolution
+                if (res.isNotEmpty) {
+                  res.sort((a, b) => _qualityScore(b.quality).compareTo(_qualityScore(a.quality)));
+                  selectedResolution = res.first;
+                } else {
+                  selectedResolution = null;
+                }
+
+                // Default Quality Source selection if no resolutions parsed
+                if (currentResult.sources.isNotEmpty) {
+                  final sortedSources = List<StreamSource>.from(currentResult.sources)
+                    ..sort((a, b) => _qualityScore(b.quality).compareTo(_qualityScore(a.quality)));
+                  selectedSource = sortedSources.first;
+                } else {
+                  selectedSource = null;
+                }
+
+                // Default Audio Selection based on global prefs
+                final prefAudio = ref.read(preferredDownloadAudioLanguageProvider);
+                if (currentResult.selectedAudio.isNotEmpty && audios.any((t) => t.language == currentResult.selectedAudio)) {
+                  selectedAudio = currentResult.selectedAudio;
+                } else if (prefAudio == 'Original' && audios.isNotEmpty) {
+                  selectedAudio = audios.first.language;
+                } else {
+                  final match = audios.where((t) => t.name.toLowerCase().contains(prefAudio.toLowerCase()));
+                  if (match.isNotEmpty) selectedAudio = match.first.language;
+                  else if (audios.isNotEmpty) selectedAudio = audios.first.language;
+                  else selectedAudio = null;
+                }
+
+                // Default Subtitle Selection based on global prefs
+                final prefSubtitle = ref.read(preferredDownloadSubtitleLanguageProvider);
+                if (prefSubtitle == 'Auto' && subs.isNotEmpty) {
+                  selectedSubtitle = subs.first.language;
+                } else if (prefSubtitle == 'Off') {
+                  selectedSubtitle = null;
+                } else {
+                  final match = subs.where((t) => t.name.toLowerCase().contains(prefSubtitle.toLowerCase()));
+                  if (match.isNotEmpty) selectedSubtitle = match.first.language;
+                  else if (subs.isNotEmpty) selectedSubtitle = subs.first.language;
+                  else selectedSubtitle = null;
+                }
+
+                isLoading = false;
+              });
+            }
+
+            // Initial load on first build
+            if (isLoading && resolvedResolutions.isEmpty && audioTracks.isEmpty && subtitleTracks.isEmpty) {
+              final initialUrl = selectedSource?.url ?? currentResult.sources.firstOrNull?.url ?? currentResult.url;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                loadDetails(initialUrl, currentResult.headers);
+              });
+            }
+
+            return SafeArea(
+              child: SingleChildScrollView(
                 child: Container(
-                  padding: const EdgeInsets.all(24),
+                  padding: EdgeInsets.only(
+                    left: 24,
+                    right: 24,
+                    top: 24,
+                    bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+                  ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      const Text(
+                        'Download Settings',
+                        style: TextStyle(color: NivioTheme.netflixWhite, fontSize: 22, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Configure quality, server, and language preferences.',
+                        style: TextStyle(color: NivioTheme.netflixLightGrey, fontSize: 13),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // 1. Server Selection
                       if (availableServers.length > 1) ...[
-                        const Text('Select Server (Advanced)', style: TextStyle(color: NivioTheme.netflixWhite, fontSize: 20, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 12),
+                        const Text('Server', style: TextStyle(color: NivioTheme.netflixLightGrey, fontSize: 14)),
+                        const SizedBox(height: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
@@ -208,8 +327,10 @@ class DownloadPrompt {
                               }).toList(),
                               onChanged: (newIdx) async {
                                 if (newIdx == null || newIdx == currentProviderIndex) return;
-                                
-                                setState(() => isLoadingServer = true);
+                                setState(() {
+                                  isLoading = true;
+                                  currentProviderIndex = newIdx;
+                                });
                                 final streamingService = ref.read(streamingServiceProvider);
                                 try {
                                   final newResult = await streamingService.fetchStreamUrl(
@@ -219,263 +340,169 @@ class DownloadPrompt {
                                     providerIndex: newIdx,
                                   );
                                   if (newResult != null) {
-                                    setState(() {
-                                      currentProviderIndex = newIdx;
-                                      currentResult = newResult;
-                                      selectedSource = newResult.sources.isNotEmpty ? newResult.sources.first : null;
-                                    });
+                                    currentResult = newResult;
+                                    final targetUrl = newResult.sources.isNotEmpty ? newResult.sources.first.url : newResult.url;
+                                    await loadDetails(targetUrl, newResult.headers);
                                   } else {
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to probe selected server.')));
+                                    if (ctx.mounted) {
+                                      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Failed to load server.')));
                                     }
+                                    setState(() => isLoading = false);
                                   }
-                                } finally {
-                                  if (context.mounted) setState(() => isLoadingServer = false);
+                                } catch (_) {
+                                  setState(() => isLoading = false);
                                 }
                               },
                             ),
                           ),
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 16),
                       ],
-                      if (currentResult.sources.isNotEmpty) ...[
-                        const Text('Select Quality', style: TextStyle(color: NivioTheme.netflixWhite, fontSize: 20, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 12),
+
+                      // 2. Quality Selection
+                      if (!isLoading) ...[
+                        const Text('Quality', style: TextStyle(color: NivioTheme.netflixLightGrey, fontSize: 14)),
+                        const SizedBox(height: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
                           child: DropdownButtonHideUnderline(
-                            child: DropdownButton<StreamSource>(
-                              value: selectedSource,
+                            child: resolvedResolutions.isNotEmpty
+                                ? DropdownButton<M3u8VideoResolution>(
+                                    value: selectedResolution,
+                                    isExpanded: true,
+                                    dropdownColor: NivioTheme.netflixDarkGrey,
+                                    icon: const Icon(Icons.arrow_drop_down, color: NivioTheme.netflixWhite),
+                                    items: resolvedResolutions.map((res) {
+                                      return DropdownMenuItem(
+                                        value: res,
+                                        child: Text(res.quality, style: const TextStyle(color: NivioTheme.netflixWhite)),
+                                      );
+                                    }).toList(),
+                                    onChanged: (val) => setState(() => selectedResolution = val),
+                                  )
+                                : DropdownButton<StreamSource>(
+                                    value: selectedSource,
+                                    isExpanded: true,
+                                    dropdownColor: NivioTheme.netflixDarkGrey,
+                                    icon: const Icon(Icons.arrow_drop_down, color: NivioTheme.netflixWhite),
+                                    items: currentResult.sources.map((source) {
+                                      final hasMixedAudio = currentResult.sources.any((s) => s.isDub) && currentResult.sources.any((s) => !s.isDub);
+                                      final label = (isAnimeMedia && hasMixedAudio)
+                                          ? "${source.quality} ${source.isDub ? '(Dub)' : '(Sub)'}"
+                                          : source.quality;
+                                      return DropdownMenuItem(
+                                        value: source,
+                                        child: Text(label, style: const TextStyle(color: NivioTheme.netflixWhite)),
+                                      );
+                                    }).toList(),
+                                    onChanged: (val) => setState(() => selectedSource = val),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // 3. Audio Selection
+                      if (!isLoading && audioTracks.isNotEmpty) ...[
+                        const Text('Audio Track', style: TextStyle(color: NivioTheme.netflixLightGrey, fontSize: 14)),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: selectedAudio,
                               isExpanded: true,
                               dropdownColor: NivioTheme.netflixDarkGrey,
                               icon: const Icon(Icons.arrow_drop_down, color: NivioTheme.netflixWhite),
-                              items: currentResult.sources.map((source) {
-                                final hasMixedAudio = currentResult.sources.any((s) => s.isDub) && currentResult.sources.any((s) => !s.isDub);
-                                final label = (isAnimeMedia && hasMixedAudio)
-                                    ? "${source.quality} ${source.isDub ? '(Dub)' : '(Sub)'}"
-                                    : source.quality;
+                              items: audioTracks.map((t) {
                                 return DropdownMenuItem(
-                                  value: source,
-                                  child: Text(label, style: const TextStyle(color: NivioTheme.netflixWhite)),
+                                  value: t.language,
+                                  child: Text(t.name, style: const TextStyle(color: NivioTheme.netflixWhite)),
                                 );
                               }).toList(),
-                              onChanged: (val) => setState(() => selectedSource = val),
+                              onChanged: (val) => setState(() => selectedAudio = val),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // 4. Subtitle Selection
+                      if (!isLoading && subtitleTracks.isNotEmpty) ...[
+                        const Text('Subtitle Track', style: TextStyle(color: NivioTheme.netflixLightGrey, fontSize: 14)),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String?>(
+                              value: selectedSubtitle,
+                              isExpanded: true,
+                              dropdownColor: NivioTheme.netflixDarkGrey,
+                              icon: const Icon(Icons.arrow_drop_down, color: NivioTheme.netflixWhite),
+                              items: [
+                                const DropdownMenuItem(value: null, child: Text('None (Off)', style: TextStyle(color: NivioTheme.netflixWhite))),
+                                ...subtitleTracks.map((t) {
+                                  return DropdownMenuItem(
+                                    value: t.language,
+                                    child: Text(t.name, style: const TextStyle(color: NivioTheme.netflixWhite)),
+                                  );
+                                }),
+                              ],
+                              onChanged: (val) => setState(() => selectedSubtitle = val),
                             ),
                           ),
                         ),
                         const SizedBox(height: 24),
                       ],
+
+                      if (isLoading) ...[
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(vertical: 40.0),
+                            child: CircularProgressIndicator(color: NivioTheme.netflixRed),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+
+                      // 5. Action Button
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: NivioTheme.accentColorOf(context),
+                            backgroundColor: NivioTheme.accentColorOf(ctx),
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
-                          onPressed: isLoadingServer ? null : () {
-                            confirmed = true;
+                          onPressed: isLoading ? null : () {
+                            // Extract selected quality source URL
+                            StreamSource? finalSource = selectedSource;
+                            if (selectedResolution != null) {
+                              finalSource = StreamSource(
+                                url: selectedResolution!.url,
+                                quality: selectedResolution!.quality,
+                                isM3U8: true,
+                              );
+                            }
+                            
+                            finalResultSelection = (
+                              audioLang: selectedAudio,
+                              subtitleLang: selectedSubtitle,
+                              selectedSource: finalSource,
+                              finalProviderIndex: currentProviderIndex,
+                              updatedResult: currentResult,
+                            );
                             Navigator.pop(ctx);
                           },
-                          child: isLoadingServer 
-                              ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                              : const Text('Next', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          child: const Text('Start Download', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                         ),
                       ),
                     ],
                   ),
-                ),
-              );
-            },
-          );
-        },
-      );
-      
-      if (!confirmed) return null;
-    }
-
-    // 2. Extract target URL from selection or fallback to default
-    final targetUrl = selectedSource?.url ?? streamResult.url;
-    final isM3u8 = targetUrl.toLowerCase().contains('.m3u8') || streamResult.isM3U8;
-
-    // 3. Show loading indicator and probe M3U8 if necessary
-    List<M3u8Track> audioTracks = [];
-    List<M3u8Track> subtitleTracks = [];
-
-    if (isM3u8) {
-      if (!context.mounted) return null;
-      showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: NivioTheme.netflixDarkGrey,
-        content: Row(
-          children: [
-            SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(color: NivioTheme.accentColorOf(context), strokeWidth: 2),
-            ),
-            const SizedBox(width: 16),
-            const Expanded(
-              child: Text('Fetching available languages...', style: TextStyle(color: NivioTheme.netflixWhite)),
-            ),
-          ],
-        ),
-      ),
-    );
-
-      // Parse languages
-      try {
-        final tracks = await M3u8Parser.parseTracks(targetUrl, streamResult.headers);
-        audioTracks = tracks['audio'] ?? [];
-        subtitleTracks = tracks['subtitle'] ?? [];
-      } catch (e) {
-        debugPrint('M3u8Parser error: $e');
-      }
-
-      if (context.mounted) {
-        Navigator.pop(context); // Dismiss loading
-      }
-    }
-
-    for (final audio in streamResult.availableAudios) {
-      if (!audioTracks.any((t) => t.language == audio)) {
-        audioTracks.add(M3u8Track(language: audio, name: audio));
-      }
-    }
-
-    for (final sub in streamResult.subtitles) {
-      if (!subtitleTracks.any((t) => t.language == sub.lang)) {
-        subtitleTracks.add(M3u8Track(language: sub.lang, name: sub.lang));
-      }
-    }
-
-    if (audioTracks.isEmpty && subtitleTracks.isEmpty && streamResult.availableAudios.isEmpty && streamResult.subtitles.isEmpty) {
-      return (audioLang: null, subtitleLang: null, selectedSource: selectedSource, finalProviderIndex: currentProviderIndex, updatedResult: currentResult);
-    }
-
-    // Determine default selection based on global settings
-    final prefAudio = ref.read(preferredDownloadAudioLanguageProvider);
-    final prefSubtitle = ref.read(preferredDownloadSubtitleLanguageProvider);
-
-    String? selectedAudio;
-    String? selectedSubtitle;
-
-    if (streamResult.selectedAudio.isNotEmpty && audioTracks.any((t) => t.language == streamResult.selectedAudio)) {
-      selectedAudio = streamResult.selectedAudio;
-    } else if (prefAudio == 'Original' && audioTracks.isNotEmpty) {
-      selectedAudio = audioTracks.first.language;
-    } else {
-      final match = audioTracks.where((t) => t.name.toLowerCase().contains(prefAudio.toLowerCase()));
-      if (match.isNotEmpty) selectedAudio = match.first.language;
-      else if (audioTracks.isNotEmpty) selectedAudio = audioTracks.first.language;
-    }
-
-    if (prefSubtitle == 'Auto' && subtitleTracks.isNotEmpty) {
-      selectedSubtitle = subtitleTracks.first.language;
-    } else if (prefSubtitle == 'Off') {
-      selectedSubtitle = null;
-    } else {
-      final match = subtitleTracks.where((t) => t.name.toLowerCase().contains(prefSubtitle.toLowerCase()));
-      if (match.isNotEmpty) selectedSubtitle = match.first.language;
-      else if (subtitleTracks.isNotEmpty) selectedSubtitle = subtitleTracks.first.language;
-    }
-
-    if (!context.mounted) return null;
-
-    // Show language picker
-    ({String? audioLang, String? subtitleLang, StreamSource? selectedSource, int? finalProviderIndex, StreamResult? updatedResult})? result;
-
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setState) {
-            return SafeArea(
-              child: Container(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Select Download Languages', style: TextStyle(color: NivioTheme.netflixWhite, fontSize: 20, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    const Text('This selection will be applied to all episodes', style: TextStyle(color: NivioTheme.netflixLightGrey, fontSize: 13)),
-                    const SizedBox(height: 24),
-                    if (audioTracks.isNotEmpty) ...[
-                      const Text('Audio Track', style: TextStyle(color: NivioTheme.netflixLightGrey, fontSize: 14)),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: selectedAudio,
-                            isExpanded: true,
-                            dropdownColor: NivioTheme.netflixDarkGrey,
-                            icon: const Icon(Icons.arrow_drop_down, color: NivioTheme.netflixWhite),
-                            items: audioTracks.map((t) {
-                              return DropdownMenuItem(
-                                value: t.language,
-                                child: Text(t.name, style: const TextStyle(color: NivioTheme.netflixWhite)),
-                              );
-                            }).toList(),
-                            onChanged: (val) => setState(() => selectedAudio = val),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    if (subtitleTracks.isNotEmpty) ...[
-                      const Text('Subtitle Track', style: TextStyle(color: NivioTheme.netflixLightGrey, fontSize: 14)),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String?>(
-                            value: selectedSubtitle,
-                            isExpanded: true,
-                            dropdownColor: NivioTheme.netflixDarkGrey,
-                            icon: const Icon(Icons.arrow_drop_down, color: NivioTheme.netflixWhite),
-                            items: [
-                              const DropdownMenuItem(value: null, child: Text('None (Off)', style: TextStyle(color: NivioTheme.netflixWhite))),
-                              ...subtitleTracks.map((t) {
-                                return DropdownMenuItem(
-                                  value: t.language,
-                                  child: Text(t.name, style: const TextStyle(color: NivioTheme.netflixWhite)),
-                                );
-                              }),
-                            ],
-                            onChanged: (val) => setState(() => selectedSubtitle = val),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                    ],
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: NivioTheme.accentColorOf(context),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        onPressed: () {
-                          result = (audioLang: selectedAudio, subtitleLang: selectedSubtitle, selectedSource: selectedSource, finalProviderIndex: currentProviderIndex, updatedResult: currentResult);
-                          Navigator.pop(ctx);
-                        },
-                        child: const Text('Start Downloads', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  ],
                 ),
               ),
             );
@@ -484,6 +511,6 @@ class DownloadPrompt {
       },
     );
 
-    return result;
+    return finalResultSelection;
   }
 }

@@ -730,9 +730,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
 
       // Open media
+      String targetUrl = result.url;
+      if (targetUrl.startsWith('/') && !targetUrl.startsWith('file://')) {
+        targetUrl = 'file://$targetUrl';
+      }
+
       await _player.open(
         Media(
-          result.url,
+          targetUrl,
           httpHeaders: headers,
         ),
         play: true,
@@ -752,24 +757,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           }
         }
       } catch (e) {
-        print('Error loading saved custom remote subtitle: $e');
+        appDebugLog('Error loading saved custom remote subtitle: $e');
       }
 
       if (startAt != null && startAt.inSeconds > 0) {
-        print('🎬 SEEK_DEBUG: startAt is $startAt');
+        appDebugLog('🎬 SEEK_DEBUG: startAt is $startAt');
         late StreamSubscription<Duration> seekSub;
         seekSub = _player.stream.position.listen((pos) {
           if (!mounted) {
-            print('🎬 SEEK_DEBUG: Player screen not mounted, cancelling seek listener');
+            appDebugLog('🎬 SEEK_DEBUG: Player screen not mounted, cancelling seek listener');
             seekSub.cancel();
             return;
           }
           if (pos > Duration.zero && _player.state.duration > Duration.zero) {
             seekSub.cancel();
-            print('🎬 SEEK_DEBUG: Position tick is $pos (> zero) and duration is ${_player.state.duration}. Waiting 300ms for stream stabilization...');
+            appDebugLog('🎬 SEEK_DEBUG: Position tick is $pos (> zero) and duration is ${_player.state.duration}. Waiting 300ms for stream stabilization...');
             Future.delayed(const Duration(milliseconds: 300), () async {
               if (mounted) {
-                print('🎬 SEEK_DEBUG: Executing stabilized seek to $startAt');
+                appDebugLog('🎬 SEEK_DEBUG: Executing stabilized seek to $startAt');
                 await _player.seek(startAt!);
               }
             });
@@ -777,7 +782,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         });
         _subscriptions.add(seekSub);
       } else {
-        print('🎬 SEEK_DEBUG: startAt is null or zero');
+        appDebugLog('🎬 SEEK_DEBUG: startAt is null or zero');
       }
 
       final speed = ref.read(playbackSpeedProvider);
@@ -1020,7 +1025,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subscriptions.add(
       _player.stream.position.listen((position) {
         if (!mounted) return;
-        print('🎬 POSITION_DEBUG: Current player position = $position');
+        // appDebugLog('🎬 POSITION_DEBUG: Current player position = $position');
         _checkNextEpisode();
         unawaited(_broadcastWatchPartyPlayback(force: false));
       }),
@@ -1060,7 +1065,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subscriptions.add(
       _player.stream.error.listen((error) {
         if (!mounted) return;
-        debugPrint('🎬 Player error: $error');
+        appDebugLog('🎬 Player error: $error');
       }),
     );
 
@@ -4526,10 +4531,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         
         if (preloadedResult != null && preloadedResult.url.isNotEmpty && mounted) {
            currentResult.preloadedSources![audio] = preloadedResult;
-           print('Preloaded audio: $audio');
+           appDebugLog('Preloaded audio: $audio');
         }
       } catch (e) {
-        print('Failed to preload audio $audio: $e');
+        appDebugLog('Failed to preload audio $audio: $e');
       }
     }
   }
