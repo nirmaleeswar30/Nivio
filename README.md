@@ -45,8 +45,8 @@
 *   **🎬 Unified Discovery**: Browse trending Movies, TV Shows, and Anime directly from TMDB. Includes dedicated sections for regional content (Tamil, Telugu, Hindi, Korean).
 *   **🎌 Dedicated Anime Hub**: Integrated with **AniList** for dedicated Anime scraping from high-speed providers (`Animetsu`, `Animex`, `Miruro`), complete with Miruro Cloudflare bypass and custom quality selection.
 *   **🧠 Smart Recommendations**: An intelligent, privacy-first engine that analyzes your local watch history to curate a highly personalized "Top Picks For You" list by interleaving recommendations from your top 5 most recently watched titles.
-*   **⚡ Blazing Fast Playback**: Custom native video player (`better_player_plus`) optimized for rapid streaming, picture-in-picture, and gesture controls.
-*   **🔊 Loudness Enhancer (Volume Boost)**: Rebuilt native playback engine supporting software volume boost up to 200% (+20dB gain) via screen swiping or TV arrow keys.
+*   **⚡ Blazing Fast Playback**: Custom native video player (`media_kit`) powered by `libmpv`/MPV for hardware-accelerated decoding, picture-in-picture, and custom controls.
+*   **🔊 Loudness Enhancer (Volume Boost)**: Supports software volume boost up to 200% (+20dB gain) via screen swiping or TV arrow keys.
 *   **📂 Custom Subtitles & Persistence**: Load subtitle files (.srt, .vtt) locally from your device or paste remote URLs directly. Custom subtitle choices are remembered and auto-mapped for that episode on next play.
 *   **📡 Live IPTV**: Stream live television channels using M3U/M3U8 playlists directly from the app.
 *   **🎉 Real-Time Watch Parties**: Create a room, share a 6-digit code, and watch movies perfectly synced with your friends. Host playback controls are synchronized across all devices instantly via Supabase.
@@ -66,7 +66,7 @@
 *   **Backend & Auth**: Firebase (Auth, Firestore)
 *   **Realtime Sockets**: Supabase (For Watch Parties)
 *   **Local Storage**: Hive & SharedPreferences
-*   **Media Playback**: `better_player_plus` (custom fork utilizing ExoPlayer & LoudnessEnhancer)
+*   **Media Playback**: `media_kit` (high-performance playback engine utilizing `libmpv` / MPV for hardware-accelerated rendering and extensive format decoding)
 
 ---
 

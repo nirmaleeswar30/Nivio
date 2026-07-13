@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## Nivio-v2.2.3
+
+### 🚀 New Features & Enhancements
+*   **Media Kit Core Engine Migration:** Replaced the ExoPlayer-based `better_player_plus` engine with `media_kit` (using MPV/libmpv) for high-performance, hardware-accelerated video rendering, robust stream demuxing, and universal format support.
+*   **Video Debanding (Color Smoothing):** Added a new Video Debanding setting dynamically toggleable inside the player settings overlay and configurable globally on the Profile page. Reduces color-banding artifacts on compressed video streams.
+*   **Premium Custom Subtitles Rendering:** Integrated a custom overlay subtitle view with carriage return and null-byte stripping to prevent visual layout bugs. Exposed comprehensive configuration controls in both the player settings drawer and global Profile page, supporting transparent/semi-transparent/solid backgrounds and outline styles (drop shadow vs outlines).
+*   **Wakelock Keep-Screen-On Integration:** Integrated the screen wakelock (`wakelock_plus`) across both the main video player screen and fullscreen trailer player to prevent the device screen from dimming or turning off during video playback.
+*   **Ultra-sharp 4K TMDB Artwork:** Upgraded TMDB poster and backdrop media details to request maximum resolution original quality image variants instead of compressed `w500` versions, resulting in crystal clear details on high-density and large screens.
+*   **Unified Episode Header Title**: Updated the TV show/anime player screen header to display the specific episode title and number (e.g. `S1 E1 - Title`) as the primary heading instead of the redundant show/series title.
+
+### 🐛 Bug Fixes & Logic Improvements
+*   **Android Back Gestures WebView Hijack Protection:** Wrapped the fullscreen trailer screen in a custom PopScope and disabled the built-in YouTube player fullscreen button to prevent Android's native WebView predictive back gestures from intercepting navigation events and locking the user in the player screen.
+*   **Faked PNG Download Headers Cleansing:** Added stream detection and stripping for faked PNG magic headers prepended by Animepahe (Kwik) CDN segments, resolving "Failed to recognize file format" error loops when merging/transcoding TS segments via FFmpeg.
+*   **Seek-Stabilization & Continue Watching Resume Fix:** Fixed a timing bug where resuming media or switching tracks reset playback position to `0:00`. Rewrote the seek scheduler to wait for initial stream packet decoding before executing seek commands.
+*   **Local File URI Prefixing:** Configured player loaders to automatically prefix absolute offline local paths with the `file://` scheme to ensure compatibility with `media_kit`'s format-recognition system.
+*   **Dynamic Track Highlights & Local Cache Persistence:** Fixed subtitle and audio track highlights inside selection panels to use ID/URL matching. Cached user choices locally to avoid double-tap selection latency.
+*   **Unified Download Prompt:** Consolidated multiple sequential download sheets into a single, cohesive "Download Settings" prompt featuring dynamic M3U8 video resolution parsing on server load and automatic selection of the highest quality track.
+*   **Mojibake & Code Comments Cleanup:** Scanned and purged corrupted Unicode characters (Mojibake comments e.g., `ÃƒÂ¢Ã¢â`, `Ã¢â‚¬Â¢`) project-wide, replacing them with standard clean formatting.
+*   **Package Cleanup:** Deleted the unused local `/packages/better_player_plus` library folder.
+
 ## Nivio-v2.2.2
 
 ### 🚀 New Features & Providers
