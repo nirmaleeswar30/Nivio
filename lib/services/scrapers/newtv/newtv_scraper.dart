@@ -155,7 +155,7 @@ class NetMirrorScraperService {
         return resB.compareTo(resA);
       });
 
-      final subtitles = <SubtitleTrack>[];
+      final subtitles = <StreamSubtitleTrack>[];
       final captions = data['captions'];
       if (captions is List) {
         for (final caption in captions) {
@@ -166,7 +166,7 @@ class NetMirrorScraperService {
             if (subUrl.startsWith('/')) {
               subUrl = 'https://net27.cc$subUrl';
             }
-            subtitles.add(SubtitleTrack(url: subUrl, lang: lang));
+            subtitles.add(StreamSubtitleTrack(url: subUrl, lang: lang));
           }
         }
       }

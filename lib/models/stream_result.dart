@@ -1,12 +1,12 @@
 import 'package:nivio/services/skip_times_models.dart';
-class SubtitleTrack {
+class StreamSubtitleTrack {
   final String url;
   final String lang;
 
-  SubtitleTrack({required this.url, required this.lang});
+  StreamSubtitleTrack({required this.url, required this.lang});
 
-  factory SubtitleTrack.fromJson(Map<String, dynamic> json) {
-    return SubtitleTrack(
+  factory StreamSubtitleTrack.fromJson(Map<String, dynamic> json) {
+    return StreamSubtitleTrack(
       url: json['url'] ?? '',
       lang: json['lang'] ?? 'Unknown',
     );
@@ -40,7 +40,7 @@ class StreamResult {
   final String url;
   final String quality;
   final String provider;
-  final List<SubtitleTrack> subtitles;
+  final List<StreamSubtitleTrack> subtitles;
   final List<String> availableQualities;
   final List<String> availableAudios;
   final String selectedAudio;
@@ -69,7 +69,7 @@ class StreamResult {
     String? url,
     String? quality,
     String? provider,
-    List<SubtitleTrack>? subtitles,
+    List<StreamSubtitleTrack>? subtitles,
     List<String>? availableQualities,
     List<String>? availableAudios,
     String? selectedAudio,

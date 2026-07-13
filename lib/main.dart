@@ -41,10 +41,12 @@ import 'package:nivio/services/watch_party/watch_party_models.dart';
 import 'package:nivio/services/watch_party/watch_party_supabase_config.dart';
 import 'package:nivio/services/download_service.dart';
 import 'package:nivio/services/hls_proxy_service.dart';
+import 'package:media_kit/media_kit.dart';
 
 void main() async {
   try {
     WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+    MediaKit.ensureInitialized();
 
     // Preserve splash screen while initializing
     FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);

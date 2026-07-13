@@ -1,4 +1,4 @@
-import 'package:better_player_plus/better_player_plus.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
@@ -11,9 +11,9 @@ import 'package:nivio/widgets/watch_party_participants_sheet.dart';
 import 'gesture_layer.dart';
 
 class CustomPlayerControls extends ConsumerStatefulWidget {
-  final BetterPlayerController controller;
+  final Player controller;
   final Function(bool visbility) onPlayerVisibilityChanged;
-  final BetterPlayerControlsConfiguration controlsConfiguration;
+  final void Function(BoxFit)? onFitChanged;
   
   final String? title;
   final String? subtitle;
@@ -28,7 +28,7 @@ class CustomPlayerControls extends ConsumerStatefulWidget {
     super.key,
     required this.controller,
     required this.onPlayerVisibilityChanged,
-    required this.controlsConfiguration,
+    this.onFitChanged,
     this.title,
     this.subtitle,
     this.providerName,
@@ -50,20 +50,34 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
   bool _isLocked = false;
   Timer? _hideControlsTimer;
   double? _dragValue;
+  StreamSubscription<bool>? _playingSubscription;
 
   @override
   void initState() {
     super.initState();
-    _isPlaying = widget.controller.isPlaying() ?? false;
-    widget.controller.videoPlayerController?.addListener(_onPlayerStateChanged);
+    _isPlaying = widget.controller.state.playing;
+    _playingSubscription = widget.controller.stream.playing.listen((isPlaying) {
+      if (mounted) {
+        setState(() {
+          _isPlaying = isPlaying;
+        });
+        if (!_isPlaying) {
+          if (!_isLocked) {
+            setState(() => _showControls = true);
+            widget.onPlayerVisibilityChanged(true);
+          }
+          _hideControlsTimer?.cancel();
+        } else {
+          _startHideTimer();
+        }
+      }
+    });
     _startHideTimer();
   }
 
   @override
   void dispose() {
-    widget.controller.videoPlayerController?.removeListener(
-      _onPlayerStateChanged,
-    );
+    _playingSubscription?.cancel();
     _hideControlsTimer?.cancel();
     super.dispose();
   }
@@ -213,23 +227,7 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
     );
   }
 
-  void _onPlayerStateChanged() {
-    final isPlaying = widget.controller.isPlaying() ?? false;
-    if (_isPlaying != isPlaying) {
-      setState(() {
-        _isPlaying = isPlaying;
-      });
-      if (!_isPlaying) {
-        if (!_isLocked) {
-          setState(() => _showControls = true);
-          widget.onPlayerVisibilityChanged(true);
-        }
-        _hideControlsTimer?.cancel();
-      } else {
-        _startHideTimer();
-      }
-    }
-  }
+
 
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, "0");
@@ -265,7 +263,7 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
             onLongPress: _toggleLock,
             onPinchZoom: (zoomIn) {
               final newFit = zoomIn ? BoxFit.cover : BoxFit.contain;
-              widget.controller.setOverriddenFit(newFit);
+              widget.onFitChanged?.call(newFit);
             },
           ),
 
@@ -416,25 +414,9 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                             StreamBuilder(
                               stream: Stream.periodic(const Duration(milliseconds: 500)),
                               builder: (context, _) {
-                                final vpController = widget.controller.videoPlayerController;
-                                if (vpController == null) return const SizedBox.shrink();
-                                
-                                VideoPlayerValue? value;
-                                try {
-                                  value = vpController.value;
-                                } catch (_) {
-                                  // Controller was disposed during provider switch, ignore.
-                                  return const SizedBox.shrink();
-                                }
-                                
-                                final position = value.position;
-                                final duration = value.duration ?? Duration.zero;
-                                
-                                final buffered = value.buffered;
-                                double maxBuffered = 0.0;
-                                if (buffered.isNotEmpty) {
-                                  maxBuffered = buffered.last.end.inMilliseconds.toDouble();
-                                }
+                                final position = widget.controller.state.position;
+                                final duration = widget.controller.state.duration;
+                                var maxBuffered = widget.controller.state.buffer.inMilliseconds.toDouble();
                                 
                                 if (duration.inMilliseconds > 0 && maxBuffered > duration.inMilliseconds.toDouble()) {
                                   maxBuffered = duration.inMilliseconds.toDouble();
@@ -469,7 +451,7 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                                             _hideControlsTimer?.cancel();
                                           },
                                           onChangeEnd: (val) {
-                                            widget.controller.seekTo(Duration(milliseconds: val.toInt()));
+                                            widget.controller.seek(Duration(milliseconds: val.toInt()));
                                             setState(() {
                                               _dragValue = null;
                                             });
@@ -516,7 +498,7 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                           Future.delayed(const Duration(milliseconds: 300), () {
                             if (!mounted) return;
                             final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
-                            if (widget.controller.isFullScreen || isLandscape) {
+                            if (isLandscape) {
                               SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
                             }
                           });

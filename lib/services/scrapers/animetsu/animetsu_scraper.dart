@@ -137,10 +137,10 @@ class AnimetsuScraperService {
             orElse: () => sources.first,
           );
           
-          final List<SubtitleTrack> subtitles = [];
+          final List<StreamSubtitleTrack> subtitles = [];
           final subsData = data['subs'] as List<dynamic>? ?? [];
           for (final sub in subsData) {
-            subtitles.add(SubtitleTrack(
+            subtitles.add(StreamSubtitleTrack(
               url: sub['url'] ?? '',
               lang: sub['lang'] ?? 'Unknown',
             ));

@@ -116,6 +116,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final preferredAudio = ref.watch(preferredAudioLanguageProvider);
     final preferredSubtitle = ref.watch(preferredSubtitleLanguageProvider);
     final episodeCheckEnabled = ref.watch(episodeCheckEnabledProvider);
+    final videoDebanding = ref.watch(videoDebandingProvider);
 
     final appAccentKey = ref.watch(appAccentColorProvider);
 
@@ -189,7 +190,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       preferredAudio: preferredAudio,
                       preferredSubtitle: preferredSubtitle,
                       episodeCheckEnabled: episodeCheckEnabled,
-
+                      videoDebanding: videoDebanding,
                       appAccentKey: appAccentKey,
                     ),
                   ),
@@ -249,6 +250,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             title: 'Preferred Subtitle Language',
                             subtitle: preferredSubtitle,
                             onTap: _showSubtitleLanguageDialog,
+                          ),
+                        if (_matches('video deband filter quality'))
+                          _buildSwitchTile(
+                            icon: Icons.blur_linear_rounded,
+                            title: 'Video Debanding',
+                            subtitle: 'Reduces color banding (uses more battery)',
+                            value: videoDebanding,
+                            onChanged: (value) {
+                              ref.read(videoDebandingProvider.notifier).setEnabled(value);
+                            },
                           ),
                       ],
                     ),
@@ -813,7 +824,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     required String preferredAudio,
     required String preferredSubtitle,
     required bool episodeCheckEnabled,
-
+    required bool videoDebanding,
     required String appAccentKey,
   }) {
     final results = <Widget>[];
@@ -855,6 +866,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           title: 'Preferred Subtitle Language',
           subtitle: preferredSubtitle,
           onTap: _showSubtitleLanguageDialog,
+        ),
+      );
+    }
+    if (_matches('video deband filter quality')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.blur_linear_rounded,
+          title: 'Video Debanding',
+          subtitle: 'Reduces color banding (uses more battery)',
+          value: videoDebanding,
+          onChanged: (value) {
+            ref.read(videoDebandingProvider.notifier).setEnabled(value);
+          },
         ),
       );
     }

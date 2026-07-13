@@ -411,3 +411,33 @@ class DownloadConcurrencyNotifier extends StateNotifier<int> {
     await prefs.setInt('download_concurrency', value);
   }
 }
+
+// Video Debanding Provider
+final videoDebandingProvider =
+    StateNotifierProvider<VideoDebandingNotifier, bool>((ref) {
+      return VideoDebandingNotifier();
+    });
+
+class VideoDebandingNotifier extends StateNotifier<bool> {
+  VideoDebandingNotifier() : super(false) {
+    _loadSetting();
+  }
+
+  Future<void> _loadSetting() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('video_debanding') ?? false;
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('video_debanding', state);
+  }
+
+  Future<void> setEnabled(bool enabled) async {
+    state = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('video_debanding', enabled);
+  }
+}
+

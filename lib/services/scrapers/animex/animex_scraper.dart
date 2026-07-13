@@ -188,7 +188,7 @@ class AnimexScraperService {
         return null;
       }
 
-      final List<SubtitleTrack> subtitles = [];
+      final List<StreamSubtitleTrack> subtitles = [];
       final tracks = sourcesData['tracks'] as List<dynamic>?;
       if (tracks != null) {
         for (final t in tracks) {
@@ -198,7 +198,7 @@ class AnimexScraperService {
             if (kind == 'thumbnails' || url.contains('.m3u8') || url.contains('.m3u') || url.contains('.ass') || url.contains('.ssa')) {
               continue; // Skip unsupported subtitle formats and playlists
             }
-            subtitles.add(SubtitleTrack(
+            subtitles.add(StreamSubtitleTrack(
               url: url,
               lang: t['lang'] ?? t['label'] ?? 'Unknown'
             ));

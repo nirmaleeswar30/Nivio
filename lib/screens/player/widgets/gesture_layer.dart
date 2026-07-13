@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:better_player_plus/better_player_plus.dart';
+import 'package:media_kit/media_kit.dart';
 import 'dart:async';
 
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 
 class PlayerGestureLayer extends StatefulWidget {
-  final BetterPlayerController controller;
+  final Player controller;
   final VoidCallback onSingleTap;
   final VoidCallback? onLongPress;
   final void Function(bool zoomIn)? onPinchZoom;
@@ -60,13 +60,12 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
           _volume = vol;
         });
       }
-      // Listen to volume button changes
       FlutterVolumeController.addListener((volume) {
         if (mounted) {
           setState(() {
             if (volume < 1.0) {
               _volume = volume;
-              widget.controller.setVolume(1.0);
+              widget.controller.setVolume(100.0);
             }
           });
         }
@@ -110,10 +109,10 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
         _showBrightnessIndicator = false;
         if (_volume <= 1.0) {
           FlutterVolumeController.setVolume(_volume);
-          widget.controller.setVolume(1.0);
+          widget.controller.setVolume(100.0);
         } else {
           FlutterVolumeController.setVolume(1.0);
-          widget.controller.setVolume(_volume);
+          widget.controller.setVolume(_volume * 100.0);
         }
       }
     });
@@ -135,14 +134,12 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
   void _onDoubleTap(bool isRightSide) {
     if (widget.isLocked) return;
 
-    final currentPos =
-        widget.controller.videoPlayerController?.value.position ??
-        Duration.zero;
+    final currentPos = widget.controller.state.position;
     final newPos = isRightSide
         ? currentPos + const Duration(seconds: 10)
         : currentPos - const Duration(seconds: 10);
 
-    widget.controller.seekTo(newPos);
+    widget.controller.seek(newPos);
 
     setState(() {
       _isSeekingRight = isRightSide;

@@ -213,13 +213,13 @@ class MiruroScraperService {
       if (bestStream == null || sources.isEmpty) return null;
 
       // Subtitles
-      final subtitles = <SubtitleTrack>[];
+      final subtitles = <StreamSubtitleTrack>[];
       final rawSubs = sourcesData['subtitles'] as List<dynamic>?;
       if (rawSubs != null) {
         for (final sub in rawSubs) {
           final url = sub['url'] ?? sub['file'];
           if (url != null && url.startsWith('http')) {
-            subtitles.add(SubtitleTrack(
+            subtitles.add(StreamSubtitleTrack(
               url: url,
               lang: sub['language'] ?? sub['label'] ?? 'Unknown',
             ));
