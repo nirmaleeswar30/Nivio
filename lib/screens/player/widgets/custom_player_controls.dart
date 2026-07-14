@@ -298,22 +298,29 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
           child: Stack(
             children: [
               // 1. Background (Darken when controls are shown)
-          if (_showControls && !_isLocked)
-            Container(
-              color: Colors.black.withValues(alpha: 0.5),
-            ),
+              IgnorePointer(
+                ignoring: !_showControls || _isLocked,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 200),
+                  opacity: (_showControls && !_isLocked) ? 0.5 : 0.0,
+                  child: Container(
+                    color: Colors.black,
+                  ),
+                ),
+              ),
 
-          // 2. Gesture Layer (Always active, receives drags & taps)
-          PlayerGestureLayer(
-            controller: widget.controller,
-            isLocked: _isLocked,
-            onSingleTap: _onSingleTap,
-            onLongPress: _toggleLock,
-            onPinchZoom: (zoomIn) {
-              final newFit = zoomIn ? BoxFit.cover : BoxFit.contain;
-              widget.onFitChanged?.call(newFit);
-            },
-          ),
+              // 2. Gesture Layer (Always active, receives drags & taps)
+              PlayerGestureLayer(
+                key: const ValueKey('player_gesture_layer'),
+                controller: widget.controller,
+                isLocked: _isLocked,
+                onSingleTap: _onSingleTap,
+                onLongPress: _toggleLock,
+                onPinchZoom: (zoomIn) {
+                  final newFit = zoomIn ? BoxFit.cover : BoxFit.contain;
+                  widget.onFitChanged?.call(newFit);
+                },
+              ),
 
           // 3. UI Controls Layer (Toggleable)
           if (_showControls && !_isLocked)

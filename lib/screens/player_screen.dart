@@ -222,6 +222,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _loadSubtitleDelay();
     unawaited(WakelockPlus.enable());
     
+    // Pre-cache providers to prevent using ref after widget disposal in dispose()
+    _cachedHistoryService = ref.read(watchHistoryServiceProvider);
+    _cachedMedia = ref.read(selectedMediaProvider);
+    
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     _player = Player();
     _videoController = VideoController(
@@ -2688,16 +2692,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // Prevent division by zero crash in JSON encoding when duration is missing
     if (duration.inSeconds <= 0) return;
     
-    // Cache providers safely if we are still mounted
+    // Cache providers safely if we are still mounted and active
     if (mounted) {
-      _cachedHistoryService ??= ref.read(watchHistoryServiceProvider);
-      _cachedMedia ??= ref.read(selectedMediaProvider);
+      try {
+        _cachedHistoryService ??= ref.read(watchHistoryServiceProvider);
+        _cachedMedia ??= ref.read(selectedMediaProvider);
+      } catch (_) {}
     }
     
-    final media = _cachedMedia ?? (mounted ? ref.read(selectedMediaProvider) : null);
+    SearchResult? media = _cachedMedia;
+    if (media == null && mounted) {
+      try {
+        media = ref.read(selectedMediaProvider);
+      } catch (_) {}
+    }
     if (media == null) return;
     
-    final historyService = _cachedHistoryService ?? (mounted ? ref.read(watchHistoryServiceProvider) : null);
+    WatchHistoryService? historyService = _cachedHistoryService;
+    if (historyService == null && mounted) {
+      try {
+        historyService = ref.read(watchHistoryServiceProvider);
+      } catch (_) {}
+    }
     if (historyService == null) return;
     
     // Attempt to get total seasons if available

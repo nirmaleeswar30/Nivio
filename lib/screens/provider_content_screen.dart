@@ -65,16 +65,28 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
 
+  final ScrollController _scrollController = ScrollController();
+  bool _scrolled = false;
+
   @override
   void initState() {
     super.initState();
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
-    _pageController = PageController(viewportFraction: isDesktop ? 0.72 : 0.85);
+    _pageController = PageController(viewportFraction: isDesktop ? 1.0 : 0.85);
     _fetchContent();
     _pageController.addListener(() {
       if (mounted) {
         setState(() {
           _currentPageValue = _pageController.page ?? 0.0;
+        });
+      }
+    });
+
+    _scrollController.addListener(() {
+      final scrolled = _scrollController.offset > 20;
+      if (scrolled != _scrolled) {
+        setState(() {
+          _scrolled = scrolled;
         });
       }
     });
@@ -104,6 +116,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
     _searchController.dispose();
     _searchFocusNode.dispose();
     _searchDebounce?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -291,24 +304,32 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                         stops: const [0.0, 1.0],
                       ),
                     ),
-                    child: Padding(
-                      padding: EdgeInsets.only(left: isDesktop ? 56 : 0),
-                      child: CustomScrollView(
+                    child: CustomScrollView(
+                      controller: _scrollController,
                       slivers: [
                         // Minimal Header
                         SliverAppBar(
+                          automaticallyImplyLeading: false,
                           backgroundColor: Colors.transparent,
                           elevation: 0,
                           pinned: true,
                           centerTitle: !isDesktop,
+                          leadingWidth: isDesktop ? 68 : null,
                           leading: isDesktop
-                            ? null
+                            ? const SizedBox(width: 68)
                             : IconButton(
                                 icon: const Icon(Icons.arrow_back, color: Colors.white),
                                 onPressed: () => context.pop(),
                               ),
                           title: isDesktop 
-                            ? null 
+                            ? Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _buildTab('TV Shows', 'tv'),
+                                  const SizedBox(width: 12),
+                                  _buildTab('Movies', 'movie'),
+                                ],
+                              )
                             : (logoPath != null 
                                 ? CachedNetworkImage(
                                     imageUrl: '$tmdbImageBaseUrl/w300$logoPath',
@@ -346,70 +367,70 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                         ),
                         
                         // Filter Chips
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 24.0, bottom: 24.0),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                _buildTab('TV Shows', 'tv'),
-                                const SizedBox(width: 12),
-                                _buildTab('Movies', 'movie'),
-                              ],
+                        if (!isDesktop)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 24.0, bottom: 24.0),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  _buildTab('TV Shows', 'tv'),
+                                  const SizedBox(width: 12),
+                                  _buildTab('Movies', 'movie'),
+                                ],
+                              ),
                             ),
                           ),
+
+                      // Featured Banner
+                      if (_trending.isNotEmpty)
+                        SliverToBoxAdapter(
+                          child: _buildFeaturedBanner(),
                         ),
 
-                        // Featured Banner
-                        if (_trending.isNotEmpty)
-                          SliverToBoxAdapter(
-                            child: _buildFeaturedBanner(),
-                          ),
+                      const SliverToBoxAdapter(child: SizedBox(height: 20)),
 
-                        const SliverToBoxAdapter(child: SizedBox(height: 20)),
-
-                        // Horizontal Rows
-                        if (_trending.length > 5)
-                          SliverToBoxAdapter(
-                            child: ContentRow(
-                              title: 'Top 10 ${_mediaType == 'movie' ? 'Movies' : 'Shows'} in ${widget.providerName}',
-                              items: _trending.skip(5).toList(),
-                              leftPadding: isDesktop ? 24 : 16,
-                            ),
-                          ),
-                          
+                      // Horizontal Rows
+                      if (_trending.length > 5)
                         SliverToBoxAdapter(
                           child: ContentRow(
-                            title: _mediaType == 'movie' ? 'Action & Thrillers' : 'Action & Adventure',
-                            items: _genre1,
-                            leftPadding: isDesktop ? 24 : 16,
-                          ),
-                        ),
-                        SliverToBoxAdapter(
-                          child: ContentRow(
-                            title: _mediaType == 'movie' ? 'Romance Movies' : 'Drama',
-                            items: _genre2,
-                            leftPadding: isDesktop ? 24 : 16,
-                          ),
-                        ),
-                        SliverToBoxAdapter(
-                          child: ContentRow(
-                            title: _mediaType == 'movie' ? 'Comedy Movies' : 'Sci-Fi & Fantasy',
-                            items: _genre3,
-                            leftPadding: isDesktop ? 24 : 16,
-                          ),
-                        ),
-                        SliverToBoxAdapter(
-                          child: ContentRow(
-                            title: 'Animation',
-                            items: _genre4,
-                            leftPadding: isDesktop ? 24 : 16,
+                            title: 'Top 10 ${_mediaType == 'movie' ? 'Movies' : 'Shows'} in ${widget.providerName}',
+                            items: _trending.skip(5).toList(),
+                            leftPadding: isDesktop ? 80 : 16,
                           ),
                         ),
                         
-                        const SliverToBoxAdapter(child: SizedBox(height: 40)),
-                      ],
-                    ),
+                      SliverToBoxAdapter(
+                        child: ContentRow(
+                          title: _mediaType == 'movie' ? 'Action & Thrillers' : 'Action & Adventure',
+                          items: _genre1,
+                          leftPadding: isDesktop ? 80 : 16,
+                        ),
+                      ),
+                      SliverToBoxAdapter(
+                        child: ContentRow(
+                          title: _mediaType == 'movie' ? 'Romance Movies' : 'Drama',
+                          items: _genre2,
+                          leftPadding: isDesktop ? 80 : 16,
+                        ),
+                      ),
+                      SliverToBoxAdapter(
+                        child: ContentRow(
+                          title: _mediaType == 'movie' ? 'Comedy Movies' : 'Sci-Fi & Fantasy',
+                          items: _genre3,
+                          leftPadding: isDesktop ? 80 : 16,
+                        ),
+                      ),
+                      SliverToBoxAdapter(
+                        child: ContentRow(
+                          title: 'Animation',
+                          items: _genre4,
+                          leftPadding: isDesktop ? 80 : 16,
+                        ),
+                      ),
+                      
+                      const SliverToBoxAdapter(child: SizedBox(height: 40)),
+                    ],
                   ),
                 ),
 
@@ -496,18 +517,17 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                       width: 56,
                       child: ClipRect(
                         child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                          filter: ImageFilter.blur(
+                            sigmaX: _scrolled ? 20 : 0,
+                            sigmaY: _scrolled ? 20 : 0,
+                          ),
                           child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 800),
+                            duration: const Duration(milliseconds: 250),
                             curve: Curves.easeInOut,
                             decoration: BoxDecoration(
-                              color: _currentAmbientColor.withOpacity(0.2),
-                              border: Border(
-                                right: BorderSide(
-                                  color: Colors.white.withOpacity(0.08),
-                                  width: 1,
-                                ),
-                              ),
+                              color: _scrolled
+                                  ? _currentAmbientColor.withOpacity(0.2)
+                                  : Colors.transparent,
                             ),
                             child: _buildMediaSidebar(context),
                           ),
@@ -524,7 +544,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
     final bannerItems = _trending.take(5).toList();
     if (bannerItems.isEmpty) return const SizedBox.shrink();
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
-    final bannerHeight = 480.0;
+    final bannerHeight = isDesktop ? MediaQuery.sizeOf(context).height * 0.8 : 480.0;
 
     final bannerWidget = Column(
       children: [
@@ -557,7 +577,9 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                   .where((name) => name != null)
                   .join(' • ');
 
-              final double value = (1.0 - ((_currentPageValue - index).abs() * 0.12)).clamp(0.88, 1.0);
+              final double value = isDesktop
+                  ? 1.0
+                  : (1.0 - ((_currentPageValue - index).abs() * 0.12)).clamp(0.88, 1.0);
 
               return Transform.scale(
                 scale: value,
@@ -571,13 +593,15 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                       // Large Poster/Backdrop Image
                       if (imagePath != null)
                         Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 8),
+                          margin: EdgeInsets.symmetric(horizontal: isDesktop ? 0 : 8),
                           decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.25),
-                              width: 2.0,
-                            ),
+                            borderRadius: isDesktop ? BorderRadius.zero : BorderRadius.circular(16),
+                            border: isDesktop
+                                ? null
+                                : Border.all(
+                                    color: Colors.white.withOpacity(0.25),
+                                    width: 2.0,
+                                  ),
                             image: DecorationImage(
                               image: CachedNetworkImageProvider('$tmdbImageBaseUrl/${isDesktop ? 'original' : 'w500'}$imagePath'),
                               fit: BoxFit.cover,
@@ -586,19 +610,19 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                         )
                       else
                         Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 8),
+                          margin: EdgeInsets.symmetric(horizontal: isDesktop ? 0 : 8),
                           decoration: BoxDecoration(
                             color: const Color(0xFF1E1E24),
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: isDesktop ? BorderRadius.zero : BorderRadius.circular(16),
                           ),
                           child: const Icon(Icons.movie, size: 64, color: Colors.white30),
                         ),
                         
                       // Gradient Overlay to make text readable
                       Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                        margin: EdgeInsets.symmetric(horizontal: isDesktop ? 0 : 8),
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: isDesktop ? BorderRadius.zero : BorderRadius.circular(16),
                           gradient: const LinearGradient(
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
@@ -615,22 +639,22 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                       
                       // Content Details & Buttons
                       Positioned(
-                        bottom: 24,
-                        left: 32,
-                        right: 32,
+                        bottom: isDesktop ? 60 : 24,
+                        left: isDesktop ? 68 : 32,
+                        right: isDesktop ? 48 : 32,
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
+                          crossAxisAlignment: isDesktop ? CrossAxisAlignment.start : CrossAxisAlignment.center,
                           children: [
                             Text(
                               title,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: Colors.white,
-                                fontSize: 32,
+                                fontSize: isDesktop ? 44 : 32,
                                 fontWeight: FontWeight.w900,
                                 letterSpacing: 1.2,
-                                shadows: [Shadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 4))],
+                                shadows: const [Shadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 4))],
                               ),
-                              textAlign: TextAlign.center,
+                              textAlign: isDesktop ? TextAlign.left : TextAlign.center,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -644,67 +668,126 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                                   fontWeight: FontWeight.w500,
                                   shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
                                 ),
-                                textAlign: TextAlign.center,
+                                textAlign: isDesktop ? TextAlign.left : TextAlign.center,
                               ),
                             ],
                             const SizedBox(height: 20),
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisAlignment: isDesktop ? MainAxisAlignment.start : MainAxisAlignment.center,
                               children: [
-                                Expanded(
-                                  child: ElevatedButton.icon(
-                                    onPressed: () {
-                                      context.push('/player/$tmdbId?type=$_mediaType');
-                                    },
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.white,
-                                      foregroundColor: Colors.black,
-                                      padding: const EdgeInsets.symmetric(vertical: 14),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                      elevation: 0,
+                                if (isDesktop) ...[
+                                  SizedBox(
+                                    width: 200,
+                                    child: ElevatedButton.icon(
+                                      onPressed: () {
+                                        context.push('/player/$tmdbId?type=$_mediaType');
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.white,
+                                        foregroundColor: Colors.black,
+                                        padding: const EdgeInsets.symmetric(vertical: 14),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        elevation: 0,
+                                      ),
+                                      icon: const Icon(Icons.play_arrow_rounded, size: 28, color: Colors.black87),
+                                      label: const Text('Play', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
                                     ),
-                                    icon: const Icon(Icons.play_arrow_rounded, size: 28, color: Colors.black87),
-                                    label: const Text('Play', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
                                   ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Consumer(
-                                    builder: (context, ref, child) {
-                                      final inWatchlist = ref.watch(isInWatchlistProvider(tmdbId));
-                                      return ElevatedButton.icon(
-                                        onPressed: () async {
-                                          if (inWatchlist) {
-                                            await ref.read(watchlistServiceProvider).removeFromWatchlist(tmdbId);
-                                          } else {
-                                            await ref.read(watchlistServiceProvider).addToWatchlist(
-                                              WatchlistItem(
-                                                id: tmdbId,
-                                                title: title,
-                                                posterPath: posterPath,
-                                                mediaType: _mediaType,
-                                                addedAt: DateTime.now(),
-                                                voteAverage: (item['vote_average'] as num?)?.toDouble(),
-                                                releaseDate: item['release_date'] as String? ?? item['first_air_date'] as String?,
-                                                overview: item['overview'] as String?,
-                                              )
-                                            );
-                                          }
-                                          ref.read(watchlistRefreshProvider.notifier).refresh();
-                                        },
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.white.withOpacity(0.15),
-                                          foregroundColor: Colors.white,
-                                          elevation: 0,
-                                          padding: const EdgeInsets.symmetric(vertical: 14),
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                        ),
-                                        icon: Icon(inWatchlist ? Icons.check : Icons.add, size: 24, color: Colors.white),
-                                        label: const Text('MyList', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-                                      );
-                                    }
+                                  const SizedBox(width: 12),
+                                  SizedBox(
+                                    width: 200,
+                                    child: Consumer(
+                                      builder: (context, ref, child) {
+                                        final inWatchlist = ref.watch(isInWatchlistProvider(tmdbId));
+                                        return ElevatedButton.icon(
+                                          onPressed: () async {
+                                            if (inWatchlist) {
+                                              await ref.read(watchlistServiceProvider).removeFromWatchlist(tmdbId);
+                                            } else {
+                                              await ref.read(watchlistServiceProvider).addToWatchlist(
+                                                WatchlistItem(
+                                                  id: tmdbId,
+                                                  title: title,
+                                                  posterPath: posterPath,
+                                                  mediaType: _mediaType,
+                                                  addedAt: DateTime.now(),
+                                                  voteAverage: (item['vote_average'] as num?)?.toDouble(),
+                                                  releaseDate: item['release_date'] as String? ?? item['first_air_date'] as String?,
+                                                  overview: item['overview'] as String?,
+                                                )
+                                              );
+                                            }
+                                            ref.read(watchlistRefreshProvider.notifier).refresh();
+                                          },
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.white.withOpacity(0.15),
+                                            foregroundColor: Colors.white,
+                                            elevation: 0,
+                                            padding: const EdgeInsets.symmetric(vertical: 14),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                          ),
+                                          icon: Icon(inWatchlist ? Icons.check : Icons.add, size: 24, color: Colors.white),
+                                          label: const Text('MyList', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                                        );
+                                      }
+                                    ),
                                   ),
-                                ),
+                                ] else ...[
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      onPressed: () {
+                                        context.push('/player/$tmdbId?type=$_mediaType');
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.white,
+                                        foregroundColor: Colors.black,
+                                        padding: const EdgeInsets.symmetric(vertical: 14),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        elevation: 0,
+                                      ),
+                                      icon: const Icon(Icons.play_arrow_rounded, size: 28, color: Colors.black87),
+                                      label: const Text('Play', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Consumer(
+                                      builder: (context, ref, child) {
+                                        final inWatchlist = ref.watch(isInWatchlistProvider(tmdbId));
+                                        return ElevatedButton.icon(
+                                          onPressed: () async {
+                                            if (inWatchlist) {
+                                              await ref.read(watchlistServiceProvider).removeFromWatchlist(tmdbId);
+                                            } else {
+                                              await ref.read(watchlistServiceProvider).addToWatchlist(
+                                                WatchlistItem(
+                                                  id: tmdbId,
+                                                  title: title,
+                                                  posterPath: posterPath,
+                                                  mediaType: _mediaType,
+                                                  addedAt: DateTime.now(),
+                                                  voteAverage: (item['vote_average'] as num?)?.toDouble(),
+                                                  releaseDate: item['release_date'] as String? ?? item['first_air_date'] as String?,
+                                                  overview: item['overview'] as String?,
+                                                )
+                                              );
+                                            }
+                                            ref.read(watchlistRefreshProvider.notifier).refresh();
+                                          },
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.white.withOpacity(0.15),
+                                            foregroundColor: Colors.white,
+                                            elevation: 0,
+                                            padding: const EdgeInsets.symmetric(vertical: 14),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                          ),
+                                          icon: Icon(inWatchlist ? Icons.check : Icons.add, size: 24, color: Colors.white),
+                                          label: const Text('MyList', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                                        );
+                                      }
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ],
@@ -756,16 +839,20 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
         }
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.transparent : Colors.transparent,
-          border: Border.all(color: isSelected ? Colors.white : Colors.white24),
-          borderRadius: BorderRadius.circular(20),
+          color: isSelected ? Colors.white.withOpacity(0.1) : Colors.transparent,
+          border: Border.all(
+            color: isSelected ? Colors.white : Colors.white.withOpacity(0.15),
+            width: 1,
+          ),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Text(
           title,
           style: TextStyle(
-            color: isSelected ? Colors.white : Colors.white70,
+            color: isSelected ? Colors.white : Colors.white60,
+            fontSize: 12,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
           ),
         ),

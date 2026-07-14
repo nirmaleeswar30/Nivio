@@ -75,13 +75,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     });
 
-    _bannerTimer = Timer.periodic(const Duration(seconds: 6), (timer) {
+    _bannerTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
       if (!_pageController.hasClients) return;
       final featuredContent = ref.read(featuredContentProvider).value ?? [];
       if (featuredContent.isEmpty) return;
       _pageController.animateToPage(
         _currentBannerPage + 1,
-        duration: const Duration(milliseconds: 1200),
+        duration: const Duration(milliseconds: 700),
         curve: Curves.easeInOutCubic,
       );
     });

@@ -310,19 +310,13 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     if (_trailerSource == null) return;
 
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
-    if (isDesktop && _trailerSource!.site.toLowerCase() == 'youtube') {
+    if (isDesktop) {
       final watchUrl = _trailerSource!.watchUrl;
       if (watchUrl != null) {
-        final uri = Uri.parse(watchUrl);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Failed to open YouTube trailer URL.')),
-            );
-          }
-        }
+        final title = _media?.title ?? _media?.name ?? 'Trailer';
+        context.push(
+          '/player/${widget.mediaId}?season=1&episode=1&type=${widget.mediaType ?? 'movie'}&directStreamUrl=${Uri.encodeComponent(watchUrl)}&directStreamTitle=${Uri.encodeComponent("$title - Trailer")}'
+        );
         return;
       }
     }

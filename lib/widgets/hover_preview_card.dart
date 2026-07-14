@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 import 'package:nivio/core/constants.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
@@ -19,6 +22,7 @@ class HoverPreviewCard extends ConsumerStatefulWidget {
   final String? backdropPath;
   final String? posterPath;
   final VoidCallback onDismiss;
+  final Function(PointerScrollEvent)? onScroll;
 
   const HoverPreviewCard({
     super.key,
@@ -28,7 +32,96 @@ class HoverPreviewCard extends ConsumerStatefulWidget {
     this.backdropPath,
     this.posterPath,
     required this.onDismiss,
+    this.onScroll,
   });
+
+  static final Map<String, Map<String, dynamic>> _detailsCache = {};
+  static final Map<String, String?> _trailerCache = {};
+
+  static Future<void> prefetch(WidgetRef ref, int tmdbId, String mediaType, String title) async {
+    final cacheKey = '${mediaType}_$tmdbId';
+    if (_detailsCache.containsKey(cacheKey)) return;
+
+    try {
+      final tmdbService = ref.read(tmdbServiceProvider);
+      final Map<String, dynamic> data;
+      String? youtubeUrl;
+
+      if (mediaType == 'anime') {
+        final anilistService = ref.read(aniListServiceProvider);
+        final extras = await anilistService.getAnimeDetailsWithExtras(tmdbId);
+        
+        data = {
+          'title': extras['title']?['english'] ?? extras['title']?['romaji'] ?? title,
+          'overview': extras['description'],
+          'release_date': extras['seasonYear'] != null ? '${extras['seasonYear']}-01-01' : null,
+          'vote_average': extras['averageScore'] != null ? (extras['averageScore'] as num).toDouble() : null,
+          'number_of_episodes': extras['episodes'],
+          'number_of_seasons': 1,
+        };
+
+        try {
+          final showTitle = data['title'] ?? '';
+          final year = extras['seasonYear']?.toString() ?? '';
+          final tmdbInfo = await tmdbService.getMediaInfoByTitle(showTitle, year: year);
+          if (tmdbInfo != null) {
+            data['backdrop_path'] = tmdbInfo['backdrop_path'];
+            data['poster_path'] = tmdbInfo['poster_path'];
+          }
+        } catch (_) {}
+
+        final trailer = extras['trailer'];
+        if (trailer != null && trailer['site']?.toString().toLowerCase() == 'youtube') {
+          final trailerKey = trailer['id']?.toString();
+          if (trailerKey != null && trailerKey.isNotEmpty) {
+            youtubeUrl = 'https://www.youtube.com/watch?v=$trailerKey';
+          }
+        }
+      } else {
+        final rawData = mediaType == 'tv'
+            ? await tmdbService.getTVShowDetailsWithVideos(tmdbId)
+            : await tmdbService.getMovieDetailsWithVideos(tmdbId);
+        
+        data = Map<String, dynamic>.from(rawData);
+
+        if (data['vote_average'] != null) {
+          data['vote_average'] = (data['vote_average'] as num).toDouble() * 10.0;
+        }
+
+        final videos = data['videos'];
+        if (videos != null) {
+          final results = videos['results'] as List<dynamic>?;
+          if (results != null && results.isNotEmpty) {
+            final candidates = <Map<String, dynamic>>[];
+            for (final raw in results) {
+              if (raw is! Map<String, dynamic>) continue;
+              final site = (raw['site'] as String?)?.trim().toLowerCase();
+              final key = (raw['key'] as String?)?.trim();
+              if (site == null || key == null || key.isEmpty) continue;
+              if (site != 'youtube') continue;
+
+              int score = 0;
+              final type = (raw['type'] as String?)?.toLowerCase() ?? '';
+              if (type == 'trailer') score += 50;
+              else if (type == 'teaser') score += 35;
+              else if (type == 'clip') score += 20;
+              if (raw['official'] == true) score += 20;
+
+              candidates.add({'key': key, 'score': score});
+            }
+            if (candidates.isNotEmpty) {
+              candidates.sort((a, b) => (b['score'] as int).compareTo(a['score'] as int));
+              final bestKey = candidates.first['key'] as String;
+              youtubeUrl = 'https://www.youtube.com/watch?v=$bestKey';
+            }
+          }
+        }
+      }
+
+      _detailsCache[cacheKey] = data;
+      _trailerCache[cacheKey] = youtubeUrl;
+    } catch (_) {}
+  }
 
   @override
   ConsumerState<HoverPreviewCard> createState() => _HoverPreviewCardState();
@@ -42,6 +135,46 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
 
   Map<String, dynamic>? _details;
   bool _isLoading = true;
+
+  Player? _player;
+  VideoController? _videoController;
+  bool _playerInitialized = false;
+  String? _youtubeUrl;
+
+  bool _isMuted = true;
+  bool _isPlaying = true;
+  bool _showPlayPauseFeedback = false;
+  Timer? _feedbackTimer;
+  bool _isVideoPlaying = false;
+
+  void _toggleMute() {
+    if (_player == null) return;
+    setState(() {
+      _isMuted = !_isMuted;
+      _player!.setVolume(_isMuted ? 0.0 : 100.0);
+    });
+  }
+
+  void _togglePlayPause() {
+    if (_player == null) return;
+    setState(() {
+      _isPlaying = !_isPlaying;
+      if (_isPlaying) {
+        _player!.play();
+      } else {
+        _player!.pause();
+      }
+      _showPlayPauseFeedback = true;
+    });
+    _feedbackTimer?.cancel();
+    _feedbackTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          _showPlayPauseFeedback = false;
+        });
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -58,19 +191,72 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
       CurvedAnimation(parent: _fadeController, curve: Curves.easeOutCubic),
     );
     _fadeController.forward();
-    _fetchDetails();
+
+    // Check cache first for instant loading
+    final cacheKey = '${widget.mediaType}_${widget.tmdbId}';
+    if (HoverPreviewCard._detailsCache.containsKey(cacheKey)) {
+      _details = HoverPreviewCard._detailsCache[cacheKey];
+      _isLoading = false;
+      final cachedTrailer = HoverPreviewCard._trailerCache[cacheKey];
+      if (cachedTrailer != null) {
+        _initPlayer(cachedTrailer);
+      }
+    } else {
+      _fetchDetails();
+    }
   }
 
   @override
   void dispose() {
     _fadeController.dispose();
+    _feedbackTimer?.cancel();
+    _player?.dispose();
     super.dispose();
+  }
+
+  void _initPlayer(String youtubeUrl) {
+    if (_playerInitialized) return;
+    
+    final player = Player();
+    final controller = VideoController(
+      player,
+      configuration: const VideoControllerConfiguration(
+        enableHardwareAcceleration: false,
+      ),
+    );
+    
+    _player = player;
+    _videoController = controller;
+    _playerInitialized = true;
+    _youtubeUrl = youtubeUrl;
+    _isVideoPlaying = false;
+    
+    // Mute and loop for premium preview
+    player.setVolume(0.0);
+    player.setPlaylistMode(PlaylistMode.loop);
+    
+    // Listen to video starting to play
+    player.stream.position.listen((pos) {
+      if (pos > Duration.zero && !_isVideoPlaying) {
+        if (mounted) {
+          setState(() {
+            _isVideoPlaying = true;
+          });
+        }
+      }
+    });
+    
+    // Open the YouTube URL directly (media_kit parses it with yt-dlp)
+    player.open(Media(youtubeUrl));
+    
+    if (mounted) setState(() {});
   }
 
   Future<void> _fetchDetails() async {
     try {
       final tmdbService = ref.read(tmdbServiceProvider);
       final Map<String, dynamic> data;
+      String? youtubeUrl;
 
       if (widget.mediaType == 'anime') {
         final anilistService = ref.read(aniListServiceProvider);
@@ -95,6 +281,14 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
             data['poster_path'] = tmdbInfo['poster_path'];
           }
         } catch (_) {}
+
+        final trailer = extras['trailer'];
+        if (trailer != null && trailer['site']?.toString().toLowerCase() == 'youtube') {
+          final trailerKey = trailer['id']?.toString();
+          if (trailerKey != null && trailerKey.isNotEmpty) {
+            youtubeUrl = 'https://www.youtube.com/watch?v=$trailerKey';
+          }
+        }
       } else {
         final rawData = widget.mediaType == 'tv'
             ? await tmdbService.getTVShowDetailsWithVideos(widget.tmdbId)
@@ -105,13 +299,51 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
         if (data['vote_average'] != null) {
           data['vote_average'] = (data['vote_average'] as num).toDouble() * 10.0;
         }
+
+        // Extract best trailer
+        final videos = data['videos'];
+        if (videos != null) {
+          final results = videos['results'] as List<dynamic>?;
+          if (results != null && results.isNotEmpty) {
+            // Score and pick best trailer
+            final candidates = <Map<String, dynamic>>[];
+            for (final raw in results) {
+              if (raw is! Map<String, dynamic>) continue;
+              final site = (raw['site'] as String?)?.trim().toLowerCase();
+              final key = (raw['key'] as String?)?.trim();
+              if (site == null || key == null || key.isEmpty) continue;
+              if (site != 'youtube') continue;
+
+              int score = 0;
+              final type = (raw['type'] as String?)?.toLowerCase() ?? '';
+              if (type == 'trailer') score += 50;
+              else if (type == 'teaser') score += 35;
+              else if (type == 'clip') score += 20;
+              if (raw['official'] == true) score += 20;
+
+              candidates.add({'key': key, 'score': score});
+            }
+            if (candidates.isNotEmpty) {
+              candidates.sort((a, b) => (b['score'] as int).compareTo(a['score'] as int));
+              final bestKey = candidates.first['key'] as String;
+              youtubeUrl = 'https://www.youtube.com/watch?v=$bestKey';
+            }
+          }
+        }
       }
+
+      final cacheKey = '${widget.mediaType}_${widget.tmdbId}';
+      HoverPreviewCard._detailsCache[cacheKey] = data;
+      HoverPreviewCard._trailerCache[cacheKey] = youtubeUrl;
 
       if (mounted) {
         setState(() {
           _details = data;
           _isLoading = false;
         });
+        if (youtubeUrl != null) {
+          _initPlayer(youtubeUrl);
+        }
       }
     } catch (e) {
       debugPrint('HoverPreviewCard fetch error: $e');
@@ -125,7 +357,9 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
     if (d == null) return '';
 
     // Media type
-    if (widget.mediaType == 'tv' || widget.mediaType == 'anime') {
+    if (widget.mediaType == 'anime') {
+      parts.add('Anime');
+    } else if (widget.mediaType == 'tv') {
       parts.add('TV Series');
     } else {
       parts.add('Movie');
@@ -135,8 +369,11 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
     if (widget.mediaType == 'tv' || widget.mediaType == 'anime') {
       final numEpisodes = d['number_of_episodes'];
       final numSeasons = d['number_of_seasons'];
-      if (numSeasons != null && numEpisodes != null) {
-        parts.add('$numSeasons Season${numSeasons > 1 ? 's' : ''} · $numEpisodes Episodes');
+      if (numSeasons != null) {
+        parts.add('$numSeasons Season${numSeasons > 1 ? 's' : ''}');
+      }
+      if (numEpisodes != null) {
+        parts.add('$numEpisodes Eps');
       }
     } else {
       final runtime = d['runtime'];
@@ -159,26 +396,41 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
       parts.add('${(rating as num).toStringAsFixed(0)}%');
     }
 
-    return parts.join('  ·  ');
+    return parts.join(' · ');
   }
 
   @override
   Widget build(BuildContext context) {
     final isInWatchlist = ref.watch(isInWatchlistProvider(widget.tmdbId));
-    final backdropUrl = widget.backdropPath != null
-        ? '$tmdbImageBaseUrl/w780${widget.backdropPath}'
+    final resolvedBackdrop = widget.backdropPath ?? _details?['backdrop_path'];
+    final backdropUrl = resolvedBackdrop != null
+        ? (resolvedBackdrop.startsWith('http')
+            ? resolvedBackdrop
+            : '$tmdbImageBaseUrl/w780$resolvedBackdrop')
         : null;
 
     return FadeTransition(
       opacity: _fadeAnimation,
       child: ScaleTransition(
         scale: _scaleAnimation,
-        child: MouseRegion(
-          onExit: (_) => widget.onDismiss(),
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              width: 350,
+        child: Listener(
+          onPointerSignal: (pointerSignal) {
+            if (pointerSignal is PointerScrollEvent) {
+              widget.onScroll?.call(pointerSignal);
+            }
+          },
+          child: MouseRegion(
+            onExit: (_) => widget.onDismiss(),
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: () {
+                widget.onDismiss();
+                context.push('/media/${widget.tmdbId}?type=${widget.mediaType}');
+              },
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  width: 250,
               decoration: BoxDecoration(
                 color: const Color(0xFF181818),
                 borderRadius: BorderRadius.circular(8),
@@ -199,14 +451,14 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
                   children: [
                     // ── Trailer / Backdrop ──
                     SizedBox(
-                      height: 197, // 16:9 aspect for 350 width
-                      width: 350,
+                      height: 141, // 16:9 aspect for 250 width
+                      width: 250,
                       child: _buildMediaSection(backdropUrl),
                     ),
 
                     // ── Info Section ──
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+                      padding: const EdgeInsets.fromLTRB(16, 2, 16, 16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -223,32 +475,56 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
                           ),
                           const SizedBox(height: 10),
 
-                          // Action row
                           Row(
                             children: [
                               // Play / Continue button
                               Expanded(
                                 child: SizedBox(
-                                  height: 36,
+                                  height: 30,
                                   child: ElevatedButton.icon(
                                     onPressed: () {
                                       widget.onDismiss();
                                       context.push('/media/${widget.tmdbId}?type=${widget.mediaType}');
                                     },
-                                    icon: const Icon(Icons.play_arrow, size: 20),
-                                    label: const Text('Details', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                                    icon: const Icon(Icons.play_arrow, size: 18),
+                                    label: const Text('Watch Now', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: Colors.white,
                                       foregroundColor: Colors.black,
                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10),
                                     ),
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              // Favourite / Watchlist
-                              _ActionCircleButton(
+                              const SizedBox(width: 4),
+                              // Favourite Heart Icon
+                              _ActionIconButton(
+                                icon: isInWatchlist ? Icons.favorite : Icons.favorite_border,
+                                iconColor: isInWatchlist ? const Color(0xFFE50914) : Colors.white,
+                                onPressed: () async {
+                                  final watchlistService = ref.read(watchlistServiceProvider);
+                                  if (isInWatchlist) {
+                                    await watchlistService.removeFromWatchlist(widget.tmdbId);
+                                  } else {
+                                    final item = WatchlistItem(
+                                      id: widget.tmdbId,
+                                      title: widget.title,
+                                      posterPath: widget.posterPath,
+                                      mediaType: widget.mediaType,
+                                      addedAt: DateTime.now(),
+                                      voteAverage: _details?['vote_average']?.toDouble(),
+                                      releaseDate: (_details?['release_date'] ?? _details?['first_air_date'])?.toString(),
+                                      overview: _details?['overview']?.toString(),
+                                    );
+                                    await watchlistService.addToWatchlist(item);
+                                  }
+                                  ref.read(watchlistRefreshProvider.notifier).refresh();
+                                },
+                              ),
+                              const SizedBox(width: 4),
+                              // Watchlist Plus/Check Icon
+                              _ActionIconButton(
                                 icon: isInWatchlist ? Icons.check : Icons.add,
                                 onPressed: () async {
                                   final watchlistService = ref.read(watchlistServiceProvider);
@@ -273,7 +549,6 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
                             ],
                           ),
                           const SizedBox(height: 10),
-
                           // Metadata line
                           if (!_isLoading && _details != null)
                             Text(
@@ -282,33 +557,8 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: Colors.grey[400],
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-
-                          // Overview
-                          if (!_isLoading && _details != null && _details!['overview'] != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: ShaderMask(
-                                shaderCallback: (rect) => const LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [Colors.white, Colors.white, Colors.transparent],
-                                  stops: [0.0, 0.6, 1.0],
-                                ).createShader(rect),
-                                blendMode: BlendMode.dstIn,
-                                child: Text(
-                                  _details!['overview'] as String,
-                                  maxLines: 3,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: Colors.grey[500],
-                                    fontSize: 12,
-                                    height: 1.4,
-                                  ),
-                                ),
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                         ],
@@ -321,10 +571,94 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
           ),
         ),
       ),
+    ),
+    ),
     );
   }
 
   Widget _buildMediaSection(String? backdropUrl) {
+    if (_playerInitialized && _videoController != null) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          GestureDetector(
+            onTap: _togglePlayPause,
+            behavior: HitTestBehavior.opaque,
+            child: Video(
+              controller: _videoController!,
+              controls: NoVideoControls,
+              subtitleViewConfiguration: const SubtitleViewConfiguration(
+                visible: false,
+              ),
+            ),
+          ),
+          // Show backdrop image until video starts rendering
+          if (!_isVideoPlaying && backdropUrl != null)
+            Positioned.fill(
+              child: CachedNetworkImage(
+                imageUrl: backdropUrl,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => Container(color: const Color(0xFF2F2F2F)),
+                errorWidget: (context, url, error) => Container(
+                  color: const Color(0xFF2F2F2F),
+                  child: const Icon(Icons.movie, color: Colors.white24, size: 48),
+                ),
+              ),
+            ),
+          // Gradient overlay (fades to solid Color(0xFF181818))
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      const Color(0xFF181818).withOpacity(0.1),
+                      const Color(0xFF181818),
+                    ],
+                    stops: const [0.0, 0.6, 1.0],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Mute control at top right
+          Positioned(
+            top: 8,
+            right: 8,
+            child: _MiniControlCircleButton(
+              icon: _isMuted ? Icons.volume_off : Icons.volume_up,
+              onPressed: _toggleMute,
+            ),
+          ),
+          // Play/Pause feedback in the center
+          if (_showPlayPauseFeedback)
+            Center(
+              child: IgnorePointer(
+                child: AnimatedOpacity(
+                  opacity: _showPlayPauseFeedback ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      _isPlaying ? Icons.play_arrow : Icons.pause,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
+    }
+
     if (backdropUrl != null) {
       return Stack(
         fit: StackFit.expand,
@@ -340,17 +674,21 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
               child: const Icon(Icons.movie, color: Colors.white24, size: 48),
             ),
           ),
-          // Gradient overlay
+          // Gradient overlay (fades to solid Color(0xFF181818))
           Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    const Color(0xFF181818).withOpacity(0.8),
-                  ],
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      const Color(0xFF181818).withOpacity(0.1),
+                      const Color(0xFF181818),
+                    ],
+                    stops: const [0.0, 0.6, 1.0],
+                  ),
                 ),
               ),
             ),
@@ -375,13 +713,41 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
       ),
     );
   }
+
+  String _cleanHtml(String text) {
+    return text.replaceAll(RegExp(r'<[^>]*>'), '');
+  }
 }
 
-class _ActionCircleButton extends StatelessWidget {
+class _ActionIconButton extends StatelessWidget {
+  final IconData icon;
+  final Color? iconColor;
+  final VoidCallback onPressed;
+
+  const _ActionIconButton({
+    required this.icon,
+    this.iconColor,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.all(6.0),
+        child: Icon(icon, color: iconColor ?? Colors.white, size: 20),
+      ),
+    );
+  }
+}
+
+class _MiniControlCircleButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onPressed;
 
-  const _ActionCircleButton({
+  const _MiniControlCircleButton({
     required this.icon,
     required this.onPressed,
   });
@@ -390,15 +756,16 @@ class _ActionCircleButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onPressed,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(15),
       child: Container(
-        width: 36,
-        height: 36,
+        width: 28,
+        height: 28,
         decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.5),
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.grey[600]!, width: 1.5),
+          border: Border.all(color: Colors.grey[700]!, width: 1.0),
         ),
-        child: Icon(icon, color: Colors.white, size: 18),
+        child: Icon(icon, color: Colors.white, size: 14),
       ),
     );
   }

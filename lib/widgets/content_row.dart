@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -46,12 +47,12 @@ class ContentRow extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           SizedBox(
-            height: 180,
+            height: isDesktop ? 240 : 180,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               padding: EdgeInsets.only(
                 left: leftPadding != null 
-                    ? (leftPadding! - 4).clamp(0.0, double.infinity) 
+                    ? (leftPadding! - (isDesktop ? 16 : 4)).clamp(0.0, double.infinity) 
                     : (isDesktop ? 64 : 12), 
                 right: 12,
               ),
@@ -81,7 +82,7 @@ class ContentRow extends StatelessWidget {
 
                 return RepaintBoundary(
                   child: Padding(
-                     padding: const EdgeInsets.symmetric(horizontal: 4),
+                     padding: EdgeInsets.symmetric(horizontal: isDesktop ? 16 : 4),
                      child: _AnimatedPosterCard(
                        posterPath: posterPath,
                        backdropPath: backdropPath,
@@ -129,6 +130,7 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
   final GlobalKey _cardKey = GlobalKey();
   Timer? _hoverTimer;
   Timer? _dismissTimer;
+  final LayerLink _layerLink = LayerLink();
 
   static OverlayEntry? _activeOverlay;
   static _AnimatedPosterCardState? _activeCardState;
@@ -161,8 +163,8 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
     final position = renderBox.localToGlobal(Offset.zero);
     final size = renderBox.size;
 
-    final hoverWidth = 350.0;
-    final hoverHeight = 360.0;
+    final hoverWidth = 250.0;
+    final hoverHeight = 260.0;
 
     // Centered on the card horizontally and vertically
     final left = (position.dx + size.width / 2) - hoverWidth / 2;
@@ -172,15 +174,41 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
     _activeOverlay = OverlayEntry(
       builder: (context) {
         return Positioned(
-          left: left,
-          top: top,
-          child: HoverPreviewCard(
-            tmdbId: widget.tmdbId,
-            mediaType: widget.mediaType,
-            title: widget.title,
-            backdropPath: widget.backdropPath,
-            posterPath: widget.posterPath,
-            onDismiss: _dismissOverlay,
+          width: hoverWidth,
+          height: hoverHeight,
+          child: CompositedTransformFollower(
+            link: _layerLink,
+            showWhenUnlinked: false,
+            targetAnchor: Alignment.center,
+            followerAnchor: Alignment.center,
+            child: HoverPreviewCard(
+              tmdbId: widget.tmdbId,
+              mediaType: widget.mediaType,
+              title: widget.title,
+              backdropPath: widget.backdropPath,
+              posterPath: widget.posterPath,
+              onDismiss: _dismissOverlay,
+              onScroll: (event) {
+                try {
+                  if (event.scrollDelta.dx != 0) {
+                    final scrollable = Scrollable.of(_cardKey.currentContext!, axis: Axis.horizontal);
+                    final pos = scrollable.position;
+                    pos.jumpTo((pos.pixels + event.scrollDelta.dx).clamp(
+                      pos.minScrollExtent,
+                      pos.maxScrollExtent,
+                    ));
+                  }
+                  if (event.scrollDelta.dy != 0) {
+                    final scrollable = Scrollable.of(_cardKey.currentContext!, axis: Axis.vertical);
+                    final pos = scrollable.position;
+                    pos.jumpTo((pos.pixels + event.scrollDelta.dy).clamp(
+                      pos.minScrollExtent,
+                      pos.maxScrollExtent,
+                    ));
+                  }
+                } catch (_) {}
+              },
+            ),
           ),
         );
       },
@@ -294,132 +322,139 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
       ],
     );
 
-    return MouseRegion(
-      onEnter: (_) {
-        _animationController.forward();
-        if (isDesktop) {
-          _dismissTimer?.cancel();
-          if (_activeCardState == this) return;
-          _hoverTimer?.cancel();
-          _hoverTimer = Timer(const Duration(milliseconds: 500), () {
-            _showOverlay();
-          });
-        }
-      },
-      onExit: (event) {
-        _animationController.reverse();
-        if (isDesktop) {
-          _hoverTimer?.cancel();
-          if (_activeCardState == this) {
-            // Check if cursor is inside the hover overlay bounds
-            final renderBox = _cardKey.currentContext?.findRenderObject() as RenderBox?;
-            if (renderBox != null) {
-              final position = renderBox.localToGlobal(Offset.zero);
-              final size = renderBox.size;
-              final hoverWidth = 350.0;
-              final hoverHeight = 360.0;
-              final left = (position.dx + size.width / 2) - hoverWidth / 2;
-              final top = (position.dy + size.height / 2) - hoverHeight / 2;
-              final hoverRect = Rect.fromLTWH(left, top, hoverWidth, hoverHeight);
-              
-              if (hoverRect.contains(event.position)) {
-                // Cursor is over the hover preview overlay, don't dismiss
-                return;
-              }
-            }
-
+    return CompositedTransformTarget(
+      link: _layerLink,
+      child: MouseRegion(
+        onEnter: (_) {
+          _animationController.forward();
+          if (isDesktop) {
             _dismissTimer?.cancel();
-            _dismissTimer = Timer(const Duration(milliseconds: 200), () {
-              _dismissOverlay();
+            if (_activeCardState == this) return;
+            _hoverTimer?.cancel();
+            
+            // Prefetch details and trailer URL immediately on hover enter
+            unawaited(HoverPreviewCard.prefetch(ref, widget.tmdbId, widget.mediaType, widget.title));
+            
+            _hoverTimer = Timer(const Duration(milliseconds: 500), () {
+              _showOverlay();
             });
           }
-        }
-      },
-      child: GestureDetector(
-        onTap: () =>
-            context.push('/media/${widget.tmdbId}?type=${widget.mediaType}'),
-        child: AnimatedBuilder(
-          animation: _animationController,
-          builder: (context, child) {
-            return Transform.scale(
-              scale: _scaleAnimation.value,
-              child: Container(
-                key: _cardKey,
-                width: 120,
-                height: 180,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(4),
-                  color: const Color(0xFF2F2F2F),
-                  boxShadow: _elevationAnimation.value > 0
-                      ? [
-                          BoxShadow(
-                            color: Colors.black.withValues(
-                              alpha: 0.5 * _elevationAnimation.value,
+        },
+        onExit: (event) {
+          _animationController.reverse();
+          if (isDesktop) {
+            _hoverTimer?.cancel();
+            if (_activeCardState == this) {
+              // Check if cursor is inside the hover overlay bounds
+              final renderBox = _cardKey.currentContext?.findRenderObject() as RenderBox?;
+              if (renderBox != null) {
+                final position = renderBox.localToGlobal(Offset.zero);
+                final size = renderBox.size;
+                final hoverWidth = 250.0;
+                final hoverHeight = 260.0;
+                final left = (position.dx + size.width / 2) - hoverWidth / 2;
+                final top = (position.dy + size.height / 2) - hoverHeight / 2;
+                final hoverRect = Rect.fromLTWH(left, top, hoverWidth, hoverHeight);
+                
+                if (hoverRect.contains(event.position)) {
+                  // Cursor is over the hover preview overlay, don't dismiss
+                  return;
+                }
+              }
+  
+              _dismissTimer?.cancel();
+              _dismissTimer = Timer(const Duration(milliseconds: 200), () {
+                _dismissOverlay();
+              });
+            }
+          }
+        },
+        child: GestureDetector(
+          onTap: () =>
+              context.push('/media/${widget.tmdbId}?type=${widget.mediaType}'),
+          child: AnimatedBuilder(
+            animation: _animationController,
+            builder: (context, child) {
+              return Transform.scale(
+                scale: _scaleAnimation.value,
+                child: Container(
+                  key: _cardKey,
+                  width: isDesktop ? 160 : 120,
+                  height: isDesktop ? 240 : 180,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(4),
+                    color: const Color(0xFF2F2F2F),
+                    boxShadow: _elevationAnimation.value > 0
+                        ? [
+                            BoxShadow(
+                              color: Colors.black.withValues(
+                                alpha: 0.5 * _elevationAnimation.value,
+                              ),
+                              blurRadius: 15 * _elevationAnimation.value,
+                              spreadRadius: 1 * _elevationAnimation.value,
+                              offset: Offset(0, 6 * _elevationAnimation.value),
                             ),
-                            blurRadius: 15 * _elevationAnimation.value,
-                            spreadRadius: 1 * _elevationAnimation.value,
-                            offset: Offset(0, 6 * _elevationAnimation.value),
-                          ),
-                        ]
-                      : null,
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: Stack(
-                    children: [
-                      // Poster Image (cached statically)
-                      Positioned.fill(child: child!),
-                      
-                      // Hover Overlay with Play Icon
-                      if (_elevationAnimation.value > 0)
-                        Opacity(
-                          opacity: _elevationAnimation.value,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.transparent,
-                                  Colors.black.withOpacity(0.7),
-                                ],
+                          ]
+                        : null,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Stack(
+                      children: [
+                        // Poster Image (cached statically)
+                        Positioned.fill(child: child!),
+                        
+                        // Hover Overlay with Play Icon
+                        if (_elevationAnimation.value > 0)
+                          Opacity(
+                            opacity: _elevationAnimation.value,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    Colors.black.withOpacity(0.7),
+                                  ],
+                                ),
+                              ),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.play_circle_fill,
+                                  color: Colors.white,
+                                  size: 48,
+                                ),
                               ),
                             ),
-                            child: const Center(
-                              child: Icon(
-                                Icons.play_circle_fill,
+                          ),
+                        if (isInWatchlist)
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: NivioTheme.accentColorOf(
+                                  context,
+                                ).withValues(alpha: 0.95),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.check,
                                 color: Colors.white,
-                                size: 48,
+                                size: 14,
                               ),
                             ),
                           ),
-                        ),
-                      if (isInWatchlist)
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: NivioTheme.accentColorOf(
-                                context,
-                              ).withValues(alpha: 0.95),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.check,
-                              color: Colors.white,
-                              size: 14,
-                            ),
-                          ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            );
-          },
-          child: imageWithTitle,
+              );
+            },
+            child: imageWithTitle,
+          ),
         ),
       ),
     );

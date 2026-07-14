@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'dart:io';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -59,7 +60,7 @@ void main() async {
         size: Size(1920, 1080),
         minimumSize: Size(1280, 720),
         center: true,
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.black,
         skipTaskbar: false,
         titleBarStyle: TitleBarStyle.hidden,
       );
@@ -415,6 +416,7 @@ class _NivioAppState extends ConsumerState<NivioApp> {
     final appTheme = NivioTheme.buildDarkTheme(accentColor: accentColor);
 
     return MaterialApp.router(
+      scrollBehavior: MyCustomScrollBehavior(),
       title: 'Nivio',
       theme: appTheme,
       darkTheme: appTheme,
@@ -499,4 +501,13 @@ class _GitHubReleasePromptGateState extends State<_GitHubReleasePromptGate> {
   Widget build(BuildContext context) {
     return widget.child;
   }
+}
+
+class MyCustomScrollBehavior extends MaterialScrollBehavior {
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+      };
 }
