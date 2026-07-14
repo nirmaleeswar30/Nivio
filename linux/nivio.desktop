@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Nivio
+Comment=Stream movies, TV shows, and anime
+GenericName=Media Player
+Exec=nivio %u
+Icon=com.nirmal.nivio
+Terminal=false
+Categories=AudioVideo;Video;Player;
+MimeType=x-scheme-handler/nivio;
+StartupNotify=true
+StartupWMClass=nivio

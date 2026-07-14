@@ -28,17 +28,21 @@ class CollectionReference {
     final projectId = Firebase.options?.projectId;
     if (projectId == null) throw StateError('Firebase has not been initialized.');
 
+    final apiKey = Firebase.options?.apiKey;
     final url = Uri.parse(
-      'https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/$path',
+      'https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/$path?key=$apiKey',
     );
 
-    final token = FirebaseAuth.instance.idToken;
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    print('🔑 Firestore REST Target URL: $url');
+    print('🔑 Firestore REST ID Token: ${token != null ? "${token.substring(0, 10)}..." : "null"}');
     final headers = <String, String>{
       'content-type': 'application/json',
     };
     if (token != null) {
       headers['Authorization'] = 'Bearer $token';
     }
+    print('🔑 Firestore REST Headers: $headers');
 
     final response = await http.get(url, headers: headers);
     if (response.statusCode == 404) {
@@ -80,12 +84,12 @@ class DocumentReference {
   Future<void> set(Map<String, dynamic> data, [SetOptions? options]) async {
     final projectId = Firebase.options?.projectId;
     if (projectId == null) throw StateError('Firebase has not been initialized.');
-
+    final apiKey = Firebase.options?.apiKey;
     final url = Uri.parse(
-      'https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/$path',
+      'https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/$path?key=$apiKey',
     );
 
-    final token = FirebaseAuth.instance.idToken;
+    final token = await FirebaseAuth.instance.getIdToken();
     final headers = <String, String>{
       'content-type': 'application/json',
     };
@@ -111,12 +115,12 @@ class DocumentReference {
   Future<void> delete() async {
     final projectId = Firebase.options?.projectId;
     if (projectId == null) throw StateError('Firebase has not been initialized.');
-
+    final apiKey = Firebase.options?.apiKey;
     final url = Uri.parse(
-      'https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/$path',
+      'https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/$path?key=$apiKey',
     );
 
-    final token = FirebaseAuth.instance.idToken;
+    final token = await FirebaseAuth.instance.getIdToken();
     final headers = <String, String>{};
     if (token != null) {
       headers['Authorization'] = 'Bearer $token';
@@ -134,12 +138,12 @@ class DocumentReference {
   Future<DocumentSnapshot> get() async {
     final projectId = Firebase.options?.projectId;
     if (projectId == null) throw StateError('Firebase has not been initialized.');
-
+    final apiKey = Firebase.options?.apiKey;
     final url = Uri.parse(
-      'https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/$path',
+      'https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/$path?key=$apiKey',
     );
 
-    final token = FirebaseAuth.instance.idToken;
+    final token = await FirebaseAuth.instance.getIdToken();
     final headers = <String, String>{};
     if (token != null) {
       headers['Authorization'] = 'Bearer $token';
@@ -255,7 +259,11 @@ Map<String, dynamic> _decodeFirestoreFields(Map<String, dynamic> fields) {
   final result = <String, dynamic>{};
   fields.forEach((key, val) {
     if (val is Map<String, dynamic>) {
-      result[key] = _decodeFirestoreValue(val);
+      var decoded = _decodeFirestoreValue(val);
+      if ((key == 'voteAverage' || key == 'vote_average') && decoded is num) {
+        decoded = decoded.toDouble();
+      }
+      result[key] = decoded;
     }
   });
   return result;
@@ -266,7 +274,11 @@ dynamic _decodeFirestoreValue(Map<String, dynamic> valueObj) {
   if (valueObj.containsKey('stringValue')) return valueObj['stringValue'];
   if (valueObj.containsKey('booleanValue')) return valueObj['booleanValue'];
   if (valueObj.containsKey('integerValue')) return int.tryParse(valueObj['integerValue']) ?? valueObj['integerValue'];
-  if (valueObj.containsKey('doubleValue')) return valueObj['doubleValue'];
+  if (valueObj.containsKey('doubleValue')) {
+    final val = valueObj['doubleValue'];
+    if (val is num) return val.toDouble();
+    return val;
+  }
   if (valueObj.containsKey('timestampValue')) return DateTime.tryParse(valueObj['timestampValue']) ?? valueObj['timestampValue'];
   if (valueObj.containsKey('mapValue')) {
     final mapObj = valueObj['mapValue'] as Map<String, dynamic>? ?? {};

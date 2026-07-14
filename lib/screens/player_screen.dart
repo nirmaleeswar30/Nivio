@@ -1,7 +1,7 @@
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:simple_pip_mode/actions/pip_actions_layout.dart';
-import 'package:screen_brightness/screen_brightness.dart';
+import 'package:device_screen_brightness/device_screen_brightness.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:simple_pip_mode/simple_pip.dart';
 import 'dart:ui';
@@ -222,41 +222,49 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _loadSubtitleDelay();
     unawaited(WakelockPlus.enable());
     
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     _player = Player();
-    _videoController = VideoController(_player);
+    _videoController = VideoController(
+      _player,
+      configuration: VideoControllerConfiguration(
+        enableHardwareAcceleration: !isDesktop,
+      ),
+    );
 
     // Register event listeners via stream subscriptions
     _setupPlayerStreams();
     
-    const MethodChannel('com.nivio/gesture_exclusion').invokeMethod('setCanEnterPip', {'value': true});
-    try {
-      () async {
-        const MethodChannel('puntito.simple_pip_mode').setMethodCallHandler((call) async {
-          if (call.method == 'onPipEntered') {
-            setState(() => _isPipMode = true);
-          } else if (call.method == 'onPipExited') {
-            setState(() => _isPipMode = false);
-          } else if (call.method == 'onPipAction') {
-            final String arg = call.arguments as String;
-            final actionStr = arg.toLowerCase();
-            if (actionStr == 'play') {
-              _player.play();
-            } else if (actionStr == 'pause') {
-              _player.pause();
-            } else if (actionStr == 'next' || actionStr == 'forward') {
-              final pos = _player.state.position;
-              _player.seek(pos + const Duration(seconds: 10));
-            } else if (actionStr == 'previous' || actionStr == 'rewind') {
-              final pos = _player.state.position;
-              _player.seek(pos - const Duration(seconds: 10));
+    if (Platform.isAndroid) {
+      const MethodChannel('com.nivio/gesture_exclusion').invokeMethod('setCanEnterPip', {'value': true});
+      try {
+        () async {
+          const MethodChannel('puntito.simple_pip_mode').setMethodCallHandler((call) async {
+            if (call.method == 'onPipEntered') {
+              setState(() => _isPipMode = true);
+            } else if (call.method == 'onPipExited') {
+              setState(() => _isPipMode = false);
+            } else if (call.method == 'onPipAction') {
+              final String arg = call.arguments as String;
+              final actionStr = arg.toLowerCase();
+              if (actionStr == 'play') {
+                _player.play();
+              } else if (actionStr == 'pause') {
+                _player.pause();
+              } else if (actionStr == 'next' || actionStr == 'forward') {
+                final pos = _player.state.position;
+                _player.seek(pos + const Duration(seconds: 10));
+              } else if (actionStr == 'previous' || actionStr == 'rewind') {
+                final pos = _player.state.position;
+                _player.seek(pos - const Duration(seconds: 10));
+              }
             }
-          }
-        });
-        await SimplePip().setPipActionsLayout(PipActionsLayout.mediaWithSeek10);
-        await SimplePip().setAutoPipMode(aspectRatio: const (16, 9), autoEnter: true);
-        await SimplePip().setIsPlaying(true);
-      }();
-    } catch (_) {}
+          });
+          await SimplePip().setPipActionsLayout(PipActionsLayout.mediaWithSeek10);
+          await SimplePip().setAutoPipMode(aspectRatio: const (16, 9), autoEnter: true);
+          await SimplePip().setIsPlaying(true);
+        }();
+      } catch (_) {}
+    }
     _currentEpisode = widget.episode;
     _currentProviderIndex = math.max(0, widget.providerIndex ?? 0);
     _initializePlayer(isRetry: false);
@@ -2719,16 +2727,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   @override
   void dispose() {
-    try {
-      ScreenBrightness().resetScreenBrightness();
-    } catch (e) {
-      debugPrint('Error resetting screen brightness: $e');
-    }
+    // device_screen_brightness manages app-level brightness lifecycle automatically.
     unawaited(WakelockPlus.disable());
-    const MethodChannel('com.nivio/gesture_exclusion').invokeMethod('setCanEnterPip', {'value': false});
-    const MethodChannel('com.nivio/gesture_exclusion').setMethodCallHandler(null);
-    const MethodChannel('puntito.simple_pip_mode').setMethodCallHandler(null);
-    SimplePip().setAutoPipMode(aspectRatio: const (16, 9), autoEnter: false);
+    if (Platform.isAndroid) {
+      const MethodChannel('com.nivio/gesture_exclusion').invokeMethod('setCanEnterPip', {'value': false});
+      const MethodChannel('com.nivio/gesture_exclusion').setMethodCallHandler(null);
+      const MethodChannel('puntito.simple_pip_mode').setMethodCallHandler(null);
+      SimplePip().setAutoPipMode(aspectRatio: const (16, 9), autoEnter: false);
+    }
     _progressTimer?.cancel();
     _watchPartyHostSyncTimer?.cancel();
     _watchPartyPlaybackSub?.cancel();

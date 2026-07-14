@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'dart:io';
 import 'dart:ui';
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -94,7 +95,13 @@ class DownloadService {
     const androidSettings = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
     );
-    const initSettings = InitializationSettings(android: androidSettings);
+    const linuxSettings = LinuxInitializationSettings(
+      defaultActionName: 'Open',
+    );
+    const initSettings = InitializationSettings(
+      android: androidSettings,
+      linux: linuxSettings,
+    );
     await _notifications.initialize(
       settings: initSettings,
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
@@ -838,16 +845,36 @@ class DownloadService {
 
       ffmpegArgs.add(filePath);
 
-      final session = await FFmpegKit.executeWithArguments(ffmpegArgs);
-      final returnCode = await session.getReturnCode();
+      final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+      bool success = false;
+      String errorLogs = '';
+
+      if (isDesktop) {
+        try {
+          final res = await Process.run('ffmpeg', ffmpegArgs);
+          success = res.exitCode == 0;
+          if (!success) {
+            errorLogs = res.stderr.toString();
+          }
+        } catch (e) {
+          appDebugLog('❌ Local mux desktop FFmpeg process run error: $e');
+          errorLogs = e.toString();
+        }
+      } else {
+        final session = await FFmpegKit.executeWithArguments(ffmpegArgs);
+        final returnCode = await session.getReturnCode();
+        success = ReturnCode.isSuccess(returnCode);
+        if (!success) {
+          errorLogs = await session.getLogsAsString();
+        }
+      }
 
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
 
-      if (ReturnCode.isSuccess(returnCode)) {
+      if (success) {
         return true;
       } else {
-        final logs = await session.getLogsAsString();
-        appDebugLog('❌ FFmpeg Local Mux Error: $logs');
+        appDebugLog('❌ FFmpeg Local Mux Error: $errorLogs');
         return false;
       }
     } catch (e) {
@@ -992,8 +1019,64 @@ class DownloadService {
     // Output 1: Video file
     ffmpegArgs.add(filePath);
 
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     final completer = Completer<void>();
     int lastUpdateMs = 0;
+
+    if (isDesktop) {
+      if (cancelToken.isCancelled) return;
+      Process? process;
+
+      final cleanCancel = () {
+        process?.kill();
+      };
+      cancelToken.whenCancel.then((_) => cleanCancel());
+
+      try {
+        process = await Process.start('ffmpeg', ffmpegArgs);
+
+        process.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen((line) {
+          if (cancelToken.isCancelled) return;
+          
+          final match = RegExp(r'time=(\d+):(\d+):(\d+)\.(\d+)').firstMatch(line);
+          if (match != null && durationMs > 0) {
+            final hours = int.parse(match.group(1)!);
+            final minutes = int.parse(match.group(2)!);
+            final seconds = int.parse(match.group(3)!);
+            final timeMs = ((hours * 3600 + minutes * 60 + seconds) * 1000).toInt();
+            item.progress = (timeMs / durationMs).clamp(0.0, 1.0);
+
+            if (timeMs - lastUpdateMs > 2000) {
+              lastUpdateMs = timeMs;
+              box.put(item.id, item);
+              _showProgressNotification(item);
+            }
+          }
+        });
+
+        final exitCode = await process.exitCode;
+        if (exitCode == 0) {
+          if (item.progress > 0 && item.progress < 0.95) {
+            appDebugLog("Native FFmpeg returned success but progress is incomplete. Treating as FAILED.");
+            completer.completeError(Exception("Download incomplete"));
+          } else {
+            completer.complete();
+          }
+        } else {
+          if (cancelToken.isCancelled) {
+            completer.completeError(Exception("Cancelled"));
+          } else {
+            completer.completeError(Exception("FFmpeg exited with code $exitCode"));
+          }
+        }
+      } catch (e) {
+        completer.completeError(e);
+      }
+
+      await completer.future;
+      _completeDownload(item);
+      return;
+    }
 
     final executeSession = await FFmpegKit.executeWithArgumentsAsync(
       ffmpegArgs,

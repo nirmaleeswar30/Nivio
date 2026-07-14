@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:isolate';
 import 'dart:ui';
 import 'dart:io';
+import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -45,13 +46,28 @@ import 'package:nivio/services/download_service.dart';
 import 'package:nivio/services/hls_proxy_service.dart';
 import 'package:media_kit/media_kit.dart';
 
-bool get isFirebaseSupported =>
-    kIsWeb || (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
+import 'package:window_manager/window_manager.dart';
 
 void main() async {
   try {
     WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
     MediaKit.ensureInitialized();
+
+    if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
+      await windowManager.ensureInitialized();
+      const windowOptions = WindowOptions(
+        size: Size(1920, 1080),
+        minimumSize: Size(1280, 720),
+        center: true,
+        backgroundColor: Colors.transparent,
+        skipTaskbar: false,
+        titleBarStyle: TitleBarStyle.hidden,
+      );
+      windowManager.waitUntilReadyToShow(windowOptions, () async {
+        await windowManager.show();
+        await windowManager.focus();
+      });
+    }
 
     // Preserve splash screen while initializing
     if (Platform.isAndroid || Platform.isIOS) {
@@ -68,9 +84,8 @@ void main() async {
 
   // Parallelize initialization for faster startup
   await Future.wait([
-    // Initialize Firebase (only if supported)
-    if (isFirebaseSupported)
-      Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
+    // Initialize Firebase
+    Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
     // Initialize Hive in parallel
     _initHive(),
     // Optional: initialize Supabase for watch party if configured
@@ -96,6 +111,9 @@ void main() async {
       DownloadService.deleteDownload(message);
     }
   });
+
+    // Wire up deep link handling (nivio://open/...)
+    _initDeepLinks();
 
     runApp(
       ProviderScope(
@@ -150,14 +168,41 @@ Future<void> _initHive() async {
   await WatchlistService.init();
 }
 
+/// Handle incoming deep links (nivio://open/...) on all platforms.
+void _initDeepLinks() {
+  try {
+    final appLinks = AppLinks();
+
+    // Cold start: capture the URI that launched the app.
+    appLinks.getInitialLink().then((uri) {
+      if (uri != null) _handleDeepLink(uri);
+    });
+
+    // Warm start: listen for URIs while app is running.
+    appLinks.uriLinkStream.listen((uri) {
+      _handleDeepLink(uri);
+    });
+  } catch (e) {
+    debugPrint('Deep link init error: $e');
+  }
+}
+
+void _handleDeepLink(Uri uri) {
+  // URI format: nivio://open/media/123?type=movie
+  // GoRouter path:       /media/123?type=movie
+  final path = uri.path; // e.g. "/media/123"
+  final query = uri.query.isNotEmpty ? '?${uri.query}' : '';
+  final routePath = '$path$query';
+  debugPrint('🔗 Deep link received: $uri → routing to $routePath');
+  appRouter.go(routePath);
+}
+
 // Auth state notifier for router refresh
 class _AuthStateNotifier extends ChangeNotifier {
   _AuthStateNotifier() {
-    if (isFirebaseSupported) {
-      FirebaseAuth.instance.authStateChanges().listen((_) {
-        notifyListeners();
-      });
-    }
+    FirebaseAuth.instance.authStateChanges().listen((_) {
+      notifyListeners();
+    });
   }
 }
 
@@ -167,9 +212,6 @@ final appRouter = GoRouter(
   // Optimize: Use refreshListenable for auth state instead of checking on every navigation
   refreshListenable: _AuthStateNotifier(),
   redirect: (context, state) {
-    if (!isFirebaseSupported) {
-      return null;
-    }
     final user = FirebaseAuth.instance.currentUser;
     final isAuthRoute = state.matchedLocation == '/auth';
 

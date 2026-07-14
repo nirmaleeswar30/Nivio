@@ -1,6 +1,5 @@
 import 'dart:async';
-
-
+import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
@@ -21,6 +20,7 @@ import 'package:nivio/providers/recommendations_provider.dart';
 
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
+import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/api_status_service.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
@@ -63,6 +63,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Color _currentAmbientColor = const Color(0xFF0D0F14);
 
 
+
   @override
   void initState() {
     super.initState();
@@ -101,18 +102,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ]);
   }
 
-  Future<void> _extractColorForIndex(List<dynamic> items, int index) async {
+  Future<void> _extractColorForIndex(List<Map<String, dynamic>> items, int index) async {
     if (items.isEmpty || index >= items.length) return;
     
     if (_ambientColors.containsKey(index)) return;
     
     final content = items[index];
-    String? posterPath;
-    if (content is SearchResult) {
-      posterPath = content.posterPath ?? content.backdropPath;
-    } else if (content is Map) {
-      posterPath = content['poster_path'] ?? content['backdrop_path'];
-    }
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final posterPath = isDesktop
+        ? (content['backdrop_path'] ?? content['poster_path'])?.toString()
+        : (content['poster_path'] ?? content['backdrop_path'])?.toString();
     if (posterPath == null) return;
     
     try {
@@ -128,6 +127,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           _ambientColors[index] = color;
           if (_currentBannerIndex == index) {
             _currentAmbientColor = color;
+            ref.read(ambientColorProvider.notifier).state = color;
           }
         });
       }
@@ -144,6 +144,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     ref.listen(changelogProvider, (previous, next) {
       if (!next.isLoading && !next.hasSeenCurrentVersion && next.releaseNotes != null) {
         ref.read(changelogProvider.notifier).markAsSeen();
@@ -207,7 +208,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: PreferredSize(
+      appBar: isDesktop ? null : PreferredSize(
         preferredSize: const Size.fromHeight(70),
         child: AppBar(
           elevation: 0,
@@ -235,37 +236,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                   ),
           ),
-          title: const Padding(
-            padding: EdgeInsets.only(top: 6, left: 2),
-            child: SizedBox(
-              height: 80,
-              child: Image(
-                image: AssetImage('assets/images/nivio-dark.png'),
-                fit: BoxFit.contain,
-              ),
-            ),
-          ),
+          title: isDesktop 
+              ? const SizedBox.shrink()
+              : const Padding(
+                  padding: EdgeInsets.only(top: 6, left: 2),
+                  child: SizedBox(
+                    height: 80,
+                    child: Image(
+                      image: AssetImage('assets/images/nivio-dark.png'),
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
           actions: [
             _buildBypassIndicator(context),
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: IconButton(
-                icon: const PhosphorIcon(
-                  PhosphorIconsRegular.magnifyingGlass,
-                  color: Colors.white,
-                  size: 22,
+            if (!isDesktop) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: IconButton(
+                  icon: const PhosphorIcon(
+                    PhosphorIconsRegular.magnifyingGlass,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                  onPressed: () => context.push('/search'),
                 ),
-                onPressed: () => context.push('/search'),
               ),
-            ),
+            ],
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: _buildNotificationBell(context),
             ),
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: _buildProfileButton(context),
-            ),
+            if (!isDesktop) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: _buildProfileButton(context),
+              ),
+            ],
             const SizedBox(width: 8),
           ],
         ),
@@ -289,9 +296,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
           ),
-          _buildProviderSelectionRow(),
-          const SliverToBoxAdapter(
-            child: SizedBox(height: 40),
+          SliverToBoxAdapter(
+            child: Consumer(
+              builder: (context, ref, child) {
+                final continueWatching = ref.watch(continueWatchingProvider);
+                return continueWatching.when(
+                  data: (items) {
+                    if (items.isEmpty) return const SizedBox.shrink();
+                    return Padding(
+                      padding: EdgeInsets.only(top: 0, left: isDesktop ? 68 : 16, right: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Continue Watching',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 12),
+                          RepaintBoundary(
+                            child: ContinueWatchingRow(),
+                          ),
+                          SizedBox(height: 30),
+                        ],
+                      ),
+                    );
+                  },
+                  loading: () => const SizedBox.shrink(),
+                  error: (error, stackTrace) => const SizedBox.shrink(),
+                );
+              },
+            ),
           ),
           SliverToBoxAdapter(
             child: Consumer(
@@ -322,40 +360,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               },
             ),
           ),
-          SliverToBoxAdapter(
-            child: Consumer(
-              builder: (context, ref, child) {
-                final continueWatching = ref.watch(continueWatchingProvider);
-                return continueWatching.when(
-                  data: (items) {
-                    if (items.isEmpty) return const SizedBox.shrink();
-                    return const Padding(
-                      padding: EdgeInsets.only(top: 0, left: 16, right: 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Continue Watching',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          SizedBox(height: 12),
-                          RepaintBoundary(
-                            child: ContinueWatchingRow(),
-                          ),
-                          SizedBox(height: 30),
-                        ],
-                      ),
-                    );
-                  },
-                  loading: () => const SizedBox.shrink(),
-                  error: (error, stackTrace) => const SizedBox.shrink(),
-                );
-              },
-            ),
+          _buildProviderSelectionRow(),
+          const SliverToBoxAdapter(
+            child: SizedBox(height: 40),
           ),
           SliverToBoxAdapter(
             child: Consumer(
@@ -407,6 +414,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Widget _buildProviderSelectionRow() {
     final providers = allProviders.take(20).toList();
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
 
     return SliverToBoxAdapter(
       child: RepaintBoundary(
@@ -414,7 +422,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding: EdgeInsets.only(top: 8.0, bottom: 8.0, left: isDesktop ? 68 : 16, right: 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -446,7 +454,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             height: 90,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
+              padding: EdgeInsets.only(left: isDesktop ? 64 : 10, right: 10),
               itemCount: providers.length,
               itemBuilder: (context, index) {
                 final provider = providers[index];
@@ -492,8 +500,125 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildHeroBannerCarousel(BuildContext context, List<dynamic> items) {
+  Widget _buildTitleText(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 32,
+        fontWeight: FontWeight.bold,
+        height: 1.2,
+      ),
+    );
+  }
+
+  Widget _desktopOutlineButton({required Widget icon, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: Colors.black26,
+          border: Border.all(color: Colors.white24, width: 1.5),
+          shape: BoxShape.circle,
+        ),
+        child: Center(child: icon),
+      ),
+    );
+  }
+
+  Widget _buildGenreBubble(String genre, Color themeColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(
+         color: themeColor.withOpacity(0.12),
+         border: Border.all(color: themeColor.withOpacity(0.4), width: 1.2),
+         borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        genre,
+        style: TextStyle(
+          color: themeColor,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildDesktopBadges(
+    int? episodes,
+    String format,
+    String status,
+    String? season,
+    double? voteAverage,
+    Color themeColor,
+  ) {
+    final widgets = <Widget>[];
+     
+    if (episodes != null && episodes > 0) {
+      widgets.add(_buildBadge("$episodes Episode${episodes > 1 ? 's' : ''}", themeColor));
+    }
+    if (format.isNotEmpty) {
+      widgets.add(_buildBadge(format, themeColor));
+    }
+    if (status.isNotEmpty) {
+      widgets.add(_buildBadge(status, themeColor));
+    }
+    if (season != null && season.isNotEmpty) {
+      widgets.add(_buildBadge(season, themeColor));
+    }
+    if (voteAverage != null && voteAverage > 0) {
+      final pct = (voteAverage * 10).toInt();
+      widgets.add(
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: pct >= 70 ? const Color(0xFF4CAF50).withOpacity(0.12) : themeColor.withOpacity(0.12),
+            border: Border.all(
+              color: pct >= 70 ? const Color(0xFF4CAF50).withOpacity(0.4) : themeColor.withOpacity(0.4),
+              width: 1.2,
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            "$pct%",
+            style: TextStyle(
+              color: pct >= 70 ? const Color(0xFF4CAF50) : themeColor,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      );
+    }
+     
+    return widgets;
+  }
+
+  Widget _buildBadge(String text, Color themeColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(
+        color: themeColor.withOpacity(0.12),
+        border: Border.all(color: themeColor.withOpacity(0.4), width: 1.2),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: themeColor,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeroBannerCarousel(BuildContext context, List<Map<String, dynamic>> items) {
     if (items.isEmpty) return const SizedBox(height: 500);
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     final watchlistIds = ref
         .watch(watchlistProvider)
         .map((item) => item.id)
@@ -505,9 +630,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _extractColorForIndex(items, 0);
       });
     }
+    final bannerHeight = isDesktop ? MediaQuery.sizeOf(context).height * 0.8 : 600.0;
 
     return SizedBox(
-      height: 600,
+      height: bannerHeight,
       child: PageView.builder(
         controller: _pageController,
         itemCount: itemCount,
@@ -535,42 +661,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             _currentBannerIndex = index % items.length;
             if (_ambientColors.containsKey(_currentBannerIndex)) {
               _currentAmbientColor = _ambientColors[_currentBannerIndex]!;
+              ref.read(ambientColorProvider.notifier).state = _currentAmbientColor;
             }
           });
         },
         itemBuilder: (context, index) {
           final content = items[index == items.length ? 0 : index];
           
-          int tmdbId = 0;
-          String mediaType = 'movie';
-          String title = 'Featured';
-          String? backdropPath;
-          double? voteAverage;
-          String year = '';
-          List<String> genreIds = [];
+          final tmdbId = content['id'] as int? ?? 0;
+          final mediaType = content['media_type'] as String? ?? 'movie';
+          final title = content['title'] as String? ?? 'Featured';
+          final backdropPath = content['backdrop_path'] as String?;
+          final voteAverage = content['vote_average'] as double?;
+          final year = content['year'] as String? ?? '';
+          final genres = List<String>.from(content['genres'] ?? []);
+          
+          final episodes = content['episodes'] as int?;
+          final format = content['format'] as String? ?? '';
+          final status = content['status'] as String? ?? '';
+          final season = content['season'] as String?;
 
-          if (content is SearchResult) {
-            tmdbId = content.id;
-            mediaType = content.mediaType;
-            title = content.title ?? content.name ?? 'Featured';
-            backdropPath = content.posterPath ?? content.backdropPath;
-            voteAverage = content.voteAverage;
-            year = content.firstAirDate?.split('-').first ?? '';
-            // AniList doesn't map genres to TMDB genre IDs in the same way, so we'll skip for now or use a generic one
-          } else if (content is Map) {
-            tmdbId = _parseMediaId(content['id']) ?? 0;
-            mediaType = (content['media_type'] ?? (content['title'] != null ? 'movie' : 'tv')).toString();
-            title = (content['title'] ?? content['name'] ?? 'Featured').toString();
-            backdropPath = (content['poster_path'] ?? content['backdrop_path'])?.toString();
-            voteAverage = (content['vote_average'] as num?)?.toDouble();
-            year = ((content['first_air_date'] ?? content['release_date'])?.toString().split('-').first ?? '').trim();
-            genreIds = (content['genre_ids'] as List<dynamic>? ?? [])
-                .whereType<num>()
-                .map((genreId) => _genreMap[genreId.toInt()])
-                .whereType<String>()
-                .take(3)
-                .toList();
-          }
+          final logoUrl = content['logo_url'] as String?;
+
+          final isDesktop = !Platform.isAndroid && !Platform.isIOS;
 
           final isInWatchlist = tmdbId != 0
               ? (_pendingWatchlistState[tmdbId] ??
@@ -581,10 +694,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ? backdropPath 
               : _tmdbImageUrl(backdropPath, backdropSize);
 
-          final meta = <String>[
-            if (genreIds.isNotEmpty) genreIds.join(' / '),
-            if (voteAverage != null && voteAverage > 0)
-              voteAverage.toStringAsFixed(1),
+          final activeBgColor = Color.lerp(const Color(0xFF0D0F14), _currentAmbientColor, 0.15)!;
+          final slideColor = _ambientColors[_currentBannerIndex] ?? NivioTheme.accentColorOf(context);
+
+          final mobileMeta = <String>[
+            if (genres.isNotEmpty) genres.take(3).join(' / '),
+            if (voteAverage != null && voteAverage > 0) voteAverage.toStringAsFixed(1),
             if (year.isNotEmpty) year,
           ];
 
@@ -596,7 +711,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [Colors.black, Colors.black, Colors.transparent],
-                    stops: [0.0, 0.6, 1.0],
+                    stops: [0.0, 0.85, 1.0],
                   ).createShader(rect);
                 },
                 blendMode: BlendMode.dstIn,
@@ -616,6 +731,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ),
               ),
+              // Vignette overlay
+              Container(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.center,
+                    radius: 1.3,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.8),
+                    ],
+                    stops: const [0.25, 1.0],
+                  ),
+                ),
+              ),
               Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -623,117 +752,235 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     end: Alignment.bottomCenter,
                     colors: [
                       Colors.transparent,
-                      Colors.black.withValues(alpha: 0.4),
-                      Colors.transparent,
+                      activeBgColor.withOpacity(0.5),
+                      activeBgColor,
                     ],
-                    stops: const [0.0, 0.7, 1.0],
+                    stops: const [0.0, 0.88, 1.0],
                   ),
                 ),
               ),
               Positioned(
-                bottom: 76,
-                left: 24,
-                right: 24,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    AnimatedOpacity(
-                      opacity: 1,
-                      duration: const Duration(milliseconds: 500),
-                      child: Text(
-                        title,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    if (meta.isNotEmpty)
-                      Wrap(
-                        alignment: WrapAlignment.center,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 8,
-                        runSpacing: 4,
-                        children: _buildMetaChips(meta),
-                      ),
-                    const SizedBox(height: 14),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _smallSquareButton(
-                          icon: PhosphorIcon(
-                            isInWatchlist
-                                ? PhosphorIconsFill.checkCircle
-                                : PhosphorIconsRegular.plus,
-                            color: isInWatchlist
-                                ? NivioTheme.accentColorOf(context)
-                                : Colors.white,
-                            size: 18,
-                          ),
-                          onTap: () => _toggleFeaturedWatchlist(content),
-                        ),
-                        const SizedBox(width: 10),
-                        ElevatedButton.icon(
-                          onPressed: () =>
-                              context.push('/media/$tmdbId?type=$mediaType'),
-                          icon: const PhosphorIcon(
-                            PhosphorIconsFill.play,
-                            color: Colors.black,
-                            size: 16,
-                          ),
-                          label: const Text('Play'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 10,
+                bottom: isDesktop ? 40 : 76,
+                left: isDesktop ? 68 : 24,
+                right: isDesktop ? 48 : 24,
+                child: isDesktop
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            flex: 6,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (logoUrl != null && logoUrl.isNotEmpty)
+                                  GestureDetector(
+                                    onTap: () => context.push('/media/$tmdbId?type=$mediaType'),
+                                    child: MouseRegion(
+                                      cursor: SystemMouseCursors.click,
+                                      child: CachedNetworkImage(
+                                        imageUrl: logoUrl,
+                                        height: 110,
+                                        alignment: Alignment.bottomLeft,
+                                        fit: BoxFit.contain,
+                                        fadeInDuration: Duration.zero,
+                                        fadeOutDuration: Duration.zero,
+                                        placeholder: (context, url) => SizedBox(height: 110, child: _buildTitleText(title)),
+                                        errorWidget: (_, __, ___) => _buildTitleText(title),
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  GestureDetector(
+                                    onTap: () => context.push('/media/$tmdbId?type=$mediaType'),
+                                    child: MouseRegion(
+                                      cursor: SystemMouseCursors.click,
+                                      child: _buildTitleText(title),
+                                    ),
+                                  ),
+                                const SizedBox(height: 16),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: _buildDesktopBadges(episodes, format, status, season, voteAverage, slideColor),
+                                ),
+                                const SizedBox(height: 24),
+                                Row(
+                                  children: [
+                                    ElevatedButton.icon(
+                                      onPressed: () => context.push('/media/$tmdbId?type=$mediaType'),
+                                      icon: PhosphorIcon(
+                                        PhosphorIconsFill.play,
+                                        color: slideColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+                                        size: 15,
+                                      ),
+                                      label: Text(
+                                        'Watch Now',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: slideColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+                                        ),
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: slideColor,
+                                        elevation: 0,
+                                        padding: const EdgeInsets.symmetric(horizontal: 42, vertical: 19),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    _desktopOutlineButton(
+                                      icon: PhosphorIcon(
+                                        isInWatchlist ? PhosphorIconsFill.heart : PhosphorIconsRegular.heart,
+                                        color: isInWatchlist ? slideColor : Colors.white,
+                                        size: 18,
+                                      ),
+                                      onTap: () => _toggleFeaturedWatchlist(content),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    _desktopOutlineButton(
+                                      icon: PhosphorIcon(
+                                        isInWatchlist ? PhosphorIconsFill.bookmarkSimple : PhosphorIconsRegular.bookmarkSimple,
+                                        color: isInWatchlist ? slideColor : Colors.white,
+                                        size: 18,
+                                      ),
+                                      onTap: () => _toggleFeaturedWatchlist(content),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
+                          ),
+                          const SizedBox(width: 40),
+                          Expanded(
+                            flex: 5,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  content['overview'] as String? ?? '',
+                                  textAlign: TextAlign.right,
+                                  maxLines: 4,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.85),
+                                    fontSize: 14,
+                                    height: 1.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  alignment: WrapAlignment.end,
+                                  children: genres.map((genre) => _buildGenreBubble(genre, slideColor)).toList(),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        _smallSquareButton(
-                          icon: const PhosphorIcon(
-                            PhosphorIconsRegular.info,
-                            color: Colors.white,
-                            size: 18,
+                        ],
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          AnimatedOpacity(
+                            opacity: 1,
+                            duration: const Duration(milliseconds: 500),
+                            child: Text(
+                              title,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                          onTap: () =>
-                              context.push('/media/$tmdbId?type=$mediaType'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                          const SizedBox(height: 8),
+                          if (mobileMeta.isNotEmpty)
+                            Wrap(
+                              alignment: WrapAlignment.center,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: _buildMetaChips(mobileMeta),
+                            ),
+                          const SizedBox(height: 14),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _smallSquareButton(
+                                icon: PhosphorIcon(
+                                  isInWatchlist
+                                      ? PhosphorIconsFill.checkCircle
+                                      : PhosphorIconsRegular.plus,
+                                  color: isInWatchlist
+                                      ? NivioTheme.accentColorOf(context)
+                                      : Colors.white,
+                                  size: 18,
+                                ),
+                                onTap: () => _toggleFeaturedWatchlist(content),
+                              ),
+                              const SizedBox(width: 10),
+                              ElevatedButton.icon(
+                                onPressed: () => context.push('/media/$tmdbId?type=$mediaType'),
+                                icon: const PhosphorIcon(
+                                  PhosphorIconsFill.play,
+                                  color: Colors.black,
+                                  size: 16,
+                                ),
+                                label: const Text('Play'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: Colors.black,
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              _smallSquareButton(
+                                icon: const Icon(
+                                  Icons.info_outline,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                                onTap: () => context.push('/media/$tmdbId?type=$mediaType'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
               ),
               Positioned(
-                bottom: 30,
+                bottom: 20,
                 left: 0,
                 right: 0,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: List.generate(
                     items.length,
-                    (dotIndex) => AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      width: _currentBannerIndex == dotIndex ? 7 : 5,
-                      height: _currentBannerIndex == dotIndex ? 7 : 5,
-                      decoration: BoxDecoration(
-                        color: _currentBannerIndex == dotIndex
-                            ? NivioTheme.accentColorOf(context)
-                            : Colors.white38,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
+                    (dotIndex) {
+                      final isActive = _currentBannerIndex == dotIndex;
+                      final activeColor = _ambientColors[_currentBannerIndex] ?? NivioTheme.accentColorOf(context);
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        width: isActive ? 24 : 12,
+                        height: 3,
+                        decoration: BoxDecoration(
+                          color: isActive ? activeColor : Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -745,8 +992,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildHeroBannerShimmer() {
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     return Container(
-      height: 600,
+      height: isDesktop ? MediaQuery.sizeOf(context).height * 0.8 : 600.0,
       color: const Color(0xFF2F2F2F),
       child: Center(
         child: CircularProgressIndicator(

@@ -88,7 +88,13 @@ class EpisodeCheckService {
       const androidSettings = AndroidInitializationSettings(
         '@mipmap/ic_launcher',
       );
-      const initSettings = InitializationSettings(android: androidSettings);
+      const linuxSettings = LinuxInitializationSettings(
+        defaultActionName: 'Open',
+      );
+      const initSettings = InitializationSettings(
+        android: androidSettings,
+        linux: linuxSettings,
+      );
 
       await _notifications.initialize(
         settings: initSettings,

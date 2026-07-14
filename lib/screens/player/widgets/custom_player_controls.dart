@@ -2,6 +2,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:nivio/providers/watch_party_provider.dart';
@@ -117,6 +118,35 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
     );
   }
 
+  void _onMouseMoved() {
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    if (!isDesktop) return;
+    if (_isLocked) return;
+
+    final isWatchParty = ref.read(watchPartySessionProvider).value != null;
+    if (isWatchParty) {
+      // In watch party on movement, show the chat overlay only
+      if (!_showControls && !_showChatOnly) {
+        setState(() {
+          _showChatOnly = true;
+          _showControls = false;
+        });
+        widget.onPlayerVisibilityChanged(false);
+      }
+      _startHideTimer();
+    } else {
+      // In normal player, show controls on movement
+      if (!_showControls) {
+        setState(() {
+          _showControls = true;
+          _showChatOnly = false;
+        });
+        widget.onPlayerVisibilityChanged(true);
+      }
+      _startHideTimer();
+    }
+  }
+
   void _onSingleTap() {
     if (_isLocked) {
       _onLockedSingleTap();
@@ -125,9 +155,29 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
 
     final isWatchParty = ref.read(watchPartySessionProvider).value != null;
     if (isWatchParty) {
-      // Cycle: State 0 (Hidden) -> State 1 (Chat Only) -> State 2 (Both) -> State 0
+      final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+      if (isDesktop) {
+        // Desktop watch party tap toggles controls directly
+        if (!_showControls) {
+          setState(() {
+            _showControls = true;
+            _showChatOnly = false;
+          });
+          widget.onPlayerVisibilityChanged(true);
+          _startHideTimer();
+        } else {
+          setState(() {
+            _showControls = false;
+            _showChatOnly = false;
+          });
+          widget.onPlayerVisibilityChanged(false);
+          _hideControlsTimer?.cancel();
+        }
+        return;
+      }
+
+      // Mobile watch party cycles: Hidden -> Chat Only -> Both -> Hidden
       if (!_showControls && !_showChatOnly) {
-        // Go to State 1 (Chat Only)
         setState(() {
           _showChatOnly = true;
           _showControls = false;
@@ -135,7 +185,6 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
         widget.onPlayerVisibilityChanged(false);
         _startHideTimer();
       } else if (!_showControls && _showChatOnly) {
-        // Go to State 2 (Both)
         setState(() {
           _showChatOnly = false;
           _showControls = true;
@@ -143,7 +192,6 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
         widget.onPlayerVisibilityChanged(true);
         _startHideTimer();
       } else {
-        // Go to State 0 (Hidden)
         setState(() {
           _showChatOnly = false;
           _showControls = false;
@@ -246,7 +294,7 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
         if (constraints.maxWidth < 250 || constraints.maxHeight < 200) {
           return const SizedBox.shrink();
         }
-        return SizedBox.expand(
+        final content = SizedBox.expand(
           child: Stack(
             children: [
               // 1. Background (Darken when controls are shown)
@@ -513,6 +561,15 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
         ],
       ),
     );
+
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    if (isDesktop) {
+      return MouseRegion(
+        onHover: (_) => _onMouseMoved(),
+        child: content,
+      );
+    }
+    return content;
       },
     );
   }

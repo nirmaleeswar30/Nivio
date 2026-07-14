@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'dart:async';
 
-import 'package:screen_brightness/screen_brightness.dart';
+import 'dart:io';
+import 'package:device_screen_brightness/device_screen_brightness.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 
 class PlayerGestureLayer extends StatefulWidget {
@@ -29,6 +30,7 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
     with SingleTickerProviderStateMixin {
   double _volume = 0.5;
   double _brightness = 0.5;
+  bool _useLocalOverlayFallback = false;
 
   bool _showVolumeIndicator = false;
   bool _showBrightnessIndicator = false;
@@ -53,7 +55,20 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
 
   Future<void> _initHardwareLevels() async {
     try {
-      _brightness = await ScreenBrightness().current;
+      final brightnessVal = await DeviceScreenBrightness.getBrightness(mode: BrightnessMode.app);
+      setState(() {
+        _brightness = brightnessVal / 100.0;
+        _useLocalOverlayFallback = false;
+      });
+    } catch (e) {
+      debugPrint('Error getting hardware levels, falling back to local overlay: $e');
+      setState(() {
+        _brightness = 1.0;
+        _useLocalOverlayFallback = true;
+      });
+    }
+    
+    try {
       final vol = await FlutterVolumeController.getVolume();
       if (vol != null) {
         setState(() {
@@ -71,7 +86,7 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
         }
       });
     } catch (e) {
-      debugPrint('Error getting hardware levels: $e');
+      debugPrint('Error getting volume levels: $e');
     }
   }
 
@@ -102,7 +117,13 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
         _brightness = (_brightness - (delta * sensitivity)).clamp(0.0, 1.0);
         _showBrightnessIndicator = true;
         _showVolumeIndicator = false;
-        ScreenBrightness().setScreenBrightness(_brightness);
+        if (!_useLocalOverlayFallback) {
+          try {
+            DeviceScreenBrightness.setBrightness((_brightness * 100).round(), mode: BrightnessMode.app);
+          } catch (_) {
+            _useLocalOverlayFallback = true;
+          }
+        }
       } else {
         _volume = (_volume - (delta * sensitivity)).clamp(0.0, 2.0);
         _showVolumeIndicator = true;
@@ -157,6 +178,15 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
   Widget build(BuildContext context) {
     return Stack(
       children: [
+        if (_useLocalOverlayFallback)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 50),
+                color: Colors.black.withOpacity((1.0 - _brightness).clamp(0.0, 0.85)),
+              ),
+            ),
+          ),
         GestureDetector(
           behavior: HitTestBehavior.translucent,
           onScaleUpdate: (details) {

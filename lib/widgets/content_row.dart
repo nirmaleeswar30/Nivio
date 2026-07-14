@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,16 +8,25 @@ import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/models/search_result.dart';
+import 'package:nivio/widgets/hover_preview_card.dart';
 
 class ContentRow extends StatelessWidget {
   final String title;
   final List<dynamic> items;
+  final double? leftPadding;
 
-  const ContentRow({super.key, required this.title, required this.items});
+  const ContentRow({
+    super.key,
+    required this.title,
+    required this.items,
+    this.leftPadding,
+  });
 
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) return const SizedBox.shrink();
+
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 30),
@@ -23,7 +34,7 @@ class ContentRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: EdgeInsets.only(left: leftPadding ?? (isDesktop ? 68 : 16), right: 16),
             child: Text(
               title,
               style: const TextStyle(
@@ -38,38 +49,46 @@ class ContentRow extends StatelessWidget {
             height: 180,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: EdgeInsets.only(
+                left: leftPadding != null 
+                    ? (leftPadding! - 4).clamp(0.0, double.infinity) 
+                    : (isDesktop ? 64 : 12), 
+                right: 12,
+              ),
               itemCount: items.length,
               cacheExtent: 200,
               itemBuilder: (context, index) {
                 final item = items[index];
                 String? posterPath;
+                String? backdropPath;
                 int tmdbId = 0;
                 String mediaType = 'movie';
                 String title = '';
 
                 if (item is SearchResult) {
                   posterPath = item.posterPath;
+                  backdropPath = item.backdropPath;
                   tmdbId = item.id;
                   mediaType = item.mediaType;
                   title = item.title ?? item.name ?? '';
                 } else if (item is Map) {
                   posterPath = item['poster_path'];
+                  backdropPath = item['backdrop_path'];
                   tmdbId = item['id'];
                   mediaType = item['media_type'] ?? (item['title'] != null ? 'movie' : 'tv');
                   title = (item['title'] ?? item['name'] ?? '').toString();
-                  debugPrint('📋 ContentRow [$title]: id=$tmdbId, media_type=${item['media_type']}, resolved=$mediaType, has_title=${item['title'] != null}, has_name=${item['name'] != null}');
                 }
 
                 return RepaintBoundary(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: _AnimatedPosterCard(
-                      posterPath: posterPath,
-                      tmdbId: tmdbId,
-                      mediaType: mediaType,
-                      title: title,
-                    ),
+                     padding: const EdgeInsets.symmetric(horizontal: 4),
+                     child: _AnimatedPosterCard(
+                       posterPath: posterPath,
+                       backdropPath: backdropPath,
+                       tmdbId: tmdbId,
+                       mediaType: mediaType,
+                       title: title,
+                     ),
                   ),
                 );
               },
@@ -83,12 +102,14 @@ class ContentRow extends StatelessWidget {
 
 class _AnimatedPosterCard extends ConsumerStatefulWidget {
   final String? posterPath;
+  final String? backdropPath;
   final int tmdbId;
   final String mediaType;
   final String title;
 
   const _AnimatedPosterCard({
     required this.posterPath,
+    this.backdropPath,
     required this.tmdbId,
     required this.mediaType,
     required this.title,
@@ -104,6 +125,13 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
   late Animation<double> _elevationAnimation;
+
+  final GlobalKey _cardKey = GlobalKey();
+  Timer? _hoverTimer;
+  Timer? _dismissTimer;
+
+  static OverlayEntry? _activeOverlay;
+  static _AnimatedPosterCardState? _activeCardState;
 
   @override
   void initState() {
@@ -122,8 +150,66 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
     );
   }
 
+  void _showOverlay() {
+    if (!mounted) return;
+    
+    // Dismiss any existing overlay first
+    _dismissActiveOverlay();
+
+    final renderBox = _cardKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+    final position = renderBox.localToGlobal(Offset.zero);
+    final size = renderBox.size;
+
+    final hoverWidth = 350.0;
+    final hoverHeight = 360.0;
+
+    // Centered on the card horizontally and vertically
+    final left = (position.dx + size.width / 2) - hoverWidth / 2;
+    final top = (position.dy + size.height / 2) - hoverHeight / 2;
+
+    _activeCardState = this;
+    _activeOverlay = OverlayEntry(
+      builder: (context) {
+        return Positioned(
+          left: left,
+          top: top,
+          child: HoverPreviewCard(
+            tmdbId: widget.tmdbId,
+            mediaType: widget.mediaType,
+            title: widget.title,
+            backdropPath: widget.backdropPath,
+            posterPath: widget.posterPath,
+            onDismiss: _dismissOverlay,
+          ),
+        );
+      },
+    );
+
+    Overlay.of(_cardKey.currentContext!).insert(_activeOverlay!);
+  }
+
+  void _dismissOverlay() {
+    _activeOverlay?.remove();
+    _activeOverlay = null;
+    _activeCardState = null;
+  }
+
+  static void _dismissActiveOverlay() {
+    _activeCardState?._dismissTimer?.cancel();
+    _activeCardState?._hoverTimer?.cancel();
+    _activeOverlay?.remove();
+    _activeOverlay = null;
+    _activeCardState = null;
+  }
+
   @override
   void dispose() {
+    _hoverTimer?.cancel();
+    _dismissTimer?.cancel();
+    if (_activeCardState == this) {
+      _dismissOverlay();
+    }
     _animationController.dispose();
     super.dispose();
   }
@@ -131,12 +217,16 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
   @override
   Widget build(BuildContext context) {
     final isInWatchlist = ref.watch(isInWatchlistProvider(widget.tmdbId));
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
 
-    final staticImageContent = widget.posterPath != null
+    final activePath = widget.posterPath;
+    final sizeSegment = isDesktop ? 'original' : posterSize;
+
+    final staticImageContent = activePath != null
         ? CachedNetworkImage(
-            imageUrl: widget.posterPath!.startsWith('http') 
-                ? widget.posterPath! 
-                : '$tmdbImageBaseUrl/$posterSize${widget.posterPath}',
+            imageUrl: activePath.startsWith('http') 
+                ? activePath 
+                : '$tmdbImageBaseUrl/$sizeSegment$activePath',
             fit: BoxFit.cover,
             width: double.infinity,
             height: double.infinity,
@@ -207,9 +297,43 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
     return MouseRegion(
       onEnter: (_) {
         _animationController.forward();
+        if (isDesktop) {
+          _dismissTimer?.cancel();
+          if (_activeCardState == this) return;
+          _hoverTimer?.cancel();
+          _hoverTimer = Timer(const Duration(milliseconds: 500), () {
+            _showOverlay();
+          });
+        }
       },
-      onExit: (_) {
+      onExit: (event) {
         _animationController.reverse();
+        if (isDesktop) {
+          _hoverTimer?.cancel();
+          if (_activeCardState == this) {
+            // Check if cursor is inside the hover overlay bounds
+            final renderBox = _cardKey.currentContext?.findRenderObject() as RenderBox?;
+            if (renderBox != null) {
+              final position = renderBox.localToGlobal(Offset.zero);
+              final size = renderBox.size;
+              final hoverWidth = 350.0;
+              final hoverHeight = 360.0;
+              final left = (position.dx + size.width / 2) - hoverWidth / 2;
+              final top = (position.dy + size.height / 2) - hoverHeight / 2;
+              final hoverRect = Rect.fromLTWH(left, top, hoverWidth, hoverHeight);
+              
+              if (hoverRect.contains(event.position)) {
+                // Cursor is over the hover preview overlay, don't dismiss
+                return;
+              }
+            }
+
+            _dismissTimer?.cancel();
+            _dismissTimer = Timer(const Duration(milliseconds: 200), () {
+              _dismissOverlay();
+            });
+          }
+        }
       },
       child: GestureDetector(
         onTap: () =>
@@ -220,8 +344,9 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
             return Transform.scale(
               scale: _scaleAnimation.value,
               child: Container(
+                key: _cardKey,
                 width: 120,
-                height: 170,
+                height: 180,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(4),
                   color: const Color(0xFF2F2F2F),

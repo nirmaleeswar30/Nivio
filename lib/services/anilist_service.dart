@@ -259,6 +259,38 @@ class AniListService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> getTrendingAnimeForFeatured() async {
+    const String query = '''
+      query {
+        Page(page: 1, perPage: 10) {
+          media(type: ANIME, sort: TRENDING_DESC) {
+            id
+            idMal
+            title { romaji english }
+            description
+            coverImage { extraLarge large }
+            bannerImage
+            averageScore
+            season
+            seasonYear
+            genres
+            format
+            status
+            episodes
+          }
+        }
+      }
+    ''';
+    try {
+      final response = await _dio.post('', data: {'query': query});
+      final data = response.data['data']['Page']['media'] as List<dynamic>;
+      return data.map((e) => e as Map<String, dynamic>).toList();
+    } catch (e) {
+      appDebugLog('getTrendingAnimeForFeatured error: $e');
+      return [];
+    }
+  }
+
   Future<SearchResults> getPopularAnime({int page = 1}) async {
     const String query = '''
       query (\$page: Int) {

@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -73,6 +74,7 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -100,15 +102,35 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
               )
             else
               SliverPadding(
-                padding: const EdgeInsets.only(top: 8, bottom: 80),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      return _buildScheduleItem(_schedules[index]);
-                    },
-                    childCount: _schedules.length,
-                  ),
+                padding: EdgeInsets.only(
+                  top: 8, 
+                  bottom: 80,
+                  left: isDesktop ? 16 : 0,
+                  right: isDesktop ? 16 : 0,
                 ),
+                sliver: isDesktop
+                    ? SliverGrid(
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 4,
+                          childAspectRatio: 0.72,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 14,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            return _buildDesktopScheduleCard(_schedules[index]);
+                          },
+                          childCount: _schedules.length,
+                        ),
+                      )
+                    : SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            return _buildScheduleItem(_schedules[index]);
+                          },
+                          childCount: _schedules.length,
+                        ),
+                      ),
               ),
           ],
         ),
@@ -368,6 +390,7 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                     item.releaseDate.month == now.month && 
                     item.releaseDate.day == now.day;
     final isPast = item.releaseDate.isBefore(now);
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     
     String statusText;
     if (isToday) {
@@ -413,7 +436,7 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                       ? CachedNetworkImage(
                           imageUrl: item.posterPath!.startsWith('http') 
                               ? item.posterPath! 
-                              : '$tmdbImageBaseUrl/$posterSize${item.posterPath}',
+                              : '$tmdbImageBaseUrl/${isDesktop ? 'original' : posterSize}${item.posterPath}',
                           width: 70,
                           height: 105,
                           fit: BoxFit.cover,
@@ -523,6 +546,171 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
       height: 105,
       color: Colors.white10,
       child: const Icon(Icons.movie_creation_outlined, color: Colors.white54),
+    );
+  }
+
+  Widget _buildDesktopScheduleCard(ScheduleItem item) {
+    final now = DateTime.now();
+    final isToday = item.releaseDate.year == now.year && 
+                    item.releaseDate.month == now.month && 
+                    item.releaseDate.day == now.day;
+    final isPast = item.releaseDate.isBefore(now);
+    
+    String statusText;
+    if (isToday) {
+      statusText = (item.hasPreciseTime && isPast) ? 'Aired Today' : 'Airing Today';
+    } else if (item.releaseDate.isBefore(DateTime(now.year, now.month, now.day))) {
+      statusText = 'Aired';
+    } else {
+      statusText = 'Upcoming';
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            if (item.id == -1) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Details unavailable. Please search for this show.')),
+              );
+              return;
+            }
+            final type = item.mediaType == 'anime' ? 'tv' : item.mediaType;
+            final season = item.seasonNumber ?? 1;
+            final episode = item.episodeNumber ?? 1;
+            context.push('/player/${item.id}?type=$type&season=$season&episode=$episode');
+          },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Poster
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      item.posterPath != null
+                          ? CachedNetworkImage(
+                              imageUrl: item.posterPath!.startsWith('http') 
+                                  ? item.posterPath! 
+                                  : '$tmdbImageBaseUrl/original${item.posterPath}',
+                              fit: BoxFit.cover,
+                              errorWidget: (_, __, ___) => const Center(
+                                child: Icon(Icons.movie_creation_outlined, color: Colors.white54, size: 40),
+                              ),
+                            )
+                          : const Center(
+                              child: Icon(Icons.movie_creation_outlined, color: Colors.white54, size: 40),
+                            ),
+                      // MediaType badge top-left
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: NivioTheme.accentColorOf(context),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            item.mediaType.toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Episode number bottom-right
+                      if (item.episodeNumber != null)
+                        Positioned(
+                          bottom: 8,
+                          right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.75),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'EP ${item.episodeNumber}',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              // Info Area
+              Padding(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    // Timing
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.access_time_rounded, 
+                          size: 12, 
+                          color: isPast ? Colors.white54 : NivioTheme.accentColorOf(context),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: item.hasPreciseTime
+                              ? CountdownTimerWidget(
+                                  targetDate: item.releaseDate,
+                                  textStyle: TextStyle(
+                                    color: isPast ? Colors.white54 : NivioTheme.accentColorOf(context),
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                )
+                              : Text(
+                                  statusText,
+                                  style: TextStyle(
+                                    color: isPast ? Colors.white54 : NivioTheme.accentColorOf(context),
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

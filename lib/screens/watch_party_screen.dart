@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -508,6 +509,7 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
   Widget build(BuildContext context) {
     final service = ref.watch(watchPartyServiceProvider);
     final session = ref.watch(watchPartySessionProvider).valueOrNull;
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     final content = service == null
         ? Center(
             child: Padding(
@@ -520,8 +522,24 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
             ),
           )
         : ListView(
+            shrinkWrap: isDesktop,
+            physics: isDesktop ? const NeverScrollableScrollPhysics() : null,
             padding: const EdgeInsets.all(16),
             children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 24.0),
+                child: Center(
+                  child: Text(
+                    'Watch Party',
+                    style: const TextStyle(
+                      color: NivioTheme.netflixWhite,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                ),
+              ),
               if ((_selectedMediaTitle ?? '').trim().isNotEmpty) ...[
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -609,26 +627,13 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
           ),
         ),
         child: SafeArea(
-          child: Column(
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: Row(
-                  children: [
-                    Text(
-                      'Watch Party',
-                      style: TextStyle(
-                        color: NivioTheme.netflixWhite,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
+          child: Center(
+            child: SingleChildScrollView(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 500),
+                child: content,
               ),
-              const SizedBox(height: 10),
-              Expanded(child: content),
-            ],
+            ),
           ),
         ),
       ),

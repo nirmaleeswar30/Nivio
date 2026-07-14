@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/core/theme.dart';
@@ -9,6 +10,7 @@ import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/widgets/search_result_card.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -27,11 +29,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   int _currentPage = 1;
   int _totalPages = 1;
   int _searchRequestId = 0;
+  List<String> _recentSearches = [];
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _loadRecentSearches();
   }
 
   @override
@@ -40,6 +44,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _controller.dispose();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    
+    // Clear persistent search query state so we start fresh next time
+    try {
+      ref.read(searchQueryProvider.notifier).state = '';
+    } catch (_) {}
+    
     super.dispose();
   }
 
@@ -113,10 +123,59 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
   }
 
+  Future<void> _loadRecentSearches() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _recentSearches = prefs.getStringList('recent_searches') ?? [];
+      });
+    }
+  }
+
+  Future<void> _saveToRecentSearches(String query) async {
+    if (query.trim().isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList('recent_searches') ?? [];
+    list.remove(query);
+    list.insert(0, query);
+    if (list.length > 8) {
+      list.removeRange(8, list.length);
+    }
+    await prefs.setStringList('recent_searches', list);
+    if (mounted) {
+      setState(() {
+        _recentSearches = list;
+      });
+    }
+  }
+
+  Future<void> _removeFromRecentSearches(String query) async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList('recent_searches') ?? [];
+    list.remove(query);
+    await prefs.setStringList('recent_searches', list);
+    if (mounted) {
+      setState(() {
+        _recentSearches = list;
+      });
+    }
+  }
+
+  Future<void> _clearAllRecentSearches() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('recent_searches');
+    if (mounted) {
+      setState(() {
+        _recentSearches = [];
+      });
+    }
+  }
+
   void _performSearch(String value) {
     final query = value.trim();
     if (query.isEmpty) return;
 
+    _saveToRecentSearches(query);
     _searchDebounce?.cancel();
     ref.read(searchQueryProvider.notifier).state = query;
     setState(() {
@@ -387,7 +446,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           titleSpacing: 0,
           leading: IconButton(
             icon: const PhosphorIcon(PhosphorIconsRegular.caretLeft, color: Colors.white),
-            onPressed: () => context.pop(),
+            onPressed: () => context.canPop() ? context.pop() : context.go('/'),
           ),
           title: _buildSearchField(),
           actions: [
@@ -426,7 +485,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 220),
                     child: query.isEmpty
-                        ? const SizedBox.expand(key: ValueKey('empty_state'))
+                        ? _buildRecentSearches()
                         : _isInitialLoading
                         ? Center(
                             key: const ValueKey('loading'),
@@ -701,5 +760,84 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       }
     }
     return merged;
+  }
+
+  Widget _buildRecentSearches() {
+    if (_recentSearches.isEmpty) {
+      return const SizedBox.expand(key: ValueKey('empty_state'));
+    }
+
+    return Padding(
+      key: const ValueKey('recent_searches_state'),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Recent Searches',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              TextButton(
+                onPressed: _clearAllRecentSearches,
+                child: const Text(
+                  'Clear All',
+                  style: TextStyle(
+                    color: Colors.redAccent,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: ListView.separated(
+              itemCount: _recentSearches.length,
+              separatorBuilder: (context, index) => Divider(
+                color: Colors.white.withOpacity(0.08),
+                height: 1,
+              ),
+              itemBuilder: (context, index) {
+                final search = _recentSearches[index];
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(
+                    Icons.history,
+                    color: Colors.white30,
+                    size: 20,
+                  ),
+                  title: Text(
+                    search,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                    ),
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: Colors.white30,
+                      size: 20,
+                    ),
+                    onPressed: () => _removeFromRecentSearches(search),
+                  ),
+                  onTap: () {
+                    _controller.text = search;
+                    _performSearch(search);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

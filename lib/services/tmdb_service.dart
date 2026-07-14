@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:nivio/core/constants.dart';
 import 'package:nivio/models/search_result.dart';
@@ -426,12 +427,14 @@ class TmdbService {
   }
 
   /// Get poster URL
-  String getPosterUrl(String? posterPath, {String size = posterSize}) {
+  String getPosterUrl(String? posterPath, {String? size}) {
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final resolvedSize = size ?? (isDesktop ? 'original' : posterSize);
     if (posterPath == null || posterPath.isEmpty) {
       return '';
     }
     if (posterPath.startsWith('http')) return posterPath;
-    return '$tmdbImageBaseUrl/$size$posterPath';
+    return '$tmdbImageBaseUrl/$resolvedSize$posterPath';
   }
 
   /// Get backdrop URL
@@ -441,6 +444,116 @@ class TmdbService {
     }
     if (backdropPath.startsWith('http')) return backdropPath;
     return '$tmdbImageBaseUrl/$size$backdropPath';
+  }
+
+  /// Get logo URL for movie or tv show
+  Future<String?> getMediaLogo(int id, String mediaType) async {
+    if (mediaType == 'anime') return null;
+    try {
+      final response = await _dio.get('/3/$mediaType/$id/images', queryParameters: {
+        'api_key': tmdbApiKey,
+      });
+      final logos = response.data['logos'] as List<dynamic>?;
+      if (logos == null || logos.isEmpty) return null;
+      
+      // Filter for English logo, or fallback to first one available
+      final englishLogo = logos.firstWhere(
+        (logo) => logo['iso_639_1'] == 'en',
+        orElse: () => logos.first,
+      );
+      
+      final filePath = englishLogo['file_path'] as String?;
+      if (filePath == null) return null;
+      return '$tmdbImageBaseUrl/original$filePath';
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Search for a media item on TMDB by title (with optional year) and fetch its logo
+  Future<String?> getLogoByTitle(String title, {String? year}) async {
+    try {
+      final searchResponse = await _dio.get('/3/search/multi', queryParameters: {
+        'api_key': tmdbApiKey,
+        'query': title,
+        if (year != null && year.isNotEmpty) 'first_air_date_year': year,
+      });
+      final results = searchResponse.data['results'] as List<dynamic>?;
+      if (results == null || results.isEmpty) return null;
+      
+      // Get first match that is a tv show or movie
+      final match = results.firstWhere(
+        (r) => r['media_type'] == 'tv' || r['media_type'] == 'movie',
+        orElse: () => results.first,
+      );
+      
+      final id = match['id'] as int? ?? 0;
+      final mediaType = match['media_type'] as String? ?? 'tv';
+      if (id == 0) return null;
+      
+      return await getMediaLogo(id, mediaType);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<Map<String, String?>?> getMediaInfoByTitle(String title, {String? year}) async {
+    try {
+      final searchResponse = await _dio.get('/3/search/multi', queryParameters: {
+        'api_key': tmdbApiKey,
+        'query': title,
+      });
+      final results = searchResponse.data['results'] as List<dynamic>?;
+      if (results == null || results.isEmpty) return null;
+      
+      dynamic bestMatch;
+      int highestScore = -1;
+
+      for (final r in results) {
+        final mediaType = r['media_type'] as String?;
+        if (mediaType != 'tv' && mediaType != 'movie') continue;
+
+        int score = 0;
+        
+        final genreIds = r['genre_ids'] as List<dynamic>? ?? [];
+        if (genreIds.contains(16)) {
+          score += 10;
+        }
+
+        final dateStr = (r['first_air_date'] ?? r['release_date'])?.toString() ?? '';
+        if (year != null && year.isNotEmpty && dateStr.startsWith(year)) {
+          score += 5;
+        }
+
+        if (score > highestScore) {
+          highestScore = score;
+          bestMatch = r;
+        }
+      }
+
+      final match = bestMatch ?? results.firstWhere(
+        (r) => r['media_type'] == 'tv' || r['media_type'] == 'movie',
+        orElse: () => results.first,
+      );
+      
+      final id = match['id'] as int? ?? 0;
+      final mediaType = match['media_type'] as String? ?? 'tv';
+      if (id == 0) return null;
+      
+      final logoUrl = await getMediaLogo(id, mediaType);
+      
+      final backdropPath = match['backdrop_path'] as String?;
+      final posterPath = match['poster_path'] as String?;
+      
+      return {
+        'logo_url': logoUrl,
+        'backdrop_path': backdropPath != null ? getBackdropUrl(backdropPath, size: 'original') : null,
+        'poster_path': posterPath != null ? getPosterUrl(posterPath, size: 'original') : null,
+        'tmdb_id': id.toString(),
+      };
+    } catch (e) {
+      return null;
+    }
   }
 
   /// Get trending content - with stale-while-revalidate

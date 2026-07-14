@@ -9,6 +9,15 @@ cd "$PROJECT_ROOT"
 
 echo "⚙️ Setting up desktop compilation overrides..."
 
+# Self-healing: if backup exists from a previous crashed run, restore it first!
+if [ -f pubspec.yaml.bak ]; then
+  echo "🩹 Restoring previous pubspec.yaml.bak..."
+  mv pubspec.yaml.bak pubspec.yaml
+fi
+if [ -f pubspec.lock.bak ]; then
+  mv pubspec.lock.bak pubspec.lock
+fi
+
 # Back up pubspec.yaml and pubspec.lock
 cp pubspec.yaml pubspec.yaml.bak
 cp pubspec.lock pubspec.lock.bak
@@ -36,6 +45,8 @@ dependency_overrides:
     path: ./packages/stubs/firebase_auth
   cloud_firestore:
     path: ./packages/stubs/cloud_firestore
+  google_sign_in:
+    path: ./packages/stubs/google_sign_in
 EOF
 
 echo "📥 Getting local stub dependencies..."

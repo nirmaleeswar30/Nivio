@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -94,6 +95,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     final seasonDataAsync = ref.watch(
       seasonDataProvider((
         showId: widget.media.id,
@@ -228,9 +230,30 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                 ),
               )
             else ...[
-              ...visibleEpisodes.asMap().entries.map(
-                (entry) => _buildEpisodeCard(entry.key, entry.value),
-              ),
+              if (isDesktop)
+                Column(
+                  children: [
+                    for (int i = 0; i < visibleEpisodes.length; i += 2)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: _buildEpisodeCard(i, visibleEpisodes[i]),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: (i + 1 < visibleEpisodes.length)
+                                ? _buildEpisodeCard(i + 1, visibleEpisodes[i + 1])
+                                : const SizedBox.shrink(),
+                          ),
+                        ],
+                      ),
+                  ],
+                )
+              else
+                ...visibleEpisodes.asMap().entries.map(
+                  (entry) => _buildEpisodeCard(entry.key, entry.value),
+                ),
               if (_hasMore)
                 Padding(
                   padding: EdgeInsets.symmetric(vertical: 20),
@@ -262,12 +285,13 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
   }
 
   Widget _buildEpisodeCard(int index, EpisodeData episode) {
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     final stillPath = episode.stillPath ?? widget.media.backdropPath ?? widget.media.posterPath;
     final stillUrl = stillPath == null || stillPath.isEmpty
         ? ''
         : stillPath.startsWith('http://') || stillPath.startsWith('https://')
         ? stillPath
-        : '$tmdbImageBaseUrl/w500$stillPath';
+        : '$tmdbImageBaseUrl/${isDesktop ? 'original' : 'w500'}$stillPath';
 
     final bgColor = index.isEven ? const Color(0x0EFFFFFF) : Colors.transparent;
     final isUnaired = _isUnaired(episode.airDate);

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -18,12 +19,14 @@ import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/models/watchlist_item.dart';
 import 'package:nivio/models/download_item.dart';
+import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/dynamic_colors_provider.dart';
 import 'package:nivio/widgets/marquee_text.dart';
 import 'package:nivio/providers/media_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
+import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/widgets/episode_list.dart';
 import 'package:nivio/services/download_service.dart';
@@ -182,6 +185,18 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         );
         mediaDetails = anilistService.mapToSearchResult(extras);
 
+        try {
+          final title = mediaDetails.title ?? mediaDetails.name ?? '';
+          final year = mediaDetails.releaseDate?.split('-').first ?? '';
+          final tmdbInfo = await tmdbService.getMediaInfoByTitle(title, year: year);
+          if (tmdbInfo != null) {
+            mediaDetails = mediaDetails.copyWith(
+              backdropPath: tmdbInfo['backdrop_path'] ?? mediaDetails.backdropPath,
+              posterPath: tmdbInfo['poster_path'] ?? mediaDetails.posterPath,
+            );
+          }
+        } catch (_) {}
+
         if (extras['trailer'] != null &&
             extras['trailer']['site'] == 'youtube') {
           trailerSource = _TrailerSource(
@@ -291,8 +306,27 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     }
   }
 
-  void _showTrailerPlayer(BuildContext context) {
+  void _showTrailerPlayer(BuildContext context) async {
     if (_trailerSource == null) return;
+
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    if (isDesktop && _trailerSource!.site.toLowerCase() == 'youtube') {
+      final watchUrl = _trailerSource!.watchUrl;
+      if (watchUrl != null) {
+        final uri = Uri.parse(watchUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Failed to open YouTube trailer URL.')),
+            );
+          }
+        }
+        return;
+      }
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => TrailerFullscreenScreen(source: _trailerSource!),
@@ -429,11 +463,15 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     final tmdbService = ref.read(tmdbServiceProvider);
     final fallbackBackdropUrl = tmdbService.getBackdropUrl(media.backdropPath, size: 'original');
     final fallbackPosterUrl = tmdbService.getPosterUrl(media.posterPath, size: 'original');
-    final backdropUrl = fallbackPosterUrl.isNotEmpty
-        ? fallbackPosterUrl
-        : fallbackBackdropUrl;
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final backdropUrl = isDesktop
+        ? (fallbackBackdropUrl.isNotEmpty ? fallbackBackdropUrl : fallbackPosterUrl)
+        : (fallbackPosterUrl.isNotEmpty ? fallbackPosterUrl : fallbackBackdropUrl);
     final posterUrl = fallbackPosterUrl;
     final isInWatchlist = ref.watch(isInWatchlistProvider(media.id));
+    final isTv = media.mediaType == 'tv' || media.mediaType == 'anime';
+    final seriesInfoAsync = isTv ? ref.watch(seriesInfoProvider(media.id)) : null;
+    final seriesInfo = seriesInfoAsync?.valueOrNull;
     final colorsAsync = ref.watch(dynamicColorsProvider(posterUrl));
     final colors = colorsAsync.valueOrNull ?? DynamicColors.fallback;
     final accentColor = colors.lightVibrant;
@@ -441,9 +479,11 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     final screenHeight = MediaQuery.sizeOf(context).height;
     final shortestSide = MediaQuery.sizeOf(context).shortestSide;
     final isTablet = shortestSide >= 600;
-    final heroHeight = (screenHeight * (isTablet ? 0.58 : 0.50))
-        .clamp(360.0, isTablet ? 700.0 : 560.0)
-        .toDouble();
+    final heroHeight = isDesktop
+        ? (screenHeight * 0.58).clamp(360.0, 700.0).toDouble()
+        : (screenHeight * (isTablet ? 0.58 : 0.50))
+            .clamp(360.0, isTablet ? 700.0 : 560.0)
+            .toDouble();
     const detailsOverlap = 0.0;
     final rawDate = media.releaseDate ?? media.firstAirDate;
     final year = (rawDate != null && rawDate.length >= 4)
@@ -454,7 +494,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     return _withBackGuard(
       Scaffold(
         backgroundColor: colors.darkMuted,
-        body: CustomScrollView(
+        body: Stack(
+          children: [
+            CustomScrollView(
           controller: _scrollController,
           slivers: [
             SliverToBoxAdapter(
@@ -502,15 +544,42 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            if (backdropUrl.isNotEmpty)
-                              CachedNetworkImage(
-                                imageUrl: backdropUrl,
-                                fit: BoxFit.cover,
-                                errorWidget: (context, url, error) =>
-                                    Container(color: colors.darkMuted),
-                              )
-                            else
-                              Container(color: colors.darkMuted),
+                            ShaderMask(
+                              shaderCallback: (rect) {
+                                return const LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [Colors.black, Colors.black, Colors.transparent],
+                                  stops: [0.0, 0.85, 1.0],
+                                ).createShader(rect);
+                              },
+                              blendMode: BlendMode.dstIn,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  image: backdropUrl.isNotEmpty
+                                      ? DecorationImage(
+                                          image: CachedNetworkImageProvider(backdropUrl),
+                                          fit: BoxFit.cover,
+                                        )
+                                      : null,
+                                  color: colors.darkMuted,
+                                ),
+                              ),
+                            ),
+                            // Vignette overlay
+                            Container(
+                              decoration: BoxDecoration(
+                                gradient: RadialGradient(
+                                  center: Alignment.center,
+                                  radius: 1.3,
+                                  colors: [
+                                    Colors.transparent,
+                                    Colors.black.withValues(alpha: 0.8),
+                                  ],
+                                  stops: const [0.25, 1.0],
+                                ),
+                              ),
+                            ),
                             Container(
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
@@ -518,63 +587,288 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                   end: Alignment.bottomCenter,
                                   colors: [
                                     Colors.transparent,
-                                    Colors.black.withValues(alpha: 0.5),
+                                    colors.darkMuted.withOpacity(0.5),
                                     colors.darkMuted,
                                   ],
-                                  stops: [0.0, 0.7, 1.0],
+                                  stops: const [0.0, 0.88, 1.0],
                                 ),
                               ),
                             ),
-                            Positioned(
-                              left: 14,
-                              right: 14,
-                              top: MediaQuery.paddingOf(context).top + 4,
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  _glassIconButton(
-                                    icon: const PhosphorIcon(
-                                      PhosphorIconsRegular.caretLeft,
-                                      color: NivioTheme.netflixWhite,
-                                      size: 20,
-                                    ),
-                                    onTap: _handleBackNavigation,
-                                  ),
-                                  Row(
-                                    children: [
-                                      _glassIconButton(
-                                        icon: const PhosphorIcon(
-                                          PhosphorIconsRegular.users,
-                                          color: NivioTheme.netflixWhite,
-                                          size: 19,
-                                        ),
-                                        onTap: () => _openWatchPartyHub(media),
+                            if (!isDesktop)
+                              Positioned(
+                                left: 14,
+                                right: 14,
+                                top: MediaQuery.paddingOf(context).top + 4,
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    _glassIconButton(
+                                      icon: const PhosphorIcon(
+                                        PhosphorIconsRegular.caretLeft,
+                                        color: NivioTheme.netflixWhite,
+                                        size: 20,
                                       ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Positioned(
-                              left: 16,
-                              bottom: 20,
-                              child: Row(
-                                children: [
-                                  if ((media.voteAverage ?? 0) > 0) ...[
-                                    _glassTag(
-                                      '★ ${media.voteAverage!.toStringAsFixed(1)}',
+                                      onTap: _handleBackNavigation,
                                     ),
-                                    const SizedBox(width: 8),
+                                    const SizedBox.shrink(),
                                   ],
-                                  if (year.isNotEmpty) ...[
-                                    _glassTag(year),
-                                    const SizedBox(width: 8),
-                                  ],
-                                  _glassTag(media.mediaType.toUpperCase()),
-                                ],
+                                ),
                               ),
-                            ),
+                            if (!isDesktop)
+                              Positioned(
+                                left: 16,
+                                bottom: 20,
+                                child: Row(
+                                  children: [
+                                    if ((media.voteAverage ?? 0) > 0) ...[
+                                      _glassTag(
+                                        '★ ${media.voteAverage!.toStringAsFixed(1)}',
+                                      ),
+                                      const SizedBox(width: 8),
+                                    ],
+                                    if (year.isNotEmpty) ...[
+                                      _glassTag(year),
+                                      const SizedBox(width: 8),
+                                    ],
+                                    _glassTag(media.mediaType.toUpperCase()),
+                                  ],
+                                ),
+                              ),
+                            // Desktop split column header overlay (at left: 72, right: 48, bottom: 24)
+                            if (isDesktop)
+                              Positioned(
+                                left: 72,
+                                right: 48,
+                                bottom: 24,
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    if (posterUrl.isNotEmpty)
+                                      Container(
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(8),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withOpacity(0.5),
+                                              blurRadius: 20,
+                                              spreadRadius: 2,
+                                            ),
+                                          ],
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(8),
+                                          child: CachedNetworkImage(
+                                            imageUrl: posterUrl,
+                                            height: heroHeight * 0.62,
+                                            fit: BoxFit.cover,
+                                            fadeInDuration: Duration.zero,
+                                            fadeOutDuration: Duration.zero,
+                                          ),
+                                        ),
+                                      ),
+                                    const SizedBox(width: 24),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (media.title != null && media.name != null && media.title != media.name)
+                                            Text(
+                                              media.title!,
+                                              style: const TextStyle(
+                                                color: Colors.white70,
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            mediaName,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 32,
+                                              fontWeight: FontWeight.bold,
+                                              height: 1.2,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 12),
+                                          Wrap(
+                                            spacing: 8,
+                                            runSpacing: 8,
+                                            children: _buildDetailBadges(
+                                              media,
+                                              year,
+                                              accentColor,
+                                              seriesInfo,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 16),
+                                          Text(
+                                            media.overview ?? '',
+                                            maxLines: 4,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: Colors.white.withOpacity(0.85),
+                                              fontSize: 12.5,
+                                              height: 1.4,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 20),
+                                          Row(
+                                            children: [
+                                              _playAllButton(
+                                                accentColor: accentColor,
+                                                label: media.mediaType == 'movie'
+                                                    ? 'Play'
+                                                    : 'Play all episodes',
+                                                onTap: () {
+                                                  final season = (media.mediaType == 'tv' || media.mediaType == 'anime')
+                                                      ? ref.read(selectedSeasonProvider)
+                                                      : 1;
+                                                  context.push(
+                                                    _buildPlayerRoute(
+                                                      media: media,
+                                                      season: season,
+                                                      episode: 1,
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                              const SizedBox(width: 12),
+                                              _plainIconButton(
+                                                icon: Icon(
+                                                  isInWatchlist ? Icons.favorite : Icons.favorite_border,
+                                                  color: isInWatchlist ? colors.dominant : NivioTheme.netflixWhite,
+                                                  size: 24,
+                                                ),
+                                                iconColor: isInWatchlist ? colors.dominant : NivioTheme.netflixWhite,
+                                                onTap: () => _toggleWatchlist(media, isInWatchlist),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              ValueListenableBuilder<Box<DownloadItem>>(
+                                                valueListenable: DownloadService.box.listenable(),
+                                                builder: (context, box, _) {
+                                                  final downloads = box.values
+                                                      .where((item) => item.mediaId == media.id)
+                                                      .toList();
+                                                  final isDownloading = downloads.any(
+                                                    (item) => item.status == DownloadStatus.downloading ||
+                                                        item.status == DownloadStatus.pending ||
+                                                        item.status == DownloadStatus.extracting,
+                                                  );
+                                                  final allCompleted = downloads.isNotEmpty &&
+                                                      downloads.every((item) => item.status == DownloadStatus.completed);
+
+                                                  if (isDownloading) {
+                                                    final downloadingItems = downloads
+                                                        .where((item) => item.status == DownloadStatus.downloading ||
+                                                            item.status == DownloadStatus.extracting)
+                                                        .toList();
+                                                    double progress = 0;
+                                                    if (downloadingItems.isNotEmpty) {
+                                                      progress = downloadingItems.map((e) => e.progress).reduce((a, b) => a + b) /
+                                                          downloadingItems.length;
+                                                    }
+                                                    return SizedBox(
+                                                      width: 40,
+                                                      height: 40,
+                                                      child: Padding(
+                                                        padding: const EdgeInsets.all(8.0),
+                                                        child: CircularProgressIndicator(
+                                                          value: progress > 0 ? progress : null,
+                                                          strokeWidth: 3,
+                                                          valueColor: AlwaysStoppedAnimation<Color>(
+                                                            NivioTheme.accentColorOf(context),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }
+
+                                                  return _plainIconButton(
+                                                    icon: Icon(
+                                                      allCompleted
+                                                          ? Icons.download_done_rounded
+                                                          : (media.mediaType == 'movie'
+                                                                ? Icons.download_rounded
+                                                                : Icons.file_download),
+                                                      color: allCompleted
+                                                          ? NivioTheme.accentColorOf(context)
+                                                          : NivioTheme.netflixWhite,
+                                                      size: 24,
+                                                    ),
+                                                    iconColor: NivioTheme.netflixWhite,
+                                                    onTap: () => _handleDownload(media),
+                                                  );
+                                                },
+                                              ),
+                                              const SizedBox(width: 12),
+                                              _plainIconButton(
+                                                icon: const Icon(
+                                                  Icons.share_rounded,
+                                                  color: NivioTheme.netflixWhite,
+                                                  size: 24,
+                                                ),
+                                                iconColor: NivioTheme.netflixWhite,
+                                                onTap: () => _shareMedia(media),
+                                              ),
+                                              if (_trailerSource != null) ...[
+                                                const SizedBox(width: 12),
+                                                TextButton.icon(
+                                                  onPressed: () => _showTrailerPlayer(context),
+                                                  icon: Icon(
+                                                    Icons.play_circle_outline,
+                                                    size: 17,
+                                                    color: accentColor,
+                                                  ),
+                                                  label: Text(
+                                                    'Watch trailer',
+                                                    style: TextStyle(color: accentColor),
+                                                  ),
+                                                ),
+                                              ],
+                                              const SizedBox(width: 12),
+                                              TextButton.icon(
+                                                onPressed: () => _openWatchPartyHub(media),
+                                                icon: Icon(
+                                                  PhosphorIconsRegular.users,
+                                                  size: 17,
+                                                  color: accentColor,
+                                                ),
+                                                label: Text(
+                                                  'Watch together',
+                                                  style: TextStyle(color: accentColor),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              TextButton.icon(
+                                                onPressed: () {
+                                                  final title = Uri.encodeComponent(
+                                                    media.title ?? media.name ?? '',
+                                                  );
+                                                  context.push(
+                                                    '/similar/${media.id}?type=${media.mediaType}&title=$title',
+                                                  );
+                                                },
+                                                icon: Icon(
+                                                  PhosphorIconsRegular.magicWand,
+                                                  size: 17,
+                                                  color: accentColor,
+                                                ),
+                                                label: Text(
+                                                  'More Like This',
+                                                  style: TextStyle(color: accentColor),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                           ],
                         ),
                       ),
@@ -583,11 +877,12 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                         offset: Offset(0, -detailsOverlap),
                         child: Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                          padding: EdgeInsets.fromLTRB(isDesktop ? 72 : 16, 16, 16, 24),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              MarqueeText(
+                              if (!isDesktop) ...[
+                                MarqueeText(
                                 text: mediaName,
                                 style: Theme.of(context).textTheme.displaySmall
                                     ?.copyWith(
@@ -755,22 +1050,38 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  if (_trailerSource != null)
-                                    TextButton.icon(
-                                      onPressed: () =>
-                                          _showTrailerPlayer(context),
-                                      icon: Icon(
-                                        Icons.play_circle_outline,
-                                        size: 17,
-                                        color: accentColor,
+                                  Row(
+                                    children: [
+                                      if (_trailerSource != null) ...[
+                                        TextButton.icon(
+                                          onPressed: () =>
+                                              _showTrailerPlayer(context),
+                                          icon: Icon(
+                                            Icons.play_circle_outline,
+                                            size: 17,
+                                            color: accentColor,
+                                          ),
+                                          label: Text(
+                                            'Watch trailer',
+                                            style: TextStyle(color: accentColor),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      TextButton.icon(
+                                        onPressed: () => _openWatchPartyHub(media),
+                                        icon: Icon(
+                                          PhosphorIconsRegular.users,
+                                          size: 17,
+                                          color: accentColor,
+                                        ),
+                                        label: Text(
+                                          'Watch together',
+                                          style: TextStyle(color: accentColor),
+                                        ),
                                       ),
-                                      label: Text(
-                                        'Watch trailer',
-                                        style: TextStyle(color: accentColor),
-                                      ),
-                                    )
-                                  else
-                                    const SizedBox.shrink(),
+                                    ],
+                                  ),
                                   TextButton.icon(
                                     onPressed: () {
                                       final title = Uri.encodeComponent(
@@ -808,6 +1119,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                     : 'No description available for this title yet.',
                                 accentColor: accentColor,
                               ),
+                              ], // end of !isDesktop group
                               if (_cast.isNotEmpty) _buildCastRow(),
                               const SizedBox(height: 26),
                               if (media.mediaType == 'tv' ||
@@ -822,6 +1134,16 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                 ],
               ),
             ),
+          ],
+        ),
+            if (isDesktop)
+              Positioned(
+                top: 0,
+                bottom: 0,
+                left: 0,
+                width: 56,
+                child: _buildMediaSidebar(context),
+              ),
           ],
         ),
       ),
@@ -1106,6 +1428,21 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         : '';
     final shareText =
         'Check out "$title"!$overview\n\nWatch here: $redirectUrl';
+
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    if (isDesktop) {
+      Clipboard.setData(ClipboardData(text: shareText));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Share link copied to clipboard!'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
     Share.share(shareText, subject: title);
   }
 
@@ -1652,6 +1989,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   Widget _buildAboutSection(String aboutText, {required Color accentColor}) {
     final style = Theme.of(context).textTheme.bodyMedium?.copyWith(
       color: NivioTheme.netflixLightGrey,
+      fontSize: 12.5,
       height: 1.45,
     );
 
@@ -1708,6 +2046,205 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       },
     );
   }
+
+  List<Widget> _buildDetailBadges(
+    SearchResult media,
+    String year,
+    Color accentColor,
+    SeriesInfo? seriesInfo,
+  ) {
+    final widgets = <Widget>[];
+
+    // Format / Media Type
+    final format = media.mediaType == 'movie'
+        ? 'Movie'
+        : (media.mediaType == 'anime' ? 'Anime' : 'TV Series');
+    widgets.add(_glassDetailTag(format, accentColor));
+
+    // Episodes (for TV shows)
+    if (seriesInfo != null) {
+      int totalEpisodes = 0;
+      try {
+        totalEpisodes = seriesInfo.seasons.fold<int>(0, (sum, s) => sum + s.episodeCount);
+      } catch (_) {}
+      if (totalEpisodes > 0) {
+        widgets.add(_glassDetailTag("$totalEpisodes Episode${totalEpisodes > 1 ? 's' : ''}", accentColor));
+      }
+    }
+
+    // Year / Release Status
+    if (year.isNotEmpty && year != 'Unknown') {
+      widgets.add(_glassDetailTag(year, accentColor));
+    }
+
+    // Status (Released/Releasing)
+    final status = media.mediaType == 'movie' ? 'Released' : 'Releasing';
+    widgets.add(_glassDetailTag(status, accentColor));
+
+    // Rating Percentage
+    if ((media.voteAverage ?? 0) > 0) {
+      final pct = (media.voteAverage! * 10).toInt();
+      widgets.add(
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: pct >= 70 ? const Color(0xFF4CAF50).withOpacity(0.12) : accentColor.withOpacity(0.12),
+            border: Border.all(
+              color: pct >= 70 ? const Color(0xFF4CAF50).withOpacity(0.4) : accentColor.withOpacity(0.4),
+              width: 1.2,
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            "$pct%",
+            style: TextStyle(
+              color: pct >= 70 ? const Color(0xFF4CAF50) : accentColor,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return widgets;
+  }
+
+  Widget _glassDetailTag(String text, Color themeColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: themeColor.withOpacity(0.12),
+        border: Border.all(color: themeColor.withOpacity(0.4), width: 1.2),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: themeColor,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMediaSidebar(BuildContext context) {
+    final authState = ref.watch(authStateProvider);
+    final user = authState.valueOrNull;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+      width: 56,
+      decoration: const BoxDecoration(
+        color: Colors.transparent,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const SizedBox(height: 12),
+          Image.asset(
+            'assets/images/nivio.png',
+            width: 48,
+            height: 48,
+            fit: BoxFit.contain,
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: Column(
+              children: [
+                _buildSidebarItem(
+                  context: context,
+                  route: '/home',
+                  icon: PhosphorIconsRegular.house,
+                  label: 'Home',
+                ),
+                const SizedBox(height: 8),
+                _buildSidebarItem(
+                  context: context,
+                  route: '/search',
+                  icon: PhosphorIconsRegular.magnifyingGlass,
+                  label: 'Search',
+                ),
+                const SizedBox(height: 8),
+                _buildSidebarItem(
+                  context: context,
+                  route: '/library',
+                  icon: PhosphorIconsRegular.calendarBlank,
+                  label: 'Library',
+                ),
+                const SizedBox(height: 8),
+                _buildSidebarItem(
+                  context: context,
+                  route: '/iptv',
+                  icon: PhosphorIconsRegular.television,
+                  label: 'Live TV',
+                ),
+                const SizedBox(height: 8),
+                _buildSidebarItem(
+                  context: context,
+                  route: '/party',
+                  icon: PhosphorIconsRegular.users,
+                  label: 'Party',
+                ),
+              ],
+            ),
+          ),
+          _buildSidebarItem(
+            context: context,
+            route: '/profile',
+            icon: PhosphorIconsRegular.user,
+            label: 'Profile',
+            photoUrl: user?.photoURL,
+          ),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSidebarItem({
+    required BuildContext context,
+    required String route,
+    required IconData icon,
+    required String label,
+    String? photoUrl,
+  }) {
+    return Tooltip(
+      message: label,
+      child: Align(
+        alignment: Alignment.center,
+        child: InkWell(
+          onTap: () {
+            context.go(route);
+          },
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(
+              child: photoUrl != null
+                  ? CircleAvatar(
+                      radius: 14,
+                      backgroundImage: CachedNetworkImageProvider(photoUrl),
+                      backgroundColor: NivioTheme.netflixDarkGrey,
+                    )
+                  : PhosphorIcon(
+                      icon,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class TrailerFullscreenScreen extends StatefulWidget {
@@ -1748,10 +2285,11 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
   }
 
   void _initPlayer() {
-    if (widget.source.site.toLowerCase() == 'youtube') {
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    if (widget.source.site.toLowerCase() == 'youtube' && !isDesktop) {
       _initYoutubePlayer();
     } else {
-      // For non-YouTube sources, mark as loaded (WebView will handle)
+      // For desktop YouTube or non-YouTube sources, mark as loaded (WebView will handle)
       setState(() => _isLoading = false);
     }
   }
@@ -1919,6 +2457,10 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
   }
 
   Widget _buildYoutubePlayer() {
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    if (isDesktop) {
+      return _buildWebViewPlayer();
+    }
     if (_youtubeController == null) {
       return const SizedBox.shrink();
     }
@@ -1927,6 +2469,8 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
       backgroundColor: Colors.black,
     );
   }
+
+
 
   Widget _buildWebViewPlayer() {
     final trailerUrl = widget.source.embedUrl;
@@ -1939,6 +2483,57 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
         ),
       );
     }
+
+    bool isPlatformAvailable = false;
+    try {
+      isPlatformAvailable = InAppWebViewPlatform.instance != null;
+    } catch (_) {}
+
+    if (!isPlatformAvailable) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.web_asset_off_rounded, size: 48, color: Colors.white54),
+              const SizedBox(height: 16),
+              const Text(
+                'In-App Webview is unavailable on this system.',
+                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'You can open the trailer externally in your browser instead.',
+                style: TextStyle(color: Colors.white54, fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  final watchUrl = widget.source.watchUrl;
+                  if (watchUrl != null) {
+                    final uri = Uri.parse(watchUrl);
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    }
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: NivioTheme.accentColorOf(context),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                ),
+                icon: const Icon(Icons.open_in_new_rounded),
+                label: const Text('Open Externally'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return InAppWebView(
       initialUrlRequest: URLRequest(url: WebUri(trailerUrl)),
       initialSettings: InAppWebViewSettings(

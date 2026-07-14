@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import 'package:nivio/core/providers_data.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/watchlist_item.dart';
 import 'package:nivio/providers/service_providers.dart';
+import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/widgets/content_row.dart';
 import 'package:nivio/widgets/search_result_card.dart';
@@ -47,7 +49,8 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
   List<dynamic> _genre3 = [];
   List<dynamic> _genre4 = [];
 
-  final PageController _pageController = PageController();
+  late final PageController _pageController;
+  double _currentPageValue = 0.0;
   int _currentBannerPage = 0;
   Timer? _bannerTimer;
   
@@ -65,7 +68,16 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
   @override
   void initState() {
     super.initState();
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    _pageController = PageController(viewportFraction: isDesktop ? 0.72 : 0.85);
     _fetchContent();
+    _pageController.addListener(() {
+      if (mounted) {
+        setState(() {
+          _currentPageValue = _pageController.page ?? 0.0;
+        });
+      }
+    });
 
     _bannerTimer = Timer.periodic(const Duration(seconds: 6), (timer) {
       if (!_pageController.hasClients) return;
@@ -247,6 +259,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
   @override
   Widget build(BuildContext context) {
     final logoPath = _getProviderLogo();
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
 
     return PopScope(
       canPop: !_isSearching,
@@ -278,36 +291,52 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                         stops: const [0.0, 1.0],
                       ),
                     ),
-                    child: CustomScrollView(
+                    child: Padding(
+                      padding: EdgeInsets.only(left: isDesktop ? 56 : 0),
+                      child: CustomScrollView(
                       slivers: [
                         // Minimal Header
                         SliverAppBar(
                           backgroundColor: Colors.transparent,
                           elevation: 0,
                           pinned: true,
-                          leadingWidth: 240,
-                          leading: GestureDetector(
-                            onTap: () => context.pop(),
-                            child: Padding(
-                              padding: const EdgeInsets.only(left: 24.0),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: logoPath != null 
-                                  ? CachedNetworkImage(
-                                      imageUrl: '$tmdbImageBaseUrl/w300$logoPath',
-                                      height: 56,
-                                      fit: BoxFit.contain,
-                                      alignment: Alignment.centerLeft,
-                                      colorBlendMode: BlendMode.dst,
-                                    )
-                                  : Text(
-                                      widget.providerName,
-                                      style: const TextStyle(fontWeight: FontWeight.w900, color: Colors.white, fontSize: 32, letterSpacing: -0.5),
-                                    ),
+                          centerTitle: !isDesktop,
+                          leading: isDesktop
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                                onPressed: () => context.pop(),
                               ),
-                            ),
-                          ),
+                          title: isDesktop 
+                            ? null 
+                            : (logoPath != null 
+                                ? CachedNetworkImage(
+                                    imageUrl: '$tmdbImageBaseUrl/w300$logoPath',
+                                    height: 40,
+                                    fit: BoxFit.contain,
+                                  )
+                                : Text(
+                                    widget.providerName,
+                                    style: const TextStyle(fontWeight: FontWeight.w900, color: Colors.white, fontSize: 24, letterSpacing: -0.5),
+                                  )),
                           actions: [
+                            if (isDesktop) ...[
+                              Padding(
+                                padding: const EdgeInsets.only(right: 16.0),
+                                child: Center(
+                                  child: logoPath != null 
+                                    ? CachedNetworkImage(
+                                        imageUrl: '$tmdbImageBaseUrl/w300$logoPath',
+                                        height: 32,
+                                        fit: BoxFit.contain,
+                                      )
+                                    : Text(
+                                        widget.providerName,
+                                        style: const TextStyle(fontWeight: FontWeight.w900, color: Colors.white, fontSize: 20, letterSpacing: -0.5),
+                                      ),
+                                ),
+                              ),
+                            ],
                             IconButton(
                               icon: const PhosphorIcon(PhosphorIconsRegular.magnifyingGlass, color: Colors.white),
                               onPressed: _toggleSearch,
@@ -321,6 +350,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                           child: Padding(
                             padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 24.0, bottom: 24.0),
                             child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 _buildTab('TV Shows', 'tv'),
                                 const SizedBox(width: 12),
@@ -344,6 +374,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                             child: ContentRow(
                               title: 'Top 10 ${_mediaType == 'movie' ? 'Movies' : 'Shows'} in ${widget.providerName}',
                               items: _trending.skip(5).toList(),
+                              leftPadding: isDesktop ? 24 : 16,
                             ),
                           ),
                           
@@ -351,24 +382,28 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                           child: ContentRow(
                             title: _mediaType == 'movie' ? 'Action & Thrillers' : 'Action & Adventure',
                             items: _genre1,
+                            leftPadding: isDesktop ? 24 : 16,
                           ),
                         ),
                         SliverToBoxAdapter(
                           child: ContentRow(
                             title: _mediaType == 'movie' ? 'Romance Movies' : 'Drama',
                             items: _genre2,
+                            leftPadding: isDesktop ? 24 : 16,
                           ),
                         ),
                         SliverToBoxAdapter(
                           child: ContentRow(
                             title: _mediaType == 'movie' ? 'Comedy Movies' : 'Sci-Fi & Fantasy',
                             items: _genre3,
+                            leftPadding: isDesktop ? 24 : 16,
                           ),
                         ),
                         SliverToBoxAdapter(
                           child: ContentRow(
                             title: 'Animation',
                             items: _genre4,
+                            leftPadding: isDesktop ? 24 : 16,
                           ),
                         ),
                         
@@ -376,6 +411,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                       ],
                     ),
                   ),
+                ),
 
                   // --- Search Overlay Layer ---
                   Positioned.fill(
@@ -392,6 +428,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                                   filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
                                   child: Container(
                                     color: const Color(0xFF0D0F14).withOpacity(0.65),
+                                    margin: EdgeInsets.only(left: isDesktop ? 56 : 0),
                                     child: SafeArea(
                                       child: CustomScrollView(
                                         slivers: [
@@ -451,6 +488,32 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                       ),
                     ),
                   ),
+                  if (isDesktop)
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 56,
+                      child: ClipRect(
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 800),
+                            curve: Curves.easeInOut,
+                            decoration: BoxDecoration(
+                              color: _currentAmbientColor.withOpacity(0.2),
+                              border: Border(
+                                right: BorderSide(
+                                  color: Colors.white.withOpacity(0.08),
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: _buildMediaSidebar(context),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
       ),
@@ -460,11 +523,13 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
   Widget _buildFeaturedBanner() {
     final bannerItems = _trending.take(5).toList();
     if (bannerItems.isEmpty) return const SizedBox.shrink();
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final bannerHeight = 480.0;
 
-    return Column(
+    final bannerWidget = Column(
       children: [
         SizedBox(
-          height: 480,
+          height: bannerHeight,
           child: PageView.builder(
             controller: _pageController,
             onPageChanged: (index) {
@@ -480,6 +545,8 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
             itemBuilder: (context, index) {
               final item = bannerItems[index];
               final posterPath = item['poster_path'] as String?;
+              final backdropPath = item['backdrop_path'] as String?;
+              final imagePath = isDesktop ? (backdropPath ?? posterPath) : posterPath;
               final title = item['title'] ?? item['name'] ?? 'Unknown';
               final tmdbId = item['id'] as int;
               
@@ -490,156 +557,161 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                   .where((name) => name != null)
                   .join(' • ');
 
-              return GestureDetector(
-                onTap: () {
-                  context.push('/media/$tmdbId?type=$_mediaType');
-                },
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    // Large Poster Image
-                    if (posterPath != null)
+              final double value = (1.0 - ((_currentPageValue - index).abs() * 0.12)).clamp(0.88, 1.0);
+
+              return Transform.scale(
+                scale: value,
+                child: GestureDetector(
+                  onTap: () {
+                    context.push('/media/$tmdbId?type=$_mediaType');
+                  },
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Large Poster/Backdrop Image
+                      if (imagePath != null)
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 8),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.25),
+                              width: 2.0,
+                            ),
+                            image: DecorationImage(
+                              image: CachedNetworkImageProvider('$tmdbImageBaseUrl/${isDesktop ? 'original' : 'w500'}$imagePath'),
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        )
+                      else
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E1E24),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: const Icon(Icons.movie, size: 64, color: Colors.white30),
+                        ),
+                        
+                      // Gradient Overlay to make text readable
                       Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 16),
+                        margin: const EdgeInsets.symmetric(horizontal: 8),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.25),
-                            width: 2.0,
-                          ),
-                          image: DecorationImage(
-                            image: CachedNetworkImageProvider('$tmdbImageBaseUrl/w500$posterPath'),
-                            fit: BoxFit.cover,
+                          gradient: const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.transparent,
+                              Colors.black54,
+                              Colors.black87,
+                            ],
+                            stops: [0.0, 0.5, 0.8, 1.0],
                           ),
                         ),
-                      )
-                    else
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 16),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1E1E24),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: const Icon(Icons.movie, size: 64, color: Colors.white30),
                       ),
                       
-                    // Gradient Overlay to make text readable
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        gradient: const LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.transparent,
-                            Colors.transparent,
-                            Colors.black54,
-                            Colors.black87,
-                          ],
-                          stops: [0.0, 0.5, 0.8, 1.0],
-                        ),
-                      ),
-                    ),
-                    
-                    // Content Details & Buttons
-                    Positioned(
-                      bottom: 24,
-                      left: 32,
-                      right: 32,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Text(
-                            title,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 32,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.2,
-                              shadows: [Shadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 4))],
-                            ),
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if (genreNames.isNotEmpty) ...[
-                            const SizedBox(height: 8),
+                      // Content Details & Buttons
+                      Positioned(
+                        bottom: 24,
+                        left: 32,
+                        right: 32,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
                             Text(
-                              genreNames,
+                              title,
                               style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
+                                fontSize: 32,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.2,
+                                shadows: [Shadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 4))],
                               ),
                               textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ],
-                          const SizedBox(height: 20),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: () {
-                                    context.push('/player/$tmdbId?type=$_mediaType');
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.white,
-                                    foregroundColor: Colors.black,
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    elevation: 0,
-                                  ),
-                                  icon: const Icon(Icons.play_arrow_rounded, size: 28, color: Colors.black87),
-                                  label: const Text('Play', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
+                            if (genreNames.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                genreNames,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
                                 ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Consumer(
-                                  builder: (context, ref, child) {
-                                    final inWatchlist = ref.watch(isInWatchlistProvider(tmdbId));
-                                    return ElevatedButton.icon(
-                                      onPressed: () async {
-                                        if (inWatchlist) {
-                                          await ref.read(watchlistServiceProvider).removeFromWatchlist(tmdbId);
-                                        } else {
-                                          await ref.read(watchlistServiceProvider).addToWatchlist(
-                                            WatchlistItem(
-                                              id: tmdbId,
-                                              title: title,
-                                              posterPath: posterPath,
-                                              mediaType: _mediaType,
-                                              addedAt: DateTime.now(),
-                                              voteAverage: (item['vote_average'] as num?)?.toDouble(),
-                                              releaseDate: item['release_date'] as String? ?? item['first_air_date'] as String?,
-                                              overview: item['overview'] as String?,
-                                            )
-                                          );
-                                        }
-                                        ref.read(watchlistRefreshProvider.notifier).refresh();
-                                      },
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.white.withOpacity(0.15),
-                                        foregroundColor: Colors.white,
-                                        elevation: 0,
-                                        padding: const EdgeInsets.symmetric(vertical: 14),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                      ),
-                                      icon: Icon(inWatchlist ? Icons.check : Icons.add, size: 24, color: Colors.white),
-                                      label: const Text('MyList', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-                                    );
-                                  }
-                                ),
+                                textAlign: TextAlign.center,
                               ),
                             ],
-                          ),
-                        ],
+                            const SizedBox(height: 20),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: () {
+                                      context.push('/player/$tmdbId?type=$_mediaType');
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.white,
+                                      foregroundColor: Colors.black,
+                                      padding: const EdgeInsets.symmetric(vertical: 14),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      elevation: 0,
+                                    ),
+                                    icon: const Icon(Icons.play_arrow_rounded, size: 28, color: Colors.black87),
+                                    label: const Text('Play', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Consumer(
+                                    builder: (context, ref, child) {
+                                      final inWatchlist = ref.watch(isInWatchlistProvider(tmdbId));
+                                      return ElevatedButton.icon(
+                                        onPressed: () async {
+                                          if (inWatchlist) {
+                                            await ref.read(watchlistServiceProvider).removeFromWatchlist(tmdbId);
+                                          } else {
+                                            await ref.read(watchlistServiceProvider).addToWatchlist(
+                                              WatchlistItem(
+                                                id: tmdbId,
+                                                title: title,
+                                                posterPath: posterPath,
+                                                mediaType: _mediaType,
+                                                addedAt: DateTime.now(),
+                                                voteAverage: (item['vote_average'] as num?)?.toDouble(),
+                                                releaseDate: item['release_date'] as String? ?? item['first_air_date'] as String?,
+                                                overview: item['overview'] as String?,
+                                              )
+                                            );
+                                          }
+                                          ref.read(watchlistRefreshProvider.notifier).refresh();
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.white.withOpacity(0.15),
+                                          foregroundColor: Colors.white,
+                                          elevation: 0,
+                                          padding: const EdgeInsets.symmetric(vertical: 14),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                        icon: Icon(inWatchlist ? Icons.check : Icons.add, size: 24, color: Colors.white),
+                                        label: const Text('MyList', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                                      );
+                                    }
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               );
             },
@@ -666,6 +738,8 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
         ),
       ],
     );
+
+    return bannerWidget;
   }
 
   Widget _buildTab(String title, String type) {
@@ -693,6 +767,123 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
           style: TextStyle(
             color: isSelected ? Colors.white : Colors.white70,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMediaSidebar(BuildContext context) {
+    final authState = ref.watch(authStateProvider);
+    final user = authState.valueOrNull;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+      width: 56,
+      decoration: const BoxDecoration(
+        color: Colors.transparent,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const SizedBox(height: 12),
+          Image.asset(
+            'assets/images/nivio.png',
+            width: 48,
+            height: 48,
+            fit: BoxFit.contain,
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: Column(
+              children: [
+                _buildSidebarItem(
+                  context: context,
+                  route: '/home',
+                  icon: PhosphorIconsRegular.house,
+                  label: 'Home',
+                ),
+                const SizedBox(height: 8),
+                _buildSidebarItem(
+                  context: context,
+                  route: '/search',
+                  icon: PhosphorIconsRegular.magnifyingGlass,
+                  label: 'Search',
+                ),
+                const SizedBox(height: 8),
+                _buildSidebarItem(
+                  context: context,
+                  route: '/library',
+                  icon: PhosphorIconsRegular.calendarBlank,
+                  label: 'Library',
+                ),
+                const SizedBox(height: 8),
+                _buildSidebarItem(
+                  context: context,
+                  route: '/iptv',
+                  icon: PhosphorIconsRegular.television,
+                  label: 'Live TV',
+                ),
+                const SizedBox(height: 8),
+                _buildSidebarItem(
+                  context: context,
+                  route: '/party',
+                  icon: PhosphorIconsRegular.users,
+                  label: 'Party',
+                ),
+              ],
+            ),
+          ),
+          _buildSidebarItem(
+            context: context,
+            route: '/profile',
+            icon: PhosphorIconsRegular.user,
+            label: 'Profile',
+            photoUrl: user?.photoURL,
+          ),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSidebarItem({
+    required BuildContext context,
+    required String route,
+    required IconData icon,
+    required String label,
+    String? photoUrl,
+  }) {
+    return Tooltip(
+      message: label,
+      child: Align(
+        alignment: Alignment.center,
+        child: InkWell(
+          onTap: () {
+            context.go(route);
+          },
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(
+              child: photoUrl != null
+                  ? CircleAvatar(
+                      radius: 14,
+                      backgroundImage: CachedNetworkImageProvider(photoUrl),
+                      backgroundColor: NivioTheme.netflixDarkGrey,
+                    )
+                  : PhosphorIcon(
+                      icon,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+            ),
           ),
         ),
       ),

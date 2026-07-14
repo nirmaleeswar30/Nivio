@@ -3,15 +3,19 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  flutter_inappwebview_linux
   flutter_volume_controller
   gtk
   media_kit_libs_linux
   media_kit_video
+  screen_retriever
   url_launcher_linux
   volume_controller
+  window_manager
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
+  device_screen_brightness
   jni
 )
 
