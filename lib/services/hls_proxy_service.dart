@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:cronet_http/cronet_http.dart';
 import 'package:http/http.dart' as http;
+import 'package:rhttp/rhttp.dart' hide HttpRequest;
 import 'package:nivio/core/debug_log.dart';
 
 class HlsProxyService {
@@ -20,10 +21,10 @@ class HlsProxyService {
       if (Platform.isAndroid || Platform.isIOS) {
         _cronetClient = CronetClient.defaultCronetEngine();
       } else {
-        _cronetClient = http.Client();
+        _cronetClient = RhttpCompatibleClient.createSync();
       }
     } catch (_) {
-      _cronetClient = http.Client();
+      _cronetClient = RhttpCompatibleClient.createSync();
     }
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     appDebugLog('🚀 HlsProxyService started on port ${_server!.port}');
@@ -135,21 +136,13 @@ class HlsProxyService {
 
       if (isM3u8) {
         final bodyBytes = await response.stream.toBytes();
-        final bodyString = utf8.decode(bodyBytes, allowMalformed: true);
+        final bodyString = utf8.decode(bodyBytes);
         final lines = bodyString.split('\n');
         final modifiedLines = <String>[];
-        
-        bool isSegmentPlaylist = false;
-        bool hasEndList = false;
-        bool hasPlaylistType = false;
 
         for (var line in lines) {
           final trimmed = line.trim();
           if (trimmed.isEmpty) continue;
-          
-          if (trimmed.startsWith('#EXT-X-ENDLIST')) hasEndList = true;
-          if (trimmed.startsWith('#EXT-X-PLAYLIST-TYPE')) hasPlaylistType = true;
-          if (!trimmed.startsWith('#')) isSegmentPlaylist = true;
           
           String trimBase64(String str) => str.replaceAll('=', '');
           
@@ -186,20 +179,6 @@ class HlsProxyService {
           }
         }
         
-        // Force VOD behavior to prevent MPV from treating the stream as LIVE
-        if (isSegmentPlaylist) {
-          if (!hasPlaylistType) {
-            if (modifiedLines.isNotEmpty && modifiedLines.first.startsWith('#EXTM3U')) {
-              modifiedLines.insert(1, '#EXT-X-PLAYLIST-TYPE:VOD');
-            } else {
-              modifiedLines.insert(0, '#EXT-X-PLAYLIST-TYPE:VOD');
-            }
-          }
-          if (!hasEndList) {
-            modifiedLines.add('#EXT-X-ENDLIST');
-          }
-        }
-        
         final modifiedBody = modifiedLines.join('\n');
         final modifiedBytes = utf8.encode(modifiedBody);
         
@@ -207,32 +186,55 @@ class HlsProxyService {
         request.response.add(modifiedBytes);
         await request.response.close();
       } else {
-        bool foundHeader = false;
+        bool isFirstChunk = true;
+        bool isDisguisedPng = false;
         List<int> buffer = [];
+        bool headerStripped = false;
         
-        await response.stream.map((chunk) {
-          if (foundHeader) return chunk;
-          buffer.addAll(chunk);
-          int searchLimit = buffer.length - (188 * 2);
+        await response.stream.listen((chunk) {
+          if (headerStripped) {
+            request.response.add(chunk);
+            return;
+          }
           
-          for (int i = 0; i < searchLimit; i++) {
-            if (buffer[i] == 0x47 && buffer[i + 188] == 0x47 && buffer[i + 188 * 2] == 0x47) {
-              foundHeader = true;
-              final result = buffer.sublist(i);
-              buffer = [];
-              return result;
+          if (isFirstChunk) {
+            isFirstChunk = false;
+            // Check for PNG signature
+            if (chunk.length >= 4 && chunk[0] == 0x89 && chunk[1] == 0x50 && chunk[2] == 0x4E && chunk[3] == 0x47) {
+              isDisguisedPng = true;
+            } else {
+              headerStripped = true;
+              request.response.add(chunk);
+              return;
             }
           }
           
-          if (buffer.length > 1024 * 1024) {
-            foundHeader = true;
-            final result = List<int>.from(buffer);
-            buffer = [];
-            return result;
+          if (isDisguisedPng && !headerStripped) {
+            buffer.addAll(chunk);
+            // Search for TS sync byte (0x47) that repeats after 188 bytes
+            int tsStart = -1;
+            for (int i = 0; i < buffer.length - 188; i++) {
+              if (buffer[i] == 0x47 && buffer[i + 188] == 0x47) {
+                tsStart = i;
+                break;
+              }
+            }
+            if (tsStart != -1) {
+              headerStripped = true;
+              appDebugLog('🛠️ HlsProxyService: Stripping fake PNG header of size $tsStart bytes.');
+              request.response.add(buffer.sublist(tsStart));
+              buffer = [];
+            } else if (buffer.length > 5000) {
+              // Safety fallback
+              headerStripped = true;
+              appDebugLog('⚠️ HlsProxyService: Fake PNG header detected but no TS sync byte found within 5KB! Piping as-is.');
+              request.response.add(buffer);
+              buffer = [];
+            }
           }
-          
-          return <int>[];
-        }).pipe(request.response);
+        }).asFuture();
+        
+        await request.response.close();
       }
     } catch (e) {
       appDebugLog('❌ HlsProxyService Error: $e');

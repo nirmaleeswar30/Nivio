@@ -37,8 +37,6 @@ trap cleanup EXIT
 
 # Append overrides to pubspec.yaml
 cat << 'EOF' >> pubspec.yaml
-
-dependency_overrides:
   firebase_core:
     path: ./packages/stubs/firebase_core
   firebase_auth:

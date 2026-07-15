@@ -48,11 +48,13 @@ import 'package:nivio/services/hls_proxy_service.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'package:window_manager/window_manager.dart';
+import 'package:rhttp/rhttp.dart';
 
 void main() async {
   try {
     WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
     MediaKit.ensureInitialized();
+    await Rhttp.init();
 
     if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
       await windowManager.ensureInitialized();

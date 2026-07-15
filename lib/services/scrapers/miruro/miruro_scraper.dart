@@ -1,30 +1,27 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:cronet_http/cronet_http.dart';
+import 'package:rhttp/rhttp.dart' hide HttpRequest;
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/models/stream_result.dart';
-import 'package:nivio/services/scrapers/miruro/miruro_bypass_service.dart';
 
 import 'package:nivio/services/hls_proxy_service.dart';
 
 class MiruroScraperService {
-  final Ref? ref;
   late final http.Client client;
   final List<int> _obfKey = utf8.encode('71951034f8fbcf53d89db52ceb3dc22c');
 
-  MiruroScraperService([this.ref]) {
-    if (Platform.isAndroid) {
+  MiruroScraperService() {
+    if (Platform.isAndroid || Platform.isIOS) {
       final engine = CronetEngine.build(
         cacheMode: CacheMode.disabled,
         userAgent: 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36',
       );
       client = CronetClient.fromCronetEngine(engine);
     } else {
-      client = http.Client();
+      client = RhttpCompatibleClient.createSync();
     }
   }
 
@@ -59,14 +56,6 @@ class MiruroScraperService {
     };
 
     final encodedReq = _encodePipeRequest(payload);
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
-    
-    if (isDesktop && ref != null) {
-      final bypassService = ref!.read(miruroBypassProvider);
-      final result = await bypassService.executePipeRequest(encodedReq);
-      return _decodePipeResponse(result['body'], result['obfuscated']);
-    }
-
     final uri = Uri.parse('https://www.miruro.bz/api/secure/pipe?e=$encodedReq');
 
     final res = await client.get(uri, headers: {

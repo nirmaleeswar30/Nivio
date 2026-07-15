@@ -1820,6 +1820,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } else {
       dur = _player.state.duration;
     }
+
+    if (dur.inSeconds <= 0) {
+      appDebugLog('⚠️ Ignoring _markAsCompleted because duration is 0 (playback likely failed or stream ended prematurely)');
+      return;
+    }
+
     final historyService = ref.read(watchHistoryServiceProvider);
     await historyService.updateProgress(
       tmdbId: widget.mediaId,

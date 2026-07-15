@@ -22,6 +22,7 @@ list(APPEND FLUTTER_FFI_PLUGIN_LIST
   device_screen_brightness
   flutter_local_notifications_windows
   jni
+  rhttp
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)
