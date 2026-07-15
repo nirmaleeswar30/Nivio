@@ -45,7 +45,9 @@ class WatchHistoryService {
     if (!_initialized) await init();
 
     final id = '${_userId}_$tmdbId';
-    final progressPercent = lastPosition.inSeconds / totalDuration.inSeconds;
+    final progressPercent = totalDuration.inSeconds > 0 
+        ? lastPosition.inSeconds / totalDuration.inSeconds 
+        : 0.0;
 
     final isMediaCompleted = mediaType == 'tv'
         ? (progressPercent >= 0.95 &&

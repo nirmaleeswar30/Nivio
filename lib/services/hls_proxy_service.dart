@@ -135,13 +135,21 @@ class HlsProxyService {
 
       if (isM3u8) {
         final bodyBytes = await response.stream.toBytes();
-        final bodyString = utf8.decode(bodyBytes);
+        final bodyString = utf8.decode(bodyBytes, allowMalformed: true);
         final lines = bodyString.split('\n');
         final modifiedLines = <String>[];
+        
+        bool isSegmentPlaylist = false;
+        bool hasEndList = false;
+        bool hasPlaylistType = false;
 
         for (var line in lines) {
           final trimmed = line.trim();
           if (trimmed.isEmpty) continue;
+          
+          if (trimmed.startsWith('#EXT-X-ENDLIST')) hasEndList = true;
+          if (trimmed.startsWith('#EXT-X-PLAYLIST-TYPE')) hasPlaylistType = true;
+          if (!trimmed.startsWith('#')) isSegmentPlaylist = true;
           
           String trimBase64(String str) => str.replaceAll('=', '');
           
@@ -178,6 +186,20 @@ class HlsProxyService {
           }
         }
         
+        // Force VOD behavior to prevent MPV from treating the stream as LIVE
+        if (isSegmentPlaylist) {
+          if (!hasPlaylistType) {
+            if (modifiedLines.isNotEmpty && modifiedLines.first.startsWith('#EXTM3U')) {
+              modifiedLines.insert(1, '#EXT-X-PLAYLIST-TYPE:VOD');
+            } else {
+              modifiedLines.insert(0, '#EXT-X-PLAYLIST-TYPE:VOD');
+            }
+          }
+          if (!hasEndList) {
+            modifiedLines.add('#EXT-X-ENDLIST');
+          }
+        }
+        
         final modifiedBody = modifiedLines.join('\n');
         final modifiedBytes = utf8.encode(modifiedBody);
         
@@ -185,7 +207,32 @@ class HlsProxyService {
         request.response.add(modifiedBytes);
         await request.response.close();
       } else {
-        await response.stream.pipe(request.response);
+        bool foundHeader = false;
+        List<int> buffer = [];
+        
+        await response.stream.map((chunk) {
+          if (foundHeader) return chunk;
+          buffer.addAll(chunk);
+          int searchLimit = buffer.length - (188 * 2);
+          
+          for (int i = 0; i < searchLimit; i++) {
+            if (buffer[i] == 0x47 && buffer[i + 188] == 0x47 && buffer[i + 188 * 2] == 0x47) {
+              foundHeader = true;
+              final result = buffer.sublist(i);
+              buffer = [];
+              return result;
+            }
+          }
+          
+          if (buffer.length > 1024 * 1024) {
+            foundHeader = true;
+            final result = List<int>.from(buffer);
+            buffer = [];
+            return result;
+          }
+          
+          return <int>[];
+        }).pipe(request.response);
       }
     } catch (e) {
       appDebugLog('❌ HlsProxyService Error: $e');
