@@ -11,6 +11,7 @@ import '../widgets/download_prompt.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:silky_scroll/silky_scroll.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:share_plus/share_plus.dart';
@@ -490,8 +491,12 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         backgroundColor: colors.darkMuted,
         body: Stack(
           children: [
-            CustomScrollView(
+            SilkyCustomScrollView(
           controller: _scrollController,
+          cacheExtent: 1500,
+          scrollSpeed: 2.0,
+          silkyScrollDuration: const Duration(milliseconds: 500),
+          animationCurve: Curves.easeOutQuart,
           slivers: [
             SliverToBoxAdapter(
               child: Stack(

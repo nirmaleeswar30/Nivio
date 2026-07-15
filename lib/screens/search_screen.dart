@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:silky_scroll/silky_scroll.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/providers/search_provider.dart';
@@ -661,9 +662,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ),
               ),
             Expanded(
-              child: GridView.builder(
+              child: SilkyGridView.builder(
                 key: PageStorageKey<String>('search_grid_$query'),
                 controller: _scrollController,
+                cacheExtent: 1500,
+                scrollSpeed: 2.0,
+                silkyScrollDuration: const Duration(milliseconds: 500),
+                animationCurve: Curves.easeOutQuart,
                 padding: const EdgeInsets.fromLTRB(14, 6, 14, 20),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: columns,
@@ -698,9 +703,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   }
 
                   final item = _allResults[index];
-                  return SearchResultCard(
-                    key: ValueKey('${item.mediaType}_${item.id}'),
-                    media: item,
+                  return RepaintBoundary(
+                    child: SearchResultCard(
+                      key: ValueKey('${item.mediaType}_${item.id}'),
+                      media: item,
+                    ),
                   );
                 },
               ),

@@ -107,10 +107,10 @@ class MiruroBypassService extends ChangeNotifier {
       throw Exception('Miruro bypass not initialized properly');
     }
     
-    final js = '''
-      (async function() {
+    final result = await _webViewController!.callAsyncJavaScript(
+      functionBody: '''
         try {
-          const res = await fetch('https://www.miruro.bz/api/secure/pipe?e=$encodedReq', {
+          const res = await fetch('https://www.miruro.bz/api/secure/pipe?e=' + encodedReq, {
             method: 'GET',
             headers: {
               'Accept': '*/*',
@@ -119,32 +119,36 @@ class MiruroBypassService extends ChangeNotifier {
           });
           const text = await res.text();
           const obfuscated = res.headers.get('x-obfuscated');
-          return JSON.stringify({
+          return {
             status: res.status,
             body: text,
             obfuscated: obfuscated
-          });
+          };
         } catch (e) {
-          return JSON.stringify({ error: e.toString() });
+          return { error: e.toString() };
         }
-      })();
-    ''';
-    
-    final resultStr = await _webViewController!.evaluateJavascript(source: js);
-    if (resultStr == null) {
+      ''',
+      arguments: {'encodedReq': encodedReq},
+    );
+
+    if (result == null) {
       throw Exception('Failed to execute JS in Miruro bypass');
     }
-    
-    final result = jsonDecode(resultStr);
-    if (result['error'] != null) {
-      throw Exception('JS fetch error: ${result["error"]}');
+
+    if (result.error != null) {
+      throw Exception('JS execution error: ${result.error}');
+    }
+
+    final resultMap = Map<String, dynamic>.from(result.value as Map);
+    if (resultMap['error'] != null) {
+      throw Exception('JS fetch error: ${resultMap["error"]}');
     }
     
-    if (result['status'] != 200) {
-      throw Exception('Pipe request failed with status: ${result["status"]}');
+    if (resultMap['status'] != 200) {
+      throw Exception('Pipe request failed with status: ${resultMap["status"]}');
     }
     
-    return result;
+    return resultMap;
   }
   
   @override

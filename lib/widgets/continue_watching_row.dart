@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:silky_scroll/silky_scroll.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/widgets/continue_watching_card.dart';
 import 'package:nivio/core/theme.dart';
@@ -42,14 +43,20 @@ class ContinueWatchingRow extends ConsumerWidget {
         }
         return SizedBox(
           height: 190,
-          child: ListView.builder(
+          child: SilkyListView.builder(
             scrollDirection: Axis.horizontal,
+            cacheExtent: 1500,
+            scrollSpeed: 2.0,
+            silkyScrollDuration: const Duration(milliseconds: 500),
+            animationCurve: Curves.easeOutQuart,
             itemCount: items.length,
             itemBuilder: (context, index) {
               final history = items[index];
-              return ContinueWatchingCard(
-                key: ValueKey('${history.tmdbId}_${history.currentSeason}_${history.currentEpisode}'),
-                history: history,
+              return RepaintBoundary(
+                child: ContinueWatchingCard(
+                  key: ValueKey('${history.tmdbId}_${history.currentSeason}_${history.currentEpisode}'),
+                  history: history,
+                ),
               );
             },
           ),

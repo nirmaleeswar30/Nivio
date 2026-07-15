@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:silky_scroll/silky_scroll.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/providers/auth_provider.dart';
@@ -242,8 +243,12 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       );
     }
 
-    final gridContent = GridView.builder(
+    final gridContent = SilkyGridView.builder(
       padding: const EdgeInsets.all(16),
+      cacheExtent: 1500,
+      scrollSpeed: 2.0,
+      silkyScrollDuration: const Duration(milliseconds: 500),
+      animationCurve: Curves.easeOutQuart,
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 200,
         childAspectRatio: 0.7,
@@ -254,20 +259,28 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       itemBuilder: (context, index) {
         final item = watchlist[index];
         final posterUrl = tmdbService.getPosterUrl(item.posterPath);
-        return InkWell(
-          onTap: () => context.push('/media/${item.id}?type=${item.mediaType}'),
-          child: buildItemCard(item, posterUrl),
+        return RepaintBoundary(
+          child: InkWell(
+            onTap: () => context.push('/media/${item.id}?type=${item.mediaType}'),
+            child: buildItemCard(item, posterUrl),
+          ),
         );
       },
     );
 
-    final listContent = ListView.builder(
+    final listContent = SilkyListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
+      cacheExtent: 1500,
+      scrollSpeed: 2.0,
+      silkyScrollDuration: const Duration(milliseconds: 500),
+      animationCurve: Curves.easeOutQuart,
       itemCount: watchlist.length,
       itemBuilder: (context, index) {
         final item = watchlist[index];
         final posterUrl = tmdbService.getPosterUrl(item.posterPath);
-        return buildListItem(item, posterUrl);
+        return RepaintBoundary(
+          child: buildListItem(item, posterUrl),
+        );
       },
     );
 

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/widgets/watch_party_chat_overlay.dart';
@@ -52,6 +53,18 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
   Timer? _hideControlsTimer;
   double? _dragValue;
   StreamSubscription<bool>? _playingSubscription;
+  bool _isWindowFullScreen = false;
+
+  void _toggleWindowFullScreen() async {
+    _startHideTimer();
+    final nextVal = !_isWindowFullScreen;
+    await windowManager.setFullScreen(nextVal);
+    if (mounted) {
+      setState(() {
+        _isWindowFullScreen = nextVal;
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -73,6 +86,15 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
         }
       }
     });
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      windowManager.isFullScreen().then((val) {
+        if (mounted) {
+          setState(() {
+            _isWindowFullScreen = val;
+          });
+        }
+      });
+    }
     _startHideTimer();
   }
 
@@ -431,6 +453,15 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                               widget.onSettings?.call();
                             },
                           ),
+                          if (!Platform.isAndroid && !Platform.isIOS)
+                            IconButton(
+                              icon: Icon(
+                                _isWindowFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                                color: Colors.white,
+                                size: 28,
+                              ),
+                              onPressed: _toggleWindowFullScreen,
+                            ),
                         ],
                       ),
                     ),

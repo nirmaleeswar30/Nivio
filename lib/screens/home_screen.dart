@@ -1,9 +1,14 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:nivio/providers/dynamic_colors_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:silky_scroll/silky_scroll.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/constants.dart';
 
@@ -75,15 +80,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     });
 
-    _bannerTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
+    _bannerTimer = Timer.periodic(const Duration(seconds: 14), (timer) {
       if (!_pageController.hasClients) return;
       final featuredContent = ref.read(featuredContentProvider).value ?? [];
       if (featuredContent.isEmpty) return;
-      _pageController.animateToPage(
-        _currentBannerPage + 1,
-        duration: const Duration(milliseconds: 700),
-        curve: Curves.easeInOutCubic,
-      );
+      _pageController.jumpToPage(_currentBannerPage + 1);
     });
 
     unawaited(_prewarmHomeContent());
@@ -118,8 +119,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final url = posterPath.startsWith('http') 
           ? posterPath 
           : '$tmdbImageBaseUrl/w200$posterPath';
-      final provider = CachedNetworkImageProvider(url);
-      final colorScheme = await ColorScheme.fromImageProvider(provider: provider, brightness: Brightness.dark);
+      
+      final cacheManager = DefaultCacheManager();
+      final fileInfo = await cacheManager.getFileFromCache(url);
+      Uint8List bytes;
+      if (fileInfo != null) {
+        bytes = await fileInfo.file.readAsBytes();
+      } else {
+        final file = await cacheManager.getSingleFile(url);
+        bytes = await file.readAsBytes();
+      }
+
+      final seedColorValue = await compute(extractSeedColor, bytes);
+      final colorScheme = ColorScheme.fromSeed(
+        seedColor: Color(seedColorValue),
+        brightness: Brightness.dark,
+      );
       final color = colorScheme.primary;
       
       if (mounted) {
@@ -277,16 +292,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ],
         ),
       ),
-      body: AnimatedContainer(
-        duration: const Duration(milliseconds: 800),
-        curve: Curves.easeInOut,
-        decoration: BoxDecoration(
-          color: Color.lerp(const Color(0xFF0D0F14), _currentAmbientColor, 0.15),
-        ),
-        child: CustomScrollView(
-        controller: _scrollController,
-        cacheExtent: 300,
-        slivers: [
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 800),
+              curve: Curves.easeInOut,
+              decoration: BoxDecoration(
+                color: Color.lerp(const Color(0xFF0D0F14), _currentAmbientColor, 0.15),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: SilkyCustomScrollView(
+          controller: _scrollController,
+          cacheExtent: 1500,
+          scrollSpeed: 2.0,
+          silkyScrollDuration: const Duration(milliseconds: 500),
+          animationCurve: Curves.easeOutQuart,
+          slivers: [
           SliverToBoxAdapter(
             child: RepaintBoundary(
               child: featuredContent.when(
@@ -386,6 +410,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           const SliverToBoxAdapter(child: SizedBox(height: 50)),
         ],
       ),
+          ),
+        ],
       ),
     );
   }

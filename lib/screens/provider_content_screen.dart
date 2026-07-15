@@ -1,8 +1,13 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:nivio/providers/dynamic_colors_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:silky_scroll/silky_scroll.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:nivio/core/constants.dart';
@@ -91,21 +96,16 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
       }
     });
 
-    _bannerTimer = Timer.periodic(const Duration(seconds: 6), (timer) {
+    _bannerTimer = Timer.periodic(const Duration(seconds: 14), (timer) {
       if (!_pageController.hasClients) return;
       if (_trending.isEmpty) return;
       final maxPages = _trending.take(5).length;
       if (maxPages == 0) return;
       
       int nextPage = _currentBannerPage + 1;
-      // Loop back smoothly or jump back
       if (nextPage >= maxPages) nextPage = 0;
 
-      _pageController.animateToPage(
-        nextPage,
-        duration: const Duration(milliseconds: 1200),
-        curve: Curves.easeInOutCubic,
-      );
+      _pageController.jumpToPage(nextPage);
     });
   }
 
@@ -245,8 +245,22 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
     if (_ambientColors.containsKey(index)) return;
     
     try {
-      final provider = CachedNetworkImageProvider('$tmdbImageBaseUrl/w200$posterPath');
-      final colorScheme = await ColorScheme.fromImageProvider(provider: provider, brightness: Brightness.dark);
+      final url = '$tmdbImageBaseUrl/w200$posterPath';
+      final cacheManager = DefaultCacheManager();
+      final fileInfo = await cacheManager.getFileFromCache(url);
+      Uint8List bytes;
+      if (fileInfo != null) {
+        bytes = await fileInfo.file.readAsBytes();
+      } else {
+        final file = await cacheManager.getSingleFile(url);
+        bytes = await file.readAsBytes();
+      }
+
+      final seedColorValue = await compute(extractSeedColor, bytes);
+      final colorScheme = ColorScheme.fromSeed(
+        seedColor: Color(seedColorValue),
+        brightness: Brightness.dark,
+      );
       final color = colorScheme.primary;
       
       if (mounted) {
@@ -290,22 +304,30 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
             : Stack(
                 children: [
                   // --- Base Layer (Main Content) ---
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 800),
-                    curve: Curves.easeInOut,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          _currentAmbientColor.withOpacity(0.6),
-                          _currentAmbientColor.withOpacity(0.15),
-                        ],
-                        stops: const [0.0, 1.0],
+                  Positioned.fill(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 800),
+                      curve: Curves.easeInOut,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            _currentAmbientColor.withOpacity(0.6),
+                            _currentAmbientColor.withOpacity(0.15),
+                          ],
+                          stops: const [0.0, 1.0],
+                        ),
                       ),
                     ),
-                    child: CustomScrollView(
+                  ),
+                  Positioned.fill(
+                    child: SilkyCustomScrollView(
                       controller: _scrollController,
+                      cacheExtent: 1500,
+                      scrollSpeed: 2.0,
+                      silkyScrollDuration: const Duration(milliseconds: 500),
+                      animationCurve: Curves.easeOutQuart,
                       slivers: [
                         // Minimal Header
                         SliverAppBar(
@@ -618,21 +640,20 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                           child: const Icon(Icons.movie, size: 64, color: Colors.white30),
                         ),
                         
-                      // Gradient Overlay to make text readable
+                      // Gradient Overlay to make text readable & fade into ambient color
                       Container(
                         margin: EdgeInsets.symmetric(horizontal: isDesktop ? 0 : 8),
                         decoration: BoxDecoration(
                           borderRadius: isDesktop ? BorderRadius.zero : BorderRadius.circular(16),
-                          gradient: const LinearGradient(
+                          gradient: LinearGradient(
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
                             colors: [
                               Colors.transparent,
-                              Colors.transparent,
-                              Colors.black54,
-                              Colors.black87,
+                              _currentAmbientColor.withOpacity(0.5),
+                              _currentAmbientColor,
                             ],
-                            stops: [0.0, 0.5, 0.8, 1.0],
+                            stops: const [0.0, 0.88, 1.0],
                           ),
                         ),
                       ),
@@ -889,35 +910,45 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                   context: context,
                   route: '/home',
                   icon: PhosphorIconsRegular.house,
+                  activeIcon: PhosphorIconsFill.house,
                   label: 'Home',
+                  isActive: false,
                 ),
                 const SizedBox(height: 8),
                 _buildSidebarItem(
                   context: context,
                   route: '/search',
                   icon: PhosphorIconsRegular.magnifyingGlass,
+                  activeIcon: PhosphorIconsFill.magnifyingGlass,
                   label: 'Search',
+                  isActive: false,
                 ),
                 const SizedBox(height: 8),
                 _buildSidebarItem(
                   context: context,
                   route: '/library',
                   icon: PhosphorIconsRegular.calendarBlank,
+                  activeIcon: PhosphorIconsFill.calendarCheck,
                   label: 'Library',
+                  isActive: false,
                 ),
                 const SizedBox(height: 8),
                 _buildSidebarItem(
                   context: context,
                   route: '/iptv',
                   icon: PhosphorIconsRegular.television,
+                  activeIcon: PhosphorIconsFill.television,
                   label: 'Live TV',
+                  isActive: false,
                 ),
                 const SizedBox(height: 8),
                 _buildSidebarItem(
                   context: context,
                   route: '/party',
                   icon: PhosphorIconsRegular.users,
+                  activeIcon: PhosphorIconsFill.users,
                   label: 'Party',
+                  isActive: false,
                 ),
               ],
             ),
@@ -926,7 +957,9 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
             context: context,
             route: '/profile',
             icon: PhosphorIconsRegular.user,
+            activeIcon: PhosphorIconsFill.user,
             label: 'Profile',
+            isActive: false,
             photoUrl: user?.photoURL,
           ),
           const SizedBox(height: 24),
@@ -939,24 +972,37 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
     required BuildContext context,
     required String route,
     required IconData icon,
+    required IconData activeIcon,
     required String label,
+    required bool isActive,
     String? photoUrl,
   }) {
     return Tooltip(
       message: label,
       child: Align(
-        alignment: Alignment.center,
+        alignment: isActive ? Alignment.centerLeft : Alignment.center,
         child: InkWell(
           onTap: () {
             context.go(route);
           },
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: isActive
+              ? const BorderRadius.only(
+                  topRight: Radius.circular(20),
+                  bottomRight: Radius.circular(20),
+                )
+              : BorderRadius.circular(8),
           child: Container(
-            width: 40,
+            width: isActive ? 48 : 40,
             height: 40,
+            padding: isActive ? const EdgeInsets.only(left: 8) : EdgeInsets.zero,
             decoration: BoxDecoration(
-              color: Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
+              color: isActive ? Colors.white : Colors.transparent,
+              borderRadius: isActive
+                  ? const BorderRadius.only(
+                      topRight: Radius.circular(20),
+                      bottomRight: Radius.circular(20),
+                    )
+                  : BorderRadius.circular(8),
             ),
             child: Center(
               child: photoUrl != null
@@ -966,8 +1012,8 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                       backgroundColor: NivioTheme.netflixDarkGrey,
                     )
                   : PhosphorIcon(
-                      icon,
-                      color: Colors.white,
+                      isActive ? activeIcon : icon,
+                      color: isActive ? NivioTheme.netflixBlack : Colors.white,
                       size: 20,
                     ),
             ),

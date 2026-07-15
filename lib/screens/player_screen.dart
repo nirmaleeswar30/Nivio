@@ -1,6 +1,8 @@
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:simple_pip_mode/actions/pip_actions_layout.dart';
+import 'package:window_manager/window_manager.dart';
+import 'dart:io';
 import 'package:device_screen_brightness/device_screen_brightness.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:simple_pip_mode/simple_pip.dart';
@@ -2743,6 +2745,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   @override
   void dispose() {
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      windowManager.setFullScreen(false);
+    }
     // device_screen_brightness manages app-level brightness lifecycle automatically.
     unawaited(WakelockPlus.disable());
     if (Platform.isAndroid) {
@@ -2780,6 +2785,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _handleBackNavigation() {
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      windowManager.setFullScreen(false);
+    }
     if (!_isDirectStream && _isInFullscreen) {
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,

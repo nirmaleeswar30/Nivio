@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:silky_scroll/silky_scroll.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/download_item.dart';
 import 'package:nivio/services/download_service.dart';
@@ -48,8 +49,12 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         
         final groups = groupedDownloads.values.toList();
 
-        return ListView.builder(
+        return SilkyListView.builder(
           padding: EdgeInsets.fromLTRB(16, 16, 16, widget.embedded ? 80 : 16),
+          cacheExtent: 1500,
+          scrollSpeed: 2.0,
+          silkyScrollDuration: const Duration(milliseconds: 500),
+          animationCurve: Curves.easeOutQuart,
           itemCount: groups.length,
           itemBuilder: (context, index) {
             final group = groups[index];

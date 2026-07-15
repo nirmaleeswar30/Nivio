@@ -27,7 +27,7 @@ final aniListServiceProvider = Provider((ref) => AniListService());
 
 // Streaming service provider (direct primary, embed fallback)
 final miruroScraperProvider = Provider<MiruroScraperService>((ref) {
-  return MiruroScraperService();
+  return MiruroScraperService(ref);
 });
 
 final animexScraperProvider = Provider<AnimexScraperService>((ref) {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:silky_scroll/silky_scroll.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -162,8 +163,12 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                       )
                     else
                       Expanded(
-                        child: ListView.builder(
+                        child: SilkyListView.builder(
                           controller: scrollController,
+                          cacheExtent: 1500,
+                          scrollSpeed: 2.0,
+                          silkyScrollDuration: const Duration(milliseconds: 500),
+                          animationCurve: Curves.easeOutQuart,
                           itemCount: playlists.length,
                           itemBuilder: (context, index) {
                             final p = playlists[index];
@@ -435,7 +440,11 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                                 ),
                               ),
                               Expanded(
-                                child: ListView.builder(
+                                child: SilkyListView.builder(
+                                  cacheExtent: 1500,
+                                  scrollSpeed: 2.0,
+                                  silkyScrollDuration: const Duration(milliseconds: 500),
+                                  animationCurve: Curves.easeOutQuart,
                                   itemCount: groups.length,
                                   itemBuilder: (context, index) {
                                     final g = groups[index];
@@ -516,76 +525,82 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                     style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
                   ),
                 )
-              : ListView.builder(
+              : SilkyListView.builder(
                   padding: const EdgeInsets.all(16),
+                  cacheExtent: 1500,
+                  scrollSpeed: 2.0,
+                  silkyScrollDuration: const Duration(milliseconds: 500),
+                  animationCurve: Curves.easeOutQuart,
                   itemCount: _filteredChannels.length,
                   itemBuilder: (context, index) {
                     final channel = _filteredChannels[index];
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        leading: Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: Colors.black26,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: channel.logo.isNotEmpty
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: CachedNetworkImage(
-                                    imageUrl: channel.logo,
-                                    fit: BoxFit.contain,
-                                    errorWidget: (context, url, error) => Icon(
-                                      PhosphorIconsRegular.television,
-                                      color: Colors.white.withValues(alpha: 0.3),
+                    return RepaintBoundary(
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          leading: Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: Colors.black26,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: channel.logo.isNotEmpty
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: CachedNetworkImage(
+                                      imageUrl: channel.logo,
+                                      fit: BoxFit.contain,
+                                      errorWidget: (context, url, error) => Icon(
+                                        PhosphorIconsRegular.television,
+                                        color: Colors.white.withValues(alpha: 0.3),
+                                      ),
                                     ),
+                                  )
+                                : Icon(
+                                    PhosphorIconsRegular.television,
+                                    color: Colors.white.withValues(alpha: 0.3),
                                   ),
-                                )
-                              : Icon(
-                                  PhosphorIconsRegular.television,
-                                  color: Colors.white.withValues(alpha: 0.3),
+                          ),
+                          title: Text(
+                            channel.name,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          subtitle: Text(
+                            channel.group,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.5),
+                              fontSize: 12,
+                            ),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: PhosphorIcon(
+                                  channel.isFavorite ? PhosphorIconsFill.heart : PhosphorIconsRegular.heart,
+                                  color: channel.isFavorite ? Colors.red : Colors.white54,
                                 ),
-                        ),
-                        title: Text(
-                          channel.name,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        subtitle: Text(
-                          channel.group,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.5),
-                            fontSize: 12,
-                          ),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: PhosphorIcon(
-                                channel.isFavorite ? PhosphorIconsFill.heart : PhosphorIconsRegular.heart,
-                                color: channel.isFavorite ? Colors.red : Colors.white54,
+                                onPressed: () => _toggleFavorite(channel),
                               ),
-                              onPressed: () => _toggleFavorite(channel),
-                            ),
-                            const SizedBox(width: 8),
-                            Icon(
-                              PhosphorIconsRegular.playCircle,
-                              color: NivioTheme.accentColorOf(context),
-                            ),
-                          ],
+                              const SizedBox(width: 8),
+                              Icon(
+                                PhosphorIconsRegular.playCircle,
+                                color: NivioTheme.accentColorOf(context),
+                              ),
+                            ],
+                          ),
+                          onTap: () => _playChannel(channel),
                         ),
-                        onTap: () => _playChannel(channel),
                       ),
                     );
                   },

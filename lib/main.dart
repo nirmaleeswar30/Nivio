@@ -417,6 +417,7 @@ class _NivioAppState extends ConsumerState<NivioApp> {
 
     return MaterialApp.router(
       scrollBehavior: MyCustomScrollBehavior(),
+      showPerformanceOverlay: true,
       title: 'Nivio',
       theme: appTheme,
       darkTheme: appTheme,
@@ -510,4 +511,9 @@ class MyCustomScrollBehavior extends MaterialScrollBehavior {
         PointerDeviceKind.mouse,
         PointerDeviceKind.trackpad,
       };
+
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) {
+    return const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics());
+  }
 }

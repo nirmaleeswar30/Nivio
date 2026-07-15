@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:silky_scroll/silky_scroll.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:nivio/core/constants.dart';
@@ -48,7 +49,7 @@ class ContentRow extends StatelessWidget {
           const SizedBox(height: 12),
           SizedBox(
             height: isDesktop ? 240 : 180,
-            child: ListView.builder(
+            child: SilkyListView.builder(
               scrollDirection: Axis.horizontal,
               padding: EdgeInsets.only(
                 left: leftPadding != null 
@@ -57,7 +58,10 @@ class ContentRow extends StatelessWidget {
                 right: 12,
               ),
               itemCount: items.length,
-              cacheExtent: 200,
+              cacheExtent: 1500,
+              scrollSpeed: 2.0,
+              silkyScrollDuration: const Duration(milliseconds: 500),
+              animationCurve: Curves.easeOutQuart,
               itemBuilder: (context, index) {
                 final item = items[index];
                 String? posterPath;
