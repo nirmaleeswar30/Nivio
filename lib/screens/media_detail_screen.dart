@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import '../widgets/download_prompt.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:nivio/widgets/youtube_webview_player.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:silky_scroll/silky_scroll.dart';
 import 'package:go_router/go_router.dart';
@@ -309,18 +310,6 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 
   void _showTrailerPlayer(BuildContext context) async {
     if (_trailerSource == null) return;
-
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
-    if (isDesktop) {
-      final watchUrl = _trailerSource!.watchUrl;
-      if (watchUrl != null) {
-        final title = _media?.title ?? _media?.name ?? 'Trailer';
-        context.push(
-          '/player/${widget.mediaId}?season=1&episode=1&type=${widget.mediaType ?? 'movie'}&directStreamUrl=${Uri.encodeComponent(watchUrl)}&directStreamTitle=${Uri.encodeComponent("$title - Trailer")}'
-        );
-        return;
-      }
-    }
 
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -2458,7 +2447,29 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
   Widget _buildYoutubePlayer() {
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     if (isDesktop) {
-      return _buildWebViewPlayer();
+      return YouTubeWebViewPlayer(
+        videoId: widget.source.key,
+        autoPlay: true,
+        muted: false,
+        showControls: true,
+        onReady: () {
+          if (mounted) setState(() => _isLoading = false);
+        },
+        onStateChanged: (state) {
+          // state 0 = ended
+          if (state == 0 && mounted) {
+            _closeTrailer();
+          }
+        },
+        onError: (code) {
+          if (mounted) {
+            setState(() {
+              _hasError = true;
+              _errorMessage = 'YouTube player error (code: $code)';
+            });
+          }
+        },
+      );
     }
     if (_youtubeController == null) {
       return const SizedBox.shrink();
@@ -2592,86 +2603,32 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
       child: Scaffold(
         backgroundColor: Colors.black,
         body: SafeArea(
-          child: Column(
+          child: Stack(
             children: [
-              // Dedicated Top Control Bar (physically separate from native webview/player)
-              Container(
-                height: 56,
-                color: Colors.black,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Back button
-                    GestureDetector(
-                      onTap: _closeTrailer,
-                      child: Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.arrow_back_rounded,
-                        color: Colors.white,
-                        size: 24,
-                      ),
-                    ),
-                  ),
-                  // Title
-                  Text(
-                    'Watch Trailer',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  // Quality button
-                  GestureDetector(
-                    onTap: _showTrailerQualityDialog,
-                    child: Container(
-                      height: 40,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.hd_rounded,
-                            color: Colors.white,
-                            size: 18,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            isYoutube
-                                ? (_youtubeQualityLabels[_selectedYoutubeQuality] ?? 'Auto')
-                                : 'Quality',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+              Positioned.fill(
+                child: isYoutube ? _buildYoutubePlayer() : _buildWebViewPlayer(),
               ),
-            ),
-            // Player area (occupies the remaining screen height)
-            Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: isYoutube ? _buildYoutubePlayer() : _buildWebViewPlayer(),
+              // Floating Back Button
+              Positioned(
+                top: 16,
+                left: 16,
+                child: GestureDetector(
+                  onTap: _closeTrailer,
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.4),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: Colors.white,
+                      size: 24,
+                    ),
                   ),
+                ),
+              ),
                   if (_hasError)
                     Positioned.fill(
                       child: Center(
@@ -2705,12 +2662,9 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
                       ),
                     ),
                 ],
-                ),
               ),
-            ],
-          ),
+            ),
         ),
-      ),
     );
   }
 }

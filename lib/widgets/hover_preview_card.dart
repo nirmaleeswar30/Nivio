@@ -5,8 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:media_kit/media_kit.dart';
-import 'package:media_kit_video/media_kit_video.dart';
+import 'package:nivio/widgets/youtube_webview_player.dart';
 import 'package:nivio/core/constants.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
@@ -136,10 +135,9 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
   Map<String, dynamic>? _details;
   bool _isLoading = true;
 
-  Player? _player;
-  VideoController? _videoController;
   bool _playerInitialized = false;
-  String? _youtubeUrl;
+  String? _youtubeVideoId;
+  final GlobalKey<YouTubeWebViewPlayerState> _ytPlayerKey = GlobalKey();
 
   bool _isMuted = true;
   bool _isPlaying = true;
@@ -148,21 +146,26 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
   bool _isVideoPlaying = false;
 
   void _toggleMute() {
-    if (_player == null) return;
+    if (_ytPlayerKey.currentState == null) return;
     setState(() {
       _isMuted = !_isMuted;
-      _player!.setVolume(_isMuted ? 0.0 : 100.0);
+      if (_isMuted) {
+        _ytPlayerKey.currentState!.mute();
+      } else {
+        _ytPlayerKey.currentState!.unMute();
+        _ytPlayerKey.currentState!.setVolume(100);
+      }
     });
   }
 
   void _togglePlayPause() {
-    if (_player == null) return;
+    if (_ytPlayerKey.currentState == null) return;
     setState(() {
       _isPlaying = !_isPlaying;
       if (_isPlaying) {
-        _player!.play();
+        _ytPlayerKey.currentState!.play();
       } else {
-        _player!.pause();
+        _ytPlayerKey.currentState!.pause();
       }
       _showPlayPauseFeedback = true;
     });
@@ -210,44 +213,27 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
   void dispose() {
     _fadeController.dispose();
     _feedbackTimer?.cancel();
-    _player?.dispose();
     super.dispose();
   }
 
   void _initPlayer(String youtubeUrl) {
     if (_playerInitialized) return;
     
-    final player = Player();
-    final controller = VideoController(
-      player,
-      configuration: const VideoControllerConfiguration(
-        enableHardwareAcceleration: false,
-      ),
-    );
-    
-    _player = player;
-    _videoController = controller;
-    _playerInitialized = true;
-    _youtubeUrl = youtubeUrl;
-    _isVideoPlaying = false;
-    
-    // Mute and loop for premium preview
-    player.setVolume(0.0);
-    player.setPlaylistMode(PlaylistMode.loop);
-    
-    // Listen to video starting to play
-    player.stream.position.listen((pos) {
-      if (pos > Duration.zero && !_isVideoPlaying) {
-        if (mounted) {
-          setState(() {
-            _isVideoPlaying = true;
-          });
-        }
+    // Extract video ID from YouTube URL
+    final uri = Uri.tryParse(youtubeUrl);
+    String? videoId;
+    if (uri != null) {
+      videoId = uri.queryParameters['v'];
+      if (videoId == null && uri.host.contains('youtu.be')) {
+        videoId = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
       }
-    });
+    }
     
-    // Open the YouTube URL directly (media_kit parses it with yt-dlp)
-    player.open(Media(youtubeUrl));
+    if (videoId == null || videoId.isEmpty) return;
+    
+    _youtubeVideoId = videoId;
+    _playerInitialized = true;
+    _isVideoPlaying = false;
     
     if (mounted) setState(() {});
   }
@@ -577,19 +563,26 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
   }
 
   Widget _buildMediaSection(String? backdropUrl) {
-    if (_playerInitialized && _videoController != null) {
+    if (_playerInitialized && _youtubeVideoId != null) {
       return Stack(
         fit: StackFit.expand,
         children: [
           GestureDetector(
             onTap: _togglePlayPause,
             behavior: HitTestBehavior.opaque,
-            child: Video(
-              controller: _videoController!,
-              controls: NoVideoControls,
-              subtitleViewConfiguration: const SubtitleViewConfiguration(
-                visible: false,
-              ),
+            child: YouTubeWebViewPlayer(
+              key: _ytPlayerKey,
+              videoId: _youtubeVideoId!,
+              autoPlay: true,
+              muted: true,
+              showControls: false,
+              loop: true,
+              onStateChanged: (state) {
+                // state 1 = playing
+                if (state == 1 && !_isVideoPlaying && mounted) {
+                  setState(() => _isVideoPlaying = true);
+                }
+              },
             ),
           ),
           // Show backdrop image until video starts rendering
