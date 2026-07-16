@@ -47,12 +47,16 @@ import 'package:nivio/services/download_service.dart';
 import 'package:nivio/services/hls_proxy_service.dart';
 import 'package:media_kit/media_kit.dart';
 
+import 'package:flutter_inappwebview_linux/flutter_inappwebview_linux.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:rhttp/rhttp.dart';
 
 void main() async {
   try {
     WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+    if (Platform.isLinux) {
+      LinuxInAppWebViewPlatform.registerWith();
+    }
     MediaKit.ensureInitialized();
     await Rhttp.init();
 

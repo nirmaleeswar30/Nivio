@@ -21,6 +21,13 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
 
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
+  // WORKAROUND for flutter_inappwebview on Linux:
+  // Force WPE WebKit to use SHM (Shared Memory) buffers instead of DMA-BUF for software rendering.
+  // Fixes the issue where WPE sends DMA-BUFs that are not read back into RAM when DISABLE_GL=1.
+  // See: https://github.com/pichillilorenzo/flutter_inappwebview/issues/2861
+  g_setenv("LIBGL_ALWAYS_SOFTWARE", "1", TRUE);
+  g_setenv("FLUTTER_INAPPWEBVIEW_LINUX_DISABLE_GL", "1", TRUE);
+  
   MyApplication* self = MY_APPLICATION(application);
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
@@ -64,7 +71,10 @@ static void my_application_activate(GApplication* application) {
   // for transparent.
   gdk_rgba_parse(&background_color, "#000000");
   fl_view_set_background_color(view, &background_color);
+  gtk_widget_set_hexpand(GTK_WIDGET(view), TRUE);
+  gtk_widget_set_vexpand(GTK_WIDGET(view), TRUE);
   gtk_widget_show(GTK_WIDGET(view));
+
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
 
   // Show the window when Flutter renders.

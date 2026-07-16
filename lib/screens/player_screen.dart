@@ -3580,14 +3580,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // ─── WebView player (embed fallback) ───────────────────────────────────────
   Widget _buildWebViewPlayer() {
-    return RepaintBoundary(
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: Listener(
-              onPointerDown: (_) => _toggleWebViewControls(),
-              behavior: HitTestBehavior.translucent,
-              child: WebViewPlayer(
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: WebViewPlayer(
                 key: ValueKey(_streamResult!.url),
                     streamUrl: _streamResult!.url,
                     headers: _streamResult!.headers,
@@ -3632,7 +3628,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     _showEpisodesBottomSheet();
                   },
                 ),
-              ),
             ),
             Positioned(
               top: 12,
@@ -3659,10 +3654,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ),
               ),
             ),
-            ),
-          ],
-        ),
-    );
+          ),
+        ],
+      );
   }
 
   Widget _buildEpisodesFloatingButton() {

@@ -1,5 +1,6 @@
 import 'dart:collection';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:nivio/core/theme.dart';
@@ -244,16 +245,18 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
             hardwareAcceleration: true,
             mediaPlaybackRequiresUserGesture: false,
             allowsInlineMediaPlayback: true,
-            useOnLoadResource: true,
+            useOnLoadResource: !kIsWeb && defaultTargetPlatform != TargetPlatform.linux,
             useShouldOverrideUrlLoading: true,
-            useShouldInterceptRequest: true,
+            useShouldInterceptRequest: !kIsWeb && defaultTargetPlatform != TargetPlatform.linux,
             supportMultipleWindows: false, // BLOCK ALL POPUPS
             javaScriptCanOpenWindowsAutomatically: false,
-            userAgent: 'Mozilla/5.0 (Linux; Android 13; SM-S901B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36',
-            transparentBackground: true,
+            userAgent: defaultTargetPlatform == TargetPlatform.linux || defaultTargetPlatform == TargetPlatform.windows || defaultTargetPlatform == TargetPlatform.macOS
+                ? 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                : 'Mozilla/5.0 (Linux; Android 13; SM-S901B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36',
+            transparentBackground: false,
             blockNetworkImage: false,
             blockNetworkLoads: false,
-            cacheEnabled: false,
+            cacheEnabled: true,
           ),
           onCreateWindow: (controller, createWindowAction) async {
             // Drop any window creation requests (popups) into the void
@@ -310,6 +313,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
             return NavigationActionPolicy.ALLOW;
           },
           shouldInterceptRequest: (controller, request) async {
+            if (defaultTargetPlatform == TargetPlatform.linux) return null;
             final url = request.url.toString().toLowerCase();
             final adPatterns = [
               'google-analytics', 'googletagmanager', 'pagead', 'doubleclick',
