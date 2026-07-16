@@ -138,33 +138,6 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
                     }
                 }, 1000);
                 
-                // 5. Automatically click the fullscreen button
-                var autoFullscreenInterval = setInterval(function() {
-                   try {
-                       var fsBtn = document.querySelector('.jw-icon-fullscreen') || 
-                                   document.querySelector('.vjs-fullscreen-control') || 
-                                   document.querySelector('[title="Fullscreen"]') || 
-                                   document.querySelector('.plyr__control[data-plyr="fullscreen"]') || 
-                                   document.querySelector('.plyr__controls [data-plyr="fullscreen"]') ||
-                                   document.querySelector('button[aria-label="Fullscreen"]') ||
-                                   document.querySelector('button[title*="ullscreen"]');
-                       if (fsBtn) {
-                           console.error('Nivio: Found fullscreen button: ' + fsBtn.className);
-                           fsBtn.click();
-                           
-                           // Also try dispatching 'f' key which many players use for fullscreen
-                           var event = new KeyboardEvent('keydown', {key: 'f', code: 'KeyF', keyCode: 70, which: 70, bubbles: true});
-                           document.dispatchEvent(event);
-                           if (document.body) document.body.dispatchEvent(event);
-                           
-                           clearInterval(autoFullscreenInterval);
-                       } else {
-                           console.error('Nivio: Fullscreen button not found yet...');
-                       }
-                   } catch(e) {
-                       console.error('Nivio Error: ' + e.message);
-                   }
-                }, 500);
               """,
               injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
               forMainFrameOnly: false,

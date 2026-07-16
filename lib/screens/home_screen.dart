@@ -84,7 +84,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (!_pageController.hasClients) return;
       final featuredContent = ref.read(featuredContentProvider).value ?? [];
       if (featuredContent.isEmpty) return;
-      _pageController.jumpToPage(_currentBannerPage + 1);
+      _pageController.animateToPage(
+        _currentBannerPage + 1,
+        duration: const Duration(milliseconds: 800),
+        curve: Curves.easeInOutCubic,
+      );
     });
 
     unawaited(_prewarmHomeContent());

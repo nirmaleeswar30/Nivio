@@ -3620,14 +3620,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   },
                   onEnterFullscreen: () {
                     _setFullscreenTopBarVisibility(true);
+                    if (!Platform.isAndroid && !Platform.isIOS) {
+                      windowManager.setFullScreen(true);
+                    }
                   },
                   onExitFullscreen: () {
                     _setFullscreenTopBarVisibility(false);
+                    if (!Platform.isAndroid && !Platform.isIOS) {
+                      windowManager.setFullScreen(false);
+                    }
                   },
                   onShowEpisodesRequested: () {
                     _showEpisodesBottomSheet();
                   },
                 ),
+            ),
+            // Back / exit button (always visible)
+            Positioned(
+              top: 12,
+              left: 12,
+              child: Material(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(8),
+                child: InkWell(
+                  onTap: _handleBackNavigation,
+                  borderRadius: BorderRadius.circular(8),
+                  child: const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Icon(Icons.arrow_back, color: Colors.white, size: 22),
+                  ),
+                ),
+              ),
             ),
             Positioned(
               top: 12,
