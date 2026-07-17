@@ -375,7 +375,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         
         // Fallback for older Watchlist/History items that don't have malId
         if (malId == null) {
-          final anilistService = AniListService();
+          final anilistService = ref.read(aniListServiceProvider);
           if (media.mediaType == 'anime') {
             // New architecture: media.id is the AniList ID
             final details = await anilistService.getAnimeDetails(media.id);

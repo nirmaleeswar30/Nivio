@@ -412,12 +412,17 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
             cursor: SystemMouseCursors.click,
             child: GestureDetector(
               onTap: () {
-                widget.onDismiss();
-                if (widget.onPlayAction != null) {
-                  widget.onPlayAction!();
-                } else {
-                  context.push('/media/${widget.tmdbId}?type=${widget.mediaType}');
-                }
+                // Remove webview from tree to prevent Linux platform view crash during navigation
+                setState(() { _playerInitialized = false; });
+                
+                Future.delayed(const Duration(milliseconds: 50), () {
+                  widget.onDismiss();
+                  if (widget.onPlayAction != null) {
+                    widget.onPlayAction!();
+                  } else {
+                    GoRouter.of(context).push('/media/${widget.tmdbId}?type=${widget.mediaType}');
+                  }
+                });
               },
               child: Material(
                 color: Colors.transparent,
@@ -476,12 +481,17 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
                                   child: _AnimatedHoverScale(
                                     child: ElevatedButton.icon(
                                       onPressed: () {
-                                        widget.onDismiss();
-                                        if (widget.onPlayAction != null) {
-                                          widget.onPlayAction!();
-                                        } else {
-                                          context.push('/media/${widget.tmdbId}?type=${widget.mediaType}');
-                                        }
+                                        // Remove webview from tree to prevent Linux platform view crash during navigation
+                                        setState(() { _playerInitialized = false; });
+                                        
+                                        Future.delayed(const Duration(milliseconds: 50), () {
+                                          widget.onDismiss();
+                                          if (widget.onPlayAction != null) {
+                                            widget.onPlayAction!();
+                                          } else {
+                                            GoRouter.of(context).push('/media/${widget.tmdbId}?type=${widget.mediaType}');
+                                          }
+                                        });
                                       },
                                       icon: const Icon(Icons.play_arrow, size: 18),
                                       label: const Text('Watch Now', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),

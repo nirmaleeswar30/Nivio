@@ -350,10 +350,22 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/media/:id',
-      builder: (context, state) {
+      pageBuilder: (context, state) {
         final id = state.pathParameters['id']!;
         final mediaType = state.uri.queryParameters['type'];
-        return MediaDetailScreen(mediaId: int.parse(id), mediaType: mediaType);
+        return CustomTransitionPage(
+          opaque: false,
+          transitionDuration: const Duration(milliseconds: 300),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return SharedAxisTransition(
+              animation: animation,
+              secondaryAnimation: secondaryAnimation,
+              transitionType: SharedAxisTransitionType.scaled,
+              child: child,
+            );
+          },
+          child: MediaDetailScreen(mediaId: int.parse(id), mediaType: mediaType),
+        );
       },
     ),
     GoRoute(

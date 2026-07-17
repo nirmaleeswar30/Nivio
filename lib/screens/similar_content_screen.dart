@@ -49,7 +49,7 @@ class SimilarContentScreen extends ConsumerWidget {
           SafeArea(
             child: FutureBuilder<List<SearchResult>>(
               future: mediaType == 'anime' 
-                  ? AniListService().getAnimeRecommendations(mediaId)
+                  ? ref.read(aniListServiceProvider).getAnimeRecommendations(mediaId)
                   : ref.read(tmdbServiceProvider).getRecommendations(mediaId, mediaType),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {

@@ -5,6 +5,7 @@ import 'package:nivio/models/search_result.dart';
 import 'package:dio/dio.dart';
 
 import 'package:nivio/core/debug_log.dart';
+import 'package:nivio/services/cache_service.dart';
 
 class AniListResult {
   final int id;
@@ -17,9 +18,10 @@ class AniListResult {
 /// Converts TMDB IDs to AniList IDs for anime content
 class AniListService {
   final Dio _dio;
+  final CacheService _cache;
   static const String _baseUrl = 'https://graphql.anilist.co';
 
-  AniListService()
+  AniListService(this._cache)
     : _dio = Dio(
         BaseOptions(
           baseUrl: _baseUrl,
@@ -35,6 +37,16 @@ class AniListService {
     String? year,
     int? tmdbId,
   }) async {
+    final cacheKey = 'anilist_mapping_${tmdbId ?? ''}_$title\_$year';
+    final cached = await _cache.get<AniListResult>(
+      cacheKey,
+      (json) => AniListResult(
+        id: json['id'] as int,
+        idMal: json['idMal'] as int?,
+      ),
+    );
+    if (cached != null) return cached;
+
     try {
       // GraphQL query to search for anime
       const query = '''
@@ -73,7 +85,15 @@ class AniListService {
         final anilistId = response.data['data']['Media']['id'] as int;
         final idMal = response.data['data']['Media']['idMal'] as int?;
         appDebugLog('✅ Found AniList ID: $anilistId, MAL ID: $idMal for $title');
-        return AniListResult(id: anilistId, idMal: idMal);
+        final result = AniListResult(id: anilistId, idMal: idMal);
+        
+        await _cache.set(
+          cacheKey,
+          {'id': anilistId, 'idMal': idMal},
+          ttl: CacheService.extraLongCache,
+        );
+        
+        return result;
       }
 
       appDebugLog('❌ No AniList match found for: $title');
@@ -93,6 +113,13 @@ class AniListService {
     return result != null;
   }
   Future<Map<String, dynamic>> getAnimeDetailsWithExtras(int id) async {
+    final cacheKey = 'anilist_details_$id';
+    final cached = await _cache.get<Map<String, dynamic>>(
+      cacheKey,
+      (json) => json,
+    );
+    if (cached != null) return cached;
+
     const String query = '''
       query (\$id: Int) {
         Media(id: \$id) {
@@ -151,7 +178,9 @@ class AniListService {
         'variables': {'id': id},
       });
 
-      return response.data['data']['Media'] as Map<String, dynamic>;
+      final data = response.data['data']['Media'] as Map<String, dynamic>;
+      await _cache.set(cacheKey, data, ttl: CacheService.longCache);
+      return data;
     } catch (e) {
       appDebugLog('AniList getAnimeDetailsWithExtras error: $e');
       throw Exception('Failed to load anime details');

@@ -22,7 +22,10 @@ final tmdbServiceProvider = Provider((ref) {
   return TmdbService(cache);
 });
 
-final aniListServiceProvider = Provider((ref) => AniListService());
+final aniListServiceProvider = Provider((ref) {
+  final cache = ref.watch(cacheServiceProvider);
+  return AniListService(cache);
+});
 
 
 // Streaming service provider (direct primary, embed fallback)

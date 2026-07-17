@@ -1,3 +1,4 @@
+import 'package:animations/animations.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -35,6 +36,18 @@ class ProfileScreen extends ConsumerStatefulWidget {
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
+  int _selectedCategoryIndex = 0;
+
+  static const List<String> _categories = [
+    'Profile & Activity',
+    'Playback',
+    'Subtitle Appearance',
+    'Downloads',
+    'Content Feed',
+    'Episode Alerts',
+    'App & Updates',
+    'Data & Account',
+  ];
 
   void _handleBackNavigation() {
     if (context.canPop()) {
@@ -107,7 +120,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
+  
   Widget _buildProfileWithSettings(BuildContext context, User user) {
+    final isDesktop = MediaQuery.sizeOf(context).width > 800;
+    if (isDesktop && _query.isEmpty) {
+      return _buildDesktopLayout(context, user);
+    }
+    return _buildMobileLayout(context, user);
+  }
+
+Widget _buildMobileLayout(BuildContext context, User user) {
     final watchlist = ref.watch(watchlistProvider);
     final historyAsync = ref.watch(watchHistoryProvider);
     final languagePrefs = ref.watch(languagePreferencesProvider);
@@ -2745,7 +2767,491 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
   }
+
+  Widget _buildDesktopLayout(BuildContext context, User user) {
+    return Scaffold(
+      backgroundColor: NivioTheme.netflixBlack,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF151922), NivioTheme.netflixBlack],
+          ),
+        ),
+        child: SafeArea(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildDesktopSidebar(user),
+              Expanded(
+                child: _buildDesktopContentArea(user),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopSidebar(User user) {
+    return Container(
+      width: 280,
+      color: Colors.black.withOpacity(0.3),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: IconButton(
+                tooltip: 'Back',
+                onPressed: _handleBackNavigation,
+                icon: const PhosphorIcon(
+                  PhosphorIconsRegular.caretLeft,
+                  color: NivioTheme.netflixWhite,
+                  size: 22,
+                ),
+              ),
+            ),
+          ),
+          _buildProfileHeader(user),
+          const Divider(color: Colors.white12, height: 1),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              itemCount: _categories.length,
+              itemBuilder: (context, index) {
+                final isSelected = _selectedCategoryIndex == index;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  child: InkWell(
+                    onTap: () => setState(() => _selectedCategoryIndex = index),
+                    borderRadius: BorderRadius.circular(8),
+                    hoverColor: Colors.white.withOpacity(0.05),
+                    splashColor: Colors.transparent,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: isSelected ? NivioTheme.accentColorOf(context).withOpacity(0.15) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        border: isSelected 
+                            ? Border.all(color: NivioTheme.accentColorOf(context).withOpacity(0.5)) 
+                            : Border.all(color: Colors.transparent),
+                      ),
+                      child: AnimatedDefaultTextStyle(
+                        duration: const Duration(milliseconds: 200),
+                        style: TextStyle(
+                          color: isSelected ? NivioTheme.netflixWhite : Colors.white60,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 15,
+                        ),
+                        child: Text(_categories[index]),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopContentArea(User user) {
+    return Padding(
+      padding: const EdgeInsets.all(32.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _categories[_selectedCategoryIndex],
+            style: const TextStyle(
+              color: NivioTheme.netflixWhite,
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Expanded(
+            child: PageTransitionSwitcher(
+              duration: const Duration(milliseconds: 300),
+              transitionBuilder: (child, animation, secondaryAnimation) {
+                return FadeThroughTransition(
+                  animation: animation,
+                  secondaryAnimation: secondaryAnimation,
+                  child: child,
+                );
+              },
+              child: _buildDesktopCategoryContent(user, _selectedCategoryIndex),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopCategoryContent(User user, int index) {
+    // We duplicate the variables here because we didn't extract them.
+    final watchlist = ref.watch(watchlistProvider);
+    final historyAsync = ref.watch(watchHistoryProvider);
+    final languagePrefs = ref.watch(languagePreferencesProvider);
+    final playbackSpeed = ref.watch(playbackSpeedProvider);
+    final videoQuality = ref.watch(videoQualityProvider);
+    final preferredAudio = ref.watch(preferredAudioLanguageProvider);
+    final preferredSubtitle = ref.watch(preferredSubtitleLanguageProvider);
+    final episodeCheckEnabled = ref.watch(episodeCheckEnabledProvider);
+    final videoDebanding = ref.watch(videoDebandingProvider);
+    final subtitleFontSize = ref.watch(subtitleFontSizeProvider);
+    final subtitleBackground = ref.watch(subtitleBackgroundProvider);
+    final subtitleOutline = ref.watch(subtitleOutlineProvider);
+    final appAccentKey = ref.watch(appAccentColorProvider);
+
+    return SingleChildScrollView(
+      key: ValueKey(index),
+      child: Material(
+        color: Colors.white.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withOpacity(0.05)),
+          ),
+          child: _buildCategorySettingsList(
+          index,
+          user: user,
+          watchlist: watchlist,
+          historyAsync: historyAsync,
+          languagePrefs: languagePrefs,
+          playbackSpeed: playbackSpeed,
+          videoQuality: videoQuality,
+          preferredAudio: preferredAudio,
+          preferredSubtitle: preferredSubtitle,
+          episodeCheckEnabled: episodeCheckEnabled,
+          videoDebanding: videoDebanding,
+          subtitleFontSize: subtitleFontSize,
+          subtitleBackground: subtitleBackground,
+          subtitleOutline: subtitleOutline,
+          appAccentKey: appAccentKey,
+        ),
+      ),
+      ),
+    );
+  }
+
+  Widget _buildCategorySettingsList(
+    int index, {
+    required User user,
+    required List<dynamic> watchlist,
+    required AsyncValue<List<dynamic>> historyAsync,
+    required dynamic languagePrefs,
+    required double playbackSpeed,
+    required String videoQuality,
+    required String preferredAudio,
+    required String preferredSubtitle,
+    required bool episodeCheckEnabled,
+    required bool videoDebanding,
+    required double subtitleFontSize,
+    required String subtitleBackground,
+    required String subtitleOutline,
+    required String appAccentKey,
+  }) {
+    switch (index) {
+      case 0: // Profile & Activity
+        return Column(
+          children: [
+            historyAsync.when(
+              loading: () => _buildStatsPlaceholder(),
+              error: (error, stackTrace) => _buildStatsPlaceholder(),
+              data: (history) => _buildStatsRow(
+                watchlistCount: watchlist.length,
+                historyCount: history.length,
+                completedCount: history.where((entry) => entry.isCompleted).length,
+              ),
+            ),
+            const SizedBox(height: 24),
+            _buildSectionCard(
+              title: 'Recent Activity',
+              initiallyExpanded: true,
+              child: _buildRecentActivity(historyAsync),
+            ),
+            if (watchlist.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              _buildSectionCard(
+                title: 'Watchlist',
+                child: _buildWatchlistPreview(watchlist),
+              ),
+            ],
+          ],
+        );
+      case 1: // Playback
+        return Column(
+          children: [
+            _buildActionTile(
+              icon: Icons.speed_rounded,
+              title: 'Default Playback Speed',
+              subtitle: '${playbackSpeed}x',
+              onTap: _showPlaybackSpeedDialog,
+            ),
+            _buildActionTile(
+              icon: Icons.high_quality_rounded,
+              title: 'Preferred Video Quality',
+              subtitle: _qualityLabel(videoQuality),
+              onTap: _showVideoQualityDialog,
+            ),
+            _buildActionTile(
+              icon: Icons.audiotrack_rounded,
+              title: 'Preferred Audio Language',
+              subtitle: preferredAudio,
+              onTap: _showAudioLanguageDialog,
+            ),
+            _buildActionTile(
+              icon: Icons.subtitles_rounded,
+              title: 'Preferred Subtitle Language',
+              subtitle: preferredSubtitle,
+              onTap: _showSubtitleLanguageDialog,
+            ),
+            _buildSwitchTile(
+              icon: Icons.blur_linear_rounded,
+              title: 'Video Debanding',
+              subtitle: 'Reduces color banding (uses more battery)',
+              value: videoDebanding,
+              onChanged: (value) {
+                ref.read(videoDebandingProvider.notifier).setEnabled(value);
+              },
+            ),
+          ],
+        );
+      case 2: // Subtitle Appearance
+        return Column(
+          children: [
+            _buildActionTile(
+              icon: Icons.format_size_rounded,
+              title: 'Subtitle Font Size',
+              subtitle: subtitleFontSizeLabel(subtitleFontSize),
+              onTap: _showSubtitleFontSizeDialog,
+            ),
+            _buildActionTile(
+              icon: Icons.picture_in_picture_alt_rounded,
+              title: 'Subtitle Background',
+              subtitle: subtitleBackground,
+              onTap: _showSubtitleBackgroundDialog,
+            ),
+            _buildActionTile(
+              icon: Icons.text_fields_rounded,
+              title: 'Subtitle Text Style',
+              subtitle: subtitleOutline,
+              onTap: _showSubtitleOutlineDialog,
+            ),
+          ],
+        );
+      case 3: // Downloads
+        return Column(
+          children: [
+            _buildActionTile(
+              icon: Icons.audio_file_rounded,
+              title: 'Preferred Download Audio',
+              subtitle: ref.watch(preferredDownloadAudioLanguageProvider),
+              onTap: _showDownloadAudioLanguageDialog,
+            ),
+            _buildActionTile(
+              icon: Icons.subtitles_rounded,
+              title: 'Preferred Download Subtitle',
+              subtitle: ref.watch(preferredDownloadSubtitleLanguageProvider),
+              onTap: _showDownloadSubtitleLanguageDialog,
+            ),
+            _buildActionTile(
+              icon: Icons.speed_rounded,
+              title: 'Parallel Download Connections',
+              subtitle: '${ref.watch(downloadConcurrencyProvider)}',
+              onTap: _showDownloadConcurrencyDialog,
+            ),
+          ],
+        );
+      case 4: // Content Feed
+        return Column(
+          children: [
+            _buildActionTile(
+              icon: Icons.dashboard_customize_rounded,
+              title: 'Customize Home Layout',
+              subtitle: 'Rearrange the order of shelves on the home screen',
+              onTap: () => _showHomeLayoutDialog(context),
+            ),
+            _buildActionTile(
+              icon: Icons.source_rounded,
+              title: 'Preferred Anime Source',
+              subtitle: ref.watch(preferredAnimeSourceProvider),
+              onTap: _showPreferredAnimeSourceDialog,
+            ),
+            _buildActionTile(
+              icon: Icons.record_voice_over_rounded,
+              title: 'Preferred Anime Audio',
+              subtitle: languagePrefs.animePreferredAudio == 'sub' ? 'Subbed' : 'Dubbed',
+              onTap: _showAnimeAudioDialog,
+            ),
+            _buildSwitchTile(
+              icon: Icons.animation_rounded,
+              title: 'Anime',
+              subtitle: 'Show anime rows on home',
+              value: languagePrefs.showAnime,
+              onChanged: (value) => ref.read(languagePreferencesProvider.notifier).toggleAnime(value),
+            ),
+            _buildSwitchTile(
+              icon: Icons.movie_filter_rounded,
+              title: 'Tamil',
+              subtitle: 'Show Tamil rows on home',
+              value: languagePrefs.showTamil,
+              onChanged: (value) => ref.read(languagePreferencesProvider.notifier).toggleTamil(value),
+            ),
+            _buildSwitchTile(
+              icon: Icons.movie_creation_outlined,
+              title: 'Telugu',
+              subtitle: 'Show Telugu rows on home',
+              value: languagePrefs.showTelugu,
+              onChanged: (value) => ref.read(languagePreferencesProvider.notifier).toggleTelugu(value),
+            ),
+            _buildSwitchTile(
+              icon: Icons.theaters_rounded,
+              title: 'Hindi',
+              subtitle: 'Show Hindi rows on home',
+              value: languagePrefs.showHindi,
+              onChanged: (value) => ref.read(languagePreferencesProvider.notifier).toggleHindi(value),
+            ),
+            _buildSwitchTile(
+              icon: Icons.live_tv_rounded,
+              title: 'Korean',
+              subtitle: 'Show Korean rows on home',
+              value: languagePrefs.showKorean,
+              onChanged: (value) => ref.read(languagePreferencesProvider.notifier).toggleKorean(value),
+            ),
+            _buildSwitchTile(
+              icon: Icons.movie_outlined,
+              title: 'Malayalam',
+              subtitle: 'Show Malayalam rows on home',
+              value: languagePrefs.showMalayalam,
+              onChanged: (value) => ref.read(languagePreferencesProvider.notifier).toggleMalayalam(value),
+            ),
+          ],
+        );
+      case 5: // Episode Alerts
+        return Column(
+          children: [
+            _buildSwitchTile(
+              icon: Icons.notifications_active_outlined,
+              title: 'New Episode Alerts',
+              subtitle: episodeCheckEnabled ? 'Enabled' : 'Disabled',
+              value: episodeCheckEnabled,
+              onChanged: (value) => ref.read(episodeCheckEnabledProvider.notifier).setEnabled(value),
+            ),
+            _buildActionTile(
+              icon: Icons.notifications_none_rounded,
+              title: 'Open New Episodes',
+              subtitle: 'View recently detected episodes',
+              onTap: () => context.go('/library'),
+            ),
+            _buildActionTile(
+              icon: Icons.sync_rounded,
+              title: 'Check Now',
+              subtitle: 'Manually check for newly aired episodes',
+              onTap: _checkNow,
+            ),
+          ],
+        );
+      case 6: // App & Updates
+        return Column(
+          children: [
+            _buildActionTile(
+              icon: Icons.palette_outlined,
+              title: 'Theme Color',
+              subtitle: appAccentLabelFromKey(appAccentKey),
+              onTap: _showThemeColorDialog,
+            ),
+            FutureBuilder<String>(
+              future: _getAppVersionLabel(),
+              builder: (context, snapshot) {
+                return _buildActionTile(
+                  icon: Icons.info_outline_rounded,
+                  title: 'App Version',
+                  subtitle: snapshot.data ?? 'Loading...',
+                  onTap: _showAppVersionDialog,
+                );
+              },
+            ),
+            FutureBuilder<GitHubReleaseUpdateResult>(
+              future: GitHubReleaseUpdateService.checkForUpdate(),
+              builder: (context, snapshot) {
+                final result = snapshot.data;
+                final subtitle = result == null
+                    ? 'Checking GitHub releases...'
+                    : result.hasUpdate
+                        ? 'Latest ${result.latestVersion} available'
+                        : result.message;
+                return _buildActionTile(
+                  icon: Icons.download_for_offline_outlined,
+                  title: 'Check GitHub Release',
+                  subtitle: subtitle,
+                  onTap: _checkForGitHubRelease,
+                );
+              },
+            ),
+            FutureBuilder<String>(
+              future: _getAppVersionLabel(),
+              builder: (context, snapshot) {
+                return _buildActionTile(
+                  icon: Icons.new_releases_outlined,
+                  title: "What's New",
+                  subtitle: 'See changes in ${snapshot.data ?? 'this version'}',
+                  onTap: () => _showChangelog(context, ref),
+                );
+              },
+            ),
+            _buildActionTile(
+              icon: Icons.favorite_rounded,
+              title: 'Sponsor Nivio',
+              subtitle: 'Support the development on GitHub',
+              titleColor: Colors.pinkAccent,
+              onTap: () {
+                final sponsorUrl = dotenv.env['GITHUB_SPONSOR_URL'] ?? 'https://github.com/sponsors/nirmaleeswar30';
+                launchUrl(Uri.parse(sponsorUrl), mode: LaunchMode.externalApplication);
+              },
+            ),
+          ],
+        );
+      case 7: // Data & Account
+        return Column(
+          children: [
+            _buildActionTile(
+              icon: Icons.delete_sweep_outlined,
+              title: 'Clear Watch History',
+              subtitle: 'Remove all watch progress and activity',
+              onTap: _showClearHistoryDialog,
+            ),
+            _buildActionTile(
+              icon: Icons.cleaning_services_outlined,
+              title: 'Clear Cache',
+              subtitle: 'Clear cached API and image metadata',
+              onTap: _showClearCacheDialog,
+            ),
+            _buildActionTile(
+              icon: Icons.logout_rounded,
+              title: user.isAnonymous ? 'Exit Guest Mode' : 'Sign Out',
+              subtitle: user.email ?? 'Current session',
+              titleColor: NivioTheme.accentColorOf(context),
+              onTap: _showSignOutDialog,
+            ),
+          ],
+        );
+      default:
+        return const SizedBox();
+    }
+  }
+
+
 }
+
 
 class _BlinkingDot extends StatefulWidget {
   final Color color;
@@ -2891,7 +3397,5 @@ class _HomeLayoutBottomSheetState extends ConsumerState<_HomeLayoutBottomSheet> 
       ],
     );
   }
+
 }
-
-
-

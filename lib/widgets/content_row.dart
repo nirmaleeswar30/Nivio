@@ -335,17 +335,13 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
       ],
     );
 
+    void action() {
+      GoRouter.of(context).push('/media/${widget.tmdbId}?type=${widget.mediaType}');
+    }
+
     return CompositedTransformTarget(
       link: _layerLink,
-      child: OpenContainer(
-        tappable: true,
-        closedColor: Colors.transparent,
-        closedElevation: 0,
-        openColor: NivioTheme.netflixBlack,
-        openElevation: 0,
-        transitionDuration: const Duration(milliseconds: 400),
-        closedBuilder: (context, action) {
-          return MouseRegion(
+      child: MouseRegion(
             onEnter: (_) {
               _animationController.forward();
               if (isDesktop) {
@@ -477,17 +473,9 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
               );
             },
             child: imageWithTitle,
-              ),
-            ),
-          );
-        },
-        openBuilder: (context, action) {
-        return MediaDetailScreen(
-          mediaId: widget.tmdbId,
-          mediaType: widget.mediaType,
-        );
-      },
-    ),
-  );
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -498,6 +498,10 @@ class TmdbService {
   }
 
   Future<Map<String, String?>?> getMediaInfoByTitle(String title, {String? year}) async {
+    final cacheKey = 'media_info_by_title_${title}_$year';
+    final cached = await _cache.getRaw(cacheKey);
+    if (cached != null) return Map<String, String?>.from(cached);
+
     try {
       final searchResponse = await _dio.get('/3/search/multi', queryParameters: {
         'api_key': tmdbApiKey,
@@ -545,12 +549,16 @@ class TmdbService {
       final backdropPath = match['backdrop_path'] as String?;
       final posterPath = match['poster_path'] as String?;
       
-      return {
+      final result = {
         'logo_url': logoUrl,
         'backdrop_path': backdropPath != null ? getBackdropUrl(backdropPath, size: 'original') : null,
         'poster_path': posterPath != null ? getPosterUrl(posterPath, size: 'original') : null,
         'tmdb_id': id.toString(),
       };
+      
+      await _cache.set(cacheKey, result, ttl: CacheService.extraLongCache);
+      
+      return result;
     } catch (e) {
       return null;
     }
