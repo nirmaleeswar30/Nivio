@@ -21,6 +21,8 @@ import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/models/watchlist_item.dart';
 import 'package:nivio/models/download_item.dart';
+import 'package:nivio/widgets/download_prompt.dart';
+import 'package:animations/animations.dart';
 import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/dynamic_colors_provider.dart';
 import 'package:nivio/widgets/marquee_text.dart';
@@ -28,6 +30,8 @@ import 'package:nivio/providers/media_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
+import 'package:nivio/providers/watch_history_provider.dart';
+import 'package:nivio/models/watch_history.dart';
 import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/widgets/episode_list.dart';
@@ -460,6 +464,20 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     final colors = colorsAsync.valueOrNull ?? DynamicColors.fallback;
     final accentColor = colors.lightVibrant;
 
+    final allHistory = ref.watch(watchHistoryProvider).valueOrNull ?? [];
+    final mediaHistory = allHistory.cast<WatchHistory?>().firstWhere(
+          (h) => h?.tmdbId == media.id,
+          orElse: () => null,
+        );
+
+    final continueSeason = mediaHistory?.currentSeason ?? 1;
+    final continueEpisode = mediaHistory?.currentEpisode ?? 1;
+    final hasHistory = mediaHistory != null && mediaHistory.progressPercent > 0.0;
+    
+    final playLabel = media.mediaType == 'movie'
+        ? (hasHistory ? 'Continue' : 'Play')
+        : (hasHistory ? 'Continue S$continueSeason E$continueEpisode' : 'Play all episodes');
+
     final screenHeight = MediaQuery.sizeOf(context).height;
     final shortestSide = MediaQuery.sizeOf(context).shortestSide;
     final isTablet = shortestSide >= 600;
@@ -500,24 +518,17 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                     left: 0,
                     right: 0,
                     height: heroHeight + 220,
-                    child: ImageFiltered(
-                      imageFilter: ImageFilter.blur(
-                        sigmaX: 64,
-                        sigmaY: 64,
-                        tileMode: TileMode.decal,
-                      ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: RadialGradient(
-                            center: Alignment.topCenter,
-                            radius: 1.4,
-                            colors: [
-                              colors.dominant.withValues(alpha: 0.20),
-                              colors.dominant.withValues(alpha: 0.07),
-                              Colors.transparent,
-                            ],
-                            stops: const [0.0, 0.40, 1.0],
-                          ),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: RadialGradient(
+                          center: Alignment.topCenter,
+                          radius: 1.4,
+                          colors: [
+                            colors.dominant.withValues(alpha: 0.20),
+                            colors.dominant.withValues(alpha: 0.07),
+                            Colors.transparent,
+                          ],
+                          stops: const [0.0, 0.40, 1.0],
                         ),
                       ),
                     ),
@@ -532,26 +543,15 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            ShaderMask(
-                              shaderCallback: (rect) {
-                                return const LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [Colors.black, Colors.black, Colors.transparent],
-                                  stops: [0.0, 0.85, 1.0],
-                                ).createShader(rect);
-                              },
-                              blendMode: BlendMode.dstIn,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  image: backdropUrl.isNotEmpty
-                                      ? DecorationImage(
-                                          image: CachedNetworkImageProvider(backdropUrl),
-                                          fit: BoxFit.cover,
-                                        )
-                                      : null,
-                                  color: colors.darkMuted,
-                                ),
+                            Container(
+                              decoration: BoxDecoration(
+                                image: backdropUrl.isNotEmpty
+                                    ? DecorationImage(
+                                        image: CachedNetworkImageProvider(backdropUrl),
+                                        fit: BoxFit.cover,
+                                      )
+                                    : null,
+                                color: colors.darkMuted,
                               ),
                             ),
                             // Vignette overlay
@@ -650,6 +650,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                             imageUrl: posterUrl,
                                             height: heroHeight * 0.62,
                                             fit: BoxFit.cover,
+                                            memCacheWidth: 400,
                                             fadeInDuration: Duration.zero,
                                             fadeOutDuration: Duration.zero,
                                           ),
@@ -707,18 +708,16 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                             children: [
                                               _playAllButton(
                                                 accentColor: accentColor,
-                                                label: media.mediaType == 'movie'
-                                                    ? 'Play'
-                                                    : 'Play all episodes',
+                                                label: playLabel,
                                                 onTap: () {
                                                   final season = (media.mediaType == 'tv' || media.mediaType == 'anime')
-                                                      ? ref.read(selectedSeasonProvider)
+                                                      ? continueSeason
                                                       : 1;
                                                   context.push(
                                                     _buildPlayerRoute(
                                                       media: media,
                                                       season: season,
-                                                      episode: 1,
+                                                      episode: continueEpisode,
                                                     ),
                                                   );
                                                 },
@@ -803,30 +802,34 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                               ),
                                               if (_trailerSource != null) ...[
                                                 const SizedBox(width: 12),
-                                                TextButton.icon(
-                                                  onPressed: () => _showTrailerPlayer(context),
-                                                  icon: Icon(
-                                                    Icons.play_circle_outline,
-                                                    size: 17,
-                                                    color: accentColor,
-                                                  ),
-                                                  label: Text(
-                                                    'Watch trailer',
-                                                    style: TextStyle(color: accentColor),
+                                                _AnimatedHoverScale(
+                                                  child: TextButton.icon(
+                                                    onPressed: () => _showTrailerPlayer(context),
+                                                    icon: Icon(
+                                                      Icons.play_circle_outline,
+                                                      size: 17,
+                                                      color: accentColor,
+                                                    ),
+                                                    label: Text(
+                                                      'Watch trailer',
+                                                      style: TextStyle(color: accentColor),
+                                                    ),
                                                   ),
                                                 ),
                                               ],
                                               const SizedBox(width: 12),
-                                              TextButton.icon(
-                                                onPressed: () => _openWatchPartyHub(media),
-                                                icon: Icon(
-                                                  PhosphorIconsRegular.users,
-                                                  size: 17,
-                                                  color: accentColor,
-                                                ),
-                                                label: Text(
-                                                  'Watch together',
-                                                  style: TextStyle(color: accentColor),
+                                              _AnimatedHoverScale(
+                                                child: TextButton.icon(
+                                                  onPressed: () => _openWatchPartyHub(media),
+                                                  icon: Icon(
+                                                    PhosphorIconsRegular.users,
+                                                    size: 17,
+                                                    color: accentColor,
+                                                  ),
+                                                  label: Text(
+                                                    'Watch together',
+                                                    style: TextStyle(color: accentColor),
+                                                  ),
                                                 ),
                                               ),
                                               const SizedBox(width: 12),
@@ -898,20 +901,18 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                   Expanded(
                                     child: _playAllButton(
                                       accentColor: accentColor,
-                                      label: media.mediaType == 'movie'
-                                          ? 'Play'
-                                          : 'Play all episodes',
+                                      label: playLabel,
                                       onTap: () {
                                         final season =
                                             (media.mediaType == 'tv' ||
                                                 media.mediaType == 'anime')
-                                            ? ref.read(selectedSeasonProvider)
+                                            ? continueSeason
                                             : 1;
                                         context.push(
                                           _buildPlayerRoute(
                                             media: media,
                                             season: season,
-                                            episode: 1,
+                                            episode: continueEpisode,
                                           ),
                                         );
                                       },
@@ -1041,31 +1042,42 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                   Row(
                                     children: [
                                       if (_trailerSource != null) ...[
-                                        TextButton.icon(
-                                          onPressed: () =>
-                                              _showTrailerPlayer(context),
+                                        const SizedBox(width: 16),
+                                        _AnimatedHoverScale(
+                                          child: TextButton.icon(
+                                            onPressed: () =>
+                                                _showTrailerPlayer(context),
+                                            icon: Icon(
+                                              Icons.play_circle_outline,
+                                              size: 18,
+                                              color: accentColor,
+                                            ),
+                                            label: Text(
+                                              'Watch trailer',
+                                              style: TextStyle(
+                                                color: accentColor,
+                                                fontSize: 15,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                      const SizedBox(width: 16),
+                                      _AnimatedHoverScale(
+                                        child: TextButton.icon(
+                                          onPressed: () => _openWatchPartyHub(media),
                                           icon: Icon(
-                                            Icons.play_circle_outline,
-                                            size: 17,
+                                            PhosphorIconsRegular.users,
+                                            size: 18,
                                             color: accentColor,
                                           ),
                                           label: Text(
-                                            'Watch trailer',
-                                            style: TextStyle(color: accentColor),
+                                            'Watch together',
+                                            style: TextStyle(
+                                              color: accentColor,
+                                              fontSize: 15,
+                                            ),
                                           ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                      ],
-                                      TextButton.icon(
-                                        onPressed: () => _openWatchPartyHub(media),
-                                        icon: Icon(
-                                          PhosphorIconsRegular.users,
-                                          size: 17,
-                                          color: accentColor,
-                                        ),
-                                        label: Text(
-                                          'Watch together',
-                                          style: TextStyle(color: accentColor),
                                         ),
                                       ),
                                     ],
@@ -1143,49 +1155,23 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     required VoidCallback onTap,
     double size = 44,
   }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(size / 2),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 9, sigmaY: 9),
-        child: Material(
-          color: const Color(0x26FFFFFF),
-          shape: const CircleBorder(
-            side: BorderSide(color: Color(0x33FFFFFF), width: 1),
-          ),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: onTap,
-            child: SizedBox(
-              width: size,
-              height: size,
-              child: Center(child: icon),
-            ),
-          ),
-        ),
-      ),
-    );
+    return _HoverGlassButton(icon: icon, onTap: onTap, size: size);
   }
 
   Widget _glassTag(String label) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: const Color(0x26FFFFFF),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: const Color(0x4DFFFFFF)),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: NivioTheme.netflixWhite,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0x26FFFFFF),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0x4DFFFFFF)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: NivioTheme.netflixWhite,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -1211,13 +1197,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     required VoidCallback onTap,
     Color iconColor = NivioTheme.netflixWhite,
   }) {
-    return IconButton(
-      onPressed: onTap,
-      icon: icon,
-      splashRadius: 24,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-    );
+    return _HoverSlideIconButton(icon: icon, onTap: onTap);
   }
 
   Widget _playAllButton({
@@ -1225,45 +1205,38 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     required String label,
     required VoidCallback onTap,
   }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-              decoration: BoxDecoration(
-                color: NivioTheme.glassFill,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: accentColor.withValues(alpha: 0.65)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  PhosphorIcon(
-                    PhosphorIconsFill.play,
+    return _AnimatedHoverScale(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            decoration: BoxDecoration(
+              color: NivioTheme.glassFill,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: accentColor.withValues(alpha: 0.65)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                PhosphorIcon(
+                  PhosphorIconsFill.play,
+                  color: accentColor,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: TextStyle(
                     color: accentColor,
-                    size: 16,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
                   ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: accentColor,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -1318,6 +1291,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                       ? profilePath
                                       : tmdbService.getPosterUrl(profilePath),
                                   fit: BoxFit.cover,
+                                  memCacheWidth: 200,
                                 )
                               : const Icon(
                                   Icons.person,
@@ -1506,8 +1480,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   }
 
   void _showDownloadDialog(SearchResult media, int providerIndex) {
-    showDialog(
+    showModal(
       context: context,
+      configuration: const FadeScaleTransitionConfiguration(),
       builder: (context) {
         return AlertDialog(
           backgroundColor: NivioTheme.netflixDarkGrey,
@@ -1918,7 +1893,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<int>(
+                      focusNode: FocusNode(canRequestFocus: false),
                       isDense: true,
+                      focusColor: Colors.transparent,
                       value: selectedSeason <= seriesInfo.seasons.length
                           ? selectedSeason
                           : 1,
@@ -1944,6 +1921,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                           .toList(),
                       onChanged: (value) {
                         if (value == null) return;
+                        FocusScope.of(context).unfocus();
                         ref.read(selectedSeasonProvider.notifier).state = value;
                         ref.read(selectedEpisodeProvider.notifier).state = 1;
                       },
@@ -2665,6 +2643,182 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
               ),
             ),
         ),
+    );
+  }
+}
+
+class _AnimatedHoverScale extends StatefulWidget {
+  final Widget child;
+  const _AnimatedHoverScale({required this.child});
+
+  @override
+  State<_AnimatedHoverScale> createState() => _AnimatedHoverScaleState();
+}
+
+class _AnimatedHoverScaleState extends State<_AnimatedHoverScale> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: AnimatedScale(
+        scale: _isHovered ? 1.1 : 1.0,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOutBack,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class _HoverGlowButton extends StatefulWidget {
+  final Color accentColor;
+  final String label;
+  final VoidCallback onTap;
+
+  const _HoverGlowButton({
+    required this.accentColor,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  State<_HoverGlowButton> createState() => _HoverGlowButtonState();
+}
+
+class _HoverGlowButtonState extends State<_HoverGlowButton> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            color: _isHovered ? widget.accentColor.withValues(alpha: 0.15) : NivioTheme.glassFill,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: widget.accentColor.withValues(alpha: _isHovered ? 1.0 : 0.65)),
+            boxShadow: _isHovered
+                ? [
+                    BoxShadow(
+                      color: widget.accentColor.withValues(alpha: 0.4),
+                      blurRadius: 12,
+                      spreadRadius: 2,
+                    )
+                  ]
+                : [],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              PhosphorIcon(
+                PhosphorIconsFill.play,
+                color: widget.accentColor,
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                widget.label,
+                style: TextStyle(
+                  color: widget.accentColor,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HoverSlideIconButton extends StatefulWidget {
+  final Widget icon;
+  final VoidCallback onTap;
+  
+  const _HoverSlideIconButton({required this.icon, required this.onTap});
+
+  @override
+  State<_HoverSlideIconButton> createState() => _HoverSlideIconButtonState();
+}
+
+class _HoverSlideIconButtonState extends State<_HoverSlideIconButton> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutBack,
+          transform: Matrix4.translationValues(0, _isHovered ? -4 : 0, 0),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: _isHovered ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
+          ),
+          child: widget.icon,
+        ),
+      ),
+    );
+  }
+}
+
+class _HoverGlassButton extends StatefulWidget {
+  final Widget icon;
+  final VoidCallback onTap;
+  final double size;
+
+  const _HoverGlassButton({required this.icon, required this.onTap, this.size = 44});
+
+  @override
+  State<_HoverGlassButton> createState() => _HoverGlassButtonState();
+}
+
+class _HoverGlassButtonState extends State<_HoverGlassButton> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+          width: widget.size,
+          height: widget.size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: _isHovered ? const Color(0x4DFFFFFF) : const Color(0x26FFFFFF),
+            border: Border.all(
+              color: _isHovered ? const Color(0x66FFFFFF) : const Color(0x33FFFFFF), 
+              width: 1
+            ),
+          ),
+          child: Center(child: widget.icon),
+        ),
+      ),
     );
   }
 }

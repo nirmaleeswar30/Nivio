@@ -3807,44 +3807,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     child: AnimatedOpacity(
                       opacity: 1.0,
                       duration: const Duration(milliseconds: 300),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: _skipIntro,
-                          borderRadius: BorderRadius.circular(6),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.95),
-                              borderRadius: BorderRadius.circular(4),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.3),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.skip_next_rounded, color: Colors.black87, size: 22),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Skip Intro',
-                                  style: TextStyle(
-                                    color: Colors.black87,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                      child: SkipIntroButton(
+                        onTap: _skipIntro,
                       ),
-                    ),
+
+                  ),
                   ),
                 // Skip Outro button
                 if (_isInOutroSegment && !isPipMode)
@@ -3854,9 +3821,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     child: AnimatedOpacity(
                       opacity: 1.0,
                       duration: const Duration(milliseconds: 300),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
+                      child: _PlayerHoverScale(
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
                           onTap: _skipOutro,
                           borderRadius: BorderRadius.circular(6),
                           child: Container(
@@ -3893,6 +3861,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       ),
                     ),
                   ),
+                ),
               ],
             ),
           ),
@@ -4352,6 +4321,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ),
               ),
             ),
+          // Back button (Desktop/Web fallback)
+          if (!Platform.isAndroid && !Platform.isIOS)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 16,
+              left: 16,
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                onPressed: _forceExitPlayer,
+              ),
+            ),
           // Content
           Center(
             child: Column(
@@ -4434,6 +4413,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ],
             ),
           ),
+          if (Platform.isLinux || Platform.isWindows || Platform.isMacOS)
+            Positioned(
+              top: 40,
+              left: 24,
+              child: _PlayerHoverScale(
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                  onPressed: _handleBackNavigation,
+                  tooltip: 'Go Back',
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -5484,4 +5475,98 @@ class _DummyState extends State<StatefulWidget> {
   Future<void> seekRelative(Duration a) async {}
   void togglePlayPause() {}
   void handleSkipIntro() {}
+}
+
+class _PlayerHoverScale extends StatefulWidget {
+  final Widget child;
+  const _PlayerHoverScale({required this.child});
+
+  @override
+  State<_PlayerHoverScale> createState() => _PlayerHoverScaleState();
+}
+
+class _PlayerHoverScaleState extends State<_PlayerHoverScale> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: AnimatedScale(
+        scale: _isHovered ? 1.05 : 1.0,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOutCubic,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class SkipIntroButton extends StatefulWidget {
+  final VoidCallback onTap;
+  const SkipIntroButton({super.key, required this.onTap});
+
+  @override
+  State<SkipIntroButton> createState() => _SkipIntroButtonState();
+}
+
+class _SkipIntroButtonState extends State<SkipIntroButton> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final accentColor = NivioTheme.accentColorOf(context);
+    
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+          padding: EdgeInsets.symmetric(
+            horizontal: _isHovered ? 26 : 22, 
+            vertical: 12,
+          ),
+          decoration: BoxDecoration(
+            color: _isHovered ? accentColor : Colors.white.withValues(alpha: 0.95),
+            borderRadius: BorderRadius.circular(6),
+            boxShadow: [
+              BoxShadow(
+                color: _isHovered ? accentColor.withValues(alpha: 0.4) : Colors.black.withValues(alpha: 0.3),
+                blurRadius: _isHovered ? 16 : 8,
+                spreadRadius: _isHovered ? 2 : 0,
+                offset: Offset(0, _isHovered ? 4 : 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.skip_next_rounded, 
+                color: _isHovered ? Colors.white : Colors.black87, 
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 300),
+                style: TextStyle(
+                  color: _isHovered ? Colors.white : Colors.black87,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: _isHovered ? 1.0 : 0.5,
+                ),
+                child: const Text('Skip Intro'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

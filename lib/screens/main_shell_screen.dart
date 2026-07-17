@@ -12,9 +12,10 @@ import 'package:nivio/widgets/changelog_dialog.dart';
 
 import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
+import 'package:animations/animations.dart';
 import 'package:nivio/providers/home_providers.dart';
 import 'package:nivio/services/schedule_api_service.dart';
-
+import '../main.dart';
 class MainShellScreen extends ConsumerStatefulWidget {
   final StatefulNavigationShell navigationShell;
 
@@ -58,8 +59,9 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
       if (!mounted) return;
 
       if (result.hasUpdate) {
-        showDialog<void>(
+        showModal<void>(
           context: context,
+          configuration: const FadeScaleTransitionConfiguration(),
           builder: (ctx) {
             return ChangelogDialog(
               version: result.latestVersion,
@@ -79,6 +81,19 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   }
 
   void _onTap(int index) {
+    if (index == widget.navigationShell.currentIndex) {
+      // Pop native modal routes (like OpenContainer) for the current branch
+      final navigatorKeys = [
+        homeNavigatorKey,
+        libraryNavigatorKey,
+        iptvNavigatorKey,
+        partyNavigatorKey,
+      ];
+      if (index < navigatorKeys.length) {
+        navigatorKeys[index].currentState?.popUntil((route) => route.isFirst);
+      }
+    }
+
     widget.navigationShell.goBranch(
       index,
       initialLocation: index == widget.navigationShell.currentIndex,
@@ -151,9 +166,6 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeInOut,
       width: 56,
-      decoration: BoxDecoration(
-        color: _scrolled ? Color.lerp(NivioTheme.netflixBlack, dynamicColor, 0.15)! : Colors.transparent,
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -249,32 +261,31 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     required String label,
     required bool isActive,
   }) {
-    return Tooltip(
-      message: label,
-      child: Align(
-        alignment: isActive ? Alignment.centerLeft : Alignment.center,
-        child: InkWell(
-          onTap: () => _onTap(index),
-          borderRadius: isActive
-              ? const BorderRadius.only(
-                  topRight: Radius.circular(20),
-                  bottomRight: Radius.circular(20),
-                )
-              : BorderRadius.circular(8),
-          child: Container(
-            width: isActive ? 48 : 40,
-            height: 40,
-            padding: isActive ? const EdgeInsets.only(left: 8) : EdgeInsets.zero,
-            decoration: BoxDecoration(
-              color: isActive ? Colors.white : Colors.transparent,
-              borderRadius: isActive
-                  ? const BorderRadius.only(
-                      topRight: Radius.circular(20),
-                      bottomRight: Radius.circular(20),
-                    )
-                  : BorderRadius.circular(8),
-            ),
-            child: Center(
+    return Align(
+      alignment: isActive ? Alignment.centerLeft : Alignment.center,
+      child: InkWell(
+        onTap: () => _onTap(index),
+        borderRadius: isActive
+            ? const BorderRadius.only(
+                topRight: Radius.circular(20),
+                bottomRight: Radius.circular(20),
+              )
+            : BorderRadius.circular(8),
+        child: Container(
+          width: isActive ? 48 : 40,
+          height: 40,
+          padding: isActive ? const EdgeInsets.only(left: 8) : EdgeInsets.zero,
+          decoration: BoxDecoration(
+            color: isActive ? Colors.white : Colors.transparent,
+            borderRadius: isActive
+                ? const BorderRadius.only(
+                    topRight: Radius.circular(20),
+                    bottomRight: Radius.circular(20),
+                  )
+                : BorderRadius.circular(8),
+          ),
+          child: Center(
+            child: _AnimatedIconWrapper(
               child: PhosphorIcon(
                 isActive ? activeIcon : icon,
                 color: isActive ? NivioTheme.netflixBlack : Colors.white,
@@ -296,38 +307,37 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     required bool isActive,
     String? photoUrl,
   }) {
-    return Tooltip(
-      message: label,
-      child: Align(
-        alignment: isActive ? Alignment.centerLeft : Alignment.center,
-        child: InkWell(
-          onTap: () {
-            if (GoRouterState.of(context).matchedLocation.startsWith(route)) {
-              context.go('/home');
-            } else {
-              context.push(route);
-            }
-          },
-          borderRadius: isActive
-              ? const BorderRadius.only(
-                  topRight: Radius.circular(20),
-                  bottomRight: Radius.circular(20),
-                )
-              : BorderRadius.circular(8),
-          child: Container(
-            width: isActive ? 48 : 40,
-            height: 40,
-            padding: isActive ? const EdgeInsets.only(left: 8) : EdgeInsets.zero,
-            decoration: BoxDecoration(
-              color: isActive ? Colors.white : Colors.transparent,
-              borderRadius: isActive
-                  ? const BorderRadius.only(
-                      topRight: Radius.circular(20),
-                      bottomRight: Radius.circular(20),
-                    )
-                  : BorderRadius.circular(8),
-            ),
-            child: Center(
+    return Align(
+      alignment: isActive ? Alignment.centerLeft : Alignment.center,
+      child: InkWell(
+        onTap: () {
+          if (GoRouterState.of(context).matchedLocation.startsWith(route)) {
+            context.go('/home');
+          } else {
+            context.push(route);
+          }
+        },
+        borderRadius: isActive
+            ? const BorderRadius.only(
+                topRight: Radius.circular(20),
+                bottomRight: Radius.circular(20),
+              )
+            : BorderRadius.circular(8),
+        child: Container(
+          width: isActive ? 48 : 40,
+          height: 40,
+          padding: isActive ? const EdgeInsets.only(left: 8) : EdgeInsets.zero,
+          decoration: BoxDecoration(
+            color: isActive ? Colors.white : Colors.transparent,
+            borderRadius: isActive
+                ? const BorderRadius.only(
+                    topRight: Radius.circular(20),
+                    bottomRight: Radius.circular(20),
+                  )
+                : BorderRadius.circular(8),
+          ),
+          child: Center(
+            child: _AnimatedIconWrapper(
               child: photoUrl != null
                   ? CircleAvatar(
                       radius: 14,
@@ -596,6 +606,32 @@ class _TitleBarButtonState extends State<_TitleBarButton> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _AnimatedIconWrapper extends StatefulWidget {
+  final Widget child;
+  const _AnimatedIconWrapper({required this.child});
+
+  @override
+  State<_AnimatedIconWrapper> createState() => _AnimatedIconWrapperState();
+}
+
+class _AnimatedIconWrapperState extends State<_AnimatedIconWrapper> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: AnimatedScale(
+        scale: _isHovered ? 1.25 : 1.0,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOutBack,
+        child: widget.child,
       ),
     );
   }

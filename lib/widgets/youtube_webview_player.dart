@@ -59,6 +59,17 @@ class YouTubeWebViewPlayerState extends State<YouTubeWebViewPlayer> {
   InAppWebViewController? _controller;
   bool _isReady = false;
 
+  @override
+  void dispose() {
+    if (_isReady && _controller != null) {
+      try {
+        _controller!.evaluateJavascript(source: 'if(player) player.stopVideo();');
+        _controller!.loadUrl(urlRequest: URLRequest(url: WebUri('about:blank')));
+      } catch (_) {}
+    }
+    super.dispose();
+  }
+
   String _buildHtml() {
     final autoplay = widget.autoPlay ? 1 : 0;
     final controls = widget.showControls ? 1 : 0;

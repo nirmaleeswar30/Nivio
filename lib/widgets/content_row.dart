@@ -11,6 +11,8 @@ import 'package:nivio/core/theme.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/widgets/hover_preview_card.dart';
+import 'package:animations/animations.dart';
+import 'package:nivio/screens/media_detail_screen.dart';
 
 class ContentRow extends StatelessWidget {
   final String title;
@@ -87,12 +89,18 @@ class ContentRow extends StatelessWidget {
                 return RepaintBoundary(
                   child: Padding(
                      padding: EdgeInsets.symmetric(horizontal: isDesktop ? 16 : 4),
-                     child: _AnimatedPosterCard(
-                       posterPath: posterPath,
-                       backdropPath: backdropPath,
-                       tmdbId: tmdbId,
-                       mediaType: mediaType,
-                       title: title,
+                     child: OpenContainer(
+                       closedBuilder: (context, action) => _AnimatedPosterCard(
+                         posterPath: posterPath,
+                         backdropPath: backdropPath,
+                         tmdbId: tmdbId,
+                         mediaType: mediaType,
+                         title: title,
+                       ),
+                       openBuilder: (context, action) => MediaDetailScreen(
+                         mediaId: tmdbId,
+                         mediaType: mediaType,
+                       ),
                      ),
                   ),
                 );
@@ -156,7 +164,7 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
     );
   }
 
-  void _showOverlay() {
+  void _showOverlay([VoidCallback? onPlayAction]) {
     if (!mounted) return;
     
     // Dismiss any existing overlay first
@@ -192,6 +200,7 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
               backdropPath: widget.backdropPath,
               posterPath: widget.posterPath,
               onDismiss: _dismissOverlay,
+              onPlayAction: onPlayAction,
               onScroll: (event) {
                 try {
                   if (event.scrollDelta.dx != 0) {
@@ -328,55 +337,65 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
 
     return CompositedTransformTarget(
       link: _layerLink,
-      child: MouseRegion(
-        onEnter: (_) {
-          _animationController.forward();
-          if (isDesktop) {
-            _dismissTimer?.cancel();
-            if (_activeCardState == this) return;
-            _hoverTimer?.cancel();
-            
-            // Prefetch details and trailer URL immediately on hover enter
-            unawaited(HoverPreviewCard.prefetch(ref, widget.tmdbId, widget.mediaType, widget.title));
-            
-            _hoverTimer = Timer(const Duration(milliseconds: 500), () {
-              _showOverlay();
-            });
-          }
-        },
-        onExit: (event) {
-          _animationController.reverse();
-          if (isDesktop) {
-            _hoverTimer?.cancel();
-            if (_activeCardState == this) {
-              // Check if cursor is inside the hover overlay bounds
-              final renderBox = _cardKey.currentContext?.findRenderObject() as RenderBox?;
-              if (renderBox != null) {
-                final position = renderBox.localToGlobal(Offset.zero);
-                final size = renderBox.size;
-                final hoverWidth = 250.0;
-                final hoverHeight = 260.0;
-                final left = (position.dx + size.width / 2) - hoverWidth / 2;
-                final top = (position.dy + size.height / 2) - hoverHeight / 2;
-                final hoverRect = Rect.fromLTWH(left, top, hoverWidth, hoverHeight);
+      child: OpenContainer(
+        tappable: true,
+        closedColor: Colors.transparent,
+        closedElevation: 0,
+        openColor: NivioTheme.netflixBlack,
+        openElevation: 0,
+        transitionDuration: const Duration(milliseconds: 400),
+        closedBuilder: (context, action) {
+          return MouseRegion(
+            onEnter: (_) {
+              _animationController.forward();
+              if (isDesktop) {
+                _dismissTimer?.cancel();
+                if (_activeCardState == this) return;
+                _hoverTimer?.cancel();
                 
-                if (hoverRect.contains(event.position)) {
-                  // Cursor is over the hover preview overlay, don't dismiss
-                  return;
+                // Prefetch details and trailer URL immediately on hover enter
+                unawaited(HoverPreviewCard.prefetch(ref, widget.tmdbId, widget.mediaType, widget.title));
+                
+                _hoverTimer = Timer(const Duration(milliseconds: 500), () {
+                  _showOverlay(action);
+                });
+              }
+            },
+            onExit: (event) {
+              _animationController.reverse();
+              if (isDesktop) {
+                _hoverTimer?.cancel();
+                if (_activeCardState == this) {
+                  // Check if cursor is inside the hover overlay bounds
+                  final renderBox = _cardKey.currentContext?.findRenderObject() as RenderBox?;
+                  if (renderBox != null) {
+                    final position = renderBox.localToGlobal(Offset.zero);
+                    final size = renderBox.size;
+                    final hoverWidth = 250.0;
+                    final hoverHeight = 260.0;
+                    final left = (position.dx + size.width / 2) - hoverWidth / 2;
+                    final top = (position.dy + size.height / 2) - hoverHeight / 2;
+                    final hoverRect = Rect.fromLTWH(left, top, hoverWidth, hoverHeight);
+                    
+                    if (hoverRect.contains(event.position)) {
+                      // Cursor is over the hover preview overlay, don't dismiss
+                      return;
+                    }
+                  }
+      
+                  _dismissTimer?.cancel();
+                  _dismissTimer = Timer(const Duration(milliseconds: 200), () {
+                    _dismissOverlay();
+                  });
                 }
               }
-  
-              _dismissTimer?.cancel();
-              _dismissTimer = Timer(const Duration(milliseconds: 200), () {
-                _dismissOverlay();
-              });
-            }
-          }
-        },
-        child: GestureDetector(
-          onTap: () =>
-              context.push('/media/${widget.tmdbId}?type=${widget.mediaType}'),
-          child: AnimatedBuilder(
+            },
+            child: GestureDetector(
+              onTap: () {
+                _dismissActiveOverlay();
+                action();
+              },
+              child: AnimatedBuilder(
             animation: _animationController,
             builder: (context, child) {
               return Transform.scale(
@@ -458,9 +477,17 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
               );
             },
             child: imageWithTitle,
-          ),
-        ),
-      ),
-    );
+              ),
+            ),
+          );
+        },
+        openBuilder: (context, action) {
+        return MediaDetailScreen(
+          mediaId: widget.tmdbId,
+          mediaType: widget.mediaType,
+        );
+      },
+    ),
+  );
   }
 }

@@ -543,17 +543,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _desktopOutlineButton({required Widget icon, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: Colors.black26,
-          border: Border.all(color: Colors.white24, width: 1.5),
-          shape: BoxShape.circle,
+    return _AnimatedHoverScale(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: Colors.black26,
+            border: Border.all(color: Colors.white24, width: 1.5),
+            shape: BoxShape.circle,
+          ),
+          child: Center(child: icon),
         ),
-        child: Center(child: icon),
       ),
     );
   }
@@ -735,30 +737,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
           return Stack(
             children: [
-              ShaderMask(
-                shaderCallback: (rect) {
-                  return const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.black, Colors.black, Colors.transparent],
-                    stops: [0.0, 0.85, 1.0],
-                  ).createShader(rect);
-                },
-                blendMode: BlendMode.dstIn,
-                child: AnimatedOpacity(
-                  opacity: 1,
-                  duration: const Duration(milliseconds: 500),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      image: backdropUrl != null
-                          ? DecorationImage(
-                              image: CachedNetworkImageProvider(backdropUrl),
-                              fit: BoxFit.cover,
-                            )
-                          : null,
-                      color: backdropUrl == null ? const Color(0xFF2F2F2F) : null,
-                    ),
-                  ),
+              Container(
+                decoration: BoxDecoration(
+                  image: backdropUrl != null
+                      ? DecorationImage(
+                          image: CachedNetworkImageProvider(backdropUrl),
+                          fit: BoxFit.cover,
+                        )
+                      : null,
+                  color: backdropUrl == null ? const Color(0xFF2F2F2F) : null,
                 ),
               ),
               // Vignette overlay
@@ -836,27 +823,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 const SizedBox(height: 24),
                                 Row(
                                   children: [
-                                    ElevatedButton.icon(
-                                      onPressed: () => context.push('/media/$tmdbId?type=$mediaType'),
-                                      icon: PhosphorIcon(
-                                        PhosphorIconsFill.play,
-                                        color: slideColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
-                                        size: 15,
-                                      ),
-                                      label: Text(
-                                        'Watch Now',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
+                                    _AnimatedHoverScale(
+                                      child: ElevatedButton.icon(
+                                        onPressed: () => context.push('/media/$tmdbId?type=$mediaType'),
+                                        icon: PhosphorIcon(
+                                          PhosphorIconsFill.play,
                                           color: slideColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+                                          size: 15,
                                         ),
-                                      ),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: slideColor,
-                                        elevation: 0,
-                                        padding: const EdgeInsets.symmetric(horizontal: 42, vertical: 19),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(6),
+                                        label: Text(
+                                          'Watch Now',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                            color: slideColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+                                          ),
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: slideColor,
+                                          elevation: 0,
+                                          padding: const EdgeInsets.symmetric(horizontal: 42, vertical: 19),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -957,21 +946,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 onTap: () => _toggleFeaturedWatchlist(content),
                               ),
                               const SizedBox(width: 10),
-                              ElevatedButton.icon(
-                                onPressed: () => context.push('/media/$tmdbId?type=$mediaType'),
-                                icon: const PhosphorIcon(
-                                  PhosphorIconsFill.play,
-                                  color: Colors.black,
-                                  size: 16,
-                                ),
-                                label: const Text('Play'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.white,
-                                  foregroundColor: Colors.black,
-                                  elevation: 0,
-                                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
+                              _AnimatedHoverScale(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => context.push('/media/$tmdbId?type=$mediaType'),
+                                  icon: const PhosphorIcon(
+                                    PhosphorIconsFill.play,
+                                    color: Colors.black,
+                                    size: 16,
+                                  ),
+                                  label: const Text('Play'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: Colors.black,
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -998,17 +989,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   children: List.generate(
                     items.length,
                     (dotIndex) {
-                      final isActive = _currentBannerIndex == dotIndex;
-                      final activeColor = _ambientColors[_currentBannerIndex] ?? NivioTheme.accentColorOf(context);
-                      return AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                        width: isActive ? 24 : 12,
-                        height: 3,
-                        decoration: BoxDecoration(
-                          color: isActive ? activeColor : Colors.white24,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
+                      return _AnimatedProgressBarDot(
+                        isActive: _currentBannerIndex == dotIndex,
+                        activeColor: _ambientColors[_currentBannerIndex] ?? NivioTheme.accentColorOf(context),
                       );
                     },
                   ),
@@ -1206,17 +1189,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return widgets;
   }
 
-  Widget _smallSquareButton({
-    required Widget icon,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: const Color(0x30FFFFFF),
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
+  Widget _smallSquareButton({required Widget icon, required VoidCallback onTap}) {
+    return _AnimatedHoverScale(
+      child: Material(
+        color: Colors.white12,
         borderRadius: BorderRadius.circular(10),
-        child: SizedBox(width: 38, height: 38, child: Center(child: icon)),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(width: 38, height: 38, child: Center(child: icon)),
+        ),
       ),
     );
   }
@@ -1284,5 +1266,77 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (value is num) return value.toInt();
     if (value is String) return int.tryParse(value);
     return null;
+  }
+}
+
+class _AnimatedHoverScale extends StatefulWidget {
+  final Widget child;
+  const _AnimatedHoverScale({required this.child});
+
+  @override
+  State<_AnimatedHoverScale> createState() => _AnimatedHoverScaleState();
+}
+
+class _AnimatedHoverScaleState extends State<_AnimatedHoverScale> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: AnimatedScale(
+        scale: _isHovered ? 1.1 : 1.0,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOutBack,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class _AnimatedProgressBarDot extends StatelessWidget {
+  final bool isActive;
+  final Color activeColor;
+
+  const _AnimatedProgressBarDot({
+    required this.isActive,
+    required this.activeColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        width: isActive ? 24 : 12,
+        height: 3,
+        decoration: BoxDecoration(
+          color: Colors.white24,
+          borderRadius: BorderRadius.circular(2),
+        ),
+        child: isActive
+            ? TweenAnimationBuilder<double>(
+                key: ValueKey(isActive), // Resets animation when becoming active
+                tween: Tween<double>(begin: 0.0, end: 1.0),
+                duration: const Duration(seconds: 14), // Matches the banner timer
+                builder: (context, value, child) {
+                  return FractionallySizedBox(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: value,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: activeColor,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  );
+                },
+              )
+            : null,
+      ),
+    );
   }
 }

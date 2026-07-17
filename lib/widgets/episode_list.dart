@@ -297,9 +297,10 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
     final isUnaired = _isUnaired(episode.airDate);
     final relDate = _relativeDate(episode.airDate);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Stack(
+    return _HoverEpisodeCardWrapper(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Stack(
         clipBehavior: Clip.none,
         children: [
           if (!isUnaired)
@@ -365,6 +366,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                                       width: 140,
                                       height: 90,
                                       fit: BoxFit.cover,
+                                      memCacheWidth: 280,
                                       placeholder: (context, url) =>
                                           _thumbPlaceholder(),
                                       errorWidget: (context, url, error) =>
@@ -452,9 +454,11 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                             }
                           }
                           
-                          return IconButton(
-                            icon: const Icon(Icons.file_download, color: Colors.white70),
-                            onPressed: () => _downloadEpisode(episode),
+                          return _HoverIconScale(
+                            child: IconButton(
+                              icon: const Icon(Icons.file_download, color: Colors.white70),
+                              onPressed: () => _downloadEpisode(episode),
+                            ),
                           );
                         },
                       ),
@@ -466,7 +470,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
           ),
         ],
       ),
-    );
+    ));
   }
 
   bool _isUnaired(String? airDate) {
@@ -625,4 +629,56 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
     color: const Color(0x33262C3D),
     child: Icon(Icons.ondemand_video, color: NivioTheme.netflixGrey, size: 24),
   );
+}
+
+class _HoverEpisodeCardWrapper extends StatefulWidget {
+  final Widget child;
+  const _HoverEpisodeCardWrapper({required this.child});
+
+  @override
+  State<_HoverEpisodeCardWrapper> createState() => _HoverEpisodeCardWrapperState();
+}
+
+class _HoverEpisodeCardWrapperState extends State<_HoverEpisodeCardWrapper> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: AnimatedScale(
+        scale: _isHovered ? 1.015 : 1.0,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class _HoverIconScale extends StatefulWidget {
+  final Widget child;
+  const _HoverIconScale({required this.child});
+
+  @override
+  State<_HoverIconScale> createState() => _HoverIconScaleState();
+}
+
+class _HoverIconScaleState extends State<_HoverIconScale> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: AnimatedScale(
+        scale: _isHovered ? 1.15 : 1.0,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
+    );
+  }
 }

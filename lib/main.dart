@@ -12,6 +12,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:animations/animations.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -213,6 +214,12 @@ class _AuthStateNotifier extends ChangeNotifier {
   }
 }
 
+// Branch Navigator Keys
+final homeNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'home');
+final libraryNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'library');
+final iptvNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'iptv');
+final partyNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'party');
+
 // Router configuration
 final appRouter = GoRouter(
   initialLocation: '/home',
@@ -243,7 +250,12 @@ final appRouter = GoRouter(
         opaque: false,
         transitionDuration: const Duration(milliseconds: 300),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(opacity: animation, child: child);
+          return SharedAxisTransition(
+            animation: animation,
+            secondaryAnimation: secondaryAnimation,
+            transitionType: SharedAxisTransitionType.scaled,
+            child: child,
+          );
         },
         child: const SearchScreen(),
       ),
@@ -255,6 +267,7 @@ final appRouter = GoRouter(
           MainShellScreen(navigationShell: navigationShell),
       branches: [
         StatefulShellBranch(
+          navigatorKey: homeNavigatorKey,
           routes: [
             GoRoute(
               path: '/home',
@@ -263,6 +276,7 @@ final appRouter = GoRouter(
           ],
         ),
         StatefulShellBranch(
+          navigatorKey: libraryNavigatorKey,
           routes: [
             GoRoute(
               path: '/library',
@@ -277,6 +291,7 @@ final appRouter = GoRouter(
           ],
         ),
         StatefulShellBranch(
+          navigatorKey: iptvNavigatorKey,
           routes: [
             GoRoute(
               path: '/iptv',
@@ -285,6 +300,7 @@ final appRouter = GoRouter(
           ],
         ),
         StatefulShellBranch(
+          navigatorKey: partyNavigatorKey,
           routes: [
             GoRoute(
               path: '/party',
@@ -350,7 +366,12 @@ final appRouter = GoRouter(
           opaque: false,
           transitionDuration: const Duration(milliseconds: 300),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(opacity: animation, child: child);
+            return SharedAxisTransition(
+              animation: animation,
+              secondaryAnimation: secondaryAnimation,
+              transitionType: SharedAxisTransitionType.horizontal,
+              child: child,
+            );
           },
           child: SimilarContentScreen(
             mediaId: int.parse(id),

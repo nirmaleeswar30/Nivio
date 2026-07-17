@@ -21,7 +21,8 @@ class HoverPreviewCard extends ConsumerStatefulWidget {
   final String? backdropPath;
   final String? posterPath;
   final VoidCallback onDismiss;
-  final Function(PointerScrollEvent)? onScroll;
+  final void Function(PointerScrollEvent) onScroll;
+  final VoidCallback? onPlayAction;
 
   const HoverPreviewCard({
     super.key,
@@ -31,7 +32,8 @@ class HoverPreviewCard extends ConsumerStatefulWidget {
     this.backdropPath,
     this.posterPath,
     required this.onDismiss,
-    this.onScroll,
+    required this.onScroll,
+    this.onPlayAction,
   });
 
   static final Map<String, Map<String, dynamic>> _detailsCache = {};
@@ -411,7 +413,11 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
             child: GestureDetector(
               onTap: () {
                 widget.onDismiss();
-                context.push('/media/${widget.tmdbId}?type=${widget.mediaType}');
+                if (widget.onPlayAction != null) {
+                  widget.onPlayAction!();
+                } else {
+                  context.push('/media/${widget.tmdbId}?type=${widget.mediaType}');
+                }
               },
               child: Material(
                 color: Colors.transparent,
@@ -467,18 +473,24 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
                               Expanded(
                                 child: SizedBox(
                                   height: 30,
-                                  child: ElevatedButton.icon(
-                                    onPressed: () {
-                                      widget.onDismiss();
-                                      context.push('/media/${widget.tmdbId}?type=${widget.mediaType}');
-                                    },
-                                    icon: const Icon(Icons.play_arrow, size: 18),
-                                    label: const Text('Watch Now', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.white,
-                                      foregroundColor: Colors.black,
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                                  child: _AnimatedHoverScale(
+                                    child: ElevatedButton.icon(
+                                      onPressed: () {
+                                        widget.onDismiss();
+                                        if (widget.onPlayAction != null) {
+                                          widget.onPlayAction!();
+                                        } else {
+                                          context.push('/media/${widget.tmdbId}?type=${widget.mediaType}');
+                                        }
+                                      },
+                                      icon: const Icon(Icons.play_arrow, size: 18),
+                                      label: const Text('Watch Now', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.white,
+                                        foregroundColor: Colors.black,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -725,12 +737,14 @@ class _ActionIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onPressed,
-      borderRadius: BorderRadius.circular(16),
-      child: Padding(
-        padding: const EdgeInsets.all(6.0),
-        child: Icon(icon, color: iconColor ?? Colors.white, size: 20),
+    return _AnimatedHoverScale(
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(6.0),
+          child: Icon(icon, color: iconColor ?? Colors.white, size: 20),
+        ),
       ),
     );
   }
@@ -758,7 +772,34 @@ class _MiniControlCircleButton extends StatelessWidget {
           shape: BoxShape.circle,
           border: Border.all(color: Colors.grey[700]!, width: 1.0),
         ),
-        child: Icon(icon, color: Colors.white, size: 14),
+        child: Icon(icon, color: Colors.white, size: 16),
+      ),
+    );
+  }
+}
+
+class _AnimatedHoverScale extends StatefulWidget {
+  final Widget child;
+  const _AnimatedHoverScale({required this.child});
+
+  @override
+  State<_AnimatedHoverScale> createState() => _AnimatedHoverScaleState();
+}
+
+class _AnimatedHoverScaleState extends State<_AnimatedHoverScale> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: AnimatedScale(
+        scale: _isHovered ? 1.1 : 1.0,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOutBack,
+        child: widget.child,
       ),
     );
   }
