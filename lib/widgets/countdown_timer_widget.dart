@@ -27,19 +27,33 @@ class _CountdownTimerWidgetState extends State<CountdownTimerWidget> {
     _updateTimeLeft();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
-        setState(() {
-          _updateTimeLeft();
-        });
+        _updateTimeLeft();
       }
     });
   }
 
   void _updateTimeLeft() {
     final now = DateTime.now();
-    if (widget.targetDate.isAfter(now)) {
-      _timeLeft = widget.targetDate.difference(now);
-    } else {
-      _timeLeft = Duration.zero;
+    final newTimeLeft = widget.targetDate.isAfter(now) 
+        ? widget.targetDate.difference(now) 
+        : Duration.zero;
+        
+    bool shouldUpdate = false;
+    try {
+      final oldString = _formatDuration(_timeLeft);
+      final newString = _formatDuration(newTimeLeft);
+      if (oldString != newString) shouldUpdate = true;
+    } catch (_) {
+      shouldUpdate = true; // first time
+    }
+    
+    _timeLeft = newTimeLeft;
+
+    if (shouldUpdate && mounted) {
+      setState(() {});
+    }
+
+    if (newTimeLeft == Duration.zero) {
       _timer?.cancel();
     }
   }

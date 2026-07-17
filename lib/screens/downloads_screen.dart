@@ -99,6 +99,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                     width: 50,
                     height: 75,
                     fit: BoxFit.cover,
+                    memCacheWidth: 200,
                     errorWidget: (_, __, ___) => _buildFallbackPoster(),
                   )
                 : _buildFallbackPoster(),
@@ -162,6 +163,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                   width: item.season != null ? 80 : 50,
                   height: item.season != null ? 45 : 75,
                   fit: BoxFit.cover,
+                  memCacheWidth: 200,
                   errorWidget: (_, __, ___) => _buildFallbackPoster(),
                 )
               : _buildFallbackPoster(),

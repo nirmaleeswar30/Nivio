@@ -8,6 +8,7 @@ import 'package:nivio/core/theme.dart';
 import 'package:nivio/services/schedule_api_service.dart';
 import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/widgets/countdown_timer_widget.dart';
+import 'package:silky_scroll/silky_scroll.dart';
 
 
 class NewEpisodesScreen extends StatefulWidget {
@@ -85,7 +86,10 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
       ),
       child: SafeArea(
         top: !widget.embedded,
-        child: CustomScrollView(
+        child: SilkyCustomScrollView(
+          scrollSpeed: 2.0,
+          silkyScrollDuration: const Duration(milliseconds: 500),
+          animationCurve: Curves.easeOutQuart,
           slivers: [
             if (!widget.embedded) SliverToBoxAdapter(child: _buildHeader()),
             SliverToBoxAdapter(child: _buildCalendar()),
@@ -110,8 +114,8 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                 ),
                 sliver: isDesktop
                     ? SliverGrid(
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 4,
+                        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 180,
                           childAspectRatio: 0.72,
                           crossAxisSpacing: 12,
                           mainAxisSpacing: 14,
@@ -401,14 +405,16 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
       statusText = 'Upcoming';
     }
     
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Material(
+    return RepaintBoundary(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Material(
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
@@ -436,9 +442,10 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                       ? CachedNetworkImage(
                           imageUrl: item.posterPath!.startsWith('http') 
                               ? item.posterPath! 
-                              : '$tmdbImageBaseUrl/${isDesktop ? 'original' : posterSize}${item.posterPath}',
+                              : '$tmdbImageBaseUrl/$posterSize${item.posterPath}',
                           width: 70,
                           height: 105,
+                          memCacheWidth: 200,
                           fit: BoxFit.cover,
                           errorWidget: (_, __, ___) => _buildPlaceholder(),
                         )
@@ -537,8 +544,9 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildPlaceholder() {
     return Container(
@@ -565,13 +573,15 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
       statusText = 'Upcoming';
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Material(
+    return RepaintBoundary(
+      child: Container(
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Material(
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
@@ -592,17 +602,16 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
             children: [
               // Poster
               Expanded(
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      item.posterPath != null
-                          ? CachedNetworkImage(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    item.posterPath != null
+                        ? CachedNetworkImage(
                               imageUrl: item.posterPath!.startsWith('http') 
                                   ? item.posterPath! 
-                                  : '$tmdbImageBaseUrl/original${item.posterPath}',
+                                  : '$tmdbImageBaseUrl/w342${item.posterPath}',
                               fit: BoxFit.cover,
+                              memCacheWidth: 300,
                               errorWidget: (_, __, ___) => const Center(
                                 child: Icon(Icons.movie_creation_outlined, color: Colors.white54, size: 40),
                               ),
@@ -654,7 +663,6 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                     ],
                   ),
                 ),
-              ),
               // Info Area
               Padding(
                 padding: const EdgeInsets.all(10),
@@ -711,6 +719,7 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

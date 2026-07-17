@@ -63,6 +63,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                     CachedNetworkImage(
                       imageUrl: posterUrl,
                       fit: BoxFit.cover,
+                      memCacheWidth: 300,
                       placeholder: (context, url) => Container(
                         color: theme.colorScheme.surfaceContainerHighest,
                         child: const Center(child: CircularProgressIndicator()),
@@ -178,6 +179,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                     ? CachedNetworkImage(
                         imageUrl: posterUrl,
                         fit: BoxFit.cover,
+                        memCacheWidth: 300,
                         placeholder: (context, url) => Container(
                           color: theme.colorScheme.surfaceContainerHighest,
                           child: const Center(child: CircularProgressIndicator()),

@@ -80,7 +80,15 @@ class YouTubeWebViewPlayerState extends State<YouTubeWebViewPlayer> {
   </style>
 </head>
 <body>
-  <div id="player"></div>
+  <iframe 
+    id="player"
+    width="100%" 
+    height="100%" 
+    src="https://www.youtube-nocookie.com/embed/$videoId?enablejsapi=1&autoplay=$autoplay&mute=1&controls=$controls&start=$start&playsinline=1&fs=0&iv_load_policy=3&rel=0&modestbranding=1" 
+    frameborder="0" 
+    allow="autoplay; encrypted-media" 
+    allowfullscreen>
+  </iframe>
   <script>
     var tag = document.createElement('script');
     tag.src = 'https://www.youtube.com/iframe_api';
@@ -90,34 +98,11 @@ class YouTubeWebViewPlayerState extends State<YouTubeWebViewPlayer> {
     var player;
     function onYouTubeIframeAPIReady() {
       player = new YT.Player('player', {
-        videoId: '$videoId',
-        playerVars: {
-          autoplay: $autoplay,
-          controls: $controls,
-          loop: $loop,
-          start: $start,
-          rel: 0,
-          modestbranding: 1,
-          playsinline: 1,
-          enablejsapi: 1,
-          fs: 0,
-          iv_load_policy: 3
-        },
         events: {
           onReady: function(e) {
-            // Always start muted to bypass browser audio-autoplay policies
-            e.target.mute();
             window.flutter_inappwebview.callHandler('onReady');
           },
           onStateChange: function(e) {
-            // WebKitGTK audio autoplay workaround: 
-            // If the video started playing muted to bypass the autoplay block, instantly unmute it.
-            if (e.data === 1 && $autoplay === 1 && $mute === 0) {
-              if (e.target.isMuted()) {
-                e.target.unMute();
-              }
-            }
-
             if (e.data === 0 && $loop === 1) {
               e.target.seekTo(0);
               e.target.playVideo();
@@ -213,6 +198,22 @@ class YouTubeWebViewPlayerState extends State<YouTubeWebViewPlayer> {
           callback: (args) {
             if (args.isNotEmpty) {
               final state = args[0] as int;
+              
+              // Unmute workaround via native evaluateJavascript (often inherits user gesture context)
+              if (state == 1 && widget.autoPlay && !widget.muted) {
+                Future.delayed(const Duration(milliseconds: 250), () {
+                  if (mounted && _controller != null) {
+                    _controller!.evaluateJavascript(source: """
+                      var iframe = document.getElementById('player');
+                      if (iframe) {
+                        iframe.contentWindow.postMessage('{"event":"command","func":"unMute","args":""}', '*');
+                        iframe.contentWindow.postMessage('{"event":"command","func":"setVolume","args":[100]}', '*');
+                      }
+                    """);
+                  }
+                });
+              }
+              
               widget.onStateChanged?.call(state);
             }
           },
