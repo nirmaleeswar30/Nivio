@@ -60,7 +60,7 @@ class ContentRow extends StatelessWidget {
                 right: 12,
               ),
               itemCount: items.length,
-              cacheExtent: 1500,
+              cacheExtent: 250,
               scrollSpeed: 2.0,
               silkyScrollDuration: const Duration(milliseconds: 500),
               animationCurve: Curves.easeOutQuart,
@@ -86,23 +86,15 @@ class ContentRow extends StatelessWidget {
                   title = (item['title'] ?? item['name'] ?? '').toString();
                 }
 
-                return RepaintBoundary(
-                  child: Padding(
-                     padding: EdgeInsets.symmetric(horizontal: isDesktop ? 16 : 4),
-                     child: OpenContainer(
-                       closedBuilder: (context, action) => _AnimatedPosterCard(
-                         posterPath: posterPath,
-                         backdropPath: backdropPath,
-                         tmdbId: tmdbId,
-                         mediaType: mediaType,
-                         title: title,
-                       ),
-                       openBuilder: (context, action) => MediaDetailScreen(
-                         mediaId: tmdbId,
-                         mediaType: mediaType,
-                       ),
-                     ),
-                  ),
+                return Padding(
+                   padding: EdgeInsets.symmetric(horizontal: isDesktop ? 16 : 4),
+                   child: _AnimatedPosterCard(
+                     posterPath: posterPath,
+                     backdropPath: backdropPath,
+                     tmdbId: tmdbId,
+                     mediaType: mediaType,
+                     title: title,
+                   ),
                 );
               },
             ),
@@ -272,8 +264,20 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
             width: double.infinity,
             height: double.infinity,
             memCacheWidth: 360,
+            imageBuilder: (context, imageProvider) => Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(4),
+                image: DecorationImage(
+                  image: imageProvider,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
             placeholder: (context, url) => Container(
-              color: const Color(0xFF2F2F2F),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2F2F2F),
+                borderRadius: BorderRadius.circular(4),
+              ),
               child: const Center(
                 child: CircularProgressIndicator(
                   color: Color(0xFFE50914),
@@ -282,7 +286,10 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
               ),
             ),
             errorWidget: (context, url, error) => Container(
-              color: const Color(0xFF2F2F2F),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2F2F2F),
+                borderRadius: BorderRadius.circular(4),
+              ),
               child: const Icon(
                 Icons.movie,
                 color: Colors.white30,
@@ -290,10 +297,16 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
               ),
             ),
           )
-        : const Icon(
-            Icons.movie,
-            color: Colors.white30,
-            size: 40,
+        : Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF2F2F2F),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: const Icon(
+              Icons.movie,
+              color: Colors.white30,
+              size: 40,
+            ),
           );
 
     final imageWithTitle = Stack(
@@ -308,6 +321,10 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               decoration: BoxDecoration(
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(4),
+                  bottomRight: Radius.circular(4),
+                ),
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
@@ -416,28 +433,27 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
                           ]
                         : null,
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: Stack(
-                      children: [
-                        // Poster Image (cached statically)
-                        Positioned.fill(child: child!),
-                        
-                        // Hover Overlay with Play Icon
-                        if (_elevationAnimation.value > 0)
-                          Opacity(
-                            opacity: _elevationAnimation.value,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Colors.transparent,
-                                    Colors.black.withOpacity(0.7),
-                                  ],
-                                ),
+                  child: Stack(
+                    children: [
+                      // Poster Image (cached statically)
+                      Positioned.fill(child: child!),
+                      
+                      // Hover Overlay with Play Icon
+                      if (_elevationAnimation.value > 0)
+                        Opacity(
+                          opacity: _elevationAnimation.value,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(4),
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.transparent,
+                                  Colors.black.withOpacity(0.7),
+                                ],
                               ),
+                            ),
                               child: const Center(
                                 child: Icon(
                                   Icons.play_circle_fill,
@@ -466,8 +482,7 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
                               ),
                             ),
                           ),
-                      ],
-                    ),
+                    ],
                   ),
                 ),
               );

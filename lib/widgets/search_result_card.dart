@@ -35,52 +35,77 @@ class SearchResultCard extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(10),
-                ),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
                     if (posterUrl.isNotEmpty)
-                      CachedNetworkImage(
-                        imageUrl: posterUrl,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        placeholder: (context, url) => Container(
+                    CachedNetworkImage(
+                      imageUrl: posterUrl,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      imageBuilder: (context, imageProvider) => Container(
+                        decoration: BoxDecoration(
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(10),
+                          ),
+                          image: DecorationImage(
+                            image: imageProvider,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                      placeholder: (context, url) => Container(
+                        decoration: BoxDecoration(
                           color: NivioTheme.netflixDarkGrey,
-                          child: Center(
-                            child: SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                color: NivioTheme.accentColorOf(context),
-                                strokeWidth: 2,
-                              ),
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(10),
+                          ),
+                        ),
+                        child: Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              color: NivioTheme.accentColorOf(context),
+                              strokeWidth: 2,
                             ),
                           ),
                         ),
-                        errorWidget: (context, url, error) => Container(
+                      ),
+                      errorWidget: (context, url, error) => Container(
+                        decoration: BoxDecoration(
                           color: NivioTheme.netflixDarkGrey,
-                          child: Icon(
-                            Icons.movie_creation_outlined,
-                            color: NivioTheme.netflixGrey,
-                            size: 42,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(10),
                           ),
                         ),
-                      )
-                    else
-                      Container(
-                        color: NivioTheme.netflixDarkGrey,
                         child: Icon(
                           Icons.movie_creation_outlined,
                           color: NivioTheme.netflixGrey,
                           size: 42,
                         ),
                       ),
-                    DecoratedBox(
+                    )
+                  else
+                    Container(
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
+                        color: NivioTheme.netflixDarkGrey,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(10),
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.movie_creation_outlined,
+                        color: NivioTheme.netflixGrey,
+                        size: 42,
+                      ),
+                    ),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(10),
+                      ),
+                      gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
@@ -135,8 +160,7 @@ class SearchResultCard extends ConsumerWidget {
                         ],
                       ),
                     ),
-                  ],
-                ),
+                ],
               ),
             ),
             Padding(

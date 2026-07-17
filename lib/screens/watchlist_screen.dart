@@ -247,7 +247,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
 
     final gridContent = SilkyGridView.builder(
       padding: const EdgeInsets.all(16),
-      cacheExtent: 1500,
+      cacheExtent: 250,
       scrollSpeed: 2.0,
       silkyScrollDuration: const Duration(milliseconds: 500),
       animationCurve: Curves.easeOutQuart,
@@ -272,7 +272,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
 
     final listContent = SilkyListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      cacheExtent: 1500,
+      cacheExtent: 250,
       scrollSpeed: 2.0,
       silkyScrollDuration: const Duration(milliseconds: 500),
       animationCurve: Curves.easeOutQuart,

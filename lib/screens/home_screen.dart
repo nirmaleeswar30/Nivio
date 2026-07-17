@@ -299,18 +299,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       body: Stack(
         children: [
           Positioned.fill(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 800),
-              curve: Curves.easeInOut,
-              decoration: BoxDecoration(
-                color: Color.lerp(const Color(0xFF0D0F14), _currentAmbientColor, 0.15),
+            child: RepaintBoundary(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 800),
+                curve: Curves.easeInOut,
+                decoration: BoxDecoration(
+                  color: Color.lerp(const Color(0xFF0D0F14), _currentAmbientColor, 0.15),
+                ),
               ),
             ),
           ),
           Positioned.fill(
             child: SilkyCustomScrollView(
           controller: _scrollController,
-          cacheExtent: 1500,
+          cacheExtent: 250,
           scrollSpeed: 2.0,
           silkyScrollDuration: const Duration(milliseconds: 500),
           animationCurve: Curves.easeOutQuart,
@@ -345,9 +347,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             ),
                           ),
                           SizedBox(height: 12),
-                          RepaintBoundary(
-                            child: ContinueWatchingRow(),
-                          ),
+                          ContinueWatchingRow(),
                           SizedBox(height: 30),
                         ],
                       ),
@@ -382,9 +382,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     )
                     .toList(growable: false);
 
-                return RepaintBoundary(
-                  child: ContentRow(title: 'Your List', items: watchlistItems),
-                );
+                return ContentRow(title: 'Your List', items: watchlistItems);
               },
             ),
           ),
@@ -400,9 +398,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   data: (recs) {
                     if (recs == null || recs.items.isEmpty) return const SizedBox.shrink();
                     final items = recs.items.map((e) => e.toJson()).toList();
-                    return RepaintBoundary(
-                      child: ContentRow(title: 'Recommended for You', items: items),
-                    );
+                    return ContentRow(title: 'Recommended for You', items: items);
                   },
                   loading: () => const SizedBox.shrink(),
                   error: (_, __) => const SizedBox.shrink(),
@@ -430,9 +426,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         builder: (context, ref, child) {
           final asyncItems = ref.watch(provider);
           return asyncItems.when(
-            data: (items) => RepaintBoundary(
-              child: ContentRow(title: title, items: items),
-            ),
+            data: (items) => ContentRow(title: title, items: items),
             loading: () => const SizedBox(height: 220),
             error: (error, stackTrace) => const SizedBox.shrink(),
           );
@@ -447,8 +441,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
 
     return SliverToBoxAdapter(
-      child: RepaintBoundary(
-        child: Column(
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
           Padding(
@@ -525,7 +518,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           const SizedBox(height: 24),
         ],
-      ),
       ),
     );
   }
@@ -749,30 +741,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
               // Vignette overlay
-              Container(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: Alignment.center,
-                    radius: 1.3,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.8),
-                    ],
-                    stops: const [0.25, 1.0],
-                  ),
+              Positioned.fill(
+                child: Image.asset(
+                  'assets/images/vignette.png',
+                  fit: BoxFit.fill,
                 ),
               ),
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      activeBgColor.withOpacity(0.5),
-                      activeBgColor,
-                    ],
-                    stops: const [0.0, 0.88, 1.0],
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: bannerHeight * 0.4,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        activeBgColor.withOpacity(0.8),
+                        activeBgColor,
+                      ],
+                      stops: const [0.0, 0.7, 1.0],
+                    ),
                   ),
                 ),
               ),
@@ -1314,28 +1305,9 @@ class _AnimatedProgressBarDot extends StatelessWidget {
         width: isActive ? 24 : 12,
         height: 3,
         decoration: BoxDecoration(
-          color: Colors.white24,
+          color: isActive ? activeColor : Colors.white24,
           borderRadius: BorderRadius.circular(2),
         ),
-        child: isActive
-            ? TweenAnimationBuilder<double>(
-                key: ValueKey(isActive), // Resets animation when becoming active
-                tween: Tween<double>(begin: 0.0, end: 1.0),
-                duration: const Duration(seconds: 14), // Matches the banner timer
-                builder: (context, value, child) {
-                  return FractionallySizedBox(
-                    alignment: Alignment.centerLeft,
-                    widthFactor: value,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: activeColor,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  );
-                },
-              )
-            : null,
       ),
     );
   }

@@ -665,7 +665,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               child: SilkyGridView.builder(
                 key: PageStorageKey<String>('search_grid_$query'),
                 controller: _scrollController,
-                cacheExtent: 1500,
+                cacheExtent: 250,
                 scrollSpeed: 2.0,
                 silkyScrollDuration: const Duration(milliseconds: 500),
                 animationCurve: Curves.easeOutQuart,

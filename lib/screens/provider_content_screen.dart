@@ -324,7 +324,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                   Positioned.fill(
                     child: SilkyCustomScrollView(
                       controller: _scrollController,
-                      cacheExtent: 1500,
+                      cacheExtent: 250,
                       scrollSpeed: 2.0,
                       silkyScrollDuration: const Duration(milliseconds: 500),
                       animationCurve: Curves.easeOutQuart,

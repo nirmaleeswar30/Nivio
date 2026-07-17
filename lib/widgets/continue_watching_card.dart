@@ -194,34 +194,48 @@ class _ContinueWatchingCardState extends ConsumerState<ContinueWatchingCard>
                       ),
                       child: Stack(
                         children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: imageUrl.isNotEmpty
-                                ? CachedNetworkImage(
-                                    imageUrl: imageUrl,
-                                    width: 220,
-                                    height: 124,
-                                    // Use alignment topCenter so faces in posters are less likely to be cut off
-                                    alignment: Alignment.topCenter,
-                                    fit: BoxFit.cover,
-                                    placeholder: (context, url) => Container(
-                                      color: NivioTheme.netflixDarkGrey,
-                                      child: const Center(
-                                        child: CircularProgressIndicator(),
+                          imageUrl.isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl: imageUrl,
+                                  width: 220,
+                                  height: 124,
+                                  alignment: Alignment.topCenter,
+                                  imageBuilder: (context, imageProvider) => Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(10),
+                                      image: DecorationImage(
+                                        image: imageProvider,
+                                        fit: BoxFit.cover,
+                                        alignment: Alignment.topCenter,
                                       ),
                                     ),
-                                    errorWidget: (context, url, error) => Container(
+                                  ),
+                                  placeholder: (context, url) => Container(
+                                    decoration: BoxDecoration(
                                       color: NivioTheme.netflixDarkGrey,
-                                      child: const Icon(Icons.movie, size: 32, color: Colors.grey),
+                                      borderRadius: BorderRadius.circular(10),
                                     ),
-                                  )
-                                : Container(
-                                    color: NivioTheme.netflixDarkGrey,
                                     child: const Center(
-                                      child: Icon(Icons.movie, size: 32, color: Colors.grey),
+                                      child: CircularProgressIndicator(),
                                     ),
                                   ),
-                          ),
+                                  errorWidget: (context, url, error) => Container(
+                                    decoration: BoxDecoration(
+                                      color: NivioTheme.netflixDarkGrey,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Icon(Icons.movie, size: 32, color: Colors.grey),
+                                  ),
+                                )
+                              : Container(
+                                  decoration: BoxDecoration(
+                                    color: NivioTheme.netflixDarkGrey,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Center(
+                                    child: Icon(Icons.movie, size: 32, color: Colors.grey),
+                                  ),
+                                ),
                           // Subtle gradient at bottom for the progress bar
                           Positioned(
                             bottom: 0,

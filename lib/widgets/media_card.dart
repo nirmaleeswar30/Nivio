@@ -56,8 +56,20 @@ class _MediaCardState extends ConsumerState<MediaCard>
             width: 130,
             fit: BoxFit.cover,
             memCacheWidth: 390,
+            imageBuilder: (context, imageProvider) => Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(4),
+                image: DecorationImage(
+                  image: imageProvider,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
             placeholder: (context, url) => Container(
-              color: NivioTheme.netflixDarkGrey,
+              decoration: BoxDecoration(
+                color: NivioTheme.netflixDarkGrey,
+                borderRadius: BorderRadius.circular(4),
+              ),
               child: Center(
                 child: CircularProgressIndicator(
                   color: NivioTheme.accentColorOf(context),
@@ -65,7 +77,10 @@ class _MediaCardState extends ConsumerState<MediaCard>
               ),
             ),
             errorWidget: (context, url, error) => Container(
-              color: NivioTheme.netflixDarkGrey,
+              decoration: BoxDecoration(
+                color: NivioTheme.netflixDarkGrey,
+                borderRadius: BorderRadius.circular(4),
+              ),
               child: Icon(
                 Icons.movie,
                 color: NivioTheme.netflixGrey,
@@ -76,7 +91,10 @@ class _MediaCardState extends ConsumerState<MediaCard>
         : Container(
             height: 180,
             width: 130,
-            color: NivioTheme.netflixDarkGrey,
+            decoration: BoxDecoration(
+              color: NivioTheme.netflixDarkGrey,
+              borderRadius: BorderRadius.circular(4),
+            ),
             child: Icon(
               Icons.movie,
               color: NivioTheme.netflixGrey,
@@ -126,20 +144,20 @@ class _MediaCardState extends ConsumerState<MediaCard>
                       ),
                       child: Stack(
                         children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: child!,
-                          ),
+                          child!,
                           // Progress bar at bottom
                           Positioned(
                             bottom: 0,
                             left: 0,
                             right: 0,
-                            child: LinearProgressIndicator(
-                              value: widget.history.progressPercent,
-                              backgroundColor: Colors.grey.withOpacity(0.3),
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                NivioTheme.accentColorOf(context),
+                            child: ClipRRect(
+                              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(4)),
+                              child: LinearProgressIndicator(
+                                value: widget.history.progressPercent,
+                                backgroundColor: Colors.grey.withOpacity(0.3),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  NivioTheme.accentColorOf(context),
+                                ),
                               ),
                             ),
                           ),

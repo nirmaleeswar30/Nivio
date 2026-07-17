@@ -57,6 +57,9 @@ ACTION="${2:-build}"
 if [ "$ACTION" = "run" ]; then
   echo "🚀 Running application on $TARGET_PLATFORM..."
   flutter run -d "$TARGET_PLATFORM"
+elif [ "$ACTION" = "run_profile" ]; then
+  echo "🚀 Running application on $TARGET_PLATFORM in Profile Mode..."
+  flutter run --profile -d "$TARGET_PLATFORM"
 else
   echo "🏗️ Building application for $TARGET_PLATFORM..."
   flutter build "$TARGET_PLATFORM" --debug

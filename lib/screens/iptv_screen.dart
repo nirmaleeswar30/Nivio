@@ -165,7 +165,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                       Expanded(
                         child: SilkyListView.builder(
                           controller: scrollController,
-                          cacheExtent: 1500,
+                          cacheExtent: 250,
                           scrollSpeed: 2.0,
                           silkyScrollDuration: const Duration(milliseconds: 500),
                           animationCurve: Curves.easeOutQuart,
@@ -441,7 +441,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                               ),
                               Expanded(
                                 child: SilkyListView.builder(
-                                  cacheExtent: 1500,
+                                  cacheExtent: 250,
                                   scrollSpeed: 2.0,
                                   silkyScrollDuration: const Duration(milliseconds: 500),
                                   animationCurve: Curves.easeOutQuart,
@@ -527,7 +527,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                 )
               : SilkyListView.builder(
                   padding: const EdgeInsets.all(16),
-                  cacheExtent: 1500,
+                  cacheExtent: 250,
                   scrollSpeed: 2.0,
                   silkyScrollDuration: const Duration(milliseconds: 500),
                   animationCurve: Curves.easeOutQuart,

@@ -51,7 +51,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
 
         return SilkyListView.builder(
           padding: EdgeInsets.fromLTRB(16, 16, 16, widget.embedded ? 80 : 16),
-          cacheExtent: 1500,
+          cacheExtent: 250,
           scrollSpeed: 2.0,
           silkyScrollDuration: const Duration(milliseconds: 500),
           animationCurve: Curves.easeOutQuart,

@@ -45,18 +45,16 @@ class ContinueWatchingRow extends ConsumerWidget {
           height: 190,
           child: SilkyListView.builder(
             scrollDirection: Axis.horizontal,
-            cacheExtent: 1500,
+            cacheExtent: 250,
             scrollSpeed: 2.0,
             silkyScrollDuration: const Duration(milliseconds: 500),
             animationCurve: Curves.easeOutQuart,
             itemCount: items.length,
             itemBuilder: (context, index) {
               final history = items[index];
-              return RepaintBoundary(
-                child: ContinueWatchingCard(
-                  key: ValueKey('${history.tmdbId}_${history.currentSeason}_${history.currentEpisode}'),
-                  history: history,
-                ),
+              return ContinueWatchingCard(
+                key: ValueKey('${history.tmdbId}_${history.currentSeason}_${history.currentEpisode}'),
+                history: history,
               );
             },
           ),
