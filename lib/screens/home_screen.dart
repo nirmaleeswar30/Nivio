@@ -60,6 +60,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final ScrollController _scrollController = ScrollController();
   final PageController _pageController = PageController();
   bool _showAppBarBackground = false;
+  bool _isBannerVisible = true;
   int _currentBannerIndex = 0;
   int _currentBannerPage = 0;
   Timer? _bannerTimer;
@@ -78,10 +79,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       } else if (_scrollController.offset <= 50 && _showAppBarBackground) {
         setState(() => _showAppBarBackground = false);
       }
+      
+      // The hero banner is ~500-600px tall. If we've scrolled past 800px, it's definitely offscreen.
+      final isVisible = _scrollController.offset < 800;
+      if (isVisible != _isBannerVisible) {
+        // We don't setState here because we don't need to rebuild the UI,
+        // we just need to update the flag so the timer knows to pause.
+        _isBannerVisible = isVisible;
+      }
     });
 
     _bannerTimer = Timer.periodic(const Duration(seconds: 14), (timer) {
-      if (!_pageController.hasClients) return;
+      if (!_pageController.hasClients || !_isBannerVisible) return;
       final featuredContent = ref.read(featuredContentProvider).value ?? [];
       if (featuredContent.isEmpty) return;
       _pageController.animateToPage(

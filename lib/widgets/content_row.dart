@@ -50,7 +50,7 @@ class ContentRow extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           SizedBox(
-            height: isDesktop ? 240 : 180,
+            height: isDesktop ? 210 : 180,
             child: SilkyListView.builder(
               scrollDirection: Axis.horizontal,
               padding: EdgeInsets.only(
@@ -415,8 +415,8 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
                 scale: _scaleAnimation.value,
                 child: Container(
                   key: _cardKey,
-                  width: isDesktop ? 160 : 120,
-                  height: isDesktop ? 240 : 180,
+                  width: isDesktop ? 140 : 120,
+                  height: isDesktop ? 210 : 180,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(4),
                     color: const Color(0xFF2F2F2F),

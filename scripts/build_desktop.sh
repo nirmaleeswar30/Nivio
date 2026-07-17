@@ -54,6 +54,11 @@ flutter pub get
 TARGET_PLATFORM="${1:-linux}"
 ACTION="${2:-build}"
 
+# Force discrete GPU usage on Linux (AMD dual-GPU setups)
+# export DRI_PRIME=1
+# export GDK_BACKEND=x11
+# export GDK_SCALE=2
+
 if [ "$ACTION" = "run" ]; then
   echo "🚀 Running application on $TARGET_PLATFORM..."
   flutter run -d "$TARGET_PLATFORM"
