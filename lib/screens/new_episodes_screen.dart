@@ -28,12 +28,14 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
   List<ScheduleItem> _schedules = [];
   
   late final PageController _pageController;
+  late final ScrollController _scrollController;
   final int _initialPage = 500;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: _initialPage);
+    _scrollController = ScrollController();
     _selectedDay = _focusedDay;
     _fetchSchedule();
     
@@ -44,6 +46,7 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
   @override
   void dispose() {
     _pageController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -87,6 +90,7 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
       child: SafeArea(
         top: !widget.embedded,
         child: SilkyCustomScrollView(
+          controller: _scrollController,
           scrollSpeed: 2.0,
           silkyScrollDuration: const Duration(milliseconds: 500),
           animationCurve: Curves.easeOutQuart,
@@ -125,6 +129,7 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                             return _buildDesktopScheduleCard(_schedules[index]);
                           },
                           childCount: _schedules.length,
+                          addRepaintBoundaries: false,
                         ),
                       )
                     : SliverList(
@@ -133,6 +138,7 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                             return _buildScheduleItem(_schedules[index]);
                           },
                           childCount: _schedules.length,
+                          addRepaintBoundaries: false,
                         ),
                       ),
               ),
@@ -394,7 +400,6 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                     item.releaseDate.month == now.month && 
                     item.releaseDate.day == now.day;
     final isPast = item.releaseDate.isBefore(now);
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     
     String statusText;
     if (isToday) {
@@ -405,11 +410,9 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
       statusText = 'Upcoming';
     }
     
-    return RepaintBoundary(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.white10),
@@ -542,7 +545,6 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
               ],
             ),
           ),
-        ),
       ),
     ),
   );
@@ -573,10 +575,8 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
       statusText = 'Upcoming';
     }
 
-    return RepaintBoundary(
-      child: Container(
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
+    return Container(
+      decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.white10),
@@ -602,7 +602,9 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
             children: [
               // Poster
               Expanded(
-                child: Stack(
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                  child: Stack(
                   fit: StackFit.expand,
                   children: [
                     item.posterPath != null
@@ -663,6 +665,7 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                     ],
                   ),
                 ),
+              ),
               // Info Area
               Padding(
                 padding: const EdgeInsets.all(10),
@@ -717,7 +720,6 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
               ),
             ],
           ),
-        ),
       ),
     ),
   );

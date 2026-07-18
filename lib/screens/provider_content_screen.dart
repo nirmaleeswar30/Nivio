@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:nivio/providers/dynamic_colors_provider.dart';
+import 'package:nivio/providers/home_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:silky_scroll/silky_scroll.dart';
 import 'package:go_router/go_router.dart';
@@ -55,7 +55,6 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
   List<dynamic> _genre4 = [];
 
   late final PageController _pageController;
-  double _currentPageValue = 0.0;
   int _currentBannerPage = 0;
   Timer? _bannerTimer;
   
@@ -79,13 +78,6 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     _pageController = PageController(viewportFraction: isDesktop ? 1.0 : 0.85);
     _fetchContent();
-    _pageController.addListener(() {
-      if (mounted) {
-        setState(() {
-          _currentPageValue = _pageController.page ?? 0.0;
-        });
-      }
-    });
 
     _scrollController.addListener(() {
       final scrolled = _scrollController.offset > 20;
@@ -228,6 +220,21 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
         // Extract color for the first item
         _extractColorForIndex(0);
         _extractColorForIndex(1); // Pre-fetch next
+
+        // Fetch TMDB clear logos for top hero items
+        Future.wait(_trending.take(5).map((item) async {
+          if (item is Map) {
+            final tmdbId = item['id'] as int?;
+            if (tmdbId != null) {
+              final logo = await tmdbService.getMediaLogo(tmdbId, _mediaType);
+              if (logo != null) {
+                item['logo_url'] = logo;
+              }
+            }
+          }
+        })).then((_) {
+          if (mounted) setState(() {});
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -268,6 +275,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
           _ambientColors[index] = color;
           if (_currentBannerPage == index) {
             _currentAmbientColor = color;
+            ref.read(ambientColorProvider.notifier).state = color;
           }
         });
       }
@@ -283,10 +291,152 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
     return null;
   }
 
+  Widget _buildTitleText(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 32,
+        fontWeight: FontWeight.bold,
+        height: 1.2,
+      ),
+    );
+  }
+
+  Widget _desktopOutlineButton({required Widget icon, required VoidCallback onTap}) {
+    return _AnimatedHoverScale(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: Colors.black26,
+            border: Border.all(color: Colors.white24, width: 1.5),
+            shape: BoxShape.circle,
+          ),
+          child: Center(child: icon),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGenreBubble(String genre, Color themeColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(
+        color: themeColor.withOpacity(0.12),
+        border: Border.all(color: themeColor.withOpacity(0.4), width: 1.2),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        genre,
+        style: TextStyle(
+          color: themeColor,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildDesktopBadges({
+    required String mediaType,
+    required String year,
+    required String language,
+    double? voteAverage,
+    required Color themeColor,
+  }) {
+    final widgets = <Widget>[];
+
+    if (mediaType.isNotEmpty) {
+      widgets.add(_buildBadge(mediaType, themeColor));
+    }
+    if (year.isNotEmpty) {
+      widgets.add(_buildBadge(year, themeColor));
+    }
+    if (language.isNotEmpty) {
+      widgets.add(_buildBadge(language, themeColor));
+    }
+    if (voteAverage != null && voteAverage > 0) {
+      final pct = (voteAverage * 10).toInt();
+      widgets.add(
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: pct >= 70 ? const Color(0xFF4CAF50).withOpacity(0.12) : themeColor.withOpacity(0.12),
+            border: Border.all(
+              color: pct >= 70 ? const Color(0xFF4CAF50).withOpacity(0.4) : themeColor.withOpacity(0.4),
+              width: 1.2,
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            "$pct%",
+            style: TextStyle(
+              color: pct >= 70 ? const Color(0xFF4CAF50) : themeColor,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      );
+    }
+    return widgets;
+  }
+
+  Widget _buildBadge(String text, Color themeColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(
+        color: themeColor.withOpacity(0.12),
+        border: Border.all(color: themeColor.withOpacity(0.4), width: 1.2),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: themeColor,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleWatchlist(Map<String, dynamic> item) async {
+    final tmdbId = item['id'] as int?;
+    if (tmdbId == null) return;
+    final service = ref.read(watchlistServiceProvider);
+    final inWatchlist = ref.read(isInWatchlistProvider(tmdbId));
+
+    if (inWatchlist) {
+      await service.removeFromWatchlist(tmdbId);
+    } else {
+      final title = item['title'] ?? item['name'] ?? 'Unknown';
+      final posterPath = item['poster_path'] as String?;
+      final backdropPath = item['backdrop_path'] as String?;
+      await service.addToWatchlist(
+        WatchlistItem(
+          id: tmdbId,
+          title: title,
+          posterPath: posterPath ?? backdropPath,
+          mediaType: _mediaType,
+          addedAt: DateTime.now(),
+          voteAverage: (item['vote_average'] as num?)?.toDouble(),
+          releaseDate: item['release_date'] as String? ?? item['first_air_date'] as String?,
+          overview: item['overview'] as String?,
+        ),
+      );
+    }
+    ref.read(watchlistRefreshProvider.notifier).refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
     final logoPath = _getProviderLogo();
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final activeBgColor = Color.lerp(const Color(0xFF0D0F14), _currentAmbientColor, 0.15)!;
 
     return PopScope(
       canPop: !_isSearching,
@@ -303,24 +453,20 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
               )
             : Stack(
                 children: [
-                  // --- Base Layer (Main Content) ---
+                  // --- 1. Base Ambient Background Layer ---
                   Positioned.fill(
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 800),
-                      curve: Curves.easeInOut,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            _currentAmbientColor.withOpacity(0.6),
-                            _currentAmbientColor.withOpacity(0.15),
-                          ],
-                          stops: const [0.0, 1.0],
+                    child: RepaintBoundary(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 800),
+                        curve: Curves.easeInOut,
+                        decoration: BoxDecoration(
+                          color: activeBgColor,
                         ),
                       ),
                     ),
                   ),
+
+                  // --- 2. Main Scrollable Content starting at top 0 ---
                   Positioned.fill(
                     child: SilkyCustomScrollView(
                       controller: _scrollController,
@@ -329,134 +475,120 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                       silkyScrollDuration: const Duration(milliseconds: 500),
                       animationCurve: Curves.easeOutQuart,
                       slivers: [
-                        // Minimal Header
-                        SliverAppBar(
-                          automaticallyImplyLeading: false,
-                          backgroundColor: Colors.transparent,
-                          elevation: 0,
-                          pinned: true,
-                          centerTitle: !isDesktop,
-                          leadingWidth: isDesktop ? 68 : null,
-                          leading: isDesktop
-                            ? const SizedBox(width: 68)
-                            : IconButton(
-                                icon: const Icon(Icons.arrow_back, color: Colors.white),
-                                onPressed: () => context.pop(),
-                              ),
-                          title: isDesktop 
-                            ? Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _buildTab('TV Shows', 'tv'),
-                                  const SizedBox(width: 12),
-                                  _buildTab('Movies', 'movie'),
-                                ],
-                              )
-                            : (logoPath != null 
-                                ? CachedNetworkImage(
-                                    imageUrl: '$tmdbImageBaseUrl/w300$logoPath',
-                                    height: 40,
-                                    fit: BoxFit.contain,
-                                  )
-                                : Text(
-                                    widget.providerName,
-                                    style: const TextStyle(fontWeight: FontWeight.w900, color: Colors.white, fontSize: 24, letterSpacing: -0.5),
-                                  )),
-                          actions: [
-                            if (isDesktop) ...[
-                              Padding(
-                                padding: const EdgeInsets.only(right: 16.0),
-                                child: Center(
-                                  child: logoPath != null 
-                                    ? CachedNetworkImage(
-                                        imageUrl: '$tmdbImageBaseUrl/w300$logoPath',
-                                        height: 32,
-                                        fit: BoxFit.contain,
-                                      )
-                                    : Text(
-                                        widget.providerName,
-                                        style: const TextStyle(fontWeight: FontWeight.w900, color: Colors.white, fontSize: 20, letterSpacing: -0.5),
-                                      ),
-                                ),
-                              ),
-                            ],
-                            IconButton(
-                              icon: const PhosphorIcon(PhosphorIconsRegular.magnifyingGlass, color: Colors.white),
-                              onPressed: _toggleSearch,
-                            ),
-                            const SizedBox(width: 8),
-                          ],
-                        ),
-                        
-                        // Filter Chips
-                        if (!isDesktop)
+                        // Hero Banner at top (0 gap)
+                        if (_trending.isNotEmpty)
                           SliverToBoxAdapter(
-                            child: Padding(
-                              padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 24.0, bottom: 24.0),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  _buildTab('TV Shows', 'tv'),
-                                  const SizedBox(width: 12),
-                                  _buildTab('Movies', 'movie'),
-                                ],
-                              ),
+                            child: _buildFeaturedBanner(),
+                          ),
+
+                        const SliverToBoxAdapter(child: SizedBox(height: 20)),
+
+                        // Horizontal Content Rows
+                        if (_trending.length > 5)
+                          SliverToBoxAdapter(
+                            child: ContentRow(
+                              title: 'Top 10 ${_mediaType == 'movie' ? 'Movies' : 'Shows'} in ${widget.providerName}',
+                              items: _trending.skip(5).toList(),
+                              leftPadding: isDesktop ? 80 : 16,
                             ),
                           ),
 
-                      // Featured Banner
-                      if (_trending.isNotEmpty)
-                        SliverToBoxAdapter(
-                          child: _buildFeaturedBanner(),
-                        ),
-
-                      const SliverToBoxAdapter(child: SizedBox(height: 20)),
-
-                      // Horizontal Rows
-                      if (_trending.length > 5)
                         SliverToBoxAdapter(
                           child: ContentRow(
-                            title: 'Top 10 ${_mediaType == 'movie' ? 'Movies' : 'Shows'} in ${widget.providerName}',
-                            items: _trending.skip(5).toList(),
+                            title: _mediaType == 'movie' ? 'Action & Thrillers' : 'Action & Adventure',
+                            items: _genre1,
                             leftPadding: isDesktop ? 80 : 16,
                           ),
                         ),
-                        
-                      SliverToBoxAdapter(
-                        child: ContentRow(
-                          title: _mediaType == 'movie' ? 'Action & Thrillers' : 'Action & Adventure',
-                          items: _genre1,
-                          leftPadding: isDesktop ? 80 : 16,
+                        SliverToBoxAdapter(
+                          child: ContentRow(
+                            title: _mediaType == 'movie' ? 'Romance Movies' : 'Drama',
+                            items: _genre2,
+                            leftPadding: isDesktop ? 80 : 16,
+                          ),
                         ),
-                      ),
-                      SliverToBoxAdapter(
-                        child: ContentRow(
-                          title: _mediaType == 'movie' ? 'Romance Movies' : 'Drama',
-                          items: _genre2,
-                          leftPadding: isDesktop ? 80 : 16,
+                        SliverToBoxAdapter(
+                          child: ContentRow(
+                            title: _mediaType == 'movie' ? 'Comedy Movies' : 'Sci-Fi & Fantasy',
+                            items: _genre3,
+                            leftPadding: isDesktop ? 80 : 16,
+                          ),
                         ),
-                      ),
-                      SliverToBoxAdapter(
-                        child: ContentRow(
-                          title: _mediaType == 'movie' ? 'Comedy Movies' : 'Sci-Fi & Fantasy',
-                          items: _genre3,
-                          leftPadding: isDesktop ? 80 : 16,
+                        SliverToBoxAdapter(
+                          child: ContentRow(
+                            title: 'Animation',
+                            items: _genre4,
+                            leftPadding: isDesktop ? 80 : 16,
+                          ),
                         ),
-                      ),
-                      SliverToBoxAdapter(
-                        child: ContentRow(
-                          title: 'Animation',
-                          items: _genre4,
-                          leftPadding: isDesktop ? 80 : 16,
-                        ),
-                      ),
-                      
-                      const SliverToBoxAdapter(child: SizedBox(height: 40)),
-                    ],
-                  ),
-                ),
 
-                  // --- Search Overlay Layer ---
+                        const SliverToBoxAdapter(child: SizedBox(height: 40)),
+                      ],
+                    ),
+                  ),
+
+                  // --- 3. Floating Header Controls Overlay ---
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: SafeArea(
+                      bottom: false,
+                      child: Container(
+                        padding: EdgeInsets.only(
+                          top: isDesktop ? 16 : 8,
+                          left: isDesktop ? 68 : 12,
+                          right: 16,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            // Left Controls: Back button + Provider Logo + Category Bubbles
+                            Row(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                                  onPressed: () => context.pop(),
+                                ),
+                                const SizedBox(width: 4),
+                                if (logoPath != null)
+                                  CachedNetworkImage(
+                                    imageUrl: '$tmdbImageBaseUrl/w300$logoPath',
+                                    height: isDesktop ? 36 : 30,
+                                    fit: BoxFit.contain,
+                                  )
+                                else
+                                  Text(
+                                    widget.providerName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.white,
+                                      fontSize: 22,
+                                      letterSpacing: -0.5,
+                                    ),
+                                  ),
+                                const SizedBox(width: 16),
+                                _buildTab('TV Shows', 'tv'),
+                                const SizedBox(width: 10),
+                                _buildTab('Movies', 'movie'),
+                              ],
+                            ),
+                            // Right Control: Search Icon padded down to avoid desktop title bar overlap
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6.0),
+                              child: IconButton(
+                                icon: const PhosphorIcon(PhosphorIconsRegular.magnifyingGlass, color: Colors.white, size: 22),
+                                onPressed: _toggleSearch,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // --- 4. Search Overlay Layer ---
                   Positioned.fill(
                     child: IgnorePointer(
                       ignoring: !_isSearching,
@@ -566,315 +698,351 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
     final bannerItems = _trending.take(5).toList();
     if (bannerItems.isEmpty) return const SizedBox.shrink();
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
-    final bannerHeight = isDesktop ? MediaQuery.sizeOf(context).height * 0.8 : 480.0;
+    final bannerHeight = isDesktop ? MediaQuery.sizeOf(context).height * 0.8 : 600.0;
+    final watchlistIds = ref.watch(watchlistProvider).map((item) => item.id).toSet();
 
-    final bannerWidget = Column(
-      children: [
-        SizedBox(
-          height: bannerHeight,
-          child: PageView.builder(
-            controller: _pageController,
-            onPageChanged: (index) {
-              setState(() {
-                _currentBannerPage = index;
-                if (_ambientColors.containsKey(index)) {
-                  _currentAmbientColor = _ambientColors[index]!;
-                }
-              });
-              _extractColorForIndex(index + 1);
-            },
-            itemCount: bannerItems.length,
-            itemBuilder: (context, index) {
-              final item = bannerItems[index];
-              final posterPath = item['poster_path'] as String?;
-              final backdropPath = item['backdrop_path'] as String?;
-              final imagePath = isDesktop ? (backdropPath ?? posterPath) : posterPath;
-              final title = item['title'] ?? item['name'] ?? 'Unknown';
-              final tmdbId = item['id'] as int;
-              
-              final rawGenres = item['genre_ids'] as List<dynamic>? ?? [];
-              final genreNames = rawGenres
-                  .take(4)
-                  .map((id) => _genreMap[id])
-                  .where((name) => name != null)
-                  .join(' • ');
+    final activeBgColor = Color.lerp(const Color(0xFF0D0F14), _currentAmbientColor, 0.15)!;
+    final slideColor = _ambientColors[_currentBannerPage] ?? NivioTheme.accentColorOf(context);
 
-              final double value = isDesktop
-                  ? 1.0
-                  : (1.0 - ((_currentPageValue - index).abs() * 0.12)).clamp(0.88, 1.0);
+    return SizedBox(
+      height: bannerHeight,
+      child: PageView.builder(
+        controller: _pageController,
+        onPageChanged: (index) {
+          setState(() {
+            _currentBannerPage = index;
+            if (_ambientColors.containsKey(index)) {
+              _currentAmbientColor = _ambientColors[index]!;
+              ref.read(ambientColorProvider.notifier).state = _currentAmbientColor;
+            }
+          });
+          _extractColorForIndex(index + 1);
+        },
+        itemCount: bannerItems.length,
+        itemBuilder: (context, index) {
+          final item = bannerItems[index];
+          final tmdbId = item['id'] as int? ?? 0;
+          final posterPath = item['poster_path'] as String?;
+          final backdropPath = item['backdrop_path'] as String?;
+          final imagePath = isDesktop ? (backdropPath ?? posterPath) : posterPath;
+          final title = item['title'] ?? item['name'] ?? 'Featured';
+          final logoUrl = item['logo_url'] as String?;
+          final overview = item['overview'] as String? ?? '';
+          final voteAverage = (item['vote_average'] as num?)?.toDouble();
+          final rawGenres = item['genre_ids'] as List<dynamic>? ?? [];
+          final genres = rawGenres
+              .take(4)
+              .map((id) => _genreMap[id])
+              .where((name) => name != null)
+              .cast<String>()
+              .toList();
 
-              return Transform.scale(
-                scale: value,
-                child: GestureDetector(
-                  onTap: () {
-                    context.push('/media/$tmdbId?type=$_mediaType');
-                  },
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // Large Poster/Backdrop Image
-                      if (imagePath != null)
-                        Container(
-                          margin: EdgeInsets.symmetric(horizontal: isDesktop ? 0 : 8),
-                          decoration: BoxDecoration(
-                            borderRadius: isDesktop ? BorderRadius.zero : BorderRadius.circular(16),
-                            border: isDesktop
-                                ? null
-                                : Border.all(
-                                    color: Colors.white.withOpacity(0.25),
-                                    width: 2.0,
-                                  ),
-                            image: DecorationImage(
-                              image: CachedNetworkImageProvider('$tmdbImageBaseUrl/${isDesktop ? 'original' : 'w500'}$imagePath'),
-                              fit: BoxFit.cover,
-                            ),
-                          ),
+          final releaseDate = item['release_date'] as String? ?? item['first_air_date'] as String? ?? '';
+          final year = releaseDate.length >= 4 ? releaseDate.substring(0, 4) : '';
+          final lang = (item['original_language'] as String? ?? '').toUpperCase();
+
+          final desktopBadges = _buildDesktopBadges(
+            mediaType: _mediaType.toUpperCase(),
+            year: year,
+            language: lang.isNotEmpty ? lang : 'HD',
+            voteAverage: voteAverage,
+            themeColor: slideColor,
+          );
+
+          final backdropUrl = imagePath != null
+              ? (imagePath.startsWith('http')
+                  ? imagePath
+                  : '$tmdbImageBaseUrl/${isDesktop ? 'original' : 'w500'}$imagePath')
+              : null;
+
+          final isInWatchlist = tmdbId != 0 && watchlistIds.contains(tmdbId);
+
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              // 1. Backdrop / Poster Image
+              Container(
+                decoration: BoxDecoration(
+                  image: backdropUrl != null
+                      ? DecorationImage(
+                          image: CachedNetworkImageProvider(backdropUrl),
+                          fit: BoxFit.cover,
                         )
-                      else
-                        Container(
-                          margin: EdgeInsets.symmetric(horizontal: isDesktop ? 0 : 8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1E1E24),
-                            borderRadius: isDesktop ? BorderRadius.zero : BorderRadius.circular(16),
-                          ),
-                          child: const Icon(Icons.movie, size: 64, color: Colors.white30),
-                        ),
-                        
-                      // Gradient Overlay to make text readable & fade into ambient color
-                      Container(
-                        margin: EdgeInsets.symmetric(horizontal: isDesktop ? 0 : 8),
-                        decoration: BoxDecoration(
-                          borderRadius: isDesktop ? BorderRadius.zero : BorderRadius.circular(16),
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              _currentAmbientColor.withOpacity(0.5),
-                              _currentAmbientColor,
-                            ],
-                            stops: const [0.0, 0.88, 1.0],
-                          ),
-                        ),
-                      ),
-                      
-                      // Content Details & Buttons
-                      Positioned(
-                        bottom: isDesktop ? 60 : 24,
-                        left: isDesktop ? 68 : 32,
-                        right: isDesktop ? 48 : 32,
-                        child: Column(
-                          crossAxisAlignment: isDesktop ? CrossAxisAlignment.start : CrossAxisAlignment.center,
-                          children: [
-                            Text(
-                              title,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: isDesktop ? 44 : 32,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 1.2,
-                                shadows: const [Shadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 4))],
-                              ),
-                              textAlign: isDesktop ? TextAlign.left : TextAlign.center,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            if (genreNames.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                genreNames,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                  shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
-                                ),
-                                textAlign: isDesktop ? TextAlign.left : TextAlign.center,
-                              ),
-                            ],
-                            const SizedBox(height: 20),
-                            Row(
-                              mainAxisAlignment: isDesktop ? MainAxisAlignment.start : MainAxisAlignment.center,
-                              children: [
-                                if (isDesktop) ...[
-                                  SizedBox(
-                                    width: 200,
-                                    child: ElevatedButton.icon(
-                                      onPressed: () {
-                                        context.push('/player/$tmdbId?type=$_mediaType');
-                                      },
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.white,
-                                        foregroundColor: Colors.black,
-                                        padding: const EdgeInsets.symmetric(vertical: 14),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                        elevation: 0,
-                                      ),
-                                      icon: const Icon(Icons.play_arrow_rounded, size: 28, color: Colors.black87),
-                                      label: const Text('Play', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  SizedBox(
-                                    width: 200,
-                                    child: Consumer(
-                                      builder: (context, ref, child) {
-                                        final inWatchlist = ref.watch(isInWatchlistProvider(tmdbId));
-                                        return ElevatedButton.icon(
-                                          onPressed: () async {
-                                            if (inWatchlist) {
-                                              await ref.read(watchlistServiceProvider).removeFromWatchlist(tmdbId);
-                                            } else {
-                                              await ref.read(watchlistServiceProvider).addToWatchlist(
-                                                WatchlistItem(
-                                                  id: tmdbId,
-                                                  title: title,
-                                                  posterPath: posterPath,
-                                                  mediaType: _mediaType,
-                                                  addedAt: DateTime.now(),
-                                                  voteAverage: (item['vote_average'] as num?)?.toDouble(),
-                                                  releaseDate: item['release_date'] as String? ?? item['first_air_date'] as String?,
-                                                  overview: item['overview'] as String?,
-                                                )
-                                              );
-                                            }
-                                            ref.read(watchlistRefreshProvider.notifier).refresh();
-                                          },
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.white.withOpacity(0.15),
-                                            foregroundColor: Colors.white,
-                                            elevation: 0,
-                                            padding: const EdgeInsets.symmetric(vertical: 14),
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                          ),
-                                          icon: Icon(inWatchlist ? Icons.check : Icons.add, size: 24, color: Colors.white),
-                                          label: const Text('MyList', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-                                        );
-                                      }
-                                    ),
-                                  ),
-                                ] else ...[
-                                  Expanded(
-                                    child: ElevatedButton.icon(
-                                      onPressed: () {
-                                        context.push('/player/$tmdbId?type=$_mediaType');
-                                      },
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.white,
-                                        foregroundColor: Colors.black,
-                                        padding: const EdgeInsets.symmetric(vertical: 14),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                        elevation: 0,
-                                      ),
-                                      icon: const Icon(Icons.play_arrow_rounded, size: 28, color: Colors.black87),
-                                      label: const Text('Play', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Consumer(
-                                      builder: (context, ref, child) {
-                                        final inWatchlist = ref.watch(isInWatchlistProvider(tmdbId));
-                                        return ElevatedButton.icon(
-                                          onPressed: () async {
-                                            if (inWatchlist) {
-                                              await ref.read(watchlistServiceProvider).removeFromWatchlist(tmdbId);
-                                            } else {
-                                              await ref.read(watchlistServiceProvider).addToWatchlist(
-                                                WatchlistItem(
-                                                  id: tmdbId,
-                                                  title: title,
-                                                  posterPath: posterPath,
-                                                  mediaType: _mediaType,
-                                                  addedAt: DateTime.now(),
-                                                  voteAverage: (item['vote_average'] as num?)?.toDouble(),
-                                                  releaseDate: item['release_date'] as String? ?? item['first_air_date'] as String?,
-                                                  overview: item['overview'] as String?,
-                                                )
-                                              );
-                                            }
-                                            ref.read(watchlistRefreshProvider.notifier).refresh();
-                                          },
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.white.withOpacity(0.15),
-                                            foregroundColor: Colors.white,
-                                            elevation: 0,
-                                            padding: const EdgeInsets.symmetric(vertical: 14),
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                          ),
-                                          icon: Icon(inWatchlist ? Icons.check : Icons.add, size: 24, color: Colors.white),
-                                          label: const Text('MyList', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-                                        );
-                                      }
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                      : null,
+                  color: backdropUrl == null ? const Color(0xFF2F2F2F) : null,
+                ),
+              ),
+              // 2. Vignette Asset Overlay
+              Positioned.fill(
+                child: Image.asset(
+                  'assets/images/vignette.png',
+                  fit: BoxFit.fill,
+                ),
+              ),
+              // 3. Bottom Gradient Fade matching HomeScreen
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: bannerHeight * 0.4,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        activeBgColor.withOpacity(0.8),
+                        activeBgColor,
+                      ],
+                      stops: const [0.0, 0.7, 1.0],
+                    ),
                   ),
                 ),
-              );
-            },
-          ),
-        ),
-        
-        const SizedBox(height: 12),
-        // Page Indicators
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(bannerItems.length, (index) {
-            final isActive = _currentBannerPage == index;
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              height: 6,
-              width: isActive ? 16 : 6,
-              decoration: BoxDecoration(
-                color: isActive ? Colors.white : Colors.white30,
-                borderRadius: BorderRadius.circular(3),
               ),
-            );
-          }),
-        ),
-      ],
+              // 4. Content Details & Buttons
+              Positioned(
+                bottom: isDesktop ? 40 : 76,
+                left: isDesktop ? 68 : 24,
+                right: isDesktop ? 48 : 24,
+                child: isDesktop
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            flex: 6,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (logoUrl != null && logoUrl.isNotEmpty)
+                                  GestureDetector(
+                                    onTap: () => context.push('/media/$tmdbId?type=$_mediaType'),
+                                    child: MouseRegion(
+                                      cursor: SystemMouseCursors.click,
+                                      child: CachedNetworkImage(
+                                        imageUrl: logoUrl,
+                                        height: 110,
+                                        alignment: Alignment.bottomLeft,
+                                        fit: BoxFit.contain,
+                                        fadeInDuration: Duration.zero,
+                                        fadeOutDuration: Duration.zero,
+                                        placeholder: (context, url) => SizedBox(height: 110, child: _buildTitleText(title)),
+                                        errorWidget: (_, __, ___) => _buildTitleText(title),
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  GestureDetector(
+                                    onTap: () => context.push('/media/$tmdbId?type=$_mediaType'),
+                                    child: MouseRegion(
+                                      cursor: SystemMouseCursors.click,
+                                      child: _buildTitleText(title),
+                                    ),
+                                  ),
+                                const SizedBox(height: 16),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: desktopBadges,
+                                ),
+                                const SizedBox(height: 28),
+                                Row(
+                                  children: [
+                                    _AnimatedHoverScale(
+                                      child: ElevatedButton.icon(
+                                        onPressed: () => context.push('/player/$tmdbId?type=$_mediaType'),
+                                        icon: PhosphorIcon(
+                                          PhosphorIconsFill.play,
+                                          color: slideColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+                                          size: 15,
+                                        ),
+                                        label: Text(
+                                          'Watch Now',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                            color: slideColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+                                          ),
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: slideColor,
+                                          elevation: 0,
+                                          padding: const EdgeInsets.symmetric(horizontal: 42, vertical: 19),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    _desktopOutlineButton(
+                                      icon: PhosphorIcon(
+                                        isInWatchlist ? PhosphorIconsFill.heart : PhosphorIconsRegular.heart,
+                                        color: isInWatchlist ? slideColor : Colors.white,
+                                        size: 18,
+                                      ),
+                                      onTap: () => _toggleWatchlist(item),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    _desktopOutlineButton(
+                                      icon: PhosphorIcon(
+                                        isInWatchlist ? PhosphorIconsFill.bookmarkSimple : PhosphorIconsRegular.bookmarkSimple,
+                                        color: isInWatchlist ? slideColor : Colors.white,
+                                        size: 18,
+                                      ),
+                                      onTap: () => _toggleWatchlist(item),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 40),
+                          Expanded(
+                            flex: 5,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  overview,
+                                  textAlign: TextAlign.right,
+                                  maxLines: 4,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.85),
+                                    fontSize: 14,
+                                    height: 1.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  alignment: WrapAlignment.end,
+                                  children: genres.map((genre) => _buildGenreBubble(genre, slideColor)).toList(),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Text(
+                            title,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 8),
+                          if (genres.isNotEmpty)
+                            Text(
+                              genres.join(' • '),
+                              style: const TextStyle(color: Colors.white70, fontSize: 13),
+                            ),
+                          const SizedBox(height: 14),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _AnimatedHoverScale(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => context.push('/player/$tmdbId?type=$_mediaType'),
+                                  icon: const PhosphorIcon(
+                                    PhosphorIconsFill.play,
+                                    color: Colors.black,
+                                    size: 16,
+                                  ),
+                                  label: const Text('Play'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: Colors.black,
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              _desktopOutlineButton(
+                                icon: PhosphorIcon(
+                                  isInWatchlist ? PhosphorIconsFill.checkCircle : PhosphorIconsRegular.plus,
+                                  color: isInWatchlist ? slideColor : Colors.white,
+                                  size: 18,
+                                ),
+                                onTap: () => _toggleWatchlist(item),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+              ),
+              // 5. Slide Indicator Dots at Bottom Center
+              Positioned(
+                bottom: 20,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(
+                    bannerItems.length,
+                    (dotIndex) {
+                      return _AnimatedProgressBarDot(
+                        isActive: _currentBannerPage == dotIndex,
+                        activeColor: slideColor,
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
-
-    return bannerWidget;
   }
 
   Widget _buildTab(String title, String type) {
     final isSelected = _mediaType == type;
-    return GestureDetector(
-      onTap: () {
-        if (!isSelected) {
-          setState(() {
-            _mediaType = type;
-            _currentBannerPage = 0;
-            _pageController.jumpToPage(0);
-          });
-          _fetchContent();
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white.withOpacity(0.1) : Colors.transparent,
-          border: Border.all(
-            color: isSelected ? Colors.white : Colors.white.withOpacity(0.15),
-            width: 1,
+    return _AnimatedHoverScale(
+      child: GestureDetector(
+        onTap: () {
+          if (!isSelected) {
+            setState(() {
+              _mediaType = type;
+              _currentBannerPage = 0;
+              _pageController.jumpToPage(0);
+            });
+            _fetchContent();
+          }
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white.withOpacity(0.18) : Colors.black.withOpacity(0.3),
+            border: Border.all(
+              color: isSelected ? Colors.white : Colors.white24,
+              width: 1.5,
+            ),
+            borderRadius: BorderRadius.circular(20),
           ),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Text(
-          title,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.white60,
-            fontSize: 12,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          child: Text(
+            title,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.white70,
+              fontSize: 13.5,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+              letterSpacing: 0.3,
+            ),
           ),
         ),
       ),
@@ -1018,6 +1186,59 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                     ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AnimatedHoverScale extends StatefulWidget {
+  final Widget child;
+  const _AnimatedHoverScale({required this.child});
+
+  @override
+  State<_AnimatedHoverScale> createState() => _AnimatedHoverScaleState();
+}
+
+class _AnimatedHoverScaleState extends State<_AnimatedHoverScale> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: AnimatedScale(
+        scale: _isHovered ? 1.08 : 1.0,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOutBack,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class _AnimatedProgressBarDot extends StatelessWidget {
+  final bool isActive;
+  final Color activeColor;
+
+  const _AnimatedProgressBarDot({
+    required this.isActive,
+    required this.activeColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        width: isActive ? 24 : 12,
+        height: 3,
+        decoration: BoxDecoration(
+          color: isActive ? activeColor : Colors.white24,
+          borderRadius: BorderRadius.circular(2),
         ),
       ),
     );

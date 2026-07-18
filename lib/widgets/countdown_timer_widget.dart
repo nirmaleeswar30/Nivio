@@ -24,38 +24,52 @@ class _CountdownTimerWidgetState extends State<CountdownTimerWidget> {
   @override
   void initState() {
     super.initState();
-    _updateTimeLeft();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) {
-        _updateTimeLeft();
-      }
-    });
+    _scheduleNextUpdate();
   }
 
-  void _updateTimeLeft() {
+  void _scheduleNextUpdate() {
+    _timer?.cancel();
     final now = DateTime.now();
-    final newTimeLeft = widget.targetDate.isAfter(now) 
+    _timeLeft = widget.targetDate.isAfter(now) 
         ? widget.targetDate.difference(now) 
         : Duration.zero;
-        
-    bool shouldUpdate = false;
-    try {
-      final oldString = _formatDuration(_timeLeft);
-      final newString = _formatDuration(newTimeLeft);
-      if (oldString != newString) shouldUpdate = true;
-    } catch (_) {
-      shouldUpdate = true; // first time
-    }
-    
-    _timeLeft = newTimeLeft;
 
-    if (shouldUpdate && mounted) {
+    if (mounted) {
       setState(() {});
     }
 
-    if (newTimeLeft == Duration.zero) {
-      _timer?.cancel();
+    if (_timeLeft <= Duration.zero) return;
+
+    // Calculate precise time until the formatted string will change next
+    Duration delayUntilNextUpdate;
+    if (_timeLeft.inDays > 0) {
+      // Formatted as "Xd Yh", string changes only when hours cross.
+      // E.g., when the current minutes and seconds drop to zero.
+      final minutes = _timeLeft.inMinutes % 60;
+      final seconds = _timeLeft.inSeconds % 60;
+      delayUntilNextUpdate = Duration(minutes: minutes, seconds: seconds);
+      // If we are exactly on the hour, wait 1 hour for the next change
+      if (delayUntilNextUpdate.inSeconds == 0) {
+        delayUntilNextUpdate = const Duration(hours: 1);
+      }
+    } else if (_timeLeft.inHours > 0) {
+      // Formatted as "Xh Ym", string changes every minute.
+      final seconds = _timeLeft.inSeconds % 60;
+      delayUntilNextUpdate = Duration(seconds: seconds);
+      if (delayUntilNextUpdate.inSeconds == 0) {
+        delayUntilNextUpdate = const Duration(minutes: 1);
+      }
+    } else {
+      // Formatted as "Xm Ys", string changes every second.
+      delayUntilNextUpdate = const Duration(seconds: 1);
     }
+
+    // Add a tiny buffer (50ms) to ensure we cross the time boundary safely
+    delayUntilNextUpdate += const Duration(milliseconds: 50);
+
+    _timer = Timer(delayUntilNextUpdate, () {
+      if (mounted) _scheduleNextUpdate();
+    });
   }
 
   @override
