@@ -18,6 +18,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/firebase_options.dart';
+import 'package:nivio/widgets/changelog_dialog.dart';
+import 'package:nivio/widgets/mini_player_overlay.dart';
 import 'package:nivio/models/cache_entry.dart';
 import 'package:nivio/models/watchlist_item.dart';
 import 'package:nivio/models/new_episode.dart';
@@ -463,7 +465,12 @@ class _NivioAppState extends ConsumerState<NivioApp> {
       routerConfig: appRouter,
       builder: (context, child) {
         return _GitHubReleasePromptGate(
-          child: child ?? const SizedBox.shrink(),
+          child: Stack(
+            children: [
+              child ?? const SizedBox.shrink(),
+              const MiniPlayerOverlay(),
+            ],
+          ),
         );
       },
       debugShowCheckedModeBanner: false,

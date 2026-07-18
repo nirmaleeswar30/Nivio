@@ -25,8 +25,8 @@ class AniListService {
     : _dio = Dio(
         BaseOptions(
           baseUrl: _baseUrl,
-          connectTimeout: const Duration(seconds: 10),
-          receiveTimeout: const Duration(seconds: 10),
+          connectTimeout: const Duration(seconds: 25),
+          receiveTimeout: const Duration(seconds: 25),
         ),
       );
 
@@ -315,6 +315,7 @@ class AniListService {
       final data = response.data['data']['Page']['media'] as List<dynamic>;
       return data.map((e) => e as Map<String, dynamic>).toList();
     } catch (e) {
+      print('\n\n--- ANILIST HERO BANNER ERROR: $e ---\n\n');
       appDebugLog('getTrendingAnimeForFeatured error: $e');
       return [];
     }

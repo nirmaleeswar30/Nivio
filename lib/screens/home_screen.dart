@@ -31,6 +31,7 @@ import 'package:nivio/services/api_status_service.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
 import 'package:nivio/widgets/content_row.dart';
 import 'package:nivio/widgets/continue_watching_row.dart';
+import 'package:nivio/providers/player_active_provider.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 
@@ -91,6 +92,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     _bannerTimer = Timer.periodic(const Duration(seconds: 14), (timer) {
       if (!_pageController.hasClients || !_isBannerVisible) return;
+      // Don't waste cycles on banner animation while the video player is active
+      if (ref.read(isPlayerActiveProvider)) return;
       final featuredContent = ref.read(featuredContentProvider).value ?? [];
       if (featuredContent.isEmpty) return;
       _pageController.animateToPage(
@@ -120,6 +123,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (items.isEmpty || index >= items.length) return;
     
     if (_ambientColors.containsKey(index)) return;
+
+    // Don't run expensive color extraction while the video player is active
+    if (ref.read(isPlayerActiveProvider)) return;
     
     final content = items[index];
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;

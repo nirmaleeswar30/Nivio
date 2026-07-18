@@ -303,36 +303,6 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
         child: Stack(
         clipBehavior: Clip.none,
         children: [
-          if (!isUnaired)
-            Positioned(
-              left: -30,
-              top: -40,
-              width: 240,
-              height: 200,
-              child: IgnorePointer(
-                child: ImageFiltered(
-                  imageFilter: ImageFilter.blur(
-                    sigmaX: 55,
-                    sigmaY: 55,
-                    tileMode: TileMode.decal,
-                  ),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: RadialGradient(
-                        center: Alignment.topLeft,
-                        radius: 1,
-                        colors: [
-                          widget.colors.dominant.withValues(alpha: 0.18),
-                          widget.colors.dominant.withValues(alpha: 0.06),
-                          Colors.transparent,
-                        ],
-                        stops: const [0.0, 0.45, 1.0],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
           Material(
             color: bgColor,
             borderRadius: BorderRadius.circular(12),
@@ -358,22 +328,28 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: stillUrl.isNotEmpty
-                                  ? CachedNetworkImage(
-                                      imageUrl: stillUrl,
-                                      width: 140,
-                                      height: 90,
-                                      fit: BoxFit.cover,
-                                      memCacheWidth: 280,
-                                      placeholder: (context, url) =>
-                                          _thumbPlaceholder(),
-                                      errorWidget: (context, url, error) =>
-                                          _thumbError(),
-                                    )
-                                  : _thumbError(),
-                            ),
+                            stillUrl.isNotEmpty
+                                ? CachedNetworkImage(
+                                    imageUrl: stillUrl,
+                                    width: 140,
+                                    height: 90,
+                                    fit: BoxFit.cover,
+                                    memCacheWidth: 280,
+                                    placeholder: (context, url) =>
+                                        _thumbPlaceholder(),
+                                    errorWidget: (context, url, error) =>
+                                        _thumbError(),
+                                    imageBuilder: (context, imageProvider) => Container(
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(8),
+                                        image: DecorationImage(
+                                          image: imageProvider,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                : _thumbError(),
                           ],
                         ),
                       ),

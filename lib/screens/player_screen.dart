@@ -44,6 +44,8 @@ import 'package:nivio/services/anilist_service.dart';
 import 'package:nivio/services/aniskip_service.dart';
 import 'package:nivio/services/theintrodb_service.dart';
 import 'package:nivio/services/skip_times_models.dart';
+import 'package:nivio/providers/player_active_provider.dart';
+import 'package:nivio/providers/mini_player_provider.dart';
 import 'dart:math' as math;
 
 class PlayerScreen extends ConsumerStatefulWidget {
@@ -82,6 +84,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     with WidgetsBindingObserver, TickerProviderStateMixin {
   WatchHistoryService? _cachedHistoryService;
   SearchResult? _cachedMedia;
+  StateController<bool>? _cachedPlayerActiveNotifier;
 
   Future<void> _loadSubtitleDelay() async {
     final prefs = await SharedPreferences.getInstance();
@@ -168,6 +171,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _autoFullscreenTriggeredForCurrentLoad = false;
   String? _openTopActionMenuId;
   String _selectedDisplayFitKey = 'bestFit';
+  bool _transferredToMiniPlayer = false; // When true, dispose skips player.dispose()
+  bool _isDisposing = false; // Track disposal state to prevent ref usage
   final ValueNotifier<bool> _fullscreenTopBarVisibleNotifier = ValueNotifier(
     false,
   );
@@ -224,18 +229,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _loadSubtitleDelay();
     unawaited(WakelockPlus.enable());
     
+    // Signal to the rest of the app that the player is active
+    ref.read(isPlayerActiveProvider.notifier).state = true;
+    
     // Pre-cache providers to prevent using ref after widget disposal in dispose()
     _cachedHistoryService = ref.read(watchHistoryServiceProvider);
     _cachedMedia = ref.read(selectedMediaProvider);
+    _cachedPlayerActiveNotifier = ref.read(isPlayerActiveProvider.notifier);
     
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
-    _player = Player();
-    _videoController = VideoController(
-      _player,
-      configuration: VideoControllerConfiguration(
-        enableHardwareAcceleration: !isDesktop,
-      ),
-    );
+
+    // Check if the mini player has an active player we can reclaim
+    // (user tapped expand on mini player or navigated back to same media)
+    final reclaimedState = ref.read(miniPlayerProvider.notifier).reclaim();
+    if (reclaimedState != null && reclaimedState.player != null) {
+      _player = reclaimedState.player!;
+      _videoController = reclaimedState.videoController!;
+    } else {
+      _player = Player();
+      _videoController = VideoController(
+        _player,
+        configuration: VideoControllerConfiguration(
+          enableHardwareAcceleration: !isDesktop,
+        ),
+      );
+    }
 
     // Register event listeners via stream subscriptions
     _setupPlayerStreams();
@@ -273,7 +291,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     _currentEpisode = widget.episode;
     _currentProviderIndex = math.max(0, widget.providerIndex ?? 0);
-    _initializePlayer(isRetry: false);
+    // If we reclaimed from mini player, the player is already initialized and playing
+    if (reclaimedState == null || reclaimedState.player == null) {
+      _initializePlayer(isRetry: false);
+    } else {
+      // Player is already playing — just mark as loaded
+      setState(() {
+        _isLoading = false;
+      });
+    }
     _initializeWatchParty();
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
@@ -2701,7 +2727,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (duration.inSeconds <= 0) return;
     
     // Cache providers safely if we are still mounted and active
-    if (mounted) {
+    if (mounted && !_isDisposing) {
       try {
         _cachedHistoryService ??= ref.read(watchHistoryServiceProvider);
         _cachedMedia ??= ref.read(selectedMediaProvider);
@@ -2709,7 +2735,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     
     SearchResult? media = _cachedMedia;
-    if (media == null && mounted) {
+    if (media == null && mounted && !_isDisposing) {
       try {
         media = ref.read(selectedMediaProvider);
       } catch (_) {}
@@ -2717,7 +2743,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (media == null) return;
     
     WatchHistoryService? historyService = _cachedHistoryService;
-    if (historyService == null && mounted) {
+    if (historyService == null && mounted && !_isDisposing) {
       try {
         historyService = ref.read(watchHistoryServiceProvider);
       } catch (_) {}
@@ -2751,6 +2777,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   @override
   void dispose() {
+    _isDisposing = true;
     if (!Platform.isAndroid && !Platform.isIOS) {
       windowManager.setFullScreen(false);
     }
@@ -2776,13 +2803,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_player.state.duration > Duration.zero) {
       _saveProgress();
     }
-    _player.dispose();
+    // Only dispose the player if it was NOT transferred to the mini player
+    if (!_transferredToMiniPlayer) {
+      _player.dispose();
+    }
     for (final sub in _subscriptions) {
       sub.cancel();
     }
     _subscriptions.clear();
     _hasAppliedGlobalTracks = false;
     _focusNode.dispose();
+    // Signal to the rest of the app that the player is no longer active
+    // Use cached notifier since ref is no longer safe in dispose()
+    _cachedPlayerActiveNotifier?.state = false;
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
     ]);
@@ -2791,7 +2824,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _handleBackNavigation() {
-    if (!Platform.isAndroid && !Platform.isIOS) {
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    if (isDesktop) {
       windowManager.setFullScreen(false);
     }
     if (!_isDirectStream && _isInFullscreen) {
@@ -2804,6 +2838,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       });
       _syncFullscreenTopBarVisibility();
       return;
+    }
+
+    // On desktop, enter mini player mode instead of fully closing
+    if (isDesktop && !_useNativePlayer && _player.state.duration > Duration.zero) {
+      final media = ref.read(selectedMediaProvider);
+      _transferredToMiniPlayer = true;
+      ref.read(miniPlayerProvider.notifier).activate(
+        player: _player,
+        videoController: _videoController,
+        mediaInfo: MiniPlayerMediaInfo(
+          mediaId: widget.mediaId,
+          season: widget.season,
+          episode: _currentEpisode,
+          mediaType: widget.mediaType ?? media?.mediaType,
+          title: media?.title ?? media?.name ?? 'Playing',
+          posterPath: media?.posterPath ?? media?.backdropPath,
+          totalSeasons: 1,
+          totalEpisodes: _currentSeasonData?.episodes.length,
+        ),
+      );
     }
 
     if (context.canPop()) {
