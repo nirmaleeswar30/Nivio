@@ -44,13 +44,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _controller.dispose();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
-    
-    // Clear persistent search query state so we start fresh next time
-    try {
-      final notifier = ref.read(searchQueryProvider.notifier);
-      Future.microtask(() => notifier.state = '');
-    } catch (_) {}
-    
     super.dispose();
   }
 

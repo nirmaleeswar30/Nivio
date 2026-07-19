@@ -3,30 +3,30 @@ import 'package:nivio/models/search_result.dart';
 import 'package:nivio/providers/service_providers.dart';
 
 // Search query state
-final searchQueryProvider = StateProvider<String>((ref) => '');
+final searchQueryProvider = StateProvider.autoDispose<String>((ref) => '');
 
 // Current page for pagination
-final searchPageProvider = StateProvider<int>((ref) => 1);
+final searchPageProvider = StateProvider.autoDispose<int>((ref) => 1);
 
 // Language filter (null = all languages)
-final searchLanguageFilterProvider = StateProvider<String?>((ref) => null);
+final searchLanguageFilterProvider = StateProvider.autoDispose<String?>((ref) => null);
 
 // Sort option (null = default, 'popularity', 'title', 'year')
-final searchSortProvider = StateProvider<String?>((ref) => null);
+final searchSortProvider = StateProvider.autoDispose<String?>((ref) => null);
 
 // All accumulated search results (for pagination)
-final accumulatedSearchResultsProvider = StateProvider<List<SearchResult>>(
+final accumulatedSearchResultsProvider = StateProvider.autoDispose<List<SearchResult>>(
   (ref) => [],
 );
 
 // Total pages and results info
 final searchMetadataProvider =
-    StateProvider<({int totalPages, int totalResults})>((ref) {
+    StateProvider.autoDispose<({int totalPages, int totalResults})>((ref) {
       return (totalPages: 0, totalResults: 0);
     });
 
 // Search results provider with pagination
-final searchResultsProvider = FutureProvider<SearchResults>((ref) async {
+final searchResultsProvider = FutureProvider.autoDispose<SearchResults>((ref) async {
   final query = ref.watch(searchQueryProvider);
   if (query.isEmpty) {
     ref.read(accumulatedSearchResultsProvider.notifier).state = [];

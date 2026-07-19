@@ -1333,28 +1333,3 @@ class _AnimatedHoverScaleState extends State<_AnimatedHoverScale> {
   }
 }
 
-class _AnimatedProgressBarDot extends StatelessWidget {
-  final bool isActive;
-  final Color activeColor;
-
-  const _AnimatedProgressBarDot({
-    required this.isActive,
-    required this.activeColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        width: isActive ? 24 : 12,
-        height: 3,
-        decoration: BoxDecoration(
-          color: isActive ? activeColor : Colors.white24,
-          borderRadius: BorderRadius.circular(2),
-        ),
-      ),
-    );
-  }
-}

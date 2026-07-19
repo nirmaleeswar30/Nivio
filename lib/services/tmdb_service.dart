@@ -456,10 +456,18 @@ class TmdbService {
       final logos = response.data['logos'] as List<dynamic>?;
       if (logos == null || logos.isEmpty) return null;
       
+      // Filter out non-PNG logos (like SVGs) since CachedNetworkImage can't render them
+      final pngLogos = logos.where((logo) {
+        final path = logo['file_path'] as String?;
+        return path != null && path.toLowerCase().endsWith('.png');
+      }).toList();
+      
+      if (pngLogos.isEmpty) return null;
+
       // Filter for English logo, or fallback to first one available
-      final englishLogo = logos.firstWhere(
+      final englishLogo = pngLogos.firstWhere(
         (logo) => logo['iso_639_1'] == 'en',
-        orElse: () => logos.first,
+        orElse: () => pngLogos.first,
       );
       
       final filePath = englishLogo['file_path'] as String?;
