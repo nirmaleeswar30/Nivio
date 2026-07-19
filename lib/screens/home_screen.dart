@@ -693,7 +693,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           final tmdbId = content['id'] as int? ?? 0;
           final mediaType = content['media_type'] as String? ?? 'movie';
           final title = content['title'] as String? ?? 'Featured';
-          final backdropPath = content['backdrop_path'] as String?;
+          final rawBackdropPath = content['backdrop_path'] as String?;
+          final posterPath = content['poster_path'] as String?;
           final voteAverage = content['vote_average'] as double?;
           final year = content['year'] as String? ?? '';
           final genres = List<String>.from(content['genres'] ?? []);
@@ -706,6 +707,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           final logoUrl = content['logo_url'] as String?;
 
           final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+          final backdropPath = isDesktop ? (rawBackdropPath ?? posterPath) : posterPath;
 
           final isInWatchlist = tmdbId != 0
               ? (_pendingWatchlistState[tmdbId] ??
@@ -739,12 +741,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
               // Vignette overlay
-              Positioned.fill(
-                child: Image.asset(
-                  'assets/images/vignette.png',
-                  fit: BoxFit.fill,
+              if (isDesktop)
+                Positioned.fill(
+                  child: Image.asset(
+                    'assets/images/vignette.png',
+                    fit: BoxFit.fill,
+                  ),
                 ),
-              ),
               Positioned(
                 left: 0,
                 right: 0,
@@ -962,19 +965,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              _smallSquareButton(
-                                icon: PhosphorIcon(
-                                  isInWatchlist
-                                      ? PhosphorIconsFill.checkCircle
-                                      : PhosphorIconsRegular.plus,
-                                  color: isInWatchlist
-                                      ? slideColor
-                                      : Colors.white,
-                                  size: 18,
-                                ),
-                                onTap: () => _toggleFeaturedWatchlist(content),
-                              ),
-                              const SizedBox(width: 12),
                               _AnimatedHoverScale(
                                 child: ElevatedButton.icon(
                                   onPressed: () => context.push('/media/$tmdbId?type=$mediaType'),
@@ -1001,6 +991,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   ),
                                 ),
                               ),
+                              const SizedBox(width: 12),
+                              _smallSquareButton(
+                                icon: PhosphorIcon(
+                                  isInWatchlist
+                                      ? PhosphorIconsFill.checkCircle
+                                      : PhosphorIconsRegular.plus,
+                                  color: isInWatchlist
+                                      ? slideColor
+                                      : Colors.white,
+                                  size: 18,
+                                ),
+                                onTap: () => _toggleFeaturedWatchlist(content),
+                              ),
                             ],
                           ),
                         ],
@@ -1015,9 +1018,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   children: List.generate(
                     items.length,
                     (dotIndex) {
-                      return _AnimatedProgressBarDot(
-                        isActive: _currentBannerIndex == dotIndex,
-                        activeColor: _ambientColors[_currentBannerIndex] ?? NivioTheme.accentColorOf(context),
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        width: _currentBannerIndex == dotIndex ? 7 : 5,
+                        height: _currentBannerIndex == dotIndex ? 7 : 5,
+                        decoration: BoxDecoration(
+                          color: _currentBannerIndex == dotIndex
+                              ? (_ambientColors[_currentBannerIndex] ?? NivioTheme.accentColorOf(context))
+                              : Colors.white38,
+                          shape: BoxShape.circle,
+                        ),
                       );
                     },
                   ),

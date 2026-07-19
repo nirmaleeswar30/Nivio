@@ -415,7 +415,7 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
                 child: Container(
                   key: _cardKey,
                   width: isDesktop ? 140 : 120,
-                  height: isDesktop ? 210 : 180,
+                  height: isDesktop ? 210 : 170,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(4),
                     color: const Color(0xFF2F2F2F),

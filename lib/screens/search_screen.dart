@@ -47,7 +47,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     
     // Clear persistent search query state so we start fresh next time
     try {
-      ref.read(searchQueryProvider.notifier).state = '';
+      final notifier = ref.read(searchQueryProvider.notifier);
+      Future.microtask(() => notifier.state = '');
     } catch (_) {}
     
     super.dispose();

@@ -227,7 +227,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     unawaited(WakelockPlus.enable());
     
     // Signal to the rest of the app that the player is active
-    ref.read(isPlayerActiveProvider.notifier).state = true;
+    Future.microtask(() {
+      if (mounted) {
+        ref.read(isPlayerActiveProvider.notifier).state = true;
+      }
+    });
     
     // Pre-cache providers to prevent using ref after widget disposal in dispose()
     _cachedHistoryService = ref.read(watchHistoryServiceProvider);
@@ -238,10 +242,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     // Check if the mini player has an active player we can reclaim
     // (user tapped expand on mini player or navigated back to same media)
-    final reclaimedState = ref.read(miniPlayerProvider.notifier).reclaim();
-    if (reclaimedState != null && reclaimedState.player != null) {
-      _player = reclaimedState.player!;
-      _videoController = reclaimedState.videoController!;
+    final miniPlayerState = ref.read(miniPlayerProvider);
+    if (miniPlayerState.isActive && miniPlayerState.player != null) {
+      _player = miniPlayerState.player!;
+      _videoController = miniPlayerState.videoController!;
+      Future.microtask(() {
+        if (mounted) {
+          ref.read(miniPlayerProvider.notifier).reclaim();
+        }
+      });
     } else {
       _player = Player();
       _videoController = VideoController(
@@ -289,7 +298,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _currentEpisode = widget.episode;
     _currentProviderIndex = math.max(0, widget.providerIndex ?? 0);
     // If we reclaimed from mini player, the player is already initialized and playing
-    if (reclaimedState == null || reclaimedState.player == null) {
+    if (!miniPlayerState.isActive || miniPlayerState.player == null) {
       _initializePlayer(isRetry: false);
     } else {
       // Player is already playing — just mark as loaded
@@ -2812,7 +2821,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _focusNode.dispose();
     // Signal to the rest of the app that the player is no longer active
     // Use cached notifier since ref is no longer safe in dispose()
-    _cachedPlayerActiveNotifier?.state = false;
+    final cachedNotifier = _cachedPlayerActiveNotifier;
+    if (cachedNotifier != null) {
+      Future.microtask(() => cachedNotifier.state = false);
+    }
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
     ]);
@@ -2857,6 +2869,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       );
     }
 
+    if (!isDesktop) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
+
     if (context.canPop()) {
       Navigator.of(context).pop();
       return;
@@ -2865,6 +2885,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _forceExitPlayer() {
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    if (!isDesktop) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
+    
     if (context.canPop()) {
       Navigator.of(context).pop();
       return;

@@ -597,7 +597,21 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                       ),
                                       onTap: _handleBackNavigation,
                                     ),
-                                    const SizedBox.shrink(),
+                                    if (!isDesktop)
+                                      Row(
+                                        children: [
+                                          _glassIconButton(
+                                            icon: const PhosphorIcon(
+                                              PhosphorIconsRegular.users,
+                                              color: NivioTheme.netflixWhite,
+                                              size: 19,
+                                            ),
+                                            onTap: () => _openWatchPartyHub(media),
+                                          ),
+                                        ],
+                                      )
+                                    else
+                                      const SizedBox.shrink(),
                                   ],
                                 ),
                               ),
@@ -815,21 +829,23 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                                   ),
                                                 ),
                                               ],
-                                              const SizedBox(width: 12),
-                                              _AnimatedHoverScale(
-                                                child: TextButton.icon(
-                                                  onPressed: () => _openWatchPartyHub(media),
-                                                  icon: Icon(
-                                                    PhosphorIconsRegular.users,
-                                                    size: 17,
-                                                    color: accentColor,
-                                                  ),
-                                                  label: Text(
-                                                    'Watch together',
-                                                    style: TextStyle(color: accentColor),
+                                              if (isDesktop) ...[
+                                                const SizedBox(width: 12),
+                                                _AnimatedHoverScale(
+                                                  child: TextButton.icon(
+                                                    onPressed: () => _openWatchPartyHub(media),
+                                                    icon: Icon(
+                                                      PhosphorIconsRegular.users,
+                                                      size: 17,
+                                                      color: accentColor,
+                                                    ),
+                                                    label: Text(
+                                                      'Watch together',
+                                                      style: TextStyle(color: accentColor),
+                                                    ),
                                                   ),
                                                 ),
-                                              ),
+                                              ],
                                               const SizedBox(width: 12),
                                               TextButton.icon(
                                                 onPressed: () {
@@ -1033,53 +1049,34 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                 ],
                               ),
                               const SizedBox(height: 12),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                              SizedBox(
+                                width: double.infinity,
+                                child: Wrap(
+                                alignment: WrapAlignment.spaceBetween,
+                                spacing: 8,
+                                runSpacing: 8,
+                                crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
-                                  Row(
-                                    children: [
-                                      if (_trailerSource != null) ...[
-                                        const SizedBox(width: 16),
-                                        _AnimatedHoverScale(
-                                          child: TextButton.icon(
-                                            onPressed: () =>
-                                                _showTrailerPlayer(context),
-                                            icon: Icon(
-                                              Icons.play_circle_outline,
-                                              size: 18,
-                                              color: accentColor,
-                                            ),
-                                            label: Text(
-                                              'Watch trailer',
-                                              style: TextStyle(
-                                                color: accentColor,
-                                                fontSize: 15,
-                                              ),
-                                            ),
-                                          ),
+                                  if (_trailerSource != null) ...[
+                                    _AnimatedHoverScale(
+                                      child: TextButton.icon(
+                                        onPressed: () =>
+                                            _showTrailerPlayer(context),
+                                        icon: Icon(
+                                          Icons.play_circle_outline,
+                                          size: 18,
+                                          color: accentColor,
                                         ),
-                                      ],
-                                      const SizedBox(width: 16),
-                                      _AnimatedHoverScale(
-                                        child: TextButton.icon(
-                                          onPressed: () => _openWatchPartyHub(media),
-                                          icon: Icon(
-                                            PhosphorIconsRegular.users,
-                                            size: 18,
+                                        label: Text(
+                                          'Watch trailer',
+                                          style: TextStyle(
                                             color: accentColor,
-                                          ),
-                                          label: Text(
-                                            'Watch together',
-                                            style: TextStyle(
-                                              color: accentColor,
-                                              fontSize: 15,
-                                            ),
+                                            fontSize: 15,
                                           ),
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                   TextButton.icon(
                                     onPressed: () {
                                       final title = Uri.encodeComponent(
@@ -1100,6 +1097,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                     ),
                                   ),
                                 ],
+                                ),
                               ),
                               const SizedBox(height: 14),
                               Text(

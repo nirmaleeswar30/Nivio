@@ -522,8 +522,8 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
             ),
           )
         : ListView(
-            shrinkWrap: isDesktop,
-            physics: isDesktop ? const NeverScrollableScrollPhysics() : null,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
             padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 16, 16, 16),
             children: [
               Padding(

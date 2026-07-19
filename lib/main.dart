@@ -485,7 +485,7 @@ class _NivioAppState extends ConsumerState<NivioApp> {
 
     return MaterialApp.router(
       scrollBehavior: MyCustomScrollBehavior(),
-      showPerformanceOverlay: true,
+      showPerformanceOverlay: false,
       title: 'Nivio',
       theme: appTheme,
       darkTheme: appTheme,
