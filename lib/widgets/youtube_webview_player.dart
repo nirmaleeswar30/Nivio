@@ -64,9 +64,9 @@ class YouTubeWebViewPlayerState extends State<YouTubeWebViewPlayer> {
     if (_isReady && _controller != null) {
       try {
         _controller!.evaluateJavascript(source: 'if(player) player.stopVideo();');
-        _controller!.loadUrl(urlRequest: URLRequest(url: WebUri('about:blank')));
       } catch (_) {}
     }
+    _controller = null;
     super.dispose();
   }
 
@@ -74,6 +74,7 @@ class YouTubeWebViewPlayerState extends State<YouTubeWebViewPlayer> {
     final autoplay = widget.autoPlay ? 1 : 0;
     final controls = widget.showControls ? 1 : 0;
     final loop = widget.loop ? 1 : 0;
+    // ignore: unused_local_variable
     final mute = widget.muted ? 1 : 0;
     final start = widget.startAt;
     final videoId = widget.videoId;

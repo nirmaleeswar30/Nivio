@@ -1,10 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:cronet_http/cronet_http.dart';
 import 'package:http/http.dart' as http;
-import 'package:rhttp/rhttp.dart' hide HttpRequest;
 import 'package:nivio/core/debug_log.dart';
+import 'package:nivio/services/network_client_factory.dart';
 
 class HlsProxyService {
   static final HlsProxyService instance = HlsProxyService._internal();
@@ -17,15 +16,7 @@ class HlsProxyService {
   Future<void> start() async {
     if (_server != null) return;
     
-    try {
-      if (Platform.isAndroid || Platform.isIOS) {
-        _cronetClient = CronetClient.defaultCronetEngine();
-      } else {
-        _cronetClient = RhttpCompatibleClient.createSync();
-      }
-    } catch (_) {
-      _cronetClient = RhttpCompatibleClient.createSync();
-    }
+    _cronetClient = NetworkClientFactory.createClient();
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     appDebugLog('🚀 HlsProxyService started on port ${_server!.port}');
 

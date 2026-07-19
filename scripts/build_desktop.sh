@@ -3,9 +3,9 @@
 # Exit immediately if a command exits with a non-zero status
 set -e
 
-# Target directory is the project root
+# Target directory is the desktop package
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$PROJECT_ROOT"
+cd "$PROJECT_ROOT/packages/nivio_desktop"
 
 echo "⚙️ Setting up desktop compilation overrides..."
 
@@ -38,13 +38,13 @@ trap cleanup EXIT
 # Append overrides to pubspec.yaml
 cat << 'EOF' >> pubspec.yaml
   firebase_core:
-    path: ./packages/stubs/firebase_core
+    path: ../../packages/stubs/firebase_core
   firebase_auth:
-    path: ./packages/stubs/firebase_auth
+    path: ../../packages/stubs/firebase_auth
   cloud_firestore:
-    path: ./packages/stubs/cloud_firestore
+    path: ../../packages/stubs/cloud_firestore
   google_sign_in:
-    path: ./packages/stubs/google_sign_in
+    path: ../../packages/stubs/google_sign_in
 EOF
 
 echo "📥 Getting local stub dependencies..."

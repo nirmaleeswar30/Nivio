@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'dart:async';
 
-import 'dart:io';
 import 'package:device_screen_brightness/device_screen_brightness.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 

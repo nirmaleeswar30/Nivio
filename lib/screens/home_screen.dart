@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:nivio/providers/dynamic_colors_provider.dart';
@@ -8,14 +7,13 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:silky_scroll/silky_scroll.dart';
+import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/constants.dart';
 
 import 'package:nivio/core/providers_data.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/watchlist_item.dart';
-import 'package:nivio/models/search_result.dart';
 import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/changelog_provider.dart';
 import 'package:nivio/providers/home_providers.dart';
@@ -25,7 +23,6 @@ import 'package:nivio/providers/recommendations_provider.dart';
 
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
-import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/api_status_service.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
@@ -44,20 +41,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  static const Map<int, String> _genreMap = {
-    16: 'Animation',
-    28: 'Action',
-    12: 'Adventure',
-    14: 'Fantasy',
-    35: 'Comedy',
-    18: 'Drama',
-    9648: 'Mystery',
-    878: 'Sci-Fi',
-    80: 'Crime',
-    10759: 'Action',
-    10765: 'Fantasy',
-  };
-
   final ScrollController _scrollController = ScrollController();
   final PageController _pageController = PageController();
   bool _showAppBarBackground = false;
@@ -325,7 +308,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
           Positioned.fill(
-            child: SilkyCustomScrollView(
+            child: AppCustomScrollView(
           controller: _scrollController,
           cacheExtent: 250,
           scrollSpeed: 2.0,
@@ -911,21 +894,61 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     : Column(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          AnimatedOpacity(
-                            opacity: 1,
-                            duration: const Duration(milliseconds: 500),
-                            child: Text(
-                              title,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 24,
-                                fontWeight: FontWeight.w700,
+                          if (logoUrl != null && logoUrl.isNotEmpty)
+                            GestureDetector(
+                              onTap: () => context.push('/media/$tmdbId?type=$mediaType'),
+                              child: CachedNetworkImage(
+                                imageUrl: logoUrl,
+                                height: 75,
+                                alignment: Alignment.center,
+                                fit: BoxFit.contain,
+                                fadeInDuration: Duration.zero,
+                                fadeOutDuration: Duration.zero,
+                                placeholder: (context, url) => SizedBox(
+                                  height: 75,
+                                  child: Center(
+                                    child: Text(
+                                      title,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
+                                errorWidget: (_, __, ___) => Text(
+                                  title,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
+                            )
+                          else
+                            AnimatedOpacity(
+                              opacity: 1,
+                              duration: const Duration(milliseconds: 500),
+                              child: Text(
+                                title,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
                           const SizedBox(height: 8),
                           if (mobileMeta.isNotEmpty)
                             Wrap(
@@ -945,41 +968,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       ? PhosphorIconsFill.checkCircle
                                       : PhosphorIconsRegular.plus,
                                   color: isInWatchlist
-                                      ? NivioTheme.accentColorOf(context)
+                                      ? slideColor
                                       : Colors.white,
                                   size: 18,
                                 ),
                                 onTap: () => _toggleFeaturedWatchlist(content),
                               ),
-                              const SizedBox(width: 10),
+                              const SizedBox(width: 12),
                               _AnimatedHoverScale(
                                 child: ElevatedButton.icon(
                                   onPressed: () => context.push('/media/$tmdbId?type=$mediaType'),
-                                  icon: const PhosphorIcon(
+                                  icon: PhosphorIcon(
                                     PhosphorIconsFill.play,
-                                    color: Colors.black,
+                                    color: slideColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
                                     size: 16,
                                   ),
-                                  label: const Text('Play'),
+                                  label: Text(
+                                    'Watch Now',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      color: slideColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+                                    ),
+                                  ),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.white,
-                                    foregroundColor: Colors.black,
+                                    backgroundColor: slideColor,
                                     elevation: 0,
-                                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 10),
-                              _smallSquareButton(
-                                icon: const Icon(
-                                  Icons.info_outline,
-                                  color: Colors.white,
-                                  size: 18,
-                                ),
-                                onTap: () => context.push('/media/$tmdbId?type=$mediaType'),
                               ),
                             ],
                           ),

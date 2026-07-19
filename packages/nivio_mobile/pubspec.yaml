@@ -1,10 +1,7 @@
-name: nivio
-description: "A beautiful, all-in-one streaming application for Movies, TV Shows, Anime, and Live IPTV, featuring real-time Watch Parties and offline downloads."
+name: nivio_mobile
+description: "Mobile target application for Nivio (Android & iOS)."
 publish_to: 'none'
 version: 2.2.3
-
-platforms:
-  android:
 
 environment:
   sdk: ^3.10.0
@@ -13,80 +10,21 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # State Management
-  flutter_riverpod: ^2.6.1
+  nivio:
+    path: ../nivio_core
 
-  # Networking
-  dio: ^5.7.0
-
-  # Local Storage
-  hive: ^2.2.3
-  hive_flutter: ^1.1.0
-  shared_preferences: ^2.3.3
-
-  # Firebase
-  firebase_core: ^4.11.0
-  firebase_auth: ^6.5.4
-  cloud_firestore: ^6.6.0
-  google_sign_in: ^7.2.0
-
-  # Video Player
-  youtube_player_flutter: ^10.0.1
-  flutter_inappwebview: ^6.1.5
-
-  # UI & Images
-  cached_network_image: ^3.4.1
-  # Navigation
-  go_router: ^17.3.0
-
-  # Utilities
-  intl: ^0.20.2
-  freezed_annotation: ^2.4.4
-  url_launcher: ^6.3.1
-  package_info_plus: ^10.2.0
-  flutter_native_splash: ^2.4.2
-  window_manager: ^0.3.8
-
-  # Background Tasks & Notifications
+  # Mobile-specific dependencies
+  cronet_http: ^1.9.0
   workmanager: ^0.9.0
-  flutter_local_notifications: ^22.0.1
-  connectivity_plus: ^7.2.0
-  media_kit: ^1.1.10
-  media_kit_video: ^1.2.4
-  media_kit_libs_video: ^1.0.7
-  shorebird_code_push: ^2.0.5
-
-  supabase_flutter: ^2.8.0
-  flutter_dotenv: ^6.0.0
-  phosphoricons_flutter: ^1.0.0
+  simple_pip_mode: ^1.1.0
   device_screen_brightness: ^0.2.1
   flutter_volume_controller: ^2.0.1
-  permission_handler: ^12.0.3
-  path_provider: ^2.1.5
-  ffmpeg_kit_flutter_new: ^4.2.1
-  wakelock_plus: ^1.2.8
-  flutter_markdown_plus: ^1.0.11
-  flutter_cache_manager: any
-  http: ^1.6.0
-  simple_pip_mode: ^1.1.0
-  share_plus: ^13.2.0
-  cronet_http: ^1.9.0
-  file_picker: ^12.0.0-beta.7
-  silky_scroll: ^2.6.4
-  rhttp: ^0.18.0
-  animations: ^2.2.0
+  flutter_native_splash: ^2.4.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-
-  # Code Generation
-  build_runner: ^2.4.13
-  freezed: ^2.5.2
-  json_serializable: ^6.8.0
-  hive_generator: ^2.0.1
-
-  # Splash Screen & App Icon
   flutter_launcher_icons: ^0.14.2
 
 flutter:
@@ -126,7 +64,6 @@ flutter:
           weight: 900
           style: italic
 
-# App Icon Configuration
 flutter_launcher_icons:
   android: true
   ios: false
@@ -135,7 +72,6 @@ flutter_launcher_icons:
   adaptive_icon_foreground: "assets/images/nivio-dark.png"
   min_sdk_android: 21
 
-# Splash Screen Configuration  
 flutter_native_splash:
   color: "#000000"
   image: assets/images/nivio-dark.png
@@ -145,7 +81,3 @@ flutter_native_splash:
   android_12:
     image: assets/images/nivio-dark.png
     color: "#000000"
-
-
-dependency_overrides:
-  freezed_annotation: ^3.1.0

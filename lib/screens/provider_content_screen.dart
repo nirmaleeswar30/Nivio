@@ -7,7 +7,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:nivio/providers/dynamic_colors_provider.dart';
 import 'package:nivio/providers/home_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:silky_scroll/silky_scroll.dart';
+import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:nivio/core/constants.dart';
@@ -468,7 +468,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
 
                   // --- 2. Main Scrollable Content starting at top 0 ---
                   Positioned.fill(
-                    child: SilkyCustomScrollView(
+                    child: AppCustomScrollView(
                       controller: _scrollController,
                       cacheExtent: 250,
                       scrollSpeed: 2.0,
@@ -669,24 +669,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                       top: 0,
                       bottom: 0,
                       width: 56,
-                      child: ClipRect(
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(
-                            sigmaX: _scrolled ? 20 : 0,
-                            sigmaY: _scrolled ? 20 : 0,
-                          ),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 250),
-                            curve: Curves.easeInOut,
-                            decoration: BoxDecoration(
-                              color: _scrolled
-                                  ? _currentAmbientColor.withOpacity(0.2)
-                                  : Colors.transparent,
-                            ),
-                            child: _buildMediaSidebar(context),
-                          ),
-                        ),
-                      ),
+                      child: _buildMediaSidebar(context),
                     ),
                 ],
               ),

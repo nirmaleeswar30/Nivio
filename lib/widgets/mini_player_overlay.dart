@@ -45,7 +45,9 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay>
   bool _isHovered = false;
 
   // Progress tracking
+  // ignore: unused_field
   Duration _position = Duration.zero;
+  // ignore: unused_field
   Duration _duration = Duration.zero;
   bool _isPlaying = true;
   StreamSubscription? _positionSub;

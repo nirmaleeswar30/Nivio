@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/screens/new_episodes_screen.dart';
@@ -44,6 +45,8 @@ class _LibraryScreenState extends State<LibraryScreen>
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+
     return Scaffold(
       backgroundColor: NivioTheme.netflixBlack,
       body: Container(
@@ -58,7 +61,7 @@ class _LibraryScreenState extends State<LibraryScreen>
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 12, 16, 0),
                 child: Row(
                   children: const [
                     Text(
@@ -74,7 +77,7 @@ class _LibraryScreenState extends State<LibraryScreen>
               ),
               const SizedBox(height: 14),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: EdgeInsets.only(left: isDesktop ? 68 : 16, right: 16),
                 child: Container(
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.06),

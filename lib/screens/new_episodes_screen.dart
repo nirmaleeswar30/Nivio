@@ -8,7 +8,7 @@ import 'package:nivio/core/theme.dart';
 import 'package:nivio/services/schedule_api_service.dart';
 import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/widgets/countdown_timer_widget.dart';
-import 'package:silky_scroll/silky_scroll.dart';
+import 'package:nivio/widgets/app_scroll_view.dart';
 
 
 class NewEpisodesScreen extends StatefulWidget {
@@ -89,7 +89,7 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
       ),
       child: SafeArea(
         top: !widget.embedded,
-        child: SilkyCustomScrollView(
+        child: AppCustomScrollView(
           controller: _scrollController,
           scrollSpeed: 2.0,
           silkyScrollDuration: const Duration(milliseconds: 500),
@@ -113,8 +113,8 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                 padding: EdgeInsets.only(
                   top: 8, 
                   bottom: 80,
-                  left: isDesktop ? 16 : 0,
-                  right: isDesktop ? 16 : 0,
+                  left: isDesktop ? 68 : 0,
+                  right: isDesktop ? 20 : 0,
                 ),
                 sliver: isDesktop
                     ? SliverGrid(
@@ -428,7 +428,7 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                 );
                 return;
              }
-             final type = item.mediaType == 'anime' ? 'tv' : item.mediaType;
+             final type = item.mediaType;
              final season = item.seasonNumber ?? 1;
              final episode = item.episodeNumber ?? 1;
              context.push('/player/${item.id}?type=$type&season=$season&episode=$episode');
@@ -592,7 +592,7 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
               );
               return;
             }
-            final type = item.mediaType == 'anime' ? 'tv' : item.mediaType;
+            final type = item.mediaType;
             final season = item.seasonNumber ?? 1;
             final episode = item.episodeNumber ?? 1;
             context.push('/player/${item.id}?type=$type&season=$season&episode=$episode');

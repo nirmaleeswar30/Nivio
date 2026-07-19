@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,7 +8,6 @@ import 'package:nivio/widgets/youtube_webview_player.dart';
 import 'package:nivio/core/constants.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
-import 'package:nivio/services/watchlist_service.dart';
 import 'package:nivio/models/watchlist_item.dart';
 
 /// A Netflix-style hover preview popup that appears when hovering over a shelf card on desktop.
@@ -404,7 +402,7 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
         child: Listener(
           onPointerSignal: (pointerSignal) {
             if (pointerSignal is PointerScrollEvent) {
-              widget.onScroll?.call(pointerSignal);
+              widget.onScroll.call(pointerSignal);
             }
           },
           child: MouseRegion(
@@ -729,6 +727,7 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
     );
   }
 
+  // ignore: unused_element
   String _cleanHtml(String text) {
     return text.replaceAll(RegExp(r'<[^>]*>'), '');
   }

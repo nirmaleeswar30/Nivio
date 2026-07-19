@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:silky_scroll/silky_scroll.dart';
+import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:nivio/core/constants.dart';
@@ -11,8 +10,6 @@ import 'package:nivio/core/theme.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/widgets/hover_preview_card.dart';
-import 'package:animations/animations.dart';
-import 'package:nivio/screens/media_detail_screen.dart';
 
 class ContentRow extends StatelessWidget {
   final String title;
@@ -51,7 +48,7 @@ class ContentRow extends StatelessWidget {
           const SizedBox(height: 12),
           SizedBox(
             height: isDesktop ? 210 : 180,
-            child: SilkyListView.builder(
+            child: AppListView.builder(
               scrollDirection: Axis.horizontal,
               padding: EdgeInsets.only(
                 left: leftPadding != null 
@@ -171,7 +168,9 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
     final hoverHeight = 260.0;
 
     // Centered on the card horizontally and vertically
+    // ignore: unused_local_variable
     final left = (position.dx + size.width / 2) - hoverWidth / 2;
+    // ignore: unused_local_variable
     final top = (position.dy + size.height / 2) - hoverHeight / 2;
 
     _activeCardState = this;

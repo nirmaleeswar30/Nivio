@@ -3,7 +3,6 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:simple_pip_mode/actions/pip_actions_layout.dart';
 import 'package:window_manager/window_manager.dart';
 import 'dart:io';
-import 'package:device_screen_brightness/device_screen_brightness.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:simple_pip_mode/simple_pip.dart';
 import 'dart:ui';
@@ -36,11 +35,9 @@ import 'package:nivio/models/watch_history.dart';
 import 'package:nivio/services/watch_history_service.dart';
 
 import 'dart:async';
-import 'dart:io';
 import 'package:nivio/services/download_service.dart';
 import 'package:nivio/widgets/webview_player.dart';
 import 'package:nivio/services/hls_proxy_service.dart';
-import 'package:nivio/services/anilist_service.dart';
 import 'package:nivio/services/aniskip_service.dart';
 import 'package:nivio/services/theintrodb_service.dart';
 import 'package:nivio/services/skip_times_models.dart';
@@ -3616,6 +3613,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   
   Timer? _webViewControlsTimer;
 
+  // ignore: unused_element
   void _toggleWebViewControls() {
     setState(() {
       _isInFullscreen = !_isInFullscreen;

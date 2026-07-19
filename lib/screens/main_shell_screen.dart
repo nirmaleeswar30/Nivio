@@ -13,7 +13,6 @@ import 'package:nivio/widgets/changelog_dialog.dart';
 import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:animations/animations.dart';
-import 'package:nivio/providers/home_providers.dart';
 import 'package:nivio/services/schedule_api_service.dart';
 import '../main.dart';
 class MainShellScreen extends ConsumerStatefulWidget {
@@ -156,11 +155,9 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
 
   Widget _buildSidebar(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
-    final accentColor = Theme.of(context).colorScheme.primary;
 
     final authState = ref.watch(authStateProvider);
     final user = authState.valueOrNull;
-    final dynamicColor = ref.watch(ambientColorProvider);
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
@@ -367,8 +364,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
       _scrolled = false;
     }
 
-    final isOverlapRoute = location == '/home' || location.startsWith('/media/');
-    final leftPadding = (isDesktop && !isOverlapRoute) ? 56.0 : 0.0;
+    final leftPadding = 0.0;
 
     if (isDesktop) {
       return WillPopScope(

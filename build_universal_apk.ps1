@@ -8,10 +8,9 @@ $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # Configuration
 $bundletoolPath = "C:\tools\bundletool.jar"
-$aabPath = Join-Path $repoRoot "build\app\outputs\bundle\release\app-release.aab"
-$apksPath = Join-Path $repoRoot "build\app\outputs\bundle\release\app-release.apks"
-$outputDir = Join-Path $repoRoot "build\app\outputs\bundle\release\apks"
-$pubspecPath = Join-Path $repoRoot "pubspec.yaml"
+$aabPath = "$PSScriptRoot\packages\nivio_mobile\build\app\outputs\bundle\release\app-release.aab"
+$outputDir = "$PSScriptRoot\packages\nivio_mobile\build\app\outputs\bundle\release\apks"
+$pubspecPath = "$PSScriptRoot\packages\nivio_mobile\pubspec.yaml"
 
 # Debug keystore (default Android debug signing)
 $keystorePath = "$env:USERPROFILE\.android\debug.keystore"

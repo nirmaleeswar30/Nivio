@@ -1,6 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:silky_scroll/silky_scroll.dart';
+import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -163,7 +164,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                       )
                     else
                       Expanded(
-                        child: SilkyListView.builder(
+                        child: AppListView.builder(
                           controller: scrollController,
                           cacheExtent: 250,
                           scrollSpeed: 2.0,
@@ -379,12 +380,13 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
 
   Widget _buildPopulatedState() {
     final groups = ['All', 'Favorites', ..._groupedChannels.keys];
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
 
     return Column(
       children: [
         // Search and Filter Bar
         Padding(
-          padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
+          padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16.0, 16.0, 16.0, 8.0),
           child: Row(
             children: [
               Expanded(
@@ -440,7 +442,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                                 ),
                               ),
                               Expanded(
-                                child: SilkyListView.builder(
+                                child: AppListView.builder(
                                   cacheExtent: 250,
                                   scrollSpeed: 2.0,
                                   silkyScrollDuration: const Duration(milliseconds: 500),
@@ -525,7 +527,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                     style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
                   ),
                 )
-              : SilkyListView.builder(
+              : AppListView.builder(
                   padding: const EdgeInsets.all(16),
                   cacheExtent: 250,
                   scrollSpeed: 2.0,

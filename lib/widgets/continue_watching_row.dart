@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:silky_scroll/silky_scroll.dart';
+import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/widgets/continue_watching_card.dart';
 import 'package:nivio/core/theme.dart';
@@ -43,7 +43,7 @@ class ContinueWatchingRow extends ConsumerWidget {
         }
         return SizedBox(
           height: 190,
-          child: SilkyListView.builder(
+          child: AppListView.builder(
             scrollDirection: Axis.horizontal,
             cacheExtent: 250,
             scrollSpeed: 2.0,

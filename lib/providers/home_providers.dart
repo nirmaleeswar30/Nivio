@@ -44,7 +44,7 @@ final featuredContentProvider = FutureProvider<List<Map<String, dynamic>>>((ref)
     anilist.getTrendingAnimeForFeatured(),
   ]);
   
-  final trending = results[0] as List<dynamic>;
+  final trending = results[0];
   final animeTrending = results[1] as List<Map<String, dynamic>>;
 
   final interleaved = <Map<String, dynamic>>[];

@@ -5,7 +5,6 @@ import 'dart:ui';
 import 'dart:io';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -18,7 +17,6 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/firebase_options.dart';
-import 'package:nivio/widgets/changelog_dialog.dart';
 import 'package:nivio/widgets/mini_player_overlay.dart';
 import 'package:nivio/models/cache_entry.dart';
 import 'package:nivio/models/watchlist_item.dart';
@@ -52,16 +50,45 @@ import 'package:media_kit/media_kit.dart';
 
 import 'package:flutter_inappwebview_linux/flutter_inappwebview_linux.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:rhttp/rhttp.dart';
 
 void main() async {
   try {
     WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
     if (Platform.isLinux) {
       LinuxInAppWebViewPlatform.registerWith();
+      
+      // Catch non-fatal internal plugin exceptions from flutter_inappwebview_linux
+      final originalOnError = FlutterError.onError;
+      FlutterError.onError = (details) {
+        final stack = details.stack?.toString() ?? '';
+        final exc = details.exception.toString();
+        if (stack.contains('flutter_inappwebview_linux') ||
+            stack.contains('_CustomPlatformViewState') ||
+            exc.contains('InAppWebView')) {
+          debugPrint('🛡️ Handled non-fatal flutter_inappwebview_linux exception: $exc');
+          return;
+        }
+        if (originalOnError != null) {
+          originalOnError(details);
+        } else {
+          FlutterError.presentError(details);
+        }
+      };
+
+      PlatformDispatcher.instance.onError = (error, stack) {
+        final stackStr = stack.toString();
+        final errStr = error.toString();
+        if (stackStr.contains('flutter_inappwebview_linux') ||
+            stackStr.contains('_CustomPlatformViewState') ||
+            errStr.contains('InAppWebView') ||
+            errStr.contains('RenderObject.getTransformTo')) {
+          debugPrint('🛡️ Handled async flutter_inappwebview_linux exception: $errStr');
+          return true;
+        }
+        return false;
+      };
     }
     MediaKit.ensureInitialized();
-    await Rhttp.init();
 
     if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
       await windowManager.ensureInitialized();

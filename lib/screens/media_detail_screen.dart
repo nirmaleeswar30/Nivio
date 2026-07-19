@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui';
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
@@ -12,7 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:nivio/widgets/youtube_webview_player.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:silky_scroll/silky_scroll.dart';
+import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:share_plus/share_plus.dart';
@@ -21,7 +20,6 @@ import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/models/watchlist_item.dart';
 import 'package:nivio/models/download_item.dart';
-import 'package:nivio/widgets/download_prompt.dart';
 import 'package:animations/animations.dart';
 import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/dynamic_colors_provider.dart';
@@ -498,7 +496,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         backgroundColor: colors.darkMuted,
         body: Stack(
           children: [
-            SilkyCustomScrollView(
+            AppCustomScrollView(
           controller: _scrollController,
           cacheExtent: 250,
           scrollSpeed: 2.0,
@@ -2359,6 +2357,7 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
       ''');
   }
 
+  // ignore: unused_element
   Future<void> _showTrailerQualityDialog() async {
     if (widget.source.site.toLowerCase() != 'youtube') {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2426,6 +2425,7 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     if (isDesktop) {
       return YouTubeWebViewPlayer(
+        key: ValueKey('yt_${widget.source.key}'),
         videoId: widget.source.key,
         autoPlay: true,
         muted: false,
@@ -2523,6 +2523,7 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
     }
 
     return InAppWebView(
+      key: ValueKey('wv_${widget.source.embedUrl}'),
       initialUrlRequest: URLRequest(url: WebUri(trailerUrl)),
       initialSettings: InAppWebViewSettings(
         mediaPlaybackRequiresUserGesture: false,

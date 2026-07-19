@@ -2,11 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
-import 'package:cronet_http/cronet_http.dart';
-import 'package:rhttp/rhttp.dart' hide HttpRequest;
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/models/stream_result.dart';
-
+import 'package:nivio/services/network_client_factory.dart';
 import 'package:nivio/services/hls_proxy_service.dart';
 
 class MiruroScraperService {
@@ -14,15 +12,7 @@ class MiruroScraperService {
   final List<int> _obfKey = utf8.encode('71951034f8fbcf53d89db52ceb3dc22c');
 
   MiruroScraperService() {
-    if (Platform.isAndroid || Platform.isIOS) {
-      final engine = CronetEngine.build(
-        cacheMode: CacheMode.disabled,
-        userAgent: 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36',
-      );
-      client = CronetClient.fromCronetEngine(engine);
-    } else {
-      client = RhttpCompatibleClient.createSync();
-    }
+    client = NetworkClientFactory.createClient();
   }
 
   String _encodePipeRequest(Map<String, dynamic> payload) {

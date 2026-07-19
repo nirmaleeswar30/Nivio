@@ -7,10 +7,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 # Configuration
 TOOLS_DIR="$HOME/tools"
 BUNDLETOOL_PATH="$TOOLS_DIR/bundletool.jar"
-AAB_PATH="$REPO_ROOT/build/app/outputs/bundle/release/app-release.aab"
-APKS_PATH="$REPO_ROOT/build/app/outputs/bundle/release/app-release.apks"
-OUTPUT_DIR="$REPO_ROOT/build/app/outputs/bundle/release/apks"
-PUBSPEC_PATH="$REPO_ROOT/pubspec.yaml"
+AAB_PATH="$REPO_ROOT/packages/nivio_mobile/build/app/outputs/bundle/release/app-release.aab"
+APKS_PATH="$REPO_ROOT/packages/nivio_mobile/build/app/outputs/bundle/release/app-release.apks"
+OUTPUT_DIR="$REPO_ROOT/packages/nivio_mobile/build/app/outputs/bundle/release/apks"
+PUBSPEC_PATH="$REPO_ROOT/packages/nivio_mobile/pubspec.yaml"
 
 # Debug keystore
 KEYSTORE_PATH="/home/nirmal/.config/.android/debug.keystore"

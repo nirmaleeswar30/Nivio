@@ -1,0 +1,64 @@
+name: nivio_desktop
+description: "Desktop target application for Nivio (Linux, Windows, macOS)."
+publish_to: 'none'
+version: 2.2.3
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  nivio:
+    path: ../nivio_core
+
+  # Desktop-specific dependencies
+  rhttp: ^0.18.0
+  window_manager: ^0.3.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - shorebird.yaml
+    - assets/fonts/satoshi/
+    - .env
+
+  fonts:
+    - family: Satoshi
+      fonts:
+        - asset: assets/fonts/satoshi/Satoshi-Light.otf
+          weight: 300
+        - asset: assets/fonts/satoshi/Satoshi-LightItalic.otf
+          weight: 300
+          style: italic
+        - asset: assets/fonts/satoshi/Satoshi-Regular.otf
+          weight: 400
+        - asset: assets/fonts/satoshi/Satoshi-Medium.otf
+          weight: 500
+        - asset: assets/fonts/satoshi/Satoshi-MediumItalic.otf
+          weight: 500
+          style: italic
+        - asset: assets/fonts/satoshi/Satoshi-Bold.otf
+          weight: 700
+        - asset: assets/fonts/satoshi/Satoshi-BoldItalic.otf
+          weight: 700
+          style: italic
+        - asset: assets/fonts/satoshi/Satoshi-Black.otf
+          weight: 900
+        - asset: assets/fonts/satoshi/Satoshi-Italic.otf
+          style: italic
+        - asset: assets/fonts/satoshi/Satoshi-BlackItalic.otf
+          weight: 900
+          style: italic
+
+dependency_overrides:
+  freezed_annotation: ^3.1.0
+

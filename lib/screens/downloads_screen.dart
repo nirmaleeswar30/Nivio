@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:silky_scroll/silky_scroll.dart';
+import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/download_item.dart';
 import 'package:nivio/services/download_service.dart';
@@ -20,6 +20,8 @@ class DownloadsScreen extends StatefulWidget {
 class _DownloadsScreenState extends State<DownloadsScreen> {
   @override
   Widget build(BuildContext context) {
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+
     return ValueListenableBuilder(
       valueListenable: DownloadService.box.listenable(),
       builder: (context, Box<DownloadItem> box, _) {
@@ -49,8 +51,8 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         
         final groups = groupedDownloads.values.toList();
 
-        return SilkyListView.builder(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, widget.embedded ? 80 : 16),
+        return AppListView.builder(
+          padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 16, 16, widget.embedded ? 80 : 16),
           cacheExtent: 250,
           scrollSpeed: 2.0,
           silkyScrollDuration: const Duration(milliseconds: 500),

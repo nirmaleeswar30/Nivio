@@ -1,7 +1,8 @@
+import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:silky_scroll/silky_scroll.dart';
+import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/providers/auth_provider.dart';
@@ -40,6 +41,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     final allWatchlist = ref.watch(watchlistProvider);
     final theme = Theme.of(context);
     final tmdbService = ref.watch(tmdbServiceProvider);
@@ -245,8 +247,8 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       );
     }
 
-    final gridContent = SilkyGridView.builder(
-      padding: const EdgeInsets.all(16),
+    final gridContent = AppGridView.builder(
+      padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 16, 16, 16),
       cacheExtent: 250,
       scrollSpeed: 2.0,
       silkyScrollDuration: const Duration(milliseconds: 500),
@@ -270,8 +272,8 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       },
     );
 
-    final listContent = SilkyListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+    final listContent = AppListView.builder(
+      padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 8, 16, 8),
       cacheExtent: 250,
       scrollSpeed: 2.0,
       silkyScrollDuration: const Duration(milliseconds: 500),
@@ -291,7 +293,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
         : Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 16, 16, 8),
                 child: Row(
                   children: [
                     Expanded(
@@ -349,7 +351,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 10, 16, 0),
               child: Row(
                 children: [
                   const Text(

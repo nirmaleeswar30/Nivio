@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'dart:ui';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:silky_scroll/silky_scroll.dart';
+import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/providers/search_provider.dart';
@@ -662,7 +661,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ),
               ),
             Expanded(
-              child: SilkyGridView.builder(
+              child: AppGridView.builder(
                 key: PageStorageKey<String>('search_grid_$query'),
                 controller: _scrollController,
                 cacheExtent: 250,

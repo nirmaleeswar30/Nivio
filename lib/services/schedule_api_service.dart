@@ -187,7 +187,7 @@ class ScheduleApiService {
 
         if (isInWatchlist) {
            items.add(ScheduleItem(
-             id: tmdbId ?? -1,
+             id: tmdbId ?? (media['id'] as int? ?? -1),
              title: title,
              mediaType: 'anime',
              releaseDate: DateTime.fromMillisecondsSinceEpoch(airingAt * 1000),
