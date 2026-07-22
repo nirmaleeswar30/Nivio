@@ -761,21 +761,29 @@ class TmdbService {
   /// Get content by language (e.g., 'te' for Telugu, 'hi' for Hindi, 'ko' for Korean)
   Future<List<dynamic>> getByLanguage(String mediaType, String language) async {
     final cacheKey = 'by_language_${mediaType}_$language';
-    debugPrint('🌍 getByLanguage called: mediaType=$mediaType, language=$language, cacheKey=$cacheKey');
+    if (kDebugMode) {
+      debugPrint('🌍 getByLanguage called: mediaType=$mediaType, language=$language, cacheKey=$cacheKey');
+    }
 
     // Try to get from cache first
     final cached = await _cache.getRaw(cacheKey);
     if (cached != null) {
-      debugPrint('🌍 getByLanguage: CACHE HIT for $cacheKey, resultCount=${(cached['results'] as List?)?.length}');
+      if (kDebugMode) {
+        debugPrint('🌍 getByLanguage: CACHE HIT for $cacheKey, resultCount=${(cached['results'] as List?)?.length}');
+      }
       final results = _filterAndMapResults(cached['results'] as List<dynamic>?, defaultMediaType: mediaType);
       if (results.isNotEmpty) {
         final first = results[0];
-        debugPrint('🌍 getByLanguage: First cached item: id=${first['id']}, media_type=${first['media_type']}, title=${first['title']}, name=${first['name']}');
+        if (kDebugMode) {
+          debugPrint('🌍 getByLanguage: First cached item: id=${first['id']}, media_type=${first['media_type']}, title=${first['title']}, name=${first['name']}');
+        }
       }
       return results;
     }
 
-    debugPrint('🌍 getByLanguage: CACHE MISS for $cacheKey, fetching from network...');
+    if (kDebugMode) {
+      debugPrint('🌍 getByLanguage: CACHE MISS for $cacheKey, fetching from network...');
+    }
     try {
       final response = await _dio.get(
         '/3/discover/$mediaType',
@@ -787,7 +795,9 @@ class TmdbService {
         },
       );
 
-      debugPrint('🌍 getByLanguage: Network response status=${response.statusCode}, resultCount=${(response.data['results'] as List?)?.length}');
+      if (kDebugMode) {
+        debugPrint('🌍 getByLanguage: Network response status=${response.statusCode}, resultCount=${(response.data['results'] as List?)?.length}');
+      }
 
       // Cache the response
       await _cache.set(cacheKey, response.data, ttl: CacheService.mediumCache);
@@ -795,11 +805,15 @@ class TmdbService {
       final results = _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: mediaType);
       if (results.isNotEmpty) {
         final first = results[0];
-        debugPrint('🌍 getByLanguage: First network item: id=${first['id']}, media_type=${first['media_type']}, title=${first['title']}, name=${first['name']}');
+        if (kDebugMode) {
+          debugPrint('🌍 getByLanguage: First network item: id=${first['id']}, media_type=${first['media_type']}, title=${first['title']}, name=${first['name']}');
+        }
       }
       return results;
     } catch (e) {
-      debugPrint('🌍 getByLanguage: ERROR: $e');
+      if (kDebugMode) {
+        debugPrint('🌍 getByLanguage: ERROR: $e');
+      }
       throw Exception('Failed to get content by language: $e');
     }
   }

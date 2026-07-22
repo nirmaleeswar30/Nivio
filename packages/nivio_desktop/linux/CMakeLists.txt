@@ -131,3 +131,8 @@ endif()
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/nivio.desktop"
   DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
+
+# Install the app icon
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/nivio.png"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime)

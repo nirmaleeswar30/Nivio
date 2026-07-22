@@ -21,6 +21,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
@@ -59,14 +60,14 @@ flutter:
           weight: 900
           style: italic
 
+flutter_launcher_icons:
+  windows:
+    generate: true
+    image_path: "../../assets/images/nivio.png"
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: "../../assets/images/nivio.png"
+
 dependency_overrides:
   freezed_annotation: ^3.1.0
-
-  firebase_core:
-    path: ../../packages/stubs/firebase_core
-  firebase_auth:
-    path: ../../packages/stubs/firebase_auth
-  cloud_firestore:
-    path: ../../packages/stubs/cloud_firestore
-  google_sign_in:
-    path: ../../packages/stubs/google_sign_in

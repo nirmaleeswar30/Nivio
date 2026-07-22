@@ -256,7 +256,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _videoController = VideoController(
         _player,
         configuration: VideoControllerConfiguration(
-          enableHardwareAcceleration: !isDesktop,
+          enableHardwareAcceleration: !Platform.isLinux,
         ),
       );
     }

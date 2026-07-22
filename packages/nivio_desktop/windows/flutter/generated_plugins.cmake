@@ -4,8 +4,11 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
+  cloud_firestore
   connectivity_plus
   ffmpeg_kit_flutter_new
+  firebase_auth
+  firebase_core
   flutter_inappwebview_windows
   flutter_volume_controller
   media_kit_libs_windows_video

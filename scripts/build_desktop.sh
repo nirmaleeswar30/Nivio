@@ -54,18 +54,19 @@ flutter pub get
 TARGET_PLATFORM="${1:-linux}"
 ACTION="${2:-build}"
 
-# Force discrete GPU usage on Linux (AMD dual-GPU setups)
-# export DRI_PRIME=1
-# export GDK_BACKEND=x11
-# export GDK_SCALE=2
-
 if [ "$ACTION" = "run" ]; then
   echo "🚀 Running application on $TARGET_PLATFORM..."
   flutter run -d "$TARGET_PLATFORM"
 elif [ "$ACTION" = "run_profile" ]; then
   echo "🚀 Running application on $TARGET_PLATFORM in Profile Mode..."
   flutter run --profile -d "$TARGET_PLATFORM"
+elif [ "$ACTION" = "shorebird_release" ]; then
+  echo "🦅 Building Shorebird release for $TARGET_PLATFORM..."
+  shorebird release "$TARGET_PLATFORM"
+elif [ "$ACTION" = "shorebird_patch" ]; then
+  echo "🦅 Building Shorebird patch for $TARGET_PLATFORM..."
+  shorebird patch "$TARGET_PLATFORM"
 else
-  echo "🏗️ Building application for $TARGET_PLATFORM..."
-  flutter build "$TARGET_PLATFORM" --debug
+  echo "🏗️ Building application for $TARGET_PLATFORM in Release mode..."
+  flutter build "$TARGET_PLATFORM" --release
 fi
