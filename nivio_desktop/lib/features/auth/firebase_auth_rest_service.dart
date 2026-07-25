@@ -74,7 +74,9 @@ class FirebaseAuthRestService extends ChangeNotifier {
       AppEnvironment.firebaseWebApiKey.isNotEmpty &&
       AppEnvironment.firebaseProjectId.isNotEmpty;
   bool get isGoogleConfigured =>
-      isConfigured && AppEnvironment.firebaseGoogleClientId.isNotEmpty;
+      isConfigured &&
+      AppEnvironment.firebaseGoogleClientId.isNotEmpty &&
+      AppEnvironment.authExchangeUrl.isNotEmpty;
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -113,20 +115,7 @@ class FirebaseAuthRestService extends ChangeNotifier {
   Future<DesktopAuthUser> signInWithGoogle() async {
     _requireGoogleConfig();
     return _runBusy(() async {
-      final oauth = await _requestGoogleTokens();
-      final idToken = oauth['id_token']?.toString();
-      if (idToken == null || idToken.isEmpty) {
-        throw const AuthFailure('Google did not return an ID token.');
-      }
-      final postBody = Uri(
-        queryParameters: {'id_token': idToken, 'providerId': 'google.com'},
-      ).query;
-      final response = await _postJson(_identityUri('accounts:signInWithIdp'), {
-        'postBody': postBody,
-        'requestUri': 'http://localhost',
-        'returnSecureToken': true,
-        'returnIdpCredential': true,
-      });
+      final response = await _requestGoogleFirebaseSession();
       final user = await _persistAuthResponse(response, isAnonymous: false);
       notifyListeners();
       return user;
@@ -192,7 +181,7 @@ class FirebaseAuthRestService extends ChangeNotifier {
     return _idToken;
   }
 
-  Future<Map<String, dynamic>> _requestGoogleTokens() async {
+  Future<Map<String, dynamic>> _requestGoogleFirebaseSession() async {
     final verifier = _randomVerifier();
     final challenge = _base64UrlNoPadding(
       sha256.convert(utf8.encode(verifier)).bytes,
@@ -246,33 +235,42 @@ class FirebaseAuthRestService extends ChangeNotifier {
         'Nivio sign-in complete',
         'You can close this tab and return to Nivio.',
       );
-      final response = await _client.post(
-        Uri.https('oauth2.googleapis.com', '/token'),
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: {
-          'client_id': AppEnvironment.firebaseGoogleClientId,
-          if (AppEnvironment.firebaseGoogleClientSecret.isNotEmpty)
-            'client_secret': AppEnvironment.firebaseGoogleClientSecret,
-          'code': code,
-          'code_verifier': verifier,
-          'grant_type': 'authorization_code',
-          'redirect_uri': redirectUri,
-        },
+      return _exchangeGoogleCodeForFirebaseSession(
+        code: code,
+        codeVerifier: verifier,
+        redirectUri: redirectUri,
       );
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        final message = _firebaseErrorMessage(response.body);
-        if (message.toLowerCase().contains('invalid_client') &&
-            AppEnvironment.firebaseGoogleClientSecret.isEmpty) {
-          throw const AuthFailure(
-            'Google token exchange failed: invalid_client. Add the Desktop OAuth client secret to FIREBASE_GOOGLE_CLIENT_SECRET in .env, then restart.',
-          );
-        }
-        throw AuthFailure(message);
-      }
-      return jsonDecode(response.body) as Map<String, dynamic>;
     } finally {
       await server.close(force: true);
     }
+  }
+
+  Future<Map<String, dynamic>> _exchangeGoogleCodeForFirebaseSession({
+    required String code,
+    required String codeVerifier,
+    required String redirectUri,
+  }) async {
+    final exchangeUrl = AppEnvironment.authExchangeUrl;
+    if (exchangeUrl.isEmpty) {
+      throw const AuthFailure(
+        'Google sign-in needs AUTH_EXCHANGE_URL or API_BASE_URL for backend token exchange.',
+      );
+    }
+
+    final response = await _client.post(
+      Uri.parse(exchangeUrl),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'code': code,
+        'codeVerifier': codeVerifier,
+        'redirectUri': redirectUri,
+        'clientId': AppEnvironment.firebaseGoogleClientId,
+      }),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw AuthFailure(_firebaseErrorMessage(response.body));
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
   Future<DesktopAuthUser> _persistAuthResponse(
@@ -353,15 +351,18 @@ class FirebaseAuthRestService extends ChangeNotifier {
   void _requireFirebaseConfig() {
     if (isConfigured) return;
     throw const AuthFailure(
-      'Firebase auth is not configured. Add FIREBASE_WEB_API_KEY and FIREBASE_PROJECT_ID to .env.',
+      'Firebase auth is not configured. Add FIREBASE_WEB_API_KEY and FIREBASE_PROJECT_ID.',
     );
   }
 
   void _requireGoogleConfig() {
     _requireFirebaseConfig();
-    if (AppEnvironment.firebaseGoogleClientId.isNotEmpty) return;
+    if (AppEnvironment.firebaseGoogleClientId.isNotEmpty &&
+        AppEnvironment.authExchangeUrl.isNotEmpty) {
+      return;
+    }
     throw const AuthFailure(
-      'Google sign-in is not configured. Add FIREBASE_GOOGLE_CLIENT_ID to .env.',
+      'Google sign-in is not configured. Add FIREBASE_GOOGLE_CLIENT_ID and AUTH_EXCHANGE_URL.',
     );
   }
 

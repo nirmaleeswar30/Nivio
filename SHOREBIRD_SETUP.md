@@ -1,6 +1,7 @@
 # Shorebird OTA Setup
 
-This project is configured for Shorebird Code Push on Android.
+This project is configured for Shorebird Code Push on Android and desktop
+Linux.
 
 ## What's already wired
 
@@ -30,3 +31,20 @@ Run all commands from the project root.
 
 - Shorebird patches are only delivered to apps installed from a Shorebird release.
 - `flutter run` builds will show OTA as unavailable.
+
+## Linux desktop
+
+Run desktop commands from `nivio_desktop/`.
+
+1. Create a Linux desktop release:
+   ```bash
+   shorebird release linux
+   ```
+2. Publish the full Linux artifact from `build/linux/` to GitHub Releases.
+3. After Dart-only fixes, publish a patch:
+   ```bash
+   shorebird patch linux
+   ```
+
+Nivio Desktop also checks GitHub Releases for full binary updates at startup in
+release builds and from **Settings -> Check for Updates**.

@@ -50,6 +50,13 @@ app.*.map.json
 # but google-services.json should be kept private
 **/google-services.json
 **/GoogleService-Info.plist
+**/client_secret*.json
+**/credentials*.json
+**/service-account*.json
+**/*serviceAccount*.json
+**/*.p12
+**/*.pem
+**/*.key
 
 # Environment files and secrets
 .env

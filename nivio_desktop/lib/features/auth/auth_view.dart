@@ -138,7 +138,7 @@ class _AuthViewState extends State<AuthView> {
                   Text(
                     _auth.isConfigured
                         ? 'Guest mode saves data locally on this desktop.'
-                        : 'Firebase auth is not configured in .env.',
+                        : 'Firebase auth is not configured.',
                     textAlign: TextAlign.center,
                     style: AppTypography.caption,
                   ),
