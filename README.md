@@ -74,6 +74,7 @@
 *   **🎌 Dedicated Anime Hub**: Integrated with **AniList** for dedicated Anime scraping from high-speed providers (`Animetsu`, `Animex`, `Miruro`), complete with Miruro Cloudflare bypass and custom quality selection.
 *   **🧠 Smart Recommendations**: An intelligent, privacy-first engine that analyzes your local watch history to curate a highly personalized "Top Picks For You" list by interleaving recommendations from your top 5 most recently watched titles.
 *   **⚡ Blazing Fast Playback**: Custom native playback powered by `media_kit` and MPV/libmpv, with custom controls and platform-specific playback enhancements.
+*   **🔊 Loudness Enhancer (Volume Boost)**: Supports software volume boost up to 200% for quieter streams and devices.
 *   **📂 Custom Subtitles & Persistence**: Load subtitle files (.srt, .vtt) locally or paste remote URLs directly. Subtitle choices and styling preferences are saved for repeat playback.
 *   **📡 Live IPTV**: Stream live television channels using M3U/M3U8 playlists and built-in live TV sources.
 *   **🎉 Real-Time Watch Parties**: Create a room, share a 6-digit code, and watch movies perfectly synced with your friends. Host playback controls are synchronized across all devices instantly via Supabase.
@@ -85,7 +86,7 @@
 
 ### Android Features
 
-*   **🔊 Loudness Enhancer (Volume Boost)**: Supports software volume boost up to 200% (+20dB gain) via screen swiping or TV arrow keys.
+*   **🔊 Gesture Volume Boost**: Control the 200% loudness enhancer with screen swipes or TV arrow keys.
 *   **📱 Mobile & TV Controls**: Gesture controls, D-pad friendly playback controls, Android PiP behavior, and Android background notification support.
 *   **🚀 Shorebird OTA**: Receive over-the-air Android app updates without downloading a new APK.
 
@@ -93,6 +94,7 @@
 
 *   **🖥️ Desktop-first UI**: Sidebar navigation, wide-screen layouts, hover previews, keyboard-aware controls, and Linux window integration.
 *   **🪟 Mini Player**: Keep playback visible while browsing other sections.
+*   **🔊 200% Desktop Volume**: MPV-backed volume boost up to 200% with on-screen volume feedback.
 *   **⏭️ Skip Intro / Outro**: Uses skip-time metadata where available to jump over intro and ending segments.
 *   **🧩 Provider Fallbacks**: Resolves streams through multiple providers and falls back when a source fails.
 *   **💬 Custom Subtitles**: Load local subtitle files or remote subtitle URLs.
