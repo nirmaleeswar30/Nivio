@@ -303,10 +303,6 @@ class _SportzxLiveTvProvider implements _BuiltInLiveTvProvider {
     : _client = client ?? http.Client();
 
   static const providerId = 'sportzx';
-  static const _firebaseProjectId = '234785582029';
-  static const _firebaseApiKey = 'AIzaSyCTIFo_vw_-XrjzDeE1yG4KuAqGLchzZ0M';
-  static const _firebaseAppId = '1:234785582029:android:f5f9299eaa7a0d73c93284';
-  static const _androidPackage = 'com.sportzx.live';
   static const _defaultBaseUrl = 'https://modi-home.top/';
   static const _playlistUrl = 'https://fifabd.site/OPLLX7/LIVE2.m3u';
   static const _apiCandidates = [
@@ -373,38 +369,6 @@ class _SportzxLiveTvProvider implements _BuiltInLiveTvProvider {
 
   Future<List<String>> _sportzxApiBases() async {
     final bases = <String>{};
-    try {
-      final response = await _client
-          .post(
-            Uri.parse(
-              'https://firebaseremoteconfig.googleapis.com/v1/projects/'
-              '$_firebaseProjectId/namespaces/firebase:fetch?key=$_firebaseApiKey',
-            ),
-            headers: {
-              ...BuiltInLiveTvProviders.defaultHeaders,
-              'Content-Type': 'application/json',
-              'X-Android-Package': _androidPackage,
-            },
-            body: jsonEncode(const {
-              'appId': _firebaseAppId,
-              'appInstanceId': '0000000000000000000000',
-              'appInstanceIdToken': '',
-            }),
-          )
-          .timeout(const Duration(seconds: 5));
-      if (response.statusCode >= 200 && response.statusCode < 400) {
-        final entries = _asStringMap(jsonDecode(response.body))?['entries'];
-        final remote = _asStringMap(entries);
-        for (final key in const ['api_url_tv', 'api_url']) {
-          final value = remote?[key]?.toString().trim();
-          if (value != null && value.startsWith('http')) {
-            bases.add(_withTrailingSlash(value));
-          }
-        }
-      }
-    } catch (_) {
-      // Remote Config is an optimization; static fallbacks below keep working.
-    }
     bases.addAll(_apiCandidates.map(_withTrailingSlash));
     return bases.toList(growable: false);
   }

@@ -110,7 +110,7 @@ https://cdn.example/drm-match.mpd
       },
     );
 
-    test('loads SportzX encrypted Remote Config event entries', () async {
+    test('loads SportzX encrypted static fallback event entries', () async {
       final encryptedEvents = _encryptSportzxPrimary(
         jsonEncode({
           'data': [
@@ -126,18 +126,10 @@ https://cdn.example/drm-match.mpd
         }),
       );
       final client = MockClient((request) async {
-        if (request.url.host == 'firebaseremoteconfig.googleapis.com') {
-          return http.Response(
-            jsonEncode({
-              'entries': {'api_url_tv': 'https://live.example/'},
-            }),
-            200,
-          );
-        }
         if (request.url.toString() == 'https://tamilultra.co.uk') {
           return http.Response('', 200);
         }
-        if (request.url.toString() == 'https://live.example/events.json') {
+        if (request.url.toString() == 'https://modi-home.top/events.json') {
           return http.Response(jsonEncode({'data': encryptedEvents}), 200);
         }
         if (request.url.toString() == 'https://fifabd.site/OPLLX7/LIVE2.m3u') {
