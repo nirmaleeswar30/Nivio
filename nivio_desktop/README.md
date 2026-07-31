@@ -14,32 +14,25 @@
 
 ## Screenshots
 
-Add desktop screenshots here:
-
-```text
-nivio_desktop/assets/screenshots/desktop-home.png
-nivio_desktop/assets/screenshots/desktop-details.png
-nivio_desktop/assets/screenshots/desktop-player.png
-nivio_desktop/assets/screenshots/desktop-live-tv.png
-nivio_desktop/assets/screenshots/desktop-library.png
-nivio_desktop/assets/screenshots/desktop-settings.png
-```
-
-After adding those files, the section below will render on GitHub.
-
 <div align="center">
   <table border="0">
     <tr>
       <td align="center"><img src="assets/screenshots/desktop-home.png" alt="Desktop Home" /><br><b>Home</b></td>
-      <td align="center"><img src="assets/screenshots/desktop-details.png" alt="Desktop Details" /><br><b>Details</b></td>
-      <td align="center"><img src="assets/screenshots/desktop-player.png" alt="Desktop Player" /><br><b>Player</b></td>
+      <td align="center"><img src="assets/screenshots/desktop-home3.png" alt="Desktop Hover Preview" /><br><b>Hover Preview</b></td>
+      <td align="center"><img src="assets/screenshots/desktop-home-mini.png" alt="Desktop Continue Watching and Mini Player" /><br><b>Continue Watching</b></td>
     </tr>
   </table>
   <table border="0">
     <tr>
+      <td align="center"><img src="assets/screenshots/desktop-details.png" alt="Desktop Details" /><br><b>Details</b></td>
+      <td align="center"><img src="assets/screenshots/desktop-player1.png" alt="Desktop Player Controls" /><br><b>Player</b></td>
       <td align="center"><img src="assets/screenshots/desktop-live-tv.png" alt="Desktop Live TV" /><br><b>Live TV</b></td>
+    </tr>
+  </table>
+  <table border="0">
+    <tr>
       <td align="center"><img src="assets/screenshots/desktop-library.png" alt="Desktop Library" /><br><b>Library</b></td>
-      <td align="center"><img src="assets/screenshots/desktop-settings.png" alt="Desktop Settings" /><br><b>Settings</b></td>
+      <td align="center"><img src="assets/screenshots/desktop-watchtogether.png" alt="Desktop Watch Party" /><br><b>Watch Party</b></td>
     </tr>
   </table>
 </div>
@@ -50,11 +43,19 @@ After adding those files, the section below will render on GitHub.
 
 * **Desktop-first Linux UI**: Sidebar navigation, wide-screen layouts, hover states, keyboard-aware controls, and Linux window integration.
 * **Unified Discovery**: Browse movies, TV shows, anime, providers, and details from a desktop-focused interface.
+* **Hover Preview Cards**: Inspect media quickly from poster grids with preview artwork, metadata, and instant actions.
+* **Continue Watching**: Resume movies and episodes from saved playback progress.
+* **Mini Player**: Keep playback visible while browsing other desktop sections.
 * **High-performance Playback**: Uses `media_kit` with `libmpv` for native Linux video playback.
+* **Skip Intro / Outro Support**: Uses skip-time metadata where available to jump over intros and ending segments.
+* **Provider Fallbacks**: Resolves streams through multiple providers and falls back when a source fails.
+* **Custom Subtitles**: Load subtitle files or remote subtitle URLs and keep playback preferences.
 * **Embedded Web Fallback**: Uses WebKitGTK when a provider requires embedded playback.
-* **Live IPTV**: Supports custom M3U/M3U8 playlists and built-in live TV providers.
+* **Live IPTV**: Supports custom M3U/M3U8 playlists, favorites, source filters, and built-in live TV providers.
 * **Watch History & Library**: Continue watching, local history, watchlist, and desktop persistence.
 * **Watch Parties**: Supabase-backed session support for synced watch rooms.
+* **Profile & Cloud Sync**: Sync watch activity and account data when cloud sync is configured.
+* **Desktop Settings**: Playback, subtitle appearance, downloads, content feed, app updates, and account controls.
 * **Linux Packaging**: AppImage, `.deb`, Arch package, and prepared Flatpak manifest.
 
 ---
