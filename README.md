@@ -68,21 +68,26 @@
 
 ## 🚀 Features
 
-### Shared Features
+### Core App Features
 
 *   **🎬 Unified Discovery**: Browse trending Movies, TV Shows, and Anime directly from TMDB. Includes dedicated sections for regional content (Tamil, Telugu, Hindi, Korean).
 *   **🎌 Dedicated Anime Hub**: Integrated with **AniList** for dedicated Anime scraping from high-speed providers (`Animetsu`, `Animex`, `Miruro`), complete with Miruro Cloudflare bypass and custom quality selection.
 *   **🧠 Smart Recommendations**: An intelligent, privacy-first engine that analyzes your local watch history to curate a highly personalized "Top Picks For You" list by interleaving recommendations from your top 5 most recently watched titles.
-*   **⚡ Blazing Fast Playback**: Custom native video player (`media_kit`) powered by `libmpv`/MPV for hardware-accelerated decoding, picture-in-picture, and custom controls.
-*   **🔊 Loudness Enhancer (Volume Boost)**: Supports software volume boost up to 200% (+20dB gain) via screen swiping or TV arrow keys.
-*   **📂 Custom Subtitles & Persistence**: Load subtitle files (.srt, .vtt) locally from your device or paste remote URLs directly. Custom subtitle choices are remembered and auto-mapped for that episode on next play.
-*   **📡 Live IPTV**: Stream live television channels using M3U/M3U8 playlists directly from the app.
+*   **⚡ Blazing Fast Playback**: Custom native playback powered by `media_kit` and MPV/libmpv, with custom controls and platform-specific playback enhancements.
+*   **📂 Custom Subtitles & Persistence**: Load subtitle files (.srt, .vtt) locally or paste remote URLs directly. Subtitle choices and styling preferences are saved for repeat playback.
+*   **📡 Live IPTV**: Stream live television channels using M3U/M3U8 playlists and built-in live TV sources.
 *   **🎉 Real-Time Watch Parties**: Create a room, share a 6-digit code, and watch movies perfectly synced with your friends. Host playback controls are synchronized across all devices instantly via Supabase.
 *   **⬇️ Offline Downloads**: Download your favorite episodes for offline viewing.
-*   **🚀 OTA Updates**: Powered by Shorebird, receive instant over-the-air app updates in the background without needing to download a new APK or visit an app store.
-*   **💾 Cloud Sync & History**: Sign in with Google or anonymously. Watch progress, history, and watchlists are automatically synced across devices via Firebase Firestore.
-*   **🔔 Smart Episode Alerts**: Background push notifications alert you the moment a new episode of your favorite show drops.
+*   **🚀 Updates**: Android supports Shorebird OTA updates; desktop includes release/update checks for Linux builds.
+*   **💾 Cloud Sync & History**: Sign in with Google or anonymously. Watch progress, history, settings, and watchlists can sync across configured devices.
+*   **🔔 Episode Alerts**: Track watchlist shows and check for newly aired episodes.
 *   **🎛️ Total Control**: Change playback speeds, select custom audio tracks, customize subtitle styling, and tweak default video resolutions globally.
+
+### Android Features
+
+*   **🔊 Loudness Enhancer (Volume Boost)**: Supports software volume boost up to 200% (+20dB gain) via screen swiping or TV arrow keys.
+*   **📱 Mobile & TV Controls**: Gesture controls, D-pad friendly playback controls, Android PiP behavior, and Android background notification support.
+*   **🚀 Shorebird OTA**: Receive over-the-air Android app updates without downloading a new APK.
 
 ### Linux Desktop Features
 
@@ -93,6 +98,8 @@
 *   **💬 Custom Subtitles**: Load local subtitle files or remote subtitle URLs.
 *   **🌐 Embedded Web Fallback**: Uses WebKitGTK when a provider requires embedded playback.
 *   **📺 Live TV Filters**: Supports custom playlists, favorites, source filters, and built-in live TV providers.
+*   **📚 Desktop Library**: Continue Watching, watchlist, downloads, schedule, release timeline, and new episode panels.
+*   **👤 Profile & Settings**: Cloud sync controls, playback settings, subtitle appearance, download storage, cache cleanup, content feed controls, and update checks.
 *   **📦 Linux Packages**: AppImage, `.deb`, Arch package, and prepared Flatpak manifest.
 
 ---
