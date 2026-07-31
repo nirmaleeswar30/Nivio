@@ -17,8 +17,15 @@ if [[ ! -x "$APPIMAGETOOL" ]]; then
   chmod +x "$APPIMAGETOOL"
 fi
 
-cd "$ROOT_DIR"
-flutter build linux --release
+if [[ "${SKIP_FLUTTER_BUILD:-0}" != "1" ]]; then
+  "$ROOT_DIR/scripts/build_linux_release.sh"
+fi
+
+if [[ ! -x "$ROOT_DIR/build/linux/x64/release/bundle/$BINARY_NAME" ]]; then
+  echo "Release bundle not found at $ROOT_DIR/build/linux/x64/release/bundle" >&2
+  echo "Run: scripts/build_linux_release.sh" >&2
+  exit 1
+fi
 
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR" "$DIST_DIR"

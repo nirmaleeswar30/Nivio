@@ -97,7 +97,7 @@ Install Flutter with Linux desktop support, then run:
 
 ```bash
 flutter pub get
-flutter build linux --release
+scripts/build_linux_release.sh
 ```
 
 Run the release bundle:

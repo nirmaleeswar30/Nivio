@@ -14,7 +14,7 @@ if [[ ! -x "$APPIMAGETOOL" ]]; then
 fi
 
 if [[ ! -x "$BUILD_BUNDLE/nivio_desktop" ]]; then
-  echo "Release bundle not found. Run: flutter build linux --release" >&2
+  echo "Release bundle not found. Run: scripts/build_linux_release.sh" >&2
   exit 1
 fi
 

@@ -24,57 +24,69 @@ Future<void> bootstrap() async {
     clock: startupClock,
   );
   runApp(const NivioStartupSplashApp());
-  await AppEnvironment.load();
-  PlaybackRuntimeDiagnostics.lifecycleLog(
-    'Environment loaded',
-    clock: startupClock,
-  );
-  await FirebaseAuthRestService.instance.initialize();
-  PlaybackRuntimeDiagnostics.lifecycleLog(
-    'Firebase auth restored',
-    clock: startupClock,
-  );
-  await WatchPartySupabaseConfig.initializeIfConfigured();
-  PlaybackRuntimeDiagnostics.lifecycleLog(
-    'Watch party services initialized',
-    clock: startupClock,
-  );
-  await LibraryPersistence.init();
-  PlaybackRuntimeDiagnostics.lifecycleLog(
-    'Library persistence initialized',
-    clock: startupClock,
-  );
-  await DesktopCacheService.instance.init();
-  PlaybackRuntimeDiagnostics.lifecycleLog(
-    'Cache manager initialized',
-    clock: startupClock,
-  );
-  unawaited(LibraryEpisodeTrackingService.instance.runAppLaunchCheck());
-  await DesktopDownloadService.instance.restorePendingDownloads();
-  PlaybackRuntimeDiagnostics.lifecycleLog(
-    'Download manager initialized',
-    clock: startupClock,
-  );
-  await DesktopWatchHistoryRepository.instance.initialize();
-  PlaybackRuntimeDiagnostics.lifecycleLog(
-    'Watch history initialized',
-    clock: startupClock,
-  );
-  await DesktopCloudSyncService.instance.initialize();
-  PlaybackRuntimeDiagnostics.lifecycleLog(
-    'Cloud sync initialized',
-    clock: startupClock,
-  );
-  unawaited(DeepLinkService.instance.initialize());
-  runApp(const NivioDesktopApp());
-  WidgetsBinding.instance.addPostFrameCallback((_) {
+
+  try {
+    await AppEnvironment.load();
     PlaybackRuntimeDiagnostics.lifecycleLog(
-      'First Flutter frame rendered',
+      'Environment loaded',
       clock: startupClock,
     );
-    PlaybackRuntimeDiagnostics.snapshot(
-      'startup complete',
+    await FirebaseAuthRestService.instance.initialize();
+    PlaybackRuntimeDiagnostics.lifecycleLog(
+      'Firebase auth restored',
       clock: startupClock,
     );
-  });
+    await WatchPartySupabaseConfig.initializeIfConfigured();
+    PlaybackRuntimeDiagnostics.lifecycleLog(
+      'Watch party services initialized',
+      clock: startupClock,
+    );
+    await LibraryPersistence.init();
+    PlaybackRuntimeDiagnostics.lifecycleLog(
+      'Library persistence initialized',
+      clock: startupClock,
+    );
+    await DesktopCacheService.instance.init();
+    PlaybackRuntimeDiagnostics.lifecycleLog(
+      'Cache manager initialized',
+      clock: startupClock,
+    );
+    unawaited(LibraryEpisodeTrackingService.instance.runAppLaunchCheck());
+    await DesktopDownloadService.instance.restorePendingDownloads();
+    PlaybackRuntimeDiagnostics.lifecycleLog(
+      'Download manager initialized',
+      clock: startupClock,
+    );
+    await DesktopWatchHistoryRepository.instance.initialize();
+    PlaybackRuntimeDiagnostics.lifecycleLog(
+      'Watch history initialized',
+      clock: startupClock,
+    );
+    await DesktopCloudSyncService.instance.initialize();
+    PlaybackRuntimeDiagnostics.lifecycleLog(
+      'Cloud sync initialized',
+      clock: startupClock,
+    );
+    unawaited(DeepLinkService.instance.initialize());
+    runApp(const NivioDesktopApp());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      PlaybackRuntimeDiagnostics.lifecycleLog(
+        'First Flutter frame rendered',
+        clock: startupClock,
+      );
+      PlaybackRuntimeDiagnostics.snapshot(
+        'startup complete',
+        clock: startupClock,
+      );
+    });
+  } catch (error, stackTrace) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: error,
+        stack: stackTrace,
+        library: 'nivio desktop bootstrap',
+      ),
+    );
+    runApp(NivioStartupErrorApp(message: error.toString()));
+  }
 }

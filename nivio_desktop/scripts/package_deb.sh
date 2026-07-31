@@ -17,13 +17,12 @@ if [[ -z "$VERSION" ]]; then
 fi
 
 if [[ "${SKIP_FLUTTER_BUILD:-0}" != "1" ]]; then
-  cd "$ROOT_DIR"
-  flutter build linux --release
+  "$ROOT_DIR/scripts/build_linux_release.sh"
 fi
 
 if [[ ! -x "$BUNDLE_DIR/nivio_desktop" ]]; then
   echo "Release bundle not found at $BUNDLE_DIR" >&2
-  echo "Run: flutter build linux --release" >&2
+  echo "Run: scripts/build_linux_release.sh" >&2
   exit 1
 fi
 
