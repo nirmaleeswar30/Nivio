@@ -88,6 +88,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final FocusNode _videoControlsFocusNode = FocusNode(
     debugLabel: 'Nivio video controls',
   );
+  Future<void> Function()? _toggleNativeFullscreen;
   late final bool _ownsEngine = widget.engine == null;
   late final PlaybackEngine _engine =
       widget.engine ??
@@ -180,6 +181,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     unawaited(_setPlaybackWakelock(enabled: true));
     _engine.state.addListener(_onPlaybackChanged);
     _scheduleControlsHide();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _requestPlayerKeyboardFocus();
+    });
   }
 
   void _configureEmbeddedWebAppControls() {
@@ -969,6 +973,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _scheduleControlsHide();
   }
 
+  void _requestPlayerKeyboardFocus() {
+    if (!_videoControlsFocusNode.canRequestFocus) return;
+    _videoControlsFocusNode.requestFocus();
+  }
+
   void _showControlsFromPlaybackSurface() {
     if (!mounted) return;
     _showControls();
@@ -998,6 +1007,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
     _logInteractionSnapshot('after drawer open request=$drawer');
     _hideControlsTimer?.cancel();
+    if (_drawer == _PlayerDrawer.none) _requestPlayerKeyboardFocus();
   }
 
   void _openWebServerDrawer() {
@@ -1021,6 +1031,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
     _logInteractionSnapshot('after web drawer open');
     _hideControlsTimer?.cancel();
+    _requestPlayerKeyboardFocus();
   }
 
   void _toggleEmbeddedWebServerDrawer() {
@@ -1037,6 +1048,109 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _webOverlayGeneration++;
     });
     _hideControlsTimer?.cancel();
+    if (_webDrawer == _WebOverlayDrawer.none) _requestPlayerKeyboardFocus();
+  }
+
+  bool _isTextInputFocused() {
+    final context = FocusManager.instance.primaryFocus?.context;
+    if (context == null) return false;
+    var editing = false;
+    context.visitAncestorElements((element) {
+      final widget = element.widget;
+      if (widget is EditableText) {
+        editing = true;
+        return false;
+      }
+      return true;
+    });
+    return editing || context.widget is EditableText;
+  }
+
+  KeyEventResult _handlePlayerKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (_isTextInputFocused()) return KeyEventResult.ignored;
+
+    final key = event.logicalKey;
+    if (_drawer != _PlayerDrawer.none || _webDrawer != _WebOverlayDrawer.none) {
+      if (key == LogicalKeyboardKey.escape) {
+        setState(() {
+          _drawer = _PlayerDrawer.none;
+          _webDrawer = _WebOverlayDrawer.none;
+          _webOverlayGeneration++;
+        });
+        _requestPlayerKeyboardFocus();
+        _showControls();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
+    if (key == LogicalKeyboardKey.mediaPlay) {
+      if (!_ensurePartyCanControl()) return KeyEventResult.handled;
+      unawaited(_engine.play());
+    } else if (key == LogicalKeyboardKey.mediaPause) {
+      if (!_ensurePartyCanControl()) return KeyEventResult.handled;
+      unawaited(_engine.pause());
+    } else if (key == LogicalKeyboardKey.mediaPlayPause ||
+        key == LogicalKeyboardKey.space ||
+        key == LogicalKeyboardKey.keyK) {
+      if (!_ensurePartyCanControl()) return KeyEventResult.handled;
+      unawaited(_controller.togglePlayPause());
+    } else if (key == LogicalKeyboardKey.keyJ ||
+        key == LogicalKeyboardKey.arrowLeft) {
+      if (!_ensurePartyCanControl()) return KeyEventResult.handled;
+      unawaited(_controller.seekBy(const Duration(seconds: -10)));
+    } else if (key == LogicalKeyboardKey.keyL ||
+        key == LogicalKeyboardKey.arrowRight) {
+      if (!_ensurePartyCanControl()) return KeyEventResult.handled;
+      unawaited(_controller.seekBy(const Duration(seconds: 10)));
+    } else if (key == LogicalKeyboardKey.keyM) {
+      unawaited(_controller.toggleMute());
+    } else if (key == LogicalKeyboardKey.period) {
+      unawaited(
+        _controller.setPlaybackSpeed(
+          (_engine.state.value.playbackSpeed + 0.25).clamp(0.25, 2.0),
+        ),
+      );
+    } else if (key == LogicalKeyboardKey.comma) {
+      unawaited(
+        _controller.setPlaybackSpeed(
+          (_engine.state.value.playbackSpeed - 0.25).clamp(0.25, 2.0),
+        ),
+      );
+    } else if (key == LogicalKeyboardKey.arrowUp) {
+      _changeVolume(0.05);
+    } else if (key == LogicalKeyboardKey.arrowDown) {
+      _changeVolume(-0.05);
+    } else if (key == LogicalKeyboardKey.keyF) {
+      final toggleFullscreen = _toggleNativeFullscreen;
+      if (toggleFullscreen != null) unawaited(toggleFullscreen());
+    } else if (key == LogicalKeyboardKey.keyS) {
+      if (widget.sourceOptions.length > 1) {
+        if (_usesEmbeddedWebPlayback) {
+          _toggleEmbeddedWebServerDrawer();
+        } else {
+          _openDrawer(_PlayerDrawer.server);
+        }
+      }
+    } else if (key == LogicalKeyboardKey.keyC && _hasWatchPartyContext) {
+      _toggleWatchPartyPanel();
+    } else if (key == LogicalKeyboardKey.escape) {
+      if (_watchPartyPanelExpanded) {
+        _setWatchPartyPanelExpanded(false);
+      } else if (_isNativeFullscreenActive) {
+        final toggleFullscreen = _toggleNativeFullscreen;
+        if (toggleFullscreen != null) {
+          unawaited(toggleFullscreen());
+        }
+      } else {
+        _close();
+      }
+    } else {
+      return KeyEventResult.ignored;
+    }
+    _showControls();
+    return KeyEventResult.handled;
   }
 
   void _destroySharedOverlayForWebTransition({required String reason}) {
@@ -1656,171 +1770,107 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Widget _buildVideoControls(VideoState videoState) {
-    return Focus(
-      focusNode: _videoControlsFocusNode,
-      autofocus: true,
-      onKeyEvent: (node, event) {
-        if (event is! KeyDownEvent) return KeyEventResult.ignored;
-        final key = event.logicalKey;
-        if (key == LogicalKeyboardKey.mediaPlay) {
-          if (!_ensurePartyCanControl()) return KeyEventResult.handled;
-          unawaited(_engine.play());
-        } else if (key == LogicalKeyboardKey.mediaPause) {
-          if (!_ensurePartyCanControl()) return KeyEventResult.handled;
-          unawaited(_engine.pause());
-        } else if (key == LogicalKeyboardKey.mediaPlayPause ||
-            key == LogicalKeyboardKey.space ||
-            key == LogicalKeyboardKey.keyK) {
-          if (!_ensurePartyCanControl()) return KeyEventResult.handled;
-          unawaited(_controller.togglePlayPause());
-        } else if (key == LogicalKeyboardKey.keyJ ||
-            key == LogicalKeyboardKey.arrowLeft) {
-          if (!_ensurePartyCanControl()) return KeyEventResult.handled;
-          unawaited(_controller.seekBy(const Duration(seconds: -10)));
-        } else if (key == LogicalKeyboardKey.keyL ||
-            key == LogicalKeyboardKey.arrowRight) {
-          if (!_ensurePartyCanControl()) return KeyEventResult.handled;
-          unawaited(_controller.seekBy(const Duration(seconds: 10)));
-        } else if (key == LogicalKeyboardKey.keyM) {
-          unawaited(_controller.toggleMute());
-        } else if (key == LogicalKeyboardKey.period) {
-          unawaited(
-            _controller.setPlaybackSpeed(
-              (_engine.state.value.playbackSpeed + 0.25).clamp(0.25, 2.0),
-            ),
-          );
-        } else if (key == LogicalKeyboardKey.comma) {
-          unawaited(
-            _controller.setPlaybackSpeed(
-              (_engine.state.value.playbackSpeed - 0.25).clamp(0.25, 2.0),
-            ),
-          );
-        } else if (key == LogicalKeyboardKey.arrowUp) {
-          _changeVolume(0.05);
-        } else if (key == LogicalKeyboardKey.arrowDown) {
-          _changeVolume(-0.05);
-        } else if (key == LogicalKeyboardKey.keyF) {
-          unawaited(videoState.toggleFullscreen());
-        } else if (key == LogicalKeyboardKey.keyC && _hasWatchPartyContext) {
-          _toggleWatchPartyPanel();
-        } else if (key == LogicalKeyboardKey.escape) {
-          if (_watchPartyPanelExpanded) {
-            _setWatchPartyPanelExpanded(false);
-          } else if (_isNativeFullscreenActive) {
-            unawaited(videoState.exitFullscreen());
-          } else {
-            _close();
-          }
-        } else {
-          return KeyEventResult.ignored;
-        }
-        _showControls();
-        return KeyEventResult.handled;
-      },
-      child: _isNativeFullscreenActive
-          ? ValueListenableBuilder<PlaybackState>(
-              valueListenable: _engine.state,
-              builder: (context, playback, _) {
-                return MouseRegion(
-                  onHover: (_) {
-                    _videoControlsFocusNode.requestFocus();
-                    _showControls();
+    _toggleNativeFullscreen = videoState.toggleFullscreen;
+    return _isNativeFullscreenActive
+        ? ValueListenableBuilder<PlaybackState>(
+            valueListenable: _engine.state,
+            builder: (context, playback, _) {
+              return MouseRegion(
+                onHover: (_) {
+                  _requestPlayerKeyboardFocus();
+                  _showControls();
+                },
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () {
+                    _requestPlayerKeyboardFocus();
+                    _toggleControls();
                   },
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onTap: () {
-                      _videoControlsFocusNode.requestFocus();
-                      _toggleControls();
-                    },
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        if (_controlsVisible &&
-                            playback.status != PlaybackStatus.error)
-                          const ColoredBox(color: Color(0x66000000)),
-                        if (playback.status != PlaybackStatus.error)
-                          _AndroidPlayerControls(
-                            visible: _controlsVisible,
-                            playback: playback,
-                            request: widget.request,
-                            providerLabel: _providerLabel,
-                            serverLabel: _serverLabel,
-                            canSwitchServer: widget.sourceOptions.length > 1,
-                            watchPartyMemberCount: _hasWatchPartyContext
-                                ? _watchPartySession?.participantCount ?? 0
-                                : null,
-                            onWatchParty: _hasWatchPartyContext
-                                ? _toggleWatchPartyPanel
-                                : null,
-                            onClose: () =>
-                                unawaited(videoState.exitFullscreen()),
-                            onPlayPause: () {
-                              if (!_ensurePartyCanControl()) return;
-                              unawaited(_controller.togglePlayPause());
-                              _showControls();
-                            },
-                            onSeek: (position) {
-                              if (!_ensurePartyCanControl()) return;
-                              unawaited(_engine.seek(position));
-                              _showControls();
-                            },
-                            onSettings: () =>
-                                _openDrawer(_PlayerDrawer.settings),
-                            onServer: () => _openDrawer(_PlayerDrawer.server),
-                            onEpisodes: _episodeSelectorCallback,
-                          ),
-                        if (_sourceSwitchInFlight)
-                          _PlayerSwitchingOverlay(
-                            message:
-                                _sourceSwitchMessage ?? 'Switching server...',
-                          ),
-                        _SkipOverlay(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (_controlsVisible &&
+                          playback.status != PlaybackStatus.error)
+                        const ColoredBox(color: Color(0x66000000)),
+                      if (playback.status != PlaybackStatus.error)
+                        _AndroidPlayerControls(
+                          visible: _controlsVisible,
                           playback: playback,
-                          skipTimes: _effectiveSkipTimes,
-                          onSkip: (target) {
+                          request: widget.request,
+                          providerLabel: _providerLabel,
+                          serverLabel: _serverLabel,
+                          canSwitchServer: widget.sourceOptions.length > 1,
+                          watchPartyMemberCount: _hasWatchPartyContext
+                              ? _watchPartySession?.participantCount ?? 0
+                              : null,
+                          onWatchParty: _hasWatchPartyContext
+                              ? _toggleWatchPartyPanel
+                              : null,
+                          onClose: () => unawaited(videoState.exitFullscreen()),
+                          onPlayPause: () {
                             if (!_ensurePartyCanControl()) return;
-                            unawaited(_engine.seek(target));
+                            unawaited(_controller.togglePlayPause());
+                            _showControls();
                           },
+                          onSeek: (position) {
+                            if (!_ensurePartyCanControl()) return;
+                            unawaited(_engine.seek(position));
+                            _showControls();
+                          },
+                          onSettings: () => _openDrawer(_PlayerDrawer.settings),
+                          onServer: () => _openDrawer(_PlayerDrawer.server),
+                          onEpisodes: _episodeSelectorCallback,
                         ),
-                        if (_hasNextEpisode &&
-                            playback.duration > Duration.zero)
-                          _NextEpisodeOverlay(
-                            playback: playback,
-                            autoplay: _autoplayNextEpisode,
-                            onNext: _startNextEpisode,
-                          ),
-                        if (_hasWatchPartyContext)
-                          _WatchPartyStatusOverlay(
-                            visible:
-                                _controlsVisible ||
-                                _watchPartyPanelExpanded ||
-                                _watchPartyStatusMessage != null,
-                            expanded: _watchPartyPanelExpanded,
-                            onExpandedChanged: _setWatchPartyPanelExpanded,
-                            session: _watchPartySession,
-                            isHost: _watchPartyService?.isHost == true,
-                            canControl: _canControlPartyPlayback,
-                            connectionLabel: _partyConnectionLabel,
-                            controllerLabel: _partyControllerLabel,
-                            statusMessage: _watchPartyStatusMessage,
-                            messages: _watchPartyMessages,
-                            reactions: _watchPartyReactions,
-                            onSendMessage: _sendWatchPartyChat,
-                            onSendReaction: _sendWatchPartyReaction,
-                            onLeaveOrEnd: _leaveOrEndWatchParty,
-                          ),
-                        if (_volumeOverlayValue != null)
-                          _VolumeOverlay(value: _volumeOverlayValue!),
-                        if (_drawer != _PlayerDrawer.none)
-                          _buildRightDrawer(playback),
-                      ],
-                    ),
+                      if (_sourceSwitchInFlight)
+                        _PlayerSwitchingOverlay(
+                          message:
+                              _sourceSwitchMessage ?? 'Switching server...',
+                        ),
+                      _SkipOverlay(
+                        playback: playback,
+                        skipTimes: _effectiveSkipTimes,
+                        onSkip: (target) {
+                          if (!_ensurePartyCanControl()) return;
+                          unawaited(_engine.seek(target));
+                        },
+                      ),
+                      if (_hasNextEpisode && playback.duration > Duration.zero)
+                        _NextEpisodeOverlay(
+                          playback: playback,
+                          autoplay: _autoplayNextEpisode,
+                          onNext: _startNextEpisode,
+                        ),
+                      if (_hasWatchPartyContext)
+                        _WatchPartyStatusOverlay(
+                          visible:
+                              _controlsVisible ||
+                              _watchPartyPanelExpanded ||
+                              _watchPartyStatusMessage != null,
+                          expanded: _watchPartyPanelExpanded,
+                          onExpandedChanged: _setWatchPartyPanelExpanded,
+                          session: _watchPartySession,
+                          isHost: _watchPartyService?.isHost == true,
+                          canControl: _canControlPartyPlayback,
+                          connectionLabel: _partyConnectionLabel,
+                          controllerLabel: _partyControllerLabel,
+                          statusMessage: _watchPartyStatusMessage,
+                          messages: _watchPartyMessages,
+                          reactions: _watchPartyReactions,
+                          onSendMessage: _sendWatchPartyChat,
+                          onSendReaction: _sendWatchPartyReaction,
+                          onLeaveOrEnd: _leaveOrEndWatchParty,
+                        ),
+                      if (_volumeOverlayValue != null)
+                        _VolumeOverlay(value: _volumeOverlayValue!),
+                      if (_drawer != _PlayerDrawer.none)
+                        _buildRightDrawer(playback),
+                    ],
                   ),
-                );
-              },
-            )
-          : const SizedBox.expand(),
-    );
+                ),
+              );
+            },
+          )
+        : const SizedBox.expand();
   }
 
   Widget _buildSurface(BuildContext context) {
@@ -1954,193 +2004,203 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerDown: (event) {
-          PlaybackRuntimeDiagnostics.uiLog(
-            'Flutter root pointer down position=${event.position} '
-            'buttons=${event.buttons}',
-          );
-          _logFlutterHitTest('root pointer down', event);
-          _logInteractionSnapshot('root pointer down');
-        },
-        onPointerUp: (event) => PlaybackRuntimeDiagnostics.uiLog(
-          'Flutter root pointer up position=${event.position}',
-        ),
-        child: ValueListenableBuilder<PlaybackState>(
-          valueListenable: _engine.state,
-          builder: (context, playback, _) {
-            final usesEmbeddedWeb = _usesEmbeddedWebPlayback;
+    return Focus(
+      focusNode: _videoControlsFocusNode,
+      autofocus: true,
+      onKeyEvent: (node, event) => _handlePlayerKey(event),
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (event) {
+            _requestPlayerKeyboardFocus();
             PlaybackRuntimeDiagnostics.uiLog(
-              'PlayerScreen#$_instanceId ValueListenable rebuild '
-              'mounted=$mounted contextMounted=${context.mounted} '
-              'playback=${playback.status.name} usesEmbeddedWeb=$usesEmbeddedWeb '
-              'requestProvider=${widget.request.providerIndex ?? 'auto'} '
-              'controllerProvider=${_controller.request.providerIndex ?? 'auto'} '
-              'streamResultProvider=${widget.request.streamResult?.provider ?? 'none'} '
-              'streamResultIframe=${widget.request.streamResult?.isIframe ?? false} '
-              'sourceOptions=${widget.sourceOptions.length} '
-              'sourceSwitchInFlight=$_sourceSwitchInFlight '
-              'buttonShouldExist=${usesEmbeddedWeb && playback.status != PlaybackStatus.loading} '
-              '${_engineDisposedLabel()}',
+              'Flutter root pointer down position=${event.position} '
+              'buttons=${event.buttons}',
             );
-            _maybeRecoverEmbeddedProviderError(playback);
-            if (usesEmbeddedWeb) {
-              return _buildEmbeddedWebLayout(playback);
-            }
-
-            if (playback.status == PlaybackStatus.error) {
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  _buildSurface(context),
-                  _PlayerErrorOverlay(
-                    message: playback.errorMessage ?? 'Playback failed.',
-                    canSwitchServer: widget.sourceOptions.length > 1,
-                    onSwitchServer: _switchToNextSource,
-                    onRetry: () => unawaited(_controller.retry()),
-                    onClose: _close,
-                  ),
-                  _AndroidPlayerControls(
-                    visible: true,
-                    playback: playback,
-                    request: widget.request,
-                    providerLabel: _providerLabel,
-                    serverLabel: _serverLabel,
-                    canSwitchServer: widget.sourceOptions.length > 1,
-                    onClose: _close,
-                    onMiniPlayer: widget.onMinimize == null
-                        ? null
-                        : _minimizeToMiniPlayer,
-                    onPlayPause: () => unawaited(_controller.togglePlayPause()),
-                    onSeek: (position) => unawaited(_engine.seek(position)),
-                    onSettings: () => _openDrawer(_PlayerDrawer.settings),
-                    onServer: () => _openDrawer(_PlayerDrawer.server),
-                    onEpisodes: _episodeSelectorCallback,
-                  ),
-                  if (_sourceSwitchInFlight)
-                    _PlayerSwitchingOverlay(
-                      message: _sourceSwitchMessage ?? 'Switching server...',
-                    ),
-                  if (_drawer != _PlayerDrawer.none)
-                    _buildRightDrawer(playback),
-                ],
+            _logFlutterHitTest('root pointer down', event);
+            _logInteractionSnapshot('root pointer down');
+          },
+          onPointerUp: (event) => PlaybackRuntimeDiagnostics.uiLog(
+            'Flutter root pointer up position=${event.position}',
+          ),
+          child: ValueListenableBuilder<PlaybackState>(
+            valueListenable: _engine.state,
+            builder: (context, playback, _) {
+              final usesEmbeddedWeb = _usesEmbeddedWebPlayback;
+              PlaybackRuntimeDiagnostics.uiLog(
+                'PlayerScreen#$_instanceId ValueListenable rebuild '
+                'mounted=$mounted contextMounted=${context.mounted} '
+                'playback=${playback.status.name} usesEmbeddedWeb=$usesEmbeddedWeb '
+                'requestProvider=${widget.request.providerIndex ?? 'auto'} '
+                'controllerProvider=${_controller.request.providerIndex ?? 'auto'} '
+                'streamResultProvider=${widget.request.streamResult?.provider ?? 'none'} '
+                'streamResultIframe=${widget.request.streamResult?.isIframe ?? false} '
+                'sourceOptions=${widget.sourceOptions.length} '
+                'sourceSwitchInFlight=$_sourceSwitchInFlight '
+                'buttonShouldExist=${usesEmbeddedWeb && playback.status != PlaybackStatus.loading} '
+                '${_engineDisposedLabel()}',
               );
-            }
+              _maybeRecoverEmbeddedProviderError(playback);
+              if (usesEmbeddedWeb) {
+                return _buildEmbeddedWebLayout(playback);
+              }
 
-            return MouseRegion(
-              onHover: (_) => _showControls(),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  _buildSurface(context),
-                  _PlayerGestureLayer(
-                    playback: playback,
-                    onTap: _toggleControls,
-                    onSeekBy: (offset) {
-                      if (!_ensurePartyCanControl()) return;
-                      unawaited(_controller.seekBy(offset));
-                      _showControls();
-                    },
-                    onVolumeChanged: (value) {
-                      unawaited(_controller.setVolume(value));
-                      _showControls();
-                    },
-                  ),
-                  if (_controlsVisible &&
-                      playback.status != PlaybackStatus.error)
-                    const ColoredBox(color: Color(0x66000000)),
-                  if (playback.status == PlaybackStatus.loading)
-                    _PlayerLoadingOverlay(
-                      title: widget.request.title,
-                      posterPath: widget.request.posterPath,
-                      subtitle: _requestSubtitle,
-                      message:
-                          widget.request.streamResult?.provider ??
-                          'Finding a playable source...',
+              if (playback.status == PlaybackStatus.error) {
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _buildSurface(context),
+                    _PlayerErrorOverlay(
+                      message: playback.errorMessage ?? 'Playback failed.',
+                      canSwitchServer: widget.sourceOptions.length > 1,
+                      onSwitchServer: _switchToNextSource,
+                      onRetry: () => unawaited(_controller.retry()),
+                      onClose: _close,
                     ),
-                  if (playback.status != PlaybackStatus.error)
                     _AndroidPlayerControls(
-                      visible: _controlsVisible,
+                      visible: true,
                       playback: playback,
                       request: widget.request,
                       providerLabel: _providerLabel,
                       serverLabel: _serverLabel,
                       canSwitchServer: widget.sourceOptions.length > 1,
-                      watchPartyMemberCount: _hasWatchPartyContext
-                          ? _watchPartySession?.participantCount ?? 0
-                          : null,
-                      onWatchParty: _hasWatchPartyContext
-                          ? _toggleWatchPartyPanel
-                          : null,
                       onClose: _close,
                       onMiniPlayer: widget.onMinimize == null
                           ? null
                           : _minimizeToMiniPlayer,
-                      onPlayPause: () {
-                        if (!_ensurePartyCanControl()) return;
-                        unawaited(_controller.togglePlayPause());
-                        _showControls();
-                      },
-                      onSeek: (position) {
-                        if (!_ensurePartyCanControl()) return;
-                        unawaited(_engine.seek(position));
-                        _showControls();
-                      },
+                      onPlayPause: () =>
+                          unawaited(_controller.togglePlayPause()),
+                      onSeek: (position) => unawaited(_engine.seek(position)),
                       onSettings: () => _openDrawer(_PlayerDrawer.settings),
                       onServer: () => _openDrawer(_PlayerDrawer.server),
                       onEpisodes: _episodeSelectorCallback,
                     ),
-                  if (playback.status == PlaybackStatus.buffering)
-                    const _PlayerBufferingOverlay(),
-                  if (_sourceSwitchInFlight)
-                    _PlayerSwitchingOverlay(
-                      message: _sourceSwitchMessage ?? 'Switching server...',
-                    ),
-                  _SkipOverlay(
-                    playback: playback,
-                    skipTimes: _effectiveSkipTimes,
-                    onSkip: (target) {
-                      if (!_ensurePartyCanControl()) return;
-                      unawaited(_engine.seek(target));
-                    },
-                  ),
-                  if (_hasNextEpisode && playback.duration > Duration.zero)
-                    _NextEpisodeOverlay(
+                    if (_sourceSwitchInFlight)
+                      _PlayerSwitchingOverlay(
+                        message: _sourceSwitchMessage ?? 'Switching server...',
+                      ),
+                    if (_drawer != _PlayerDrawer.none)
+                      _buildRightDrawer(playback),
+                  ],
+                );
+              }
+
+              return MouseRegion(
+                onHover: (_) {
+                  _requestPlayerKeyboardFocus();
+                  _showControls();
+                },
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _buildSurface(context),
+                    _PlayerGestureLayer(
                       playback: playback,
-                      autoplay: _autoplayNextEpisode,
-                      onNext: _startNextEpisode,
+                      onTap: _toggleControls,
+                      onSeekBy: (offset) {
+                        if (!_ensurePartyCanControl()) return;
+                        unawaited(_controller.seekBy(offset));
+                        _showControls();
+                      },
+                      onVolumeChanged: (value) {
+                        unawaited(_controller.setVolume(value));
+                        _showControls();
+                      },
                     ),
-                  if (_hasWatchPartyContext)
-                    _WatchPartyStatusOverlay(
-                      visible:
-                          _controlsVisible ||
-                          _watchPartyPanelExpanded ||
-                          _watchPartyStatusMessage != null,
-                      expanded: _watchPartyPanelExpanded,
-                      onExpandedChanged: _setWatchPartyPanelExpanded,
-                      session: _watchPartySession,
-                      isHost: _watchPartyService?.isHost == true,
-                      canControl: _canControlPartyPlayback,
-                      connectionLabel: _partyConnectionLabel,
-                      controllerLabel: _partyControllerLabel,
-                      statusMessage: _watchPartyStatusMessage,
-                      messages: _watchPartyMessages,
-                      reactions: _watchPartyReactions,
-                      onSendMessage: _sendWatchPartyChat,
-                      onSendReaction: _sendWatchPartyReaction,
-                      onLeaveOrEnd: _leaveOrEndWatchParty,
+                    if (_controlsVisible &&
+                        playback.status != PlaybackStatus.error)
+                      const ColoredBox(color: Color(0x66000000)),
+                    if (playback.status == PlaybackStatus.loading)
+                      _PlayerLoadingOverlay(
+                        title: widget.request.title,
+                        posterPath: widget.request.posterPath,
+                        subtitle: _requestSubtitle,
+                        message:
+                            widget.request.streamResult?.provider ??
+                            'Finding a playable source...',
+                      ),
+                    if (playback.status != PlaybackStatus.error)
+                      _AndroidPlayerControls(
+                        visible: _controlsVisible,
+                        playback: playback,
+                        request: widget.request,
+                        providerLabel: _providerLabel,
+                        serverLabel: _serverLabel,
+                        canSwitchServer: widget.sourceOptions.length > 1,
+                        watchPartyMemberCount: _hasWatchPartyContext
+                            ? _watchPartySession?.participantCount ?? 0
+                            : null,
+                        onWatchParty: _hasWatchPartyContext
+                            ? _toggleWatchPartyPanel
+                            : null,
+                        onClose: _close,
+                        onMiniPlayer: widget.onMinimize == null
+                            ? null
+                            : _minimizeToMiniPlayer,
+                        onPlayPause: () {
+                          if (!_ensurePartyCanControl()) return;
+                          unawaited(_controller.togglePlayPause());
+                          _showControls();
+                        },
+                        onSeek: (position) {
+                          if (!_ensurePartyCanControl()) return;
+                          unawaited(_engine.seek(position));
+                          _showControls();
+                        },
+                        onSettings: () => _openDrawer(_PlayerDrawer.settings),
+                        onServer: () => _openDrawer(_PlayerDrawer.server),
+                        onEpisodes: _episodeSelectorCallback,
+                      ),
+                    if (playback.status == PlaybackStatus.buffering)
+                      const _PlayerBufferingOverlay(),
+                    if (_sourceSwitchInFlight)
+                      _PlayerSwitchingOverlay(
+                        message: _sourceSwitchMessage ?? 'Switching server...',
+                      ),
+                    _SkipOverlay(
+                      playback: playback,
+                      skipTimes: _effectiveSkipTimes,
+                      onSkip: (target) {
+                        if (!_ensurePartyCanControl()) return;
+                        unawaited(_engine.seek(target));
+                      },
                     ),
-                  if (_volumeOverlayValue != null)
-                    _VolumeOverlay(value: _volumeOverlayValue!),
-                  if (_drawer != _PlayerDrawer.none)
-                    _buildRightDrawer(playback),
-                ],
-              ),
-            );
-          },
+                    if (_hasNextEpisode && playback.duration > Duration.zero)
+                      _NextEpisodeOverlay(
+                        playback: playback,
+                        autoplay: _autoplayNextEpisode,
+                        onNext: _startNextEpisode,
+                      ),
+                    if (_hasWatchPartyContext)
+                      _WatchPartyStatusOverlay(
+                        visible:
+                            _controlsVisible ||
+                            _watchPartyPanelExpanded ||
+                            _watchPartyStatusMessage != null,
+                        expanded: _watchPartyPanelExpanded,
+                        onExpandedChanged: _setWatchPartyPanelExpanded,
+                        session: _watchPartySession,
+                        isHost: _watchPartyService?.isHost == true,
+                        canControl: _canControlPartyPlayback,
+                        connectionLabel: _partyConnectionLabel,
+                        controllerLabel: _partyControllerLabel,
+                        statusMessage: _watchPartyStatusMessage,
+                        messages: _watchPartyMessages,
+                        reactions: _watchPartyReactions,
+                        onSendMessage: _sendWatchPartyChat,
+                        onSendReaction: _sendWatchPartyReaction,
+                        onLeaveOrEnd: _leaveOrEndWatchParty,
+                      ),
+                    if (_volumeOverlayValue != null)
+                      _VolumeOverlay(value: _volumeOverlayValue!),
+                    if (_drawer != _PlayerDrawer.none)
+                      _buildRightDrawer(playback),
+                  ],
+                ),
+              );
+            },
+          ),
         ),
       ),
     );

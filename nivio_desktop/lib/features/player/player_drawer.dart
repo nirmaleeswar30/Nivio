@@ -210,10 +210,14 @@ class _RightPlayerDrawer extends StatelessWidget {
             padding: EdgeInsets.zero,
             children: [
               for (final entry in grouped.entries) ...[
-                if (entry.value.length > 1) _DrawerGroupTitle(entry.key),
+                if (grouped.length > 1 || entry.value.length > 1)
+                  _DrawerGroupTitle(entry.key),
                 for (final option in entry.value)
                   _DrawerOptionTile(
                     title: _serverTitle(option),
+                    subtitle: option.provider == entry.key
+                        ? null
+                        : option.provider,
                     selected: option.index == selectedSourceIndex,
                     onTap: () => onSourceSelected(option),
                   ),
@@ -596,6 +600,7 @@ class _DrawerOptionTile extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.leading,
+    this.subtitle,
     this.diagnosticLabel,
   });
 
@@ -603,6 +608,7 @@ class _DrawerOptionTile extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
   final IconData? leading;
+  final String? subtitle;
   final String? diagnosticLabel;
 
   @override
@@ -622,6 +628,14 @@ class _DrawerOptionTile extends StatelessWidget {
           fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
         ),
       ),
+      subtitle: subtitle == null || subtitle!.trim().isEmpty
+          ? null
+          : Text(
+              subtitle!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
+            ),
       trailing: selected
           ? const Icon(Icons.check, color: AppColors.primary, size: 19)
           : null,

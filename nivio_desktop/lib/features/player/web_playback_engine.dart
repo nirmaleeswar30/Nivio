@@ -965,6 +965,11 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
             setServerTriggerVisible(true);
           }
 
+          function isServerDrawerVisible() {
+            var drawer = document.getElementById('nivio-server-drawer');
+            return !!drawer && drawer.style.display !== 'none';
+          }
+
           function toggleServerDrawer(event) {
             if (event) {
               event.preventDefault();
@@ -1184,6 +1189,91 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
           root.addEventListener('mouseenter', wakeControls, true);
           wakeControls();
 
+          function activeEditable() {
+            var element = document.activeElement;
+            if (!element) return false;
+            var tag = (element.tagName || '').toLowerCase();
+            return tag === 'input' ||
+              tag === 'textarea' ||
+              tag === 'select' ||
+              element.isContentEditable === true;
+          }
+
+          function firstMedia() {
+            var videos = document.getElementsByTagName('video');
+            if (videos && videos.length) return videos[0];
+            var audios = document.getElementsByTagName('audio');
+            if (audios && audios.length) return audios[0];
+            return null;
+          }
+
+          function clamp(value, min, max) {
+            return Math.max(min, Math.min(max, value));
+          }
+
+          function toggleFullscreen() {
+            if (document.fullscreenElement) {
+              if (document.exitFullscreen) document.exitFullscreen();
+              return;
+            }
+            var target = firstMedia() || document.documentElement;
+            if (target && target.requestFullscreen) target.requestFullscreen();
+          }
+
+          function handlePlayerKey(event) {
+            if (activeEditable()) return;
+            var key = event.key || '';
+            if (isServerDrawerVisible()) {
+              if (key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                closeServerDrawer();
+              }
+              return;
+            }
+            var media = firstMedia();
+            if (key === 's' || key === 'S') {
+              var config = controlsConfig();
+              var sources = Array.isArray(config.sources) ? config.sources : [];
+              if (sources.length > 1) toggleServerDrawer(event);
+              return;
+            }
+            if (!media && key !== 'f' && key !== 'F') return;
+            if (key === ' ' || key === 'k' || key === 'K') {
+              event.preventDefault();
+              event.stopPropagation();
+              if (media.paused) media.play(); else media.pause();
+            } else if (key === 'ArrowLeft' || key === 'j' || key === 'J') {
+              event.preventDefault();
+              event.stopPropagation();
+              if (isFinite(media.duration)) {
+                media.currentTime = clamp(media.currentTime - 10, 0, media.duration);
+              }
+            } else if (key === 'ArrowRight' || key === 'l' || key === 'L') {
+              event.preventDefault();
+              event.stopPropagation();
+              if (isFinite(media.duration)) {
+                media.currentTime = clamp(media.currentTime + 10, 0, media.duration);
+              }
+            } else if (key === 'ArrowUp') {
+              event.preventDefault();
+              event.stopPropagation();
+              media.volume = clamp(media.volume + 0.05, 0, 1);
+              post('volume', { volume: media.volume });
+            } else if (key === 'ArrowDown') {
+              event.preventDefault();
+              event.stopPropagation();
+              media.volume = clamp(media.volume - 0.05, 0, 1);
+              post('volume', { volume: media.volume });
+            } else if (key === 'f' || key === 'F') {
+              event.preventDefault();
+              event.stopPropagation();
+              toggleFullscreen();
+            }
+          }
+
+          document.addEventListener('keydown', handlePlayerKey, true);
+
           window.__nivioCleanupCallbacks.push(function() {
             clearTimeout(controlsHideTimer);
             clearTimeout(controlsVisibilityTimer);
@@ -1193,6 +1283,7 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
               document.removeEventListener('pointerup', appControlCapture, true);
               document.removeEventListener('mouseup', appControlCapture, true);
               document.removeEventListener('touchend', appControlCapture, true);
+              document.removeEventListener('keydown', handlePlayerKey, true);
             } catch (_) {}
             try { root.remove(); } catch (_) {}
             try {
@@ -1462,6 +1553,8 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
           _maybeMarkReady();
         case 'ready':
           _maybeMarkReady();
+        case 'volume':
+          _update(volume: _number(message['volume']).clamp(0.0, 2.0));
         case 'first_frame':
           _sawFirstFrame = true;
           PlaybackRuntimeDiagnostics.webLog(
@@ -1636,9 +1729,13 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
   }
 
   static Duration _seconds(Object? raw) {
-    final number = raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 0;
+    final number = _number(raw);
     if (!number.isFinite || number <= 0) return Duration.zero;
     return Duration(milliseconds: (number * 1000).round());
+  }
+
+  static double _number(Object? raw) {
+    return raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 0;
   }
 
   static int? _integer(Object? raw) {
