@@ -1181,7 +1181,7 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
               controlsVisibilityTimer = setTimeout(function() {
                 root.style.visibility = 'hidden';
               }, 220);
-            }, 4000);
+            }, 3000);
           };
           var pointerWake = function() { wakeControls(); };
           document.addEventListener('mousemove', pointerWake, true);

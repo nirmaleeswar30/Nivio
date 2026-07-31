@@ -985,7 +985,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void _scheduleControlsHide() {
     _hideControlsTimer?.cancel();
-    _hideControlsTimer = Timer(const Duration(seconds: 4), () {
+    _hideControlsTimer = Timer(const Duration(seconds: 3), () {
       if (!mounted || _drawer != _PlayerDrawer.none) return;
       if (_engine.state.value.isPlaying) {
         setState(() => _controlsVisible = false);
