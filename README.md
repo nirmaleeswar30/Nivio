@@ -1,7 +1,7 @@
 <div align="center">
   <img src="assets/images/app-icon.png" alt="Nivio Logo" width="150" />
 
-  **A beautiful, all-in-one streaming application for Movies, TV Shows, Anime, and Live IPTV, featuring real-time Watch Parties and offline downloads.**
+  **A beautiful, all-in-one streaming application for Movies, TV Shows, Anime, and Live IPTV, featuring Android and Linux desktop builds, real-time Watch Parties, and offline downloads.**
 
   [![Flutter](https://img.shields.io/badge/Built_with-Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev/)
   [![Firebase](https://img.shields.io/badge/Powered_by-Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com/)
@@ -14,6 +14,7 @@
 
 ## 📸 Screenshots
 
+### Android
 
 <div align="center">
   <table border="0">
@@ -38,9 +39,36 @@
   </table>
 </div>
 
+### Linux Desktop
+
+<div align="center">
+  <table border="0">
+    <tr>
+      <td align="center"><img src="nivio_desktop/assets/screenshots/desktop-home.png" alt="Desktop Home" /><br><b>Desktop Home</b></td>
+      <td align="center"><img src="nivio_desktop/assets/screenshots/desktop-home3.png" alt="Desktop Hover Preview" /><br><b>Hover Preview</b></td>
+      <td align="center"><img src="nivio_desktop/assets/screenshots/desktop-home-mini.png" alt="Desktop Continue Watching and Mini Player" /><br><b>Mini Player</b></td>
+    </tr>
+  </table>
+  <table border="0">
+    <tr>
+      <td align="center"><img src="nivio_desktop/assets/screenshots/desktop-details.png" alt="Desktop Details" /><br><b>Details</b></td>
+      <td align="center"><img src="nivio_desktop/assets/screenshots/desktop-player1.png" alt="Desktop Player" /><br><b>Player</b></td>
+      <td align="center"><img src="nivio_desktop/assets/screenshots/desktop-live-tv.png" alt="Desktop Live TV" /><br><b>Live TV</b></td>
+    </tr>
+  </table>
+  <table border="0">
+    <tr>
+      <td align="center"><img src="nivio_desktop/assets/screenshots/desktop-library.png" alt="Desktop Library" /><br><b>Library</b></td>
+      <td align="center"><img src="nivio_desktop/assets/screenshots/desktop-watchtogether.png" alt="Desktop Watch Party" /><br><b>Watch Party</b></td>
+    </tr>
+  </table>
+</div>
+
 ---
 
 ## 🚀 Features
+
+### Shared Features
 
 *   **🎬 Unified Discovery**: Browse trending Movies, TV Shows, and Anime directly from TMDB. Includes dedicated sections for regional content (Tamil, Telugu, Hindi, Korean).
 *   **🎌 Dedicated Anime Hub**: Integrated with **AniList** for dedicated Anime scraping from high-speed providers (`Animetsu`, `Animex`, `Miruro`), complete with Miruro Cloudflare bypass and custom quality selection.
@@ -56,6 +84,17 @@
 *   **🔔 Smart Episode Alerts**: Background push notifications alert you the moment a new episode of your favorite show drops.
 *   **🎛️ Total Control**: Change playback speeds, select custom audio tracks, customize subtitle styling, and tweak default video resolutions globally.
 
+### Linux Desktop Features
+
+*   **🖥️ Desktop-first UI**: Sidebar navigation, wide-screen layouts, hover previews, keyboard-aware controls, and Linux window integration.
+*   **🪟 Mini Player**: Keep playback visible while browsing other sections.
+*   **⏭️ Skip Intro / Outro**: Uses skip-time metadata where available to jump over intro and ending segments.
+*   **🧩 Provider Fallbacks**: Resolves streams through multiple providers and falls back when a source fails.
+*   **💬 Custom Subtitles**: Load local subtitle files or remote subtitle URLs.
+*   **🌐 Embedded Web Fallback**: Uses WebKitGTK when a provider requires embedded playback.
+*   **📺 Live TV Filters**: Supports custom playlists, favorites, source filters, and built-in live TV providers.
+*   **📦 Linux Packages**: AppImage, `.deb`, Arch package, and prepared Flatpak manifest.
+
 ---
 
 ## 🛠️ Tech Stack
@@ -67,6 +106,7 @@
 *   **Realtime Sockets**: Supabase (For Watch Parties)
 *   **Local Storage**: Hive & SharedPreferences
 *   **Media Playback**: `media_kit` (high-performance playback engine utilizing `libmpv` / MPV for hardware-accelerated rendering and extensive format decoding)
+*   **Linux Desktop**: Flutter Linux, WebKitGTK, GTK3, AppImage, Debian package, Arch package
 
 ---
 
