@@ -1,17 +1,51 @@
-# nivio_desktop
+# Nivio Desktop
 
-A new Flutter project.
+Linux desktop build of Nivio.
 
-## Getting Started
+## Download
 
-This project is a starting point for a Flutter application.
+Download the latest Linux desktop packages from:
 
-A few resources to get you started if this is your first Flutter project:
+https://github.com/NithishSaravananRss/Nivio/releases/tag/desktop-v1.0.0
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+Normal users should download one of the package files, not the source code
+archives.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Install
+
+Portable Linux:
+
+```bash
+chmod +x Nivio-x86_64.AppImage
+./Nivio-x86_64.AppImage
+```
+
+Ubuntu, Debian, Linux Mint, Kali, Pop!_OS, Zorin:
+
+```bash
+sudo apt install ./nivio-desktop_1.0.0_amd64.deb
+```
+
+Arch, Omarchy, Manjaro, EndeavourOS:
+
+```bash
+sudo pacman -U ./nivio-desktop-1.0.0-1-x86_64.pkg.tar.zst
+```
+
+## Build From Source
+
+```bash
+flutter pub get
+flutter build linux --release
+```
+
+Packaging scripts:
+
+```bash
+scripts/package_appimage.sh
+scripts/package_deb.sh
+scripts/package_arch.sh
+```
+
+Flatpak packaging is prepared in `packaging/flatpak/`, but it is not included
+in the first desktop release.

@@ -72,6 +72,22 @@
 
 ## ⚙️ Installation & Setup
 
+### Linux Desktop Downloads
+
+Linux desktop builds are available from the
+[Nivio Desktop 1.0.0 release](https://github.com/NithishSaravananRss/Nivio/releases/tag/desktop-v1.0.0).
+
+Normal users should download one of the package files below, not the source
+code archives:
+
+| System | File | Install |
+| --- | --- | --- |
+| Portable Linux | `Nivio-x86_64.AppImage` | `chmod +x Nivio-x86_64.AppImage && ./Nivio-x86_64.AppImage` |
+| Ubuntu, Debian, Linux Mint, Kali | `nivio-desktop_1.0.0_amd64.deb` | `sudo apt install ./nivio-desktop_1.0.0_amd64.deb` |
+| Arch, Omarchy, Manjaro, EndeavourOS | `nivio-desktop-1.0.0-1-x86_64.pkg.tar.zst` | `sudo pacman -U ./nivio-desktop-1.0.0-1-x86_64.pkg.tar.zst` |
+
+The desktop app source lives in `nivio_desktop/`.
+
 ### 1. Prerequisites
 *   Flutter SDK (`^3.10.0`)
 *   A free [Firebase](https://firebase.google.com/) Project
