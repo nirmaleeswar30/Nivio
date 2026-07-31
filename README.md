@@ -172,6 +172,8 @@ Please make sure you run `flutter analyze` before opening a PR to ensure code qu
 
 ## ❤️ Acknowledgements
 
+Thank you to **Nirmaleeswar**, who started the Android version that Nivio builds from.
+
 A massive thank you to the creators of [NetMirror-Extension](https://github.com/Sushan64/NetMirror-Extension) for their incredible work. Their repository was a huge inspiration and help in building some of the core scraping and provider logic for this app!
 
 ---
