@@ -52,11 +52,14 @@ class _PartyViewState extends State<PartyView> {
   StreamSubscription<String>? _errorSub;
 
   bool _isInitializing = true;
-  bool _isLoading = false;
+  bool _isCreatingParty = false;
+  bool _isJoiningParty = false;
   bool _isControllerUpdating = false;
   bool _hasNavigatedToPlayer = false;
   PartyPreselection? _selection;
   String? _error;
+
+  bool get _isPartyActionBusy => _isCreatingParty || _isJoiningParty;
 
   @override
   void initState() {
@@ -169,8 +172,8 @@ class _PartyViewState extends State<PartyView> {
               PrimaryButton(
                 label: 'Start Watch Party',
                 icon: const Icon(Icons.add),
-                isLoading: _isLoading,
-                onPressed: _isLoading ? null : _startParty,
+                isLoading: _isCreatingParty,
+                onPressed: _isPartyActionBusy ? null : _startParty,
                 minimumSize: const Size(0, 50),
               ),
               const SizedBox(height: AppSpacing.md),
@@ -185,13 +188,15 @@ class _PartyViewState extends State<PartyView> {
                   color: AppColors.textPrimary,
                 ),
                 decoration: _partyInputDecoration(hintText: 'Join with code'),
-                onSubmitted: (_) => _joinParty(),
+                onSubmitted: (_) {
+                  if (!_isPartyActionBusy) unawaited(_joinParty());
+                },
               ),
               const SizedBox(height: AppSpacing.sm),
               SecondaryButton(
                 label: 'Join Party',
-                isLoading: _isLoading,
-                onPressed: _isLoading ? null : _joinParty,
+                isLoading: _isJoiningParty,
+                onPressed: _isPartyActionBusy ? null : _joinParty,
                 minimumSize: const Size(0, 44),
               ),
               const SizedBox(height: AppSpacing.sm),
@@ -308,13 +313,13 @@ class _PartyViewState extends State<PartyView> {
     if (service == null) return;
 
     setState(() {
-      _isLoading = true;
+      _isCreatingParty = true;
       _error = null;
     });
 
     final code = await service.createSession();
     if (!mounted) return;
-    setState(() => _isLoading = false);
+    setState(() => _isCreatingParty = false);
 
     if (code == null) {
       setState(() => _error = 'Failed to create watch party.');
@@ -367,13 +372,13 @@ class _PartyViewState extends State<PartyView> {
     }
 
     setState(() {
-      _isLoading = true;
+      _isJoiningParty = true;
       _error = null;
     });
 
     final joined = await service.joinSession(code);
     if (!mounted) return;
-    setState(() => _isLoading = false);
+    setState(() => _isJoiningParty = false);
 
     if (!joined) {
       setState(() => _error = 'No watch party found for this code.');

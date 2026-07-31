@@ -326,6 +326,8 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
     required BuildContext context,
     required BoxFit fit,
     required PlaybackControlsBuilder controls,
+    Future<void> Function()? onEnterFullscreen,
+    Future<void> Function()? onExitFullscreen,
   }) {
     PlaybackRuntimeDiagnostics.webLog(
       'WebPlaybackEngine#$debugInstanceId buildSurface '

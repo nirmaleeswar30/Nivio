@@ -152,7 +152,10 @@ class _ResolvingPlayerScreenState extends State<ResolvingPlayerScreen> {
           source: result.url,
           httpHeaders: result.headers,
           streamResult: result,
-          preferredQuality: result.quality,
+          preferredQuality: _resolvedQualityPreference(
+            result.quality,
+            effectiveRequest.preferredQuality,
+          ),
           providerIndex: result.providerIndex ?? effectiveRequest.providerIndex,
           preferredAudioTrack: result.selectedAudio.isEmpty
               ? null
@@ -308,6 +311,12 @@ class _ResolvingPlayerScreenState extends State<ResolvingPlayerScreen> {
     return text;
   }
 
+  static String? _resolvedQualityPreference(String result, String? existing) {
+    final quality = result.trim();
+    if (quality.isEmpty || quality.toLowerCase() == 'auto') return existing;
+    return quality;
+  }
+
   static int? _integer(Object? value) {
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '');
@@ -326,6 +335,8 @@ class _ResolvingPlayerScreenState extends State<ResolvingPlayerScreen> {
         previous.mediaType == next.mediaType &&
         previous.season == next.season &&
         previous.episode == next.episode &&
+        previous.totalSeasons == next.totalSeasons &&
+        previous.totalEpisodes == next.totalEpisodes &&
         previous.providerIndex == next.providerIndex &&
         previous.preferredQuality == next.preferredQuality &&
         previous.preferredAudioTrack == next.preferredAudioTrack &&

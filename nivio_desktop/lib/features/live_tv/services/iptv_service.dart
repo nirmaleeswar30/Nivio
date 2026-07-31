@@ -9,11 +9,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/config/app_environment.dart';
 import '../../../shared/models/iptv_channel.dart';
 import '../../../shared/models/iptv_playlist.dart';
+import 'builtin_live_tv_providers.dart';
+
+enum LiveTvSourceFilter { all, iptv, tamilUltra, sportzx }
 
 class DesktopIptvService {
+  DesktopIptvService({BuiltInLiveTvProviders? builtInProviders})
+    : _builtInProviders = builtInProviders ?? BuiltInLiveTvProviders();
+
   static const String playlistsKey = 'iptv_playlists';
   static const String favoritesKey = 'iptv_favorites';
   static const Duration operationTimeout = Duration(seconds: 35);
+  static final Map<String, List<IptvChannel>> _playlistChannelCache = {};
+
+  final BuiltInLiveTvProviders _builtInProviders;
 
   Future<List<IptvPlaylist>> getPlaylists() async {
     _log('getPlaylists start');
@@ -27,8 +36,32 @@ class DesktopIptvService {
     final playlists = decoded
         .map((item) => IptvPlaylist.fromJson(item as Map<String, dynamic>))
         .toList();
-    _log('getPlaylists end count=${playlists.length}');
-    return playlists;
+    final seenUrls = <String>{};
+    final duplicateIds = <String>[];
+    final unique = <IptvPlaylist>[];
+    for (final playlist in playlists) {
+      final normalizedUrl = playlist.url.trim();
+      if (normalizedUrl.isEmpty || !seenUrls.add(normalizedUrl)) {
+        duplicateIds.add(playlist.id);
+        continue;
+      }
+      unique.add(playlist);
+    }
+    if (duplicateIds.isNotEmpty) {
+      _log('getPlaylists dedupe removed=${duplicateIds.length}');
+      await _savePlaylists(unique);
+      for (final id in duplicateIds) {
+        _playlistChannelCache.removeWhere((key, _) => key.startsWith('$id:'));
+        try {
+          final file = await _getPlaylistFile(id);
+          if (await file.exists()) await file.delete();
+        } catch (error) {
+          _log('getPlaylists dedupe delete failed id=$id error=$error');
+        }
+      }
+    }
+    _log('getPlaylists end count=${unique.length}');
+    return unique;
   }
 
   Future<void> fetchAndSavePlaylist(String url, String name) async {
@@ -62,6 +95,20 @@ class DesktopIptvService {
       await file.writeAsString(response.body).timeout(operationTimeout);
 
       final playlists = await getPlaylists();
+      final normalizedUrl = url.trim();
+      final existing = playlists
+          .where((playlist) => playlist.url.trim() == normalizedUrl)
+          .toList();
+      for (final playlist in existing) {
+        playlists.remove(playlist);
+        _playlistChannelCache.removeWhere(
+          (key, _) => key.startsWith('${playlist.id}:'),
+        );
+        try {
+          final oldFile = await _getPlaylistFile(playlist.id);
+          if (await oldFile.exists()) await oldFile.delete();
+        } catch (_) {}
+      }
       playlists.add(IptvPlaylist(id: id, name: name, url: url));
       await _savePlaylists(playlists);
       _log(
@@ -75,8 +122,10 @@ class DesktopIptvService {
     }
   }
 
-  Future<List<IptvChannel>> loadAllChannels() async {
-    _log('loadAllChannels start');
+  Future<List<IptvChannel>> loadAllChannels({
+    LiveTvSourceFilter sourceFilter = LiveTvSourceFilter.all,
+  }) async {
+    _log('loadAllChannels start source=$sourceFilter');
     await migrateLegacyPlaylist().timeout(operationTimeout);
 
     final playlists = await getPlaylists();
@@ -85,33 +134,74 @@ class DesktopIptvService {
     final channels = <IptvChannel>[];
     final failures = <String>[];
 
-    for (final playlist in playlists) {
-      try {
-        _log('playlist read start id=${playlist.id} name=${playlist.name}');
-        final file = await _getPlaylistFile(playlist.id);
-        if (await file.exists()) {
-          final rawM3u = await file.readAsString().timeout(operationTimeout);
-          _log('playlist read end id=${playlist.id} bytes=${rawM3u.length}');
-          final parsed = await parseM3u(rawM3u, favorites);
-          if (parsed.isEmpty) {
-            throw const IptvServiceException(
-              'Playlist parsed successfully but contained no channels.',
+    if (sourceFilter == LiveTvSourceFilter.all ||
+        sourceFilter == LiveTvSourceFilter.tamilUltra ||
+        sourceFilter == LiveTvSourceFilter.sportzx) {
+      _log('built-in providers load start');
+      final builtIns = switch (sourceFilter) {
+        LiveTvSourceFilter.tamilUltra =>
+          await _builtInProviders
+              .loadProviderChannels('tamilultra', favorites)
+              .timeout(operationTimeout),
+        LiveTvSourceFilter.sportzx =>
+          await _builtInProviders
+              .loadProviderChannels('sportzx', favorites)
+              .timeout(operationTimeout),
+        _ =>
+          await _builtInProviders
+              .loadChannels(favorites)
+              .timeout(operationTimeout),
+      };
+      channels.addAll(builtIns);
+      _log('built-in providers load end channels=${builtIns.length}');
+    }
+
+    final playlistFallback = _playlistFallbackPredicate(sourceFilter);
+    final shouldLoadPlaylists =
+        sourceFilter == LiveTvSourceFilter.all ||
+        sourceFilter == LiveTvSourceFilter.iptv ||
+        (playlistFallback != null && channels.isEmpty);
+    if (shouldLoadPlaylists) {
+      if (playlistFallback != null && channels.isEmpty) {
+        _log('provider empty; falling back to filtered IPTV channels');
+      }
+      for (final playlist in playlists) {
+        try {
+          _log('playlist read start id=${playlist.id} name=${playlist.name}');
+          final file = await _getPlaylistFile(playlist.id);
+          if (await file.exists()) {
+            final parsed = await _loadPlaylistChannels(
+              playlist,
+              file,
+              favorites,
             );
+            if (parsed.isEmpty) {
+              throw const IptvServiceException(
+                'Playlist parsed successfully but contained no channels.',
+              );
+            }
+            channels.addAll(
+              playlistFallback == null
+                  ? parsed
+                  : parsed.where(playlistFallback),
+            );
+          } else {
+            _log('playlist file missing id=${playlist.id}');
           }
-          channels.addAll(parsed);
-        } else {
-          _log('playlist file missing id=${playlist.id}');
+        } catch (error, stackTrace) {
+          failures.add('${playlist.name}: $error');
+          _log(
+            'playlist exception id=${playlist.id} type=${error.runtimeType} error=$error',
+          );
+          debugPrintStack(
+            stackTrace: stackTrace,
+            label: '[iptv] playlist stack',
+          );
         }
-      } catch (error, stackTrace) {
-        failures.add('${playlist.name}: $error');
-        _log(
-          'playlist exception id=${playlist.id} type=${error.runtimeType} error=$error',
-        );
-        debugPrintStack(stackTrace: stackTrace, label: '[iptv] playlist stack');
       }
     }
 
-    if (failures.isNotEmpty && channels.isEmpty) {
+    if (failures.isNotEmpty && channels.isEmpty && playlists.isNotEmpty) {
       throw IptvServiceException(
         'Failed to load saved playlist${failures.length == 1 ? '' : 's'}: ${failures.join('; ')}',
       );
@@ -124,6 +214,78 @@ class DesktopIptvService {
     });
     _log('loadAllChannels end channels=${channels.length}');
     return channels;
+  }
+
+  Future<List<IptvChannel>> _loadPlaylistChannels(
+    IptvPlaylist playlist,
+    File file,
+    List<String> favorites,
+  ) async {
+    final stat = await file.stat().timeout(operationTimeout);
+    final cacheKey =
+        '${playlist.id}:${stat.modified.millisecondsSinceEpoch}:${stat.size}';
+    final cached = _playlistChannelCache[cacheKey];
+    if (cached != null) {
+      _log('playlist cache hit id=${playlist.id} channels=${cached.length}');
+      return _applyFavorites(cached, favorites);
+    }
+
+    final rawM3u = await file.readAsString().timeout(operationTimeout);
+    _log('playlist read end id=${playlist.id} bytes=${rawM3u.length}');
+    final parsed = await parseM3u(rawM3u, const []);
+    _playlistChannelCache
+      ..removeWhere((key, _) => key.startsWith('${playlist.id}:'))
+      ..[cacheKey] = parsed;
+    return _applyFavorites(parsed, favorites);
+  }
+
+  List<IptvChannel> _applyFavorites(
+    List<IptvChannel> channels,
+    List<String> favorites,
+  ) {
+    final favoriteSet = favorites.toSet();
+    return channels
+        .map(
+          (channel) => IptvChannel(
+            name: channel.name,
+            url: channel.url,
+            group: channel.group,
+            logo: channel.logo,
+            tvgId: channel.tvgId,
+            isFavorite: favoriteSet.contains(channel.url),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  bool Function(IptvChannel)? _playlistFallbackPredicate(
+    LiveTvSourceFilter sourceFilter,
+  ) {
+    return switch (sourceFilter) {
+      LiveTvSourceFilter.tamilUltra => (channel) {
+        final text = '${channel.name} ${channel.group}'.toLowerCase();
+        return text.contains('tamil') ||
+            text.contains('india') ||
+            text.contains('sun tv') ||
+            text.contains('vijay') ||
+            text.contains('zee tamil') ||
+            text.contains('ktv');
+      },
+      LiveTvSourceFilter.sportzx => (channel) {
+        final text = '${channel.name} ${channel.group}'.toLowerCase();
+        return text.contains('sport') ||
+            text.contains('cricket') ||
+            text.contains('football') ||
+            text.contains('soccer') ||
+            text.contains('tennis') ||
+            text.contains('f1') ||
+            text.contains('espn') ||
+            text.contains('sky sports') ||
+            text.contains('star sports') ||
+            text.contains('sony ten');
+      },
+      _ => null,
+    };
   }
 
   Future<List<String>> getFavorites() async {
@@ -152,6 +314,7 @@ class DesktopIptvService {
     final playlists = await getPlaylists();
     playlists.removeWhere((playlist) => playlist.id == id);
     await _savePlaylists(playlists);
+    _playlistChannelCache.removeWhere((key, _) => key.startsWith('$id:'));
 
     try {
       final file = await _getPlaylistFile(id);

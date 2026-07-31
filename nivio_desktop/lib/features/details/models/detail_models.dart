@@ -163,11 +163,13 @@ class DetailSeason {
     required this.number,
     required this.name,
     required this.episodes,
+    this.episodeCount,
   });
 
   final int number;
   final String name;
   final List<DetailEpisode> episodes;
+  final int? episodeCount;
 }
 
 class DetailEpisode {

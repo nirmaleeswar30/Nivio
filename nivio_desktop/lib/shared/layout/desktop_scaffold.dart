@@ -45,6 +45,7 @@ import '../../core/interfaces/watch_history_repository.dart';
 import '../../features/history/desktop_watch_history_repository.dart';
 import '../../features/player/services/mini_player_service.dart';
 import '../../features/player/widgets/mini_player_overlay.dart';
+import '../../features/party/services/watch_party_session_manager.dart';
 
 /// Permanent desktop shell used by future feature screens.
 class DesktopScaffold extends StatefulWidget {
@@ -308,10 +309,28 @@ class _DesktopScaffoldState extends State<DesktopScaffold> {
   }
 
   void _openPlayback(PlaybackRequest request) {
-    if (!MiniPlayerService.instance.matches(request)) {
+    final playbackRequest = _requestWithActiveWatchParty(request);
+    if (!MiniPlayerService.instance.matches(playbackRequest)) {
       unawaited(MiniPlayerService.instance.deactivate());
     }
-    setState(() => _playbackRequest = request);
+    setState(() => _playbackRequest = playbackRequest);
+  }
+
+  PlaybackRequest _requestWithActiveWatchParty(PlaybackRequest request) {
+    final service = WatchPartySessionManager.instance.currentService;
+    final sessionCode = (service?.sessionCode ?? '').trim();
+    if (service?.isInSession != true || sessionCode.isEmpty) return request;
+
+    return request.copyWith(
+      watchPartyCode: (request.watchPartyCode ?? '').trim().isNotEmpty
+          ? request.watchPartyCode
+          : sessionCode.toUpperCase(),
+      watchPartyRole: (request.watchPartyRole ?? '').trim().isNotEmpty
+          ? request.watchPartyRole
+          : service!.isHost
+          ? 'host'
+          : 'participant',
+    );
   }
 
   void _openAllProviders() {

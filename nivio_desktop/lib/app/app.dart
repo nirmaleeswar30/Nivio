@@ -16,6 +16,20 @@ import '../features/player/services/stream_resolver.dart';
 import '../features/player/playback_engine.dart';
 import '../core/interfaces/watch_history_repository.dart';
 
+class NivioStartupSplashApp extends StatelessWidget {
+  const NivioStartupSplashApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Nivio Desktop',
+      debugShowCheckedModeBanner: false,
+      theme: buildNivioDesktopTheme(),
+      home: const _StartupSplashView(),
+    );
+  }
+}
+
 /// Root widget for the Nivio Linux desktop application.
 class NivioDesktopApp extends StatefulWidget {
   final SearchRepository? searchRepository;
@@ -81,14 +95,62 @@ class _NivioDesktopAppState extends State<NivioDesktopApp> {
         watchHistoryRepository: widget.watchHistoryRepository,
       ),
     );
+    final Widget startScreen;
+    if (widget.requireAuthentication && !_auth.isInitialized) {
+      startScreen = const _StartupSplashView();
+    } else if (widget.requireAuthentication && !_auth.isSignedIn) {
+      startScreen = const AuthView();
+    } else {
+      startScreen = home;
+    }
 
     return MaterialApp(
       title: 'Nivio Desktop',
       debugShowCheckedModeBanner: false,
       theme: buildNivioDesktopTheme(accentColor: _accentController.color),
-      home: widget.requireAuthentication && !_auth.isSignedIn
-          ? const AuthView()
-          : home,
+      home: startScreen,
+    );
+  }
+}
+
+class _StartupSplashView extends StatelessWidget {
+  const _StartupSplashView();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [AppColors.surface, Colors.black],
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset(
+                'assets/images/app-icon.png',
+                width: 220,
+                height: 220,
+                fit: BoxFit.contain,
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              SizedBox(
+                width: 32,
+                height: 32,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  color: context.appAccent,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

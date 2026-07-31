@@ -177,19 +177,18 @@ class DesktopPlayerController {
     if (request.isLive) return;
     final position = state.position;
     final wasPlaying = state.isPlaying;
-    _setRequest(
-      request.copyWith(
-        source: source,
-        startPosition: position,
-        preferredQuality: quality,
-      ),
+    final nextRequest = request.copyWith(
+      source: source,
+      startPosition: position,
+      preferredQuality: quality,
     );
+    _setRequest(nextRequest);
     await _historySession?.saveProgress(
-      audioTrack: request.preferredAudioTrack,
-      subtitleTrack: request.preferredSubtitleTrack,
+      audioTrack: nextRequest.preferredAudioTrack,
+      subtitleTrack: nextRequest.preferredSubtitleTrack,
       resolution: quality,
     );
-    await engine.load(request);
+    await engine.load(nextRequest);
     if (position > Duration.zero) await engine.seek(position);
     if (!wasPlaying) await engine.pause();
   }

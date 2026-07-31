@@ -3,6 +3,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/search_media_item.dart';
 import '../../../core/interfaces/search_repository.dart';
@@ -27,6 +28,8 @@ class SearchController extends ChangeNotifier {
   SearchViewMode _viewMode = SearchViewMode.grid;
   bool _initialized = false;
   int _requestId = 0;
+  static const String _recentSearchesKey = 'recent_searches';
+  static const String _legacySearchHistoryKey = 'search_history';
 
   String get query => _query;
   bool get isLoading => _isLoading;
@@ -49,6 +52,7 @@ class SearchController extends ChangeNotifier {
       return;
     }
     _initialized = true;
+    await _loadRecentSearches();
     await _runSearch();
   }
 
@@ -58,6 +62,13 @@ class SearchController extends ChangeNotifier {
     }
 
     _query = value;
+    _requestId++;
+    _errorMessage = null;
+    _page = 1;
+    _hasMore = true;
+    _results = const [];
+    _isLoading = value.trim().isNotEmpty;
+    _isLoadingMore = false;
     _scheduleSearch();
     notifyListeners();
   }
@@ -107,11 +118,13 @@ class SearchController extends ChangeNotifier {
 
   void clearRecentSearches() {
     _recentSearches.clear();
+    unawaited(_saveRecentSearches());
     notifyListeners();
   }
 
   void removeRecentSearch(String query) {
     if (_recentSearches.remove(query)) {
+      unawaited(_saveRecentSearches());
       notifyListeners();
     }
   }
@@ -162,7 +175,7 @@ class SearchController extends ChangeNotifier {
       _errorMessage = 'We could not load search results right now.';
       _hasMore = false;
     } finally {
-      if (!_isDisposed) {
+      if (!_isDisposed && requestId == _requestId) {
         _isLoading = false;
         notifyListeners();
       }
@@ -179,19 +192,21 @@ class SearchController extends ChangeNotifier {
     }
 
     _isLoadingMore = true;
+    final requestId = _requestId;
+    final query = _query.trim();
     notifyListeners();
 
     try {
       final nextPage = _page + 1;
       final newResults = await _repository.search(
-        query: _query,
+        query: query,
         language: _language,
         mediaType: SearchMediaTypeFilter.all,
         sort: _sort,
         page: nextPage,
       );
 
-      if (_isDisposed) return;
+      if (_isDisposed || requestId != _requestId) return;
 
       if (newResults.isEmpty) {
         _hasMore = false;
@@ -200,10 +215,10 @@ class SearchController extends ChangeNotifier {
         _results = [..._results, ...newResults];
       }
     } catch (_) {
-      if (_isDisposed) return;
+      if (_isDisposed || requestId != _requestId) return;
       _hasMore = false;
     } finally {
-      if (!_isDisposed) {
+      if (!_isDisposed && requestId == _requestId) {
         _isLoadingMore = false;
         notifyListeners();
       }
@@ -216,6 +231,31 @@ class SearchController extends ChangeNotifier {
     if (_recentSearches.length > 5) {
       _recentSearches.removeRange(5, _recentSearches.length);
     }
+    unawaited(_saveRecentSearches());
+  }
+
+  Future<void> _loadRecentSearches() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored =
+        prefs.getStringList(_recentSearchesKey) ??
+        prefs.getStringList(_legacySearchHistoryKey) ??
+        const <String>[];
+    _recentSearches
+      ..clear()
+      ..addAll(
+        stored
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toSet()
+            .take(5),
+      );
+    notifyListeners();
+  }
+
+  Future<void> _saveRecentSearches() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_recentSearchesKey, _recentSearches);
+    await prefs.remove(_legacySearchHistoryKey);
   }
 
   @override

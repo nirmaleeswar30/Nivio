@@ -36,6 +36,7 @@ class PlaybackRequestFactory {
     DetailMedia media, {
     int? season,
     int? episode,
+    int? totalEpisodes,
   }) {
     return PlaybackRequest(
       mediaId: media.id,
@@ -44,8 +45,8 @@ class PlaybackRequestFactory {
       posterPath: media.posterPath ?? media.backdropPath,
       season: season,
       episode: episode,
-      totalSeasons: 1,
-      totalEpisodes: _episodeCount(media, season),
+      totalSeasons: _seasonCount(media),
+      totalEpisodes: totalEpisodes ?? _episodeCount(media, season),
     );
   }
 
@@ -164,8 +165,18 @@ class PlaybackRequestFactory {
     if (!media.isSeries || media.seasons.isEmpty) return null;
     final selected = season ?? media.seasons.first.number;
     for (final item in media.seasons) {
-      if (item.number == selected) return item.episodes.length;
+      if (item.number == selected) {
+        if (item.episodes.isNotEmpty) return item.episodes.length;
+        final count = item.episodeCount;
+        return count != null && count > 0 ? count : null;
+      }
     }
     return null;
+  }
+
+  static int _seasonCount(DetailMedia media) {
+    if (!media.isSeries) return 1;
+    final seasons = media.seasons.where((season) => season.number > 0).length;
+    return seasons <= 0 ? 1 : seasons;
   }
 }

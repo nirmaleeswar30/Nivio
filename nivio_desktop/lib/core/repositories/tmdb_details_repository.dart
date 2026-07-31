@@ -245,7 +245,14 @@ class TmdbDetailsRepository implements DetailsRepository {
       moreLikeThis: related,
       seasons: episodes.isEmpty
           ? const []
-          : [DetailSeason(number: 1, name: 'Episodes', episodes: episodes)],
+          : [
+              DetailSeason(
+                number: 1,
+                name: 'Episodes',
+                episodeCount: episodes.length,
+                episodes: episodes,
+              ),
+            ],
       posterPath:
           cover?['extraLarge']?.toString() ?? cover?['large']?.toString(),
       backdropPath: media['bannerImage']?.toString(),

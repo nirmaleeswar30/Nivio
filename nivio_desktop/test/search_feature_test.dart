@@ -1,15 +1,18 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nivio_desktop/app/app.dart';
 
 import 'package:nivio_desktop/core/interfaces/details_repository.dart';
-import 'package:nivio_desktop/features/search/controllers/mock_search_repository.dart';
+import 'package:nivio_desktop/core/interfaces/search_repository.dart';
 import 'package:nivio_desktop/features/search/models/search_media_item.dart';
-import 'package:nivio_desktop/features/details/data/mock_detail_catalog.dart';
+import 'package:nivio_desktop/features/search/search_feature.dart' as search;
 import 'package:nivio_desktop/features/details/models/detail_models.dart';
 import 'package:nivio_desktop/features/details/models/detail_route_args.dart';
 import 'package:nivio_desktop/shared/widgets/cards/media_card.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'fakes/media_test_fakes.dart';
 import 'test_helper.dart';
 
 class _SearchDetailsRepository implements DetailsRepository {
@@ -18,7 +21,7 @@ class _SearchDetailsRepository implements DetailsRepository {
   @override
   Future<DetailMedia> loadCompleteDetail(DetailRouteArgs args) async {
     lastArgs = args;
-    return detailForId('signal-lost');
+    return fakeDetailMedia('signal-lost');
   }
 
   @override
@@ -30,18 +33,80 @@ class _SearchDetailsRepository implements DetailsRepository {
   }
 }
 
+class _DelayedSearchRepository implements SearchRepository {
+  final Map<String, Completer<List<SearchMediaItem>>> requests = {};
+
+  @override
+  Future<List<SearchMediaItem>> search({
+    required String query,
+    required SearchLanguageFilter language,
+    required SearchMediaTypeFilter mediaType,
+    required SearchSortOption sort,
+    int page = 1,
+  }) {
+    return (requests[query] ??= Completer<List<SearchMediaItem>>()).future;
+  }
+}
+
 void main() {
   setUpAll(() {
     HttpOverrides.global = MockHttpOverrides();
   });
 
-  testWidgets('opens the search page and shows mock results', (
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
+  test('keeps loading while a newer debounced search is pending', () async {
+    final repository = _DelayedSearchRepository();
+    final controller = search.SearchController(repository: repository);
+    addTearDown(controller.dispose);
+
+    controller.setQuery('old');
+    final oldSearch = controller.submitQuery();
+    controller.setQuery('signal');
+    expect(controller.isLoading, isTrue);
+    expect(controller.results, isEmpty);
+
+    repository.requests['old']!.complete(const []);
+    await oldSearch;
+    expect(controller.isLoading, isTrue);
+
+    final signalSearch = controller.submitQuery();
+    repository.requests['signal']!.complete([fakeSearchItems.first]);
+    await signalSearch;
+
+    expect(controller.isLoading, isFalse);
+    expect(controller.results.single.title, 'Signal Lost');
+  });
+
+  test('loads and saves recent searches', () async {
+    SharedPreferences.setMockInitialValues({
+      'recent_searches': <String>['old search'],
+    });
+    final controller = search.SearchController(
+      repository: FakeSearchRepository(),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.initialize();
+    expect(controller.recentSearches, ['old search']);
+
+    controller.setQuery('signal');
+    await controller.submitQuery();
+
+    expect(controller.recentSearches, ['signal', 'old search']);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getStringList('recent_searches'), ['signal', 'old search']);
+  });
+
+  testWidgets('opens the search page and shows search results', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
       NivioDesktopApp(
         requireAuthentication: false,
-        searchRepository: MockSearchRepository(),
+        searchRepository: FakeSearchRepository(),
       ),
     );
 
@@ -95,7 +160,7 @@ void main() {
     await tester.pumpWidget(
       NivioDesktopApp(
         requireAuthentication: false,
-        searchRepository: MockSearchRepository(items: const [item]),
+        searchRepository: FakeSearchRepository(items: const [item]),
         detailsRepository: detailsRepository,
       ),
     );

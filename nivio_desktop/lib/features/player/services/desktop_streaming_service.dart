@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../live_tv/services/builtin_live_tv_providers.dart';
 import '../../../shared/models/stream_result.dart';
 import '../models/playback_request.dart';
 import 'anime_stream_providers.dart';
@@ -366,16 +367,20 @@ class DesktopStreamingService implements StreamResolver {
     List<AnimeStreamProvider>? animeProviders,
     ProviderRegistry? providerRegistry,
     StreamHealthChecker? healthChecker,
+    BuiltInLiveTvProviders? builtInLiveTvProviders,
   }) : _registry =
            providerRegistry ??
            ProviderRegistry.androidParity(
              netMirror: netMirror,
              animeProviders: animeProviders,
            ),
-       _healthChecker = healthChecker ?? DesktopStreamHealthChecker();
+       _healthChecker = healthChecker ?? DesktopStreamHealthChecker(),
+       _builtInLiveTvProviders =
+           builtInLiveTvProviders ?? BuiltInLiveTvProviders();
 
   final ProviderRegistry _registry;
   final StreamHealthChecker _healthChecker;
+  final BuiltInLiveTvProviders _builtInLiveTvProviders;
   String? _lastFailure;
   String? _enumeratedSourcesKey;
   List<PlaybackSourceOption>? _enumeratedSources;
@@ -414,6 +419,34 @@ class DesktopStreamingService implements StreamResolver {
             ? 'Opening live stream...'
             : 'Opening downloaded media...',
       );
+      if (request.mediaType == PlaybackMediaType.liveTv &&
+          BuiltInLiveTvProviders.isBuiltInSource(request.source!)) {
+        final resolved = await _builtInLiveTvProviders.resolve(request.source!);
+        if (resolved == null) {
+          throw const StreamResolutionException(
+            'The built-in live channel stream is unavailable.',
+          );
+        }
+        final playable = await _selectPlayableSource(
+          resolved,
+          PlaybackSourceOption(
+            index: 0,
+            provider: resolved.provider,
+            server: resolved.serverName ?? resolved.provider,
+            group: resolved.provider,
+          ),
+        );
+        if (playable != null) {
+          PlaybackRuntimeDiagnostics.streamLog(
+            'Built-in live source validated provider=${resolved.provider}',
+            clock: resolveClock,
+          );
+          return playable;
+        }
+        throw const StreamResolutionException(
+          'The built-in live channel stream is unavailable.',
+        );
+      }
       final direct = StreamResult(
         url: request.source!,
         quality: 'auto',
@@ -597,14 +630,31 @@ class DesktopStreamingService implements StreamResolver {
     PlaybackRequest request, {
     bool respectPreferredAnimeSource = true,
   }) async {
-    final sources = await _registry.sourcesFor(request);
+    final preferredAnimeProvider = request.mediaType == PlaybackMediaType.anime
+        ? await _preferredAnimeSourceId()
+        : null;
+    final requestedAnimeProvider = request.mediaType == PlaybackMediaType.anime
+        ? _animeProviderIdForIndex(request.providerIndex)
+        : null;
+    final scopedAnimeProvider =
+        requestedAnimeProvider ??
+        (respectPreferredAnimeSource ? preferredAnimeProvider : null);
+    final sources = scopedAnimeProvider == null
+        ? await _registry.sourcesFor(request)
+        : await _registry.sourcesFor(
+            request,
+            providerIds: {scopedAnimeProvider},
+          );
+    if (sources.isEmpty && scopedAnimeProvider != null) {
+      return _registry.sourcesFor(request);
+    }
     if (!respectPreferredAnimeSource ||
         request.mediaType != PlaybackMediaType.anime ||
         sources.length < 2) {
       return sources;
     }
 
-    final preferred = await _preferredAnimeSourceId();
+    final preferred = preferredAnimeProvider;
     if (preferred == null) return sources;
 
     final ordered = [...sources]
@@ -628,6 +678,13 @@ class DesktopStreamingService implements StreamResolver {
     } catch (_) {
       return null;
     }
+  }
+
+  String? _animeProviderIdForIndex(int? providerIndex) {
+    if (providerIndex == null) return null;
+    if (providerIndex >= 10000 && providerIndex < 11000) return 'animex';
+    if (providerIndex >= 11000 && providerIndex < 12000) return 'xon';
+    return null;
   }
 
   static String _sourcesKey(PlaybackRequest request) {

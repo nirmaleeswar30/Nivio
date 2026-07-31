@@ -461,14 +461,16 @@ void main() {
 
         expect(sources.map((source) => source.provider), [
           'Nivio',
+          'CastleTV',
+          'MovieBox',
+          'StreamFlix',
           'VidUp (FAST)',
           'VidLink',
           'VidCore (ACTIVE)',
-          'VidPlus',
         ]);
         expect(sources.first.directMedia, isTrue);
         expect(
-          sources.skip(1),
+          sources.skip(4),
           everyElement(
             isA<PlaybackSourceOption>().having(
               (source) => source.iframeOnly,

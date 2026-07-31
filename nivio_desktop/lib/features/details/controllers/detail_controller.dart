@@ -20,6 +20,7 @@ class DetailController extends ChangeNotifier {
   bool _isLoadingEpisodes = false;
   List<DetailEpisode> _episodes = [];
   String? _episodesError;
+  int _episodeRequestId = 0;
 
   DetailStatus get status => _status;
   DetailMedia? get media => _media;
@@ -36,6 +37,8 @@ class DetailController extends ChangeNotifier {
     _errorMessage = null;
     _media = null;
     _episodes = [];
+    _episodesError = null;
+    _episodeRequestId++;
     notifyListeners();
 
     try {
@@ -68,7 +71,9 @@ class DetailController extends ChangeNotifier {
   }
 
   Future<void> loadSeasonEpisodes(int tvId, int seasonNumber) async {
+    final requestId = ++_episodeRequestId;
     _isLoadingEpisodes = true;
+    _episodes = [];
     _episodesError = null;
     notifyListeners();
 
@@ -77,12 +82,17 @@ class DetailController extends ChangeNotifier {
         tvId: tvId,
         seasonNumber: seasonNumber,
       );
+      if (requestId != _episodeRequestId) return;
       _episodes = results;
     } catch (e) {
+      if (requestId != _episodeRequestId) return;
+      _episodes = [];
       _episodesError = e.toString();
     } finally {
-      _isLoadingEpisodes = false;
-      notifyListeners();
+      if (requestId == _episodeRequestId) {
+        _isLoadingEpisodes = false;
+        notifyListeners();
+      }
     }
   }
 

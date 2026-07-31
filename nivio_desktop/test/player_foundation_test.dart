@@ -1,10 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nivio_desktop/core/repositories/empty_watch_history_repository.dart';
 import 'package:nivio_desktop/core/services/deep_link_service.dart';
+import 'package:nivio_desktop/features/details/models/detail_models.dart';
 import 'package:nivio_desktop/features/player/models/playback_request.dart';
 import 'package:nivio_desktop/features/player/models/playback_state.dart';
 import 'package:nivio_desktop/features/player/playback_engine.dart';
+import 'package:nivio_desktop/features/player/playback_request_factory.dart';
 import 'package:nivio_desktop/features/player/player_controller.dart';
 import 'package:nivio_desktop/features/player/player_screen.dart';
 import 'package:nivio_desktop/features/player/services/mini_player_service.dart';
@@ -160,6 +163,65 @@ void main() {
       expect(request.watchPartyCode, 'PARTY1');
       expect(request.startPosition, const Duration(minutes: 4));
     });
+
+    test('factory uses TV season episode count metadata', () {
+      const media = DetailMedia(
+        id: 'tv:618934',
+        title: 'Inspector Rishi',
+        mediaType: DetailMediaType.tv,
+        releaseYear: '2024',
+        releaseDate: '2024-03-29',
+        runtime: '40m',
+        certification: 'TV-MA',
+        rating: 6.1,
+        voteCount: 100,
+        popularity: 10,
+        genres: ['Mystery'],
+        overview: 'A forest mystery.',
+        tagline: '',
+        providers: ['Amazon Prime Video'],
+        languages: ['Tamil'],
+        audioTracks: [],
+        subtitleTracks: [],
+        productionCompanies: [],
+        productionCountries: ['IN'],
+        status: 'Returning Series',
+        cast: [],
+        crew: DetailCrew(
+          director: '',
+          writer: '',
+          producer: '',
+          composer: '',
+          editor: '',
+          production: '',
+        ),
+        related: [],
+        moreLikeThis: [],
+        seasons: [
+          DetailSeason(
+            number: 1,
+            name: 'Season 1',
+            episodeCount: 10,
+            episodes: [],
+          ),
+          DetailSeason(
+            number: 2,
+            name: 'Season 2',
+            episodeCount: 0,
+            episodes: [],
+          ),
+        ],
+      );
+
+      final request = PlaybackRequestFactory.fromDetail(
+        media,
+        season: 1,
+        episode: 1,
+      );
+
+      expect(request.totalEpisodes, 10);
+      expect(request.totalSeasons, 2);
+    });
   });
 
   group('DeepLinkService', () {
@@ -219,6 +281,28 @@ void main() {
 
       expect(engine.loadedRequest, same(movieRequest));
     });
+
+    test(
+      'keeps requested audio and subtitle preferences with empty history',
+      () async {
+        final preferredRequest = movieRequest.copyWith(
+          preferredAudioTrack: 'English',
+          preferredSubtitleTrack: 'Hindi',
+        );
+        final historyController = DesktopPlayerController(
+          engine: engine,
+          request: preferredRequest,
+          watchHistoryRepository: EmptyWatchHistoryRepository(),
+        );
+
+        await historyController.initialize();
+
+        expect(engine.loadedRequest?.preferredAudioTrack, 'English');
+        expect(engine.loadedRequest?.preferredSubtitleTrack, 'Hindi');
+        expect(engine.selectedAudioTrackId, 'English');
+        expect(engine.selectedSubtitleTrackId, 'Hindi');
+      },
+    );
 
     test('toggles playback from current state', () async {
       await controller.togglePlayPause();
@@ -345,6 +429,61 @@ void main() {
 
     expect(find.byTooltip('Server'), findsOneWidget);
     expect(find.byTooltip('Change server'), findsNothing);
+    expect(find.byTooltip('Compact window'), findsNothing);
+
+    await tester.tap(find.byTooltip('Server'));
+    await tester.pump();
+
+    expect(find.text('Select Server'), findsOneWidget);
+    expect(find.text('VidUp'), findsOneWidget);
+  });
+
+  testWidgets('episode button opens picker and switches selected episode', (
+    tester,
+  ) async {
+    final engine = FakePlaybackEngine();
+    PlaybackRequest? switchedRequest;
+    engine.notifier.value = const PlaybackState(
+      status: PlaybackStatus.ready,
+      duration: Duration(minutes: 24),
+    );
+    const episodeRequest = PlaybackRequest(
+      mediaId: 'tv:42',
+      title: 'Episode Test',
+      mediaType: PlaybackMediaType.tv,
+      source: 'https://example.com/episode.m3u8',
+      season: 1,
+      episode: 1,
+      totalEpisodes: 3,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PlayerScreen(
+          request: episodeRequest,
+          engine: engine,
+          surfaceBuilder: (_, _) => const ColoredBox(color: Colors.black),
+          onClose: () {},
+          onSourceSwitch: (request) => switchedRequest = request,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byTooltip('Episodes'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Episodes'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Season 1'), findsOneWidget);
+    expect(find.text('3 Episodes'), findsOneWidget);
+
+    await tester.tap(find.text('Episode 2'));
+    await tester.pump();
+
+    expect(switchedRequest?.episode, 2);
+    expect(switchedRequest?.source, isNull);
+    expect(engine.stopCount, 1);
   });
 
   testWidgets('player reloads request updates without disposing its engine', (
@@ -428,6 +567,7 @@ void main() {
     expect(find.byType(PlayerScreen), findsOneWidget);
     expect(find.byTooltip('Back'), findsOneWidget);
     expect(find.byTooltip('Server'), findsOneWidget);
+    expect(find.byTooltip('Compact window'), findsNothing);
     expect(find.byTooltip('Settings'), findsNothing);
     expect(find.text('Server'), findsNothing);
     expect(find.text('Select Server'), findsNothing);

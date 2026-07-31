@@ -120,6 +120,7 @@ class WatchPartySession {
 
 class WatchPartyChatMessage {
   const WatchPartyChatMessage({
+    this.id,
     required this.senderId,
     required this.senderName,
     this.senderPhotoUrl,
@@ -127,6 +128,7 @@ class WatchPartyChatMessage {
     required this.timestamp,
   });
 
+  final String? id;
   final String senderId;
   final String senderName;
   final String? senderPhotoUrl;
@@ -134,9 +136,12 @@ class WatchPartyChatMessage {
   final DateTime timestamp;
 
   factory WatchPartyChatMessage.fromJson(Map<String, dynamic> json) {
+    final senderId = (json['senderId'] as String? ?? '').trim();
+    final senderName = (json['senderName'] as String? ?? '').trim();
     return WatchPartyChatMessage(
-      senderId: (json['senderId'] as String? ?? '').trim(),
-      senderName: (json['senderName'] as String? ?? 'Guest').trim(),
+      id: (json['id'] as String?)?.trim(),
+      senderId: senderId,
+      senderName: senderName.isEmpty ? 'Guest' : senderName,
       senderPhotoUrl: json['senderPhotoUrl'] as String?,
       text: (json['text'] as String? ?? '').trim(),
       timestamp:
@@ -146,6 +151,7 @@ class WatchPartyChatMessage {
   }
 
   Map<String, dynamic> toJson() => {
+    'id': id,
     'senderId': senderId,
     'senderName': senderName,
     'senderPhotoUrl': senderPhotoUrl,
@@ -156,21 +162,26 @@ class WatchPartyChatMessage {
 
 class WatchPartyReaction {
   const WatchPartyReaction({
+    this.id,
     required this.senderId,
     required this.senderName,
     required this.emoji,
     required this.timestamp,
   });
 
+  final String? id;
   final String senderId;
   final String senderName;
   final String emoji;
   final DateTime timestamp;
 
   factory WatchPartyReaction.fromJson(Map<String, dynamic> json) {
+    final senderId = (json['senderId'] as String? ?? '').trim();
+    final senderName = (json['senderName'] as String? ?? '').trim();
     return WatchPartyReaction(
-      senderId: (json['senderId'] as String? ?? '').trim(),
-      senderName: (json['senderName'] as String? ?? 'Guest').trim(),
+      id: (json['id'] as String?)?.trim(),
+      senderId: senderId,
+      senderName: senderName.isEmpty ? 'Guest' : senderName,
       emoji: (json['emoji'] as String? ?? '').trim(),
       timestamp:
           DateTime.tryParse(json['timestamp'] as String? ?? '') ??
@@ -179,6 +190,7 @@ class WatchPartyReaction {
   }
 
   Map<String, dynamic> toJson() => {
+    'id': id,
     'senderId': senderId,
     'senderName': senderName,
     'emoji': emoji,

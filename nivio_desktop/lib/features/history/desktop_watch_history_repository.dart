@@ -170,14 +170,14 @@ class DesktopWatchHistoryRepository extends ChangeNotifier
   }) async {
     await _ensureStorage();
     await _storage!.delete(_key(mediaId));
-    unawaited(DesktopCloudSyncService.instance.removeHistoryEntry(mediaId));
+    await DesktopCloudSyncService.instance.removeHistoryEntry(mediaId);
   }
 
   @override
   Future<void> clearWatchHistory() async {
     await _ensureStorage();
     await _storage!.clear();
-    unawaited(DesktopCloudSyncService.instance.clearCloudHistory());
+    await DesktopCloudSyncService.instance.clearCloudHistory();
   }
 
   static String _key(int mediaId) => 'null_$mediaId';

@@ -18,6 +18,7 @@ import '../../shared/widgets/dialogs/update_dialog.dart';
 import '../../shared/widgets/feedback/error_view.dart';
 import '../../shared/widgets/feedback/loading_view.dart';
 import '../auth/desktop_cloud_sync_service.dart';
+import '../history/desktop_watch_history_repository.dart';
 import '../home/controllers/home_controller.dart';
 import '../library/services/episode_tracking_service.dart';
 import '../library/services/library_persistence.dart';
@@ -1190,8 +1191,7 @@ class SettingsController extends ChangeNotifier {
   }
 
   Future<String> clearWatchHistory() async {
-    final box = await Hive.openBox<String>('watch_history');
-    await box.clear();
+    await DesktopWatchHistoryRepository.instance.clearWatchHistory();
     return 'Watch history cleared';
   }
 
@@ -1446,7 +1446,7 @@ class DesktopSettings {
     episodeCheckEnabled: true,
     episodeCheckFrequencyHours: 24,
     homeSectionOrder: HomeController.sectionOrder,
-    preferredAnimeSource: 'Miruro',
+    preferredAnimeSource: 'Animex',
     animePreferredAudio: 'sub',
     showAnime: true,
     showTamil: true,
@@ -1523,9 +1523,9 @@ class DesktopSettings {
       homeSectionOrder: HomeController.normalizeSectionOrder(
         prefs.getStringList(SettingsKeys.homeSectionOrder),
       ),
-      preferredAnimeSource:
-          prefs.getString(SettingsKeys.preferredAnimeSource) ??
-          defaults.preferredAnimeSource,
+      preferredAnimeSource: SettingsDefaults.normalizedAnimeSource(
+        prefs.getString(SettingsKeys.preferredAnimeSource),
+      ),
       animePreferredAudio:
           prefs.getString(SettingsKeys.animePreferredAudio) ??
           defaults.animePreferredAudio,
@@ -1660,7 +1660,13 @@ abstract final class SettingsDefaults {
   ];
   static const subtitleOutlines = ['None', 'Subtle Shadow', 'Outline'];
   static const episodeCheckFrequencies = [6, 12, 24, 48, 72];
-  static const animeSources = ['Miruro', 'Animex', 'Animetsu'];
+  static const animeSources = ['Animex', 'Xon'];
+  static String normalizedAnimeSource(String? value) {
+    final source = value?.trim();
+    if (source != null && animeSources.contains(source)) return source;
+    return animeSources.first;
+  }
+
   static List<String> get subtitleFontSizeLabels =>
       subtitleFontSizes.keys.toList();
   static const audioLanguages = [

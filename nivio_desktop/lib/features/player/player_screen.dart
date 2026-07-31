@@ -28,7 +28,6 @@ import 'web_playback_engine.dart';
 import '../party/services/watch_party_service_supabase.dart';
 import '../party/services/watch_party_session_manager.dart';
 import 'services/m3u8_parser.dart';
-import 'services/desktop_pip_service.dart';
 import 'services/playback_runtime_diagnostics.dart';
 import 'services/skip_times_service.dart';
 import 'services/stream_resolver.dart';
@@ -97,9 +96,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           onPointerActivity: _showControlsFromPlaybackSurface,
           onBackRequested: _close,
           onServerRequested: _openWebServerDrawer,
-          onEpisodesRequested: widget.request.totalEpisodes == null
-              ? null
-              : _showEpisodeSelector,
+          onEpisodesRequested: _initialEpisodeSelectorCallback,
         ),
       );
   late final DesktopPlayerController _controller = DesktopPlayerController(
@@ -123,6 +120,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _sourceSwitchInFlight = false;
   bool _watchPartyPanelExpanded = false;
   String? _sourceSwitchMessage;
+  bool _isNativeFullscreenActive = false;
+  String _subtitleBackground = 'Transparent';
+  String _subtitleOutline = 'Outline';
   bool _subtitleBackgroundEnabled = false;
   bool _subtitleOutlineEnabled = false;
   double _subtitleScale = 1;
@@ -183,9 +183,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _configureEmbeddedWebAppControls() {
-    final onEpisodes = widget.request.totalEpisodes == null
-        ? null
-        : _showEpisodeSelector;
+    final onEpisodes = _episodeSelectorCallback;
     final sourceOptions = widget.sourceOptions
         .map(
           (option) => <String, Object?>{
@@ -245,6 +243,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (!mounted) return;
     setState(() {
       _subtitleScale = nextScale;
+      _subtitleBackground = subtitleBackground;
+      _subtitleOutline = subtitleOutline;
       _subtitleBackgroundEnabled = nextBackground;
       _subtitleOutlineEnabled = nextOutline;
       _subtitleDelay = nextDelay;
@@ -275,8 +275,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Future<void> _saveSubtitleStyle({
     double? scale,
-    bool? background,
-    bool? outline,
+    String? background,
+    String? outline,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     if (scale != null) {
@@ -286,13 +286,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
       );
     }
     if (background != null) {
-      await prefs.setString(
-        _subtitleBackgroundKey,
-        background ? 'Semi-Transparent' : 'Transparent',
-      );
+      await prefs.setString(_subtitleBackgroundKey, background);
     }
     if (outline != null) {
-      await prefs.setString(_subtitleOutlineKey, outline ? 'Outline' : 'None');
+      await prefs.setString(_subtitleOutlineKey, outline);
     }
   }
 
@@ -362,6 +359,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
 
     _sourceSwitchInFlight = false;
+    _isPartyRouteSyncInFlight = false;
     _handledEmbeddedErrorProviderIndex = null;
     _embeddedProviderFallbackTimer?.cancel();
     _nextEpisodeStarted = false;
@@ -383,6 +381,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
         a.mediaType == b.mediaType &&
         a.season == b.season &&
         a.episode == b.episode &&
+        a.totalSeasons == b.totalSeasons &&
+        a.totalEpisodes == b.totalEpisodes &&
         a.providerIndex == b.providerIndex &&
         a.preferredQuality == b.preferredQuality &&
         a.preferredAudioTrack == b.preferredAudioTrack &&
@@ -394,6 +394,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _initializeController() async {
     await _controller.initialize();
     if (!mounted || _controller.debugDisposed) return;
+    unawaited(_applyCurrentPlaybackPreferences());
     _applyPreferredQuality();
     if (_pendingWatchPartyPlayback != null) {
       final pending = _pendingWatchPartyPlayback!;
@@ -406,8 +407,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _loadUpdatedRequest(PlaybackRequest request) async {
     await _controller.loadRequest(request);
     if (!mounted || !_samePlaybackRequest(widget.request, request)) return;
+    unawaited(_applyCurrentPlaybackPreferences());
     _applyPreferredQuality();
     unawaited(_broadcastWatchPartyPlayback(force: true));
+  }
+
+  Future<void> _applyCurrentPlaybackPreferences() async {
+    await _controller.setSubtitleDelay(_subtitleDelay);
+    await _controller.setSubtitleStyle(
+      SubtitleStyle(
+        scale: _subtitleScale,
+        background: _subtitleBackgroundEnabled,
+        outline: _subtitleOutlineEnabled,
+      ),
+    );
+    await _controller.setDebanding(_debandingEnabled);
   }
 
   List<SkipTime> get _effectiveSkipTimes {
@@ -492,8 +506,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _showWatchPartyStatus(message.trim());
     });
 
-    final role = WatchPartyRoleX.fromQuery(widget.request.watchPartyRole);
-    final code = (widget.request.watchPartyCode ?? '').trim().toUpperCase();
+    final role = _resolvedWatchPartyRole;
+    final code = _resolvedWatchPartyCode;
     if (role == null || code.isEmpty) return;
 
     final existingCode = service.currentSession?.sessionCode.toUpperCase();
@@ -522,12 +536,37 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   bool get _hasWatchPartyContext {
-    return (widget.request.watchPartyCode ?? '').trim().isNotEmpty &&
-        WatchPartyRoleX.fromQuery(widget.request.watchPartyRole) != null;
+    return _resolvedWatchPartyCode.isNotEmpty &&
+        _resolvedWatchPartyRole != null;
   }
 
   bool get _hasActiveWatchPartySession =>
       _watchPartyService?.isInSession == true;
+
+  String get _resolvedWatchPartyCode {
+    final fromRequest = (widget.request.watchPartyCode ?? '').trim();
+    if (fromRequest.isNotEmpty) return fromRequest.toUpperCase();
+
+    final service =
+        _watchPartyService ?? WatchPartySessionManager.instance.currentService;
+    final fromService = (service?.sessionCode ?? '').trim();
+    if (service?.isInSession == true && fromService.isNotEmpty) {
+      return fromService.toUpperCase();
+    }
+    return '';
+  }
+
+  WatchPartyRole? get _resolvedWatchPartyRole {
+    final fromRequest = WatchPartyRoleX.fromQuery(
+      widget.request.watchPartyRole,
+    );
+    if (fromRequest != null) return fromRequest;
+
+    final service =
+        _watchPartyService ?? WatchPartySessionManager.instance.currentService;
+    if (service?.isInSession != true) return null;
+    return service!.isHost ? WatchPartyRole.host : WatchPartyRole.participant;
+  }
 
   bool get _canControlPartyPlayback {
     final service = _watchPartyService;
@@ -760,10 +799,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void _syncRouteToWatchPartyPlayback(WatchPartyPlaybackState playback) {
     if (_isPartyRouteSyncInFlight || !mounted) return;
-    _isPartyRouteSyncInFlight = true;
 
     final callback = widget.onSourceSwitch ?? widget.onNextEpisode;
-    if (callback == null) return;
+    if (callback == null) {
+      _showWatchPartyStatus('Unable to follow watch party playback.');
+      return;
+    }
+    _isPartyRouteSyncInFlight = true;
     unawaited(_controller.stop());
     callback(
       _controller.request.copyWith(
@@ -775,8 +817,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
         season: playback.season,
         episode: playback.episode,
         providerIndex: playback.providerIndex,
-        watchPartyCode: widget.request.watchPartyCode,
-        watchPartyRole: widget.request.watchPartyRole,
+        watchPartyCode: _resolvedWatchPartyCode,
+        watchPartyRole: _resolvedWatchPartyRole?.queryValue,
         startPosition: Duration(milliseconds: playback.expectedPositionMs),
         clearSource: true,
         clearStreamResult: true,
@@ -814,7 +856,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     unawaited(_watchPartyReactionSub?.cancel());
     unawaited(_watchPartyErrorSub?.cancel());
     unawaited(_setPlaybackWakelock(enabled: false));
-    unawaited(DesktopPipService.instance.exit());
     _videoControlsFocusNode.dispose();
     if (_ownsEngine) {
       unawaited(_controller.close());
@@ -845,11 +886,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void _minimizeToMiniPlayer() {
     widget.onMinimize?.call();
-  }
-
-  Future<void> _togglePictureInPicture() async {
-    await DesktopPipService.instance.toggle();
-    if (mounted) _showControls();
   }
 
   void _onPlaybackChanged() {
@@ -1096,6 +1132,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
     return (widget.request.season ?? 1) < widget.request.totalSeasons;
   }
 
+  VoidCallback? get _initialEpisodeSelectorCallback {
+    final total = _episodeSelectorTotal(widget.request);
+    return total == null ? null : _showEpisodeSelector;
+  }
+
+  VoidCallback? get _episodeSelectorCallback {
+    final total = _episodeSelectorTotal(_controller.request);
+    return total == null ? null : _showEpisodeSelector;
+  }
+
+  int? _episodeSelectorTotal(PlaybackRequest request) {
+    final total = request.totalEpisodes ?? widget.request.totalEpisodes;
+    if (total != null && total > 0) return total;
+    if (request.mediaType != PlaybackMediaType.tv &&
+        request.mediaType != PlaybackMediaType.anime) {
+      return null;
+    }
+    return null;
+  }
+
   bool get _usesEmbeddedWebPlayback {
     final result =
         _controller.request.streamResult ?? widget.request.streamResult;
@@ -1309,14 +1365,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _showEpisodeSelector() async {
-    final total = widget.request.totalEpisodes;
+    final request = _controller.request;
+    final total = _episodeSelectorTotal(request);
     if (total == null || total <= 0) return;
     final selected = await showDialog<int>(
       context: context,
       barrierColor: Colors.black54,
       builder: (context) => _EpisodePickerDialog(
         totalEpisodes: total,
-        currentEpisode: widget.request.episode ?? 1,
+        currentEpisode: request.episode ?? 1,
+        season: request.season ?? 1,
       ),
     );
     if (selected != null) _playEpisode(selected);
@@ -1358,7 +1416,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           controller: controller,
           decoration: const InputDecoration(
             labelText: 'Subtitle URL',
-            hintText: 'https://example.com/sub.vtt',
+            hintText: 'Paste subtitle URL',
           ),
           autofocus: true,
           onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
@@ -1418,12 +1476,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
     unawaited(_saveSubtitleDelay());
   }
 
-  void _applySubtitleStyle({double? scale, bool? background, bool? outline}) {
+  void _applySubtitleStyle({
+    double? scale,
+    String? background,
+    String? outline,
+  }) {
     final nextScale = scale ?? _subtitleScale;
-    final nextBackground = background ?? _subtitleBackgroundEnabled;
-    final nextOutline = outline ?? _subtitleOutlineEnabled;
+    final nextBackgroundLabel = background ?? _subtitleBackground;
+    final nextOutlineLabel = outline ?? _subtitleOutline;
+    final nextBackground = nextBackgroundLabel != 'Transparent';
+    final nextOutline = nextOutlineLabel != 'None';
     setState(() {
       _subtitleScale = nextScale;
+      _subtitleBackground = nextBackgroundLabel;
+      _subtitleOutline = nextOutlineLabel;
       _subtitleBackgroundEnabled = nextBackground;
       _subtitleOutlineEnabled = nextOutline;
     });
@@ -1640,7 +1706,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         } else if (key == LogicalKeyboardKey.escape) {
           if (_watchPartyPanelExpanded) {
             _setWatchPartyPanelExpanded(false);
-          } else if (videoState.isFullscreen()) {
+          } else if (_isNativeFullscreenActive) {
             unawaited(videoState.exitFullscreen());
           } else {
             _close();
@@ -1651,7 +1717,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         _showControls();
         return KeyEventResult.handled;
       },
-      child: videoState.isFullscreen()
+      child: _isNativeFullscreenActive
           ? ValueListenableBuilder<PlaybackState>(
               valueListenable: _engine.state,
               builder: (context, playback, _) {
@@ -1701,9 +1767,27 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             onSettings: () =>
                                 _openDrawer(_PlayerDrawer.settings),
                             onServer: () => _openDrawer(_PlayerDrawer.server),
-                            onEpisodes: widget.request.totalEpisodes == null
-                                ? null
-                                : _showEpisodeSelector,
+                            onEpisodes: _episodeSelectorCallback,
+                          ),
+                        if (_sourceSwitchInFlight)
+                          _PlayerSwitchingOverlay(
+                            message:
+                                _sourceSwitchMessage ?? 'Switching server...',
+                          ),
+                        _SkipOverlay(
+                          playback: playback,
+                          skipTimes: _effectiveSkipTimes,
+                          onSkip: (target) {
+                            if (!_ensurePartyCanControl()) return;
+                            unawaited(_engine.seek(target));
+                          },
+                        ),
+                        if (_hasNextEpisode &&
+                            playback.duration > Duration.zero)
+                          _NextEpisodeOverlay(
+                            playback: playback,
+                            autoplay: _autoplayNextEpisode,
+                            onNext: _startNextEpisode,
                           ),
                         if (_hasWatchPartyContext)
                           _WatchPartyStatusOverlay(
@@ -1725,6 +1809,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             onSendReaction: _sendWatchPartyReaction,
                             onLeaveOrEnd: _leaveOrEndWatchParty,
                           ),
+                        if (_volumeOverlayValue != null)
+                          _VolumeOverlay(value: _volumeOverlayValue!),
+                        if (_drawer != _PlayerDrawer.none)
+                          _buildRightDrawer(playback),
                       ],
                     ),
                   ),
@@ -1753,6 +1841,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
         context: context,
         fit: _displayFit,
         controls: _buildVideoControls,
+        onEnterFullscreen: _handleEnterNativeFullscreen,
+        onExitFullscreen: _handleExitNativeFullscreen,
       );
     }
     if (engine is MediaKitPlaybackEngine) {
@@ -1761,6 +1851,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
         fit: _displayFit,
         fill: Colors.black,
         controls: _buildVideoControls,
+        onEnterFullscreen: _handleEnterNativeFullscreen,
+        onExitFullscreen: _handleExitNativeFullscreen,
       );
     }
 
@@ -1768,6 +1860,23 @@ class _PlayerScreenState extends State<PlayerScreen> {
       key: ValueKey('playback-surface-placeholder'),
       color: Colors.black,
     );
+  }
+
+  Future<void> _handleEnterNativeFullscreen() async {
+    if (mounted && !_isNativeFullscreenActive) {
+      setState(() => _isNativeFullscreenActive = true);
+    }
+    await defaultEnterNativeFullscreen();
+  }
+
+  Future<void> _handleExitNativeFullscreen() async {
+    if (mounted && _isNativeFullscreenActive) {
+      setState(() {
+        _isNativeFullscreenActive = false;
+        _drawer = _PlayerDrawer.none;
+      });
+    }
+    await defaultExitNativeFullscreen();
   }
 
   Widget _buildRightDrawer(PlaybackState playback, {bool inline = false}) {
@@ -1799,8 +1908,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       debandingEnabled: _debandingEnabled,
       subtitleDelay: _subtitleDelay,
       subtitleScale: _subtitleScale,
-      subtitleBackgroundEnabled: _subtitleBackgroundEnabled,
-      subtitleOutlineEnabled: _subtitleOutlineEnabled,
+      subtitleBackground: _subtitleBackground,
+      subtitleOutline: _subtitleOutline,
       onClose: () => setState(() => _drawer = _PlayerDrawer.none),
       onSourceSelected: (option) {
         PlaybackRuntimeDiagnostics.overlayLog(
@@ -1905,15 +2014,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     onMiniPlayer: widget.onMinimize == null
                         ? null
                         : _minimizeToMiniPlayer,
-                    onPictureInPicture: () =>
-                        unawaited(_togglePictureInPicture()),
                     onPlayPause: () => unawaited(_controller.togglePlayPause()),
                     onSeek: (position) => unawaited(_engine.seek(position)),
                     onSettings: () => _openDrawer(_PlayerDrawer.settings),
                     onServer: () => _openDrawer(_PlayerDrawer.server),
-                    onEpisodes: widget.request.totalEpisodes == null
-                        ? null
-                        : _showEpisodeSelector,
+                    onEpisodes: _episodeSelectorCallback,
                   ),
                   if (_sourceSwitchInFlight)
                     _PlayerSwitchingOverlay(
@@ -1974,8 +2079,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       onMiniPlayer: widget.onMinimize == null
                           ? null
                           : _minimizeToMiniPlayer,
-                      onPictureInPicture: () =>
-                          unawaited(_togglePictureInPicture()),
                       onPlayPause: () {
                         if (!_ensurePartyCanControl()) return;
                         unawaited(_controller.togglePlayPause());
@@ -1988,9 +2091,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       },
                       onSettings: () => _openDrawer(_PlayerDrawer.settings),
                       onServer: () => _openDrawer(_PlayerDrawer.server),
-                      onEpisodes: widget.request.totalEpisodes == null
-                          ? null
-                          : _showEpisodeSelector,
+                      onEpisodes: _episodeSelectorCallback,
                     ),
                   if (playback.status == PlaybackStatus.buffering)
                     const _PlayerBufferingOverlay(),
@@ -2103,8 +2204,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     onMiniPlayer: widget.onMinimize == null
                         ? null
                         : _minimizeToMiniPlayer,
-                    onPictureInPicture: () =>
-                        unawaited(_togglePictureInPicture()),
                     onRetry: playback.status == PlaybackStatus.error
                         ? () => unawaited(_controller.retry())
                         : null,

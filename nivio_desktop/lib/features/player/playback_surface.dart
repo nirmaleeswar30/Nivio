@@ -11,5 +11,7 @@ abstract interface class PlaybackSurfaceEngine implements PlaybackEngine {
     required BuildContext context,
     required BoxFit fit,
     required PlaybackControlsBuilder controls,
+    Future<void> Function()? onEnterFullscreen,
+    Future<void> Function()? onExitFullscreen,
   });
 }

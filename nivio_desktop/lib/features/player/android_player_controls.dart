@@ -17,7 +17,6 @@ class _AndroidPlayerControls extends StatelessWidget {
     this.serverLabel,
     this.onEpisodes,
     this.onMiniPlayer,
-    this.onPictureInPicture,
   });
 
   final bool visible;
@@ -35,7 +34,6 @@ class _AndroidPlayerControls extends StatelessWidget {
   final VoidCallback? onWatchParty;
   final VoidCallback? onEpisodes;
   final VoidCallback? onMiniPlayer;
-  final VoidCallback? onPictureInPicture;
 
   @override
   Widget build(BuildContext context) {
@@ -149,16 +147,6 @@ class _AndroidPlayerControls extends StatelessWidget {
                             Icons.picture_in_picture_alt,
                             color: Colors.white,
                             size: 26,
-                          ),
-                        ),
-                      if (onPictureInPicture != null)
-                        IconButton(
-                          tooltip: 'Compact window',
-                          onPressed: onPictureInPicture,
-                          icon: const Icon(
-                            Icons.open_in_new,
-                            color: Colors.white,
-                            size: 25,
                           ),
                         ),
                       if (canSwitchServer)

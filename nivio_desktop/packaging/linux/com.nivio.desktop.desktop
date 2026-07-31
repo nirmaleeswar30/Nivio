@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Nivio
+Comment=Nivio Desktop
+Exec=nivio-desktop
+Icon=nivio_desktop
+Categories=AudioVideo;Video;Player;
+Terminal=false
+StartupNotify=true

@@ -409,10 +409,12 @@ class _EpisodePickerDialog extends StatefulWidget {
   const _EpisodePickerDialog({
     required this.totalEpisodes,
     required this.currentEpisode,
+    required this.season,
   });
 
   final int totalEpisodes;
   final int currentEpisode;
+  final int season;
 
   @override
   State<_EpisodePickerDialog> createState() => _EpisodePickerDialogState();
@@ -464,9 +466,9 @@ class _EpisodePickerDialogState extends State<_EpisodePickerDialog> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'Season 1',
-                              style: TextStyle(
+                            Text(
+                              'Season ${widget.season}',
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 22,
                                 fontWeight: FontWeight.w800,

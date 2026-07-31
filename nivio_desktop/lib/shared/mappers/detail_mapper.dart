@@ -310,9 +310,11 @@ class DetailMapper {
 
     final seasons = detailDto.seasons.map((season) {
       final number = (season['season_number'] as num?)?.toInt() ?? 0;
+      final episodeCount = (season['episode_count'] as num?)?.toInt();
       return DetailSeason(
         number: number,
         name: (season['name'] ?? 'Season $number') as String,
+        episodeCount: episodeCount,
         episodes: const [],
       );
     }).toList();
@@ -341,7 +343,12 @@ class DetailMapper {
         (detailDto.raw['number_of_episodes'] as num?)?.toInt() ?? 0;
     if (seasons.isEmpty && episodeCount > 0) {
       seasons.add(
-        const DetailSeason(number: 1, name: 'Season 1', episodes: []),
+        DetailSeason(
+          number: 1,
+          name: 'Season 1',
+          episodeCount: episodeCount,
+          episodes: const [],
+        ),
       );
     }
 

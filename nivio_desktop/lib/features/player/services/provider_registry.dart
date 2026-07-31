@@ -1,8 +1,11 @@
 import '../../../shared/models/stream_result.dart';
 import '../models/playback_request.dart';
 import 'anime_stream_providers.dart';
+import 'castle_tv_stream_provider.dart';
+import 'moviebox_stream_provider.dart';
 import 'netmirror_stream_provider.dart';
 import 'stream_resolver.dart';
+import 'streamflix_stream_provider.dart';
 
 enum StreamProviderKind { direct, iframe }
 
@@ -100,21 +103,21 @@ class ProviderRegistry {
 
   factory ProviderRegistry.androidParity({
     NetMirrorStreamProvider? netMirror,
+    CastleTvStreamProvider? castleTv,
+    MovieBoxStreamProvider? movieBox,
+    StreamFlixStreamProvider? streamFlix,
     List<AnimeStreamProvider>? animeProviders,
   }) {
     final anime =
-        animeProviders ??
-        [
-          MiruroStreamProvider(),
-          AnimexStreamProvider(),
-          AnimetsuStreamProvider(),
-        ];
+        animeProviders ?? [AnimexStreamProvider(), XonStreamProvider()];
     return ProviderRegistry([
       NivioProviderAdapter(netMirror ?? NetMirrorStreamProvider()),
+      CastleTvProviderAdapter(castleTv ?? CastleTvStreamProvider()),
+      MovieBoxProviderAdapter(movieBox ?? MovieBoxStreamProvider()),
+      StreamFlixProviderAdapter(streamFlix ?? StreamFlixStreamProvider()),
       const IframeProviderAdapter.vidUp(),
       const IframeProviderAdapter.vidLink(),
       const IframeProviderAdapter.vidCore(),
-      const IframeProviderAdapter.vidPlus(),
       for (var index = 0; index < anime.length; index++)
         AnimeProviderAdapter(
           priority: 100 + (index * 10),
@@ -131,13 +134,237 @@ class ProviderRegistry {
         .toList(growable: false);
   }
 
-  Future<List<PlaybackSourceOption>> sourcesFor(PlaybackRequest request) async {
+  Future<List<PlaybackSourceOption>> sourcesFor(
+    PlaybackRequest request, {
+    Set<String>? providerIds,
+  }) async {
     final options = <PlaybackSourceOption>[];
     for (final provider in providersFor(request)) {
+      if (providerIds != null && !providerIds.contains(provider.metadata.id)) {
+        continue;
+      }
       options.addAll(await provider.enumerateServers(request));
     }
     options.sort((a, b) => a.index.compareTo(b.index));
     return options;
+  }
+}
+
+class StreamFlixProviderAdapter implements RegisteredStreamProvider {
+  const StreamFlixProviderAdapter(this._provider);
+
+  final StreamFlixStreamProvider _provider;
+
+  @override
+  StreamProviderMetadata get metadata => const StreamProviderMetadata(
+    id: 'streamflix',
+    displayName: StreamFlixStreamProvider.providerName,
+    priority: 8,
+    kind: StreamProviderKind.direct,
+    supportedMediaTypes: {PlaybackMediaType.movie, PlaybackMediaType.tv},
+  );
+
+  @override
+  StreamProviderCapabilities get capabilities =>
+      const StreamProviderCapabilities(
+        directMedia: true,
+        iframe: false,
+        subtitles: true,
+        audioTracks: true,
+        qualitySelection: false,
+        download: true,
+      );
+
+  @override
+  bool supports(PlaybackRequest request) =>
+      request.mediaType == PlaybackMediaType.movie ||
+      request.mediaType == PlaybackMediaType.tv ||
+      request.mediaType == PlaybackMediaType.unknown;
+
+  @override
+  Map<String, String> requestHeaders(PlaybackRequest request) => const {};
+
+  @override
+  Future<List<PlaybackSourceOption>> enumerateServers(
+    PlaybackRequest request,
+  ) async {
+    return const [
+      PlaybackSourceOption(
+        index: 8,
+        provider: StreamFlixStreamProvider.providerName,
+        server: StreamFlixStreamProvider.providerName,
+        providerId: 'streamflix',
+        directMedia: true,
+        iframeOnly: false,
+      ),
+    ];
+  }
+
+  @override
+  Future<StreamResolution?> resolve(
+    PlaybackRequest request, {
+    required PlaybackSourceOption source,
+  }) async {
+    final result = await _provider.resolve(request);
+    if (result == null) return null;
+    return StreamResolution(
+      result: result.copyWith(
+        providerIndex: source.index,
+        providerGroup: source.provider,
+        serverName: source.server,
+      ),
+      diagnostics: StreamProviderDiagnostics(
+        providerId: metadata.id,
+        providerName: metadata.displayName,
+        server: source.server,
+        capabilities: capabilities,
+      ),
+    );
+  }
+}
+
+class MovieBoxProviderAdapter implements RegisteredStreamProvider {
+  const MovieBoxProviderAdapter(this._provider);
+
+  final MovieBoxStreamProvider _provider;
+
+  @override
+  StreamProviderMetadata get metadata => const StreamProviderMetadata(
+    id: 'moviebox',
+    displayName: MovieBoxStreamProvider.providerName,
+    priority: 7,
+    kind: StreamProviderKind.direct,
+    supportedMediaTypes: {PlaybackMediaType.movie},
+  );
+
+  @override
+  StreamProviderCapabilities get capabilities =>
+      const StreamProviderCapabilities(
+        directMedia: true,
+        iframe: false,
+        subtitles: true,
+        audioTracks: true,
+        qualitySelection: true,
+        download: true,
+      );
+
+  @override
+  bool supports(PlaybackRequest request) =>
+      request.mediaType == PlaybackMediaType.movie ||
+      request.mediaType == PlaybackMediaType.unknown;
+
+  @override
+  Map<String, String> requestHeaders(PlaybackRequest request) => const {};
+
+  @override
+  Future<List<PlaybackSourceOption>> enumerateServers(
+    PlaybackRequest request,
+  ) async {
+    return const [
+      PlaybackSourceOption(
+        index: 7,
+        provider: MovieBoxStreamProvider.providerName,
+        server: MovieBoxStreamProvider.providerName,
+        providerId: 'moviebox',
+        directMedia: true,
+        iframeOnly: false,
+      ),
+    ];
+  }
+
+  @override
+  Future<StreamResolution?> resolve(
+    PlaybackRequest request, {
+    required PlaybackSourceOption source,
+  }) async {
+    final result = await _provider.resolve(request);
+    if (result == null) return null;
+    return StreamResolution(
+      result: result.copyWith(
+        providerIndex: source.index,
+        providerGroup: source.provider,
+        serverName: source.server,
+      ),
+      diagnostics: StreamProviderDiagnostics(
+        providerId: metadata.id,
+        providerName: metadata.displayName,
+        server: source.server,
+        capabilities: capabilities,
+      ),
+    );
+  }
+}
+
+class CastleTvProviderAdapter implements RegisteredStreamProvider {
+  const CastleTvProviderAdapter(this._provider);
+
+  final CastleTvStreamProvider _provider;
+
+  @override
+  StreamProviderMetadata get metadata => const StreamProviderMetadata(
+    id: 'castletv',
+    displayName: CastleTvStreamProvider.providerName,
+    priority: 5,
+    kind: StreamProviderKind.direct,
+    supportedMediaTypes: {PlaybackMediaType.movie, PlaybackMediaType.tv},
+  );
+
+  @override
+  StreamProviderCapabilities get capabilities =>
+      const StreamProviderCapabilities(
+        directMedia: true,
+        iframe: false,
+        subtitles: true,
+        audioTracks: true,
+        qualitySelection: true,
+        download: true,
+      );
+
+  @override
+  bool supports(PlaybackRequest request) =>
+      request.mediaType == PlaybackMediaType.movie ||
+      request.mediaType == PlaybackMediaType.tv ||
+      request.mediaType == PlaybackMediaType.unknown;
+
+  @override
+  Map<String, String> requestHeaders(PlaybackRequest request) => const {};
+
+  @override
+  Future<List<PlaybackSourceOption>> enumerateServers(
+    PlaybackRequest request,
+  ) async {
+    return const [
+      PlaybackSourceOption(
+        index: 5,
+        provider: CastleTvStreamProvider.providerName,
+        server: CastleTvStreamProvider.providerName,
+        providerId: 'castletv',
+        directMedia: true,
+        iframeOnly: false,
+      ),
+    ];
+  }
+
+  @override
+  Future<StreamResolution?> resolve(
+    PlaybackRequest request, {
+    required PlaybackSourceOption source,
+  }) async {
+    final result = await _provider.resolve(request);
+    if (result == null) return null;
+    return StreamResolution(
+      result: result.copyWith(
+        providerIndex: source.index,
+        providerGroup: source.provider,
+        serverName: source.server,
+      ),
+      diagnostics: StreamProviderDiagnostics(
+        providerId: metadata.id,
+        providerName: metadata.displayName,
+        server: source.server,
+        capabilities: capabilities,
+      ),
+    );
   }
 }
 
@@ -254,7 +481,9 @@ class AnimeProviderAdapter implements RegisteredStreamProvider {
     PlaybackRequest request,
   ) async {
     final servers = await provider.availableServers(request);
-    final resolvedServers = provider is AnimetsuStreamProvider
+    final resolvedServers = provider is XonStreamProvider
+        ? servers
+        : provider is AnimetsuStreamProvider
         ? const ['auto', 'kite', 'dio', 'sage', 'meg']
         : servers.isEmpty
         ? [provider is MiruroStreamProvider ? 'zoro' : 'mimi']
@@ -384,7 +613,7 @@ class IframeProviderAdapter implements RegisteredStreamProvider {
   ) async {
     return [
       PlaybackSourceOption(
-        index: priority ~/ 10,
+        index: priority,
         provider: name,
         server: name,
         providerId: id,

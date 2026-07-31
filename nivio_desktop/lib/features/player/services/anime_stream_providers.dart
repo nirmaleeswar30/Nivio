@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../shared/models/stream_result.dart';
+import '../../../shared/models/skip_times_models.dart';
 import '../models/playback_request.dart';
 import 'playback_runtime_diagnostics.dart';
 
@@ -18,6 +19,268 @@ abstract interface class AnimeStreamProvider {
     PlaybackRequest request, {
     required String server,
   });
+}
+
+class XonStreamProvider implements AnimeStreamProvider {
+  XonStreamProvider({Dio? dio})
+    : _dio =
+          dio ??
+          Dio(
+            BaseOptions(
+              baseUrl: _baseUrl,
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 20),
+              validateStatus: (status) => status != null && status < 600,
+              headers: _headers,
+            ),
+          );
+
+  final Dio _dio;
+  List<Map<String, dynamic>> _shows = const [];
+  List<Map<String, dynamic>> _episodes = const [];
+  DateTime? _showsFetchedAt;
+  DateTime? _episodesFetchedAt;
+
+  static const _baseUrl = 'https://xon-avens.xyz/apis';
+  static const _archiveBaseUrl = 'https://archive.org/download/';
+  static const _cacheTtl = Duration(minutes: 30);
+  static const _headers = {
+    'Accept-Encoding': 'gzip',
+    'API': '553y845hfhdlfhjkl438943943839443943fdhdkfjfj9834lnfd98',
+    'CALLER': 'vion-official-app',
+    'Connection': 'Keep-Alive',
+    'Host': 'xon-avens.xyz',
+    'User-Agent': 'okhttp/5.3.2',
+  };
+
+  @override
+  String get name => 'Xon';
+
+  @override
+  Future<List<String>> availableServers(PlaybackRequest request) async {
+    final candidates = await _matchingCandidates(
+      request,
+      includeEpisodes: request.episode != null,
+    );
+    final labels = <String>[];
+    for (final candidate in candidates) {
+      if (candidate.sources.isEmpty) continue;
+      final label = candidate.languageLabel;
+      if (label.isEmpty || labels.contains(label)) continue;
+      labels.add(label);
+    }
+    return labels;
+  }
+
+  @override
+  Future<StreamResult?> resolve(
+    PlaybackRequest request, {
+    required String server,
+  }) async {
+    final candidates = await _matchingCandidates(
+      request,
+      includeEpisodes: request.episode != null,
+    );
+    if (candidates.isEmpty) return null;
+
+    final availableAudios = <String>[];
+    for (final candidate in candidates) {
+      if (candidate.sources.isEmpty) continue;
+      final language = candidate.languageLabel;
+      if (language.isNotEmpty && !availableAudios.contains(language)) {
+        availableAudios.add(language);
+      }
+    }
+
+    final selected = _selectCandidate(candidates, server, request);
+    if (selected == null || selected.sources.isEmpty) return null;
+    final source = _selectSource(selected.sources, request.preferredQuality);
+    if (source == null) return null;
+
+    return StreamResult(
+      url: source.url,
+      quality: source.quality,
+      provider: '$name (${selected.languageLabel})',
+      headers: const {'User-Agent': 'okhttp/5.3.2', 'Referer': _baseUrl},
+      sources: selected.sources,
+      availableQualities: selected.sources
+          .map((source) => source.quality)
+          .toSet()
+          .toList(growable: false),
+      availableAudios: availableAudios,
+      selectedAudio: selected.languageLabel,
+      isM3U8: source.isM3U8,
+      isDirect: true,
+      isIframe: false,
+    );
+  }
+
+  Future<List<_XonCandidate>> _matchingCandidates(
+    PlaybackRequest request, {
+    required bool includeEpisodes,
+  }) async {
+    await _refreshShows();
+    final title = _normalizeTitle(request.title);
+    final candidates = <_XonCandidate>[];
+
+    if (includeEpisodes) {
+      try {
+        await _refreshEpisodes();
+        for (final episode in _episodes) {
+          final episodeNo = _intValue(episode['no']);
+          if (episodeNo != null && episodeNo != (request.episode ?? 1)) {
+            continue;
+          }
+          if (!_matchesXonTitle(episode, title)) continue;
+          final candidate = _XonCandidate.fromJson(episode);
+          if (!_matchesRequestedXonSeason(candidate, request.season)) continue;
+          if (candidate.sources.isNotEmpty) candidates.add(candidate);
+        }
+      } catch (_) {
+        // The episode catalog is large; movie/cartoon specials can still be
+        // resolved from the show catalog when this endpoint is slow.
+      }
+    }
+
+    for (final show in _shows) {
+      if (!_matchesXonTitle(show, title)) continue;
+      final candidate = _XonCandidate.fromJson(show);
+      if (candidate.sources.isNotEmpty) candidates.add(candidate);
+    }
+
+    candidates.sort((a, b) {
+      final aScore = _candidateScore(a, request);
+      final bScore = _candidateScore(b, request);
+      if (aScore != bScore) return bScore.compareTo(aScore);
+      return b.sources.length.compareTo(a.sources.length);
+    });
+    return candidates;
+  }
+
+  Future<void> _refreshShows() async {
+    if (_showsFetchedAt case final fetched?
+        when DateTime.now().difference(fetched) < _cacheTtl) {
+      return;
+    }
+    final response = await _dio.get<Object?>('$_baseUrl/nzgetshows.php');
+    _animeLog(
+      name,
+      'Request URL: ${response.realUri} HTTP ${response.statusCode} '
+      'headers=${_dioHeaderSummary(response.headers)}',
+    );
+    if (response.statusCode != 200) return;
+    final body = _decodeXonBody(response.data);
+    final movies = body?['movies'];
+    if (movies is! List) return;
+    _shows = movies
+        .map(_map)
+        .whereType<Map<String, dynamic>>()
+        .toList(growable: false);
+    _showsFetchedAt = DateTime.now();
+  }
+
+  Future<void> _refreshEpisodes() async {
+    if (_episodesFetchedAt case final fetched?
+        when DateTime.now().difference(fetched) < _cacheTtl) {
+      return;
+    }
+    final response = await _dio.get<Object?>('$_baseUrl/nzgetepisodes_v2.php');
+    _animeLog(
+      name,
+      'Request URL: ${response.realUri} HTTP ${response.statusCode} '
+      'headers=${_dioHeaderSummary(response.headers)}',
+    );
+    if (response.statusCode != 200) return;
+    final body = _decodeXonBody(response.data);
+    final episodes = body?['episodes'];
+    if (episodes is! List) return;
+    _episodes = episodes
+        .map(_map)
+        .whereType<Map<String, dynamic>>()
+        .toList(growable: false);
+    _episodesFetchedAt = DateTime.now();
+  }
+
+  _XonCandidate? _selectCandidate(
+    List<_XonCandidate> candidates,
+    String server,
+    PlaybackRequest request,
+  ) {
+    final serverLanguage = _normalizedLanguage(server);
+    if (serverLanguage.isNotEmpty && serverLanguage != 'auto') {
+      for (final candidate in candidates) {
+        if (_normalizedLanguage(candidate.languageLabel) == serverLanguage) {
+          return candidate;
+        }
+      }
+    }
+
+    final preferred = _normalizedLanguage(request.preferredAudioTrack ?? '');
+    if (preferred.isNotEmpty) {
+      for (final candidate in candidates) {
+        if (_normalizedLanguage(candidate.languageLabel) == preferred) {
+          return candidate;
+        }
+      }
+    }
+
+    return candidates.first;
+  }
+
+  StreamSource? _selectSource(List<StreamSource> sources, String? quality) {
+    if (sources.isEmpty) return null;
+    final preferred = quality?.toLowerCase().trim() ?? '';
+    if (preferred.isNotEmpty && preferred != 'auto') {
+      for (final source in sources) {
+        if (source.quality.toLowerCase() == preferred) return source;
+      }
+    }
+    return sources.last;
+  }
+
+  bool _matchesXonTitle(Map<String, dynamic> json, String normalizedTitle) {
+    if (normalizedTitle.isEmpty) return false;
+    final names = [
+      json['name'],
+      json['show_name'],
+      json['showName'],
+      json['tags'],
+    ].map((value) => _normalizeTitle(value?.toString() ?? ''));
+    for (final name in names) {
+      if (name.isEmpty) continue;
+      if (name == normalizedTitle ||
+          name.contains(normalizedTitle) ||
+          normalizedTitle.contains(name)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  int _candidateScore(_XonCandidate candidate, PlaybackRequest request) {
+    var score = 0;
+    final preferred = _normalizedLanguage(request.preferredAudioTrack ?? '');
+    if (preferred.isNotEmpty &&
+        _normalizedLanguage(candidate.languageLabel) == preferred) {
+      score += 20;
+    }
+    if (candidate.kind == _XonCandidateKind.episode) {
+      score += 10;
+      if (request.season != null && candidate.seasonNumber == request.season) {
+        score += 15;
+      }
+    }
+    if (candidate.titleNormalized == _normalizeTitle(request.title)) score += 5;
+    return score;
+  }
+
+  bool _matchesRequestedXonSeason(_XonCandidate candidate, int? season) {
+    if (season == null || candidate.kind != _XonCandidateKind.episode) {
+      return true;
+    }
+    final candidateSeason = candidate.seasonNumber;
+    return candidateSeason == null || candidateSeason == season;
+  }
 }
 
 /// Android's first anime provider. Its `auto` server preserves the Android
@@ -149,6 +412,29 @@ class AnimetsuStreamProvider implements AnimeStreamProvider {
           }
         }
 
+        final skipTimes = <SkipTime>[];
+        final skips = _map(data?['skips']);
+        final intro = _map(skips?['intro']);
+        final outro = _map(skips?['outro']);
+        if (intro?['start'] != null && intro?['end'] != null) {
+          skipTimes.add(
+            SkipTime(
+              type: 'op',
+              startTime: Duration(seconds: (intro!['start'] as num).toInt()),
+              endTime: Duration(seconds: (intro['end'] as num).toInt()),
+            ),
+          );
+        }
+        if (outro?['start'] != null && outro?['end'] != null) {
+          skipTimes.add(
+            SkipTime(
+              type: 'ed',
+              startTime: Duration(seconds: (outro!['start'] as num).toInt()),
+              endTime: Duration(seconds: (outro['end'] as num).toInt()),
+            ),
+          );
+        }
+
         final primary = sources.firstWhere(
           (source) =>
               source.quality.toLowerCase() == 'auto' ||
@@ -161,6 +447,7 @@ class AnimetsuStreamProvider implements AnimeStreamProvider {
           provider: 'Animetsu ($currentServer)',
           sources: sources,
           subtitles: subtitles,
+          skipTimes: skipTimes,
           availableQualities: sources
               .map((source) => source.quality)
               .toSet()
@@ -188,6 +475,7 @@ class MiruroStreamProvider implements AnimeStreamProvider {
     : _client = client ?? http.Client();
 
   final http.Client _client;
+  final _hlsSanitizer = _AnimeHlsSanitizer('Miruro');
   final List<int> _obfuscationKey = utf8.encode(
     '71951034f8fbcf53d89db52ceb3dc22c',
   );
@@ -272,20 +560,36 @@ class MiruroStreamProvider implements AnimeStreamProvider {
         final stream = _map(raw);
         final url = stream?['url']?.toString() ?? '';
         if (url.isEmpty) continue;
-        referer = stream?['referer']?.toString() ?? referer;
+        final streamReferer = stream?['referer']?.toString() ?? referer;
+        final streamOrigin = streamReferer.endsWith('/')
+            ? streamReferer.substring(0, streamReferer.length - 1)
+            : streamReferer;
+        referer = streamReferer;
         var quality = stream?['quality']?.toString() ?? 'Auto';
+        final fansub = stream?['fansub']?.toString();
         final serverName = stream?['server']?.toString();
-        if (serverName != null && serverName.isNotEmpty) {
+        if (fansub != null && fansub.isNotEmpty) {
+          quality += ' ($fansub)';
+        } else if (serverName != null && serverName.isNotEmpty) {
           quality += ' ($serverName)';
         }
+        final isHls =
+            url.contains('.m3u8') ||
+            stream?['type']?.toString().toLowerCase() == 'hls';
+        final sourceHeaders = {
+          'Referer': streamReferer,
+          'Origin': streamOrigin,
+          'User-Agent': _miruroUserAgent,
+        };
+        final resolvedUrl = isHls
+            ? await _hlsSanitizer.proxyPlaylist(url, sourceHeaders)
+            : url;
         sources.add(
           StreamSource(
-            url: url,
+            url: resolvedUrl,
             quality: quality,
             isDub: category == 'dub',
-            isM3U8:
-                url.contains('.m3u8') ||
-                stream?['type']?.toString().toLowerCase() == 'hls',
+            isM3U8: isHls,
           ),
         );
       }
@@ -399,9 +703,12 @@ class AnimexStreamProvider implements AnimeStreamProvider {
     : _client = client ?? http.Client();
 
   final http.Client _client;
-  final _hlsSanitizer = _AnimexHlsSanitizer();
+  final _hlsSanitizer = _AnimeHlsSanitizer('Animex');
+  final _slugCache = <int, _AnimeCacheEntry<String>>{};
+  final _serverCache = <String, _AnimeCacheEntry<Map<String, dynamic>>>{};
   static const _baseUrl = 'https://animex.one';
   static const _apiUrl = 'https://pp.animex.one/rest/api';
+  static const _cacheTtl = Duration(minutes: 30);
 
   @override
   String get name => 'Animex';
@@ -409,6 +716,8 @@ class AnimexStreamProvider implements AnimeStreamProvider {
   Future<String?> _slug(PlaybackRequest request) async {
     final id = request.numericMediaId;
     if (id == null) return null;
+    final cached = _slugCache[id];
+    if (cached != null && cached.isFresh(_cacheTtl)) return cached.value;
     final response = await _client.get(
       Uri.parse('$_baseUrl/anime/$id'),
       headers: const {
@@ -424,7 +733,11 @@ class AnimexStreamProvider implements AnimeStreamProvider {
       'headers=${_mapHeaderSummary(response.headers)}',
     );
     if (response.statusCode != 200) return null;
-    return RegExp(r'slug:"([^"]+)"').firstMatch(response.body)?.group(1);
+    final slug = RegExp(r'slug:"([^"]+)"').firstMatch(response.body)?.group(1);
+    if (slug != null && slug.isNotEmpty) {
+      _slugCache[id] = _AnimeCacheEntry(slug);
+    }
+    return slug;
   }
 
   @override
@@ -433,7 +746,7 @@ class AnimexStreamProvider implements AnimeStreamProvider {
       final slug = await _slug(request);
       if (slug == null) return const [];
       final data = await _servers(slug, request.episode ?? 1);
-      final providers = data?['subProviders'];
+      final providers = _animexProviderListFor(data, request);
       if (providers is! List) return const [];
       final result = <String>[];
       for (final raw in providers) {
@@ -467,8 +780,14 @@ class AnimexStreamProvider implements AnimeStreamProvider {
       if (slug == null) return null;
       final episode = request.episode ?? 1;
       final serverData = await _servers(slug, episode);
-      final providers = serverData?['subProviders'];
+      final type = _prefersDub(request.preferredAudioTrack) ? 'dub' : 'sub';
+      final providers = serverData == null
+          ? null
+          : type == 'dub'
+          ? serverData['dubProviders']
+          : serverData['subProviders'];
       if (providers is! List || providers.isEmpty) return null;
+      final availableAudios = _animexAvailableAudioLabels(serverData);
 
       String? providerId;
       final cleanServer = server
@@ -485,12 +804,12 @@ class AnimexStreamProvider implements AnimeStreamProvider {
           break;
         }
       }
-      providerId ??= _map(providers.first)?['id']?.toString();
+      providerId ??= _defaultAnimexProviderId(providers);
       if (providerId == null) return null;
 
       final response = await _client.get(
         Uri.parse(
-          '$_apiUrl/sources?id=$slug&epNum=$episode&type=sub&providerId=$providerId',
+          '$_apiUrl/sources?id=$slug&epNum=$episode&type=$type&providerId=$providerId',
         ),
         headers: const {
           'User-Agent': _animexUserAgent,
@@ -536,6 +855,65 @@ class AnimexStreamProvider implements AnimeStreamProvider {
       headers.putIfAbsent('User-Agent', () => _animexUserAgent);
       headers.putIfAbsent('Referer', () => '$_baseUrl/');
       headers.putIfAbsent('Origin', () => _baseUrl);
+
+      final subtitles = <SubtitleTrack>[];
+      final tracks = data?['tracks'];
+      if (tracks is List) {
+        for (final raw in tracks) {
+          final track = _map(raw);
+          final url = track?['url']?.toString() ?? '';
+          final kind = track?['kind']?.toString().toLowerCase() ?? '';
+          final lowerUrl = url.toLowerCase();
+          if (url.isEmpty || !url.startsWith('http')) continue;
+          if (kind == 'thumbnails' ||
+              lowerUrl.contains('.m3u8') ||
+              lowerUrl.contains('.m3u') ||
+              lowerUrl.contains('.ass') ||
+              lowerUrl.contains('.ssa')) {
+            continue;
+          }
+          subtitles.add(
+            SubtitleTrack(
+              url: url,
+              lang:
+                  track?['lang']?.toString() ??
+                  track?['label']?.toString() ??
+                  'Unknown',
+            ),
+          );
+        }
+      }
+
+      final skipTimes = <SkipTime>[];
+      final intro = _map(data?['intro']);
+      final outro = _map(data?['outro']);
+      if (intro?['start'] != null && intro?['end'] != null) {
+        skipTimes.add(
+          SkipTime(
+            startTime: Duration(
+              milliseconds: ((intro!['start'] as num).toInt() * 1000),
+            ),
+            endTime: Duration(
+              milliseconds: ((intro['end'] as num).toInt() * 1000),
+            ),
+            type: 'intro',
+          ),
+        );
+      }
+      if (outro?['start'] != null && outro?['end'] != null) {
+        skipTimes.add(
+          SkipTime(
+            startTime: Duration(
+              milliseconds: ((outro!['start'] as num).toInt() * 1000),
+            ),
+            endTime: Duration(
+              milliseconds: ((outro['end'] as num).toInt() * 1000),
+            ),
+            type: 'outro',
+          ),
+        );
+      }
+
       final resolvedUrl = selected.isM3U8
           ? await _hlsSanitizer.proxyPlaylist(selected.url, headers)
           : selected.url;
@@ -545,6 +923,7 @@ class AnimexStreamProvider implements AnimeStreamProvider {
                 url: resolvedUrl,
                 quality: selected.quality,
                 isM3U8: true,
+                isDub: type == 'dub',
               ),
               ...sources.where((source) => source.url != selected.url),
             ]
@@ -555,7 +934,11 @@ class AnimexStreamProvider implements AnimeStreamProvider {
         provider: 'Animex ($providerId)',
         headers: headers,
         sources: resolvedSources,
+        subtitles: subtitles,
+        skipTimes: skipTimes,
         isM3U8: selected.isM3U8,
+        availableAudios: availableAudios,
+        selectedAudio: type == 'dub' ? 'English (Dub)' : 'Japanese (Sub)',
       );
     } catch (_) {
       return null;
@@ -563,6 +946,9 @@ class AnimexStreamProvider implements AnimeStreamProvider {
   }
 
   Future<Map<String, dynamic>?> _servers(String slug, int episode) async {
+    final cacheKey = '$slug|$episode';
+    final cached = _serverCache[cacheKey];
+    if (cached != null && cached.isFresh(_cacheTtl)) return cached.value;
     final response = await _client.get(
       Uri.parse('$_apiUrl/servers?id=$slug&epNum=$episode'),
       headers: const {
@@ -578,11 +964,59 @@ class AnimexStreamProvider implements AnimeStreamProvider {
       'headers=${_mapHeaderSummary(response.headers)}',
     );
     if (response.statusCode != 200) return null;
-    return _map(jsonDecode(response.body));
+    final data = _map(jsonDecode(response.body));
+    if (data != null) {
+      _serverCache[cacheKey] = _AnimeCacheEntry(data);
+    }
+    return data;
   }
 }
 
-class _AnimexHlsSanitizer {
+class _AnimeCacheEntry<T> {
+  _AnimeCacheEntry(this.value) : createdAt = DateTime.now();
+
+  final T value;
+  final DateTime createdAt;
+
+  bool isFresh(Duration ttl) => DateTime.now().difference(createdAt) < ttl;
+}
+
+List<dynamic>? _animexProviderListFor(
+  Map<String, dynamic>? data,
+  PlaybackRequest request,
+) {
+  if (data == null) return null;
+  final type = _prefersDub(request.preferredAudioTrack) ? 'dub' : 'sub';
+  final providers = type == 'dub' ? data['dubProviders'] : data['subProviders'];
+  return providers is List ? providers : null;
+}
+
+List<String> _animexAvailableAudioLabels(Map<String, dynamic>? data) {
+  if (data == null) return const [];
+  final labels = <String>[];
+  if ((data['subProviders'] as List?)?.isNotEmpty == true) {
+    labels.add('Japanese (Sub)');
+  }
+  if ((data['dubProviders'] as List?)?.isNotEmpty == true) {
+    labels.add('English (Dub)');
+  }
+  return labels;
+}
+
+String? _defaultAnimexProviderId(List<dynamic> providers) {
+  for (final raw in providers) {
+    final provider = _map(raw);
+    if (provider?['default'] == true) {
+      return provider?['id']?.toString();
+    }
+  }
+  return _map(providers.first)?['id']?.toString();
+}
+
+class _AnimeHlsSanitizer {
+  _AnimeHlsSanitizer(this.providerName);
+
+  final String providerName;
   HttpServer? _server;
 
   Future<String> proxyPlaylist(
@@ -592,8 +1026,8 @@ class _AnimexHlsSanitizer {
     await _start();
     final uri = _proxyUri(playlistUrl, headers, _AnimexProxyKind.playlist);
     _animeLog(
-      'Animex',
-      'Resolved URL: $playlistUrl backend=media_kit via Animex HLS sanitizer',
+      providerName,
+      'Resolved URL: $playlistUrl backend=media_kit via anime HLS sanitizer',
     );
     return uri.toString();
   }
@@ -602,7 +1036,7 @@ class _AnimexHlsSanitizer {
     if (_server != null) return;
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     _server!.listen(_handleRequest);
-    _animeLog('Animex', 'HLS sanitizer started on port ${_server!.port}');
+    _animeLog(providerName, 'HLS sanitizer started on port ${_server!.port}');
   }
 
   Uri _proxyUri(
@@ -673,7 +1107,7 @@ class _AnimexHlsSanitizer {
         request.response.add(upstream.bodyBytes);
       }
     } catch (error) {
-      _animeLog('Animex', 'HLS sanitizer error: $error');
+      _animeLog(providerName, 'HLS sanitizer error: $error');
       request.response.statusCode = HttpStatus.internalServerError;
     } finally {
       await request.response.close();
@@ -728,7 +1162,7 @@ class _AnimexHlsSanitizer {
     final syncOffset = _mpegTsSyncOffset(bytes);
     if (syncOffset == null || syncOffset == 0) return bytes;
     _animeLog(
-      'Animex',
+      providerName,
       'Stripped fake PNG prelude from HLS segment at byte $syncOffset',
     );
     return Uint8List.sublistView(bytes, syncOffset);
@@ -787,6 +1221,134 @@ class _AnimexHlsSanitizer {
 }
 
 enum _AnimexProxyKind { playlist, segment, raw }
+
+enum _XonCandidateKind { movie, episode }
+
+class _XonCandidate {
+  const _XonCandidate({
+    required this.kind,
+    required this.title,
+    required this.showTitle,
+    required this.seasonName,
+    required this.seasonNumber,
+    required this.languageLabel,
+    required this.sources,
+  });
+
+  final _XonCandidateKind kind;
+  final String title;
+  final String showTitle;
+  final String seasonName;
+  final int? seasonNumber;
+  final String languageLabel;
+  final List<StreamSource> sources;
+
+  String get titleNormalized => _normalizeTitle(title);
+
+  factory _XonCandidate.fromJson(Map<String, dynamic> json) {
+    final language = _cleanXonLanguage(
+      json['language_name']?.toString() ?? json['languageName']?.toString(),
+    );
+    final seasonName =
+        json['season_name']?.toString() ?? json['seasonName']?.toString() ?? '';
+    return _XonCandidate(
+      kind: json.containsKey('season_id')
+          ? _XonCandidateKind.episode
+          : _XonCandidateKind.movie,
+      title: json['name']?.toString() ?? '',
+      showTitle:
+          json['show_name']?.toString() ?? json['showName']?.toString() ?? '',
+      seasonName: seasonName,
+      seasonNumber: _xonSeasonNumber(seasonName),
+      languageLabel: language.isEmpty ? 'Default' : language,
+      sources: _xonSources(json),
+    );
+  }
+}
+
+List<StreamSource> _xonSources(Map<String, dynamic> json) {
+  final sources = <StreamSource>[];
+  void add(String key, String quality) {
+    final rawUrl = json[key]?.toString().trim() ?? '';
+    if (rawUrl.isEmpty) return;
+    final url = _formatXonUrl(rawUrl);
+    if (url.isEmpty || sources.any((source) => source.url == url)) return;
+    sources.add(
+      StreamSource(url: url, quality: quality, isM3U8: _isXonM3u8(url)),
+    );
+  }
+
+  add('basic', '360p');
+  add('sd', '480p');
+  add('hd', '720p');
+  add('fhd', '1080p');
+  return sources;
+}
+
+Map<String, dynamic>? _decodeXonBody(Object? data) {
+  if (data is Map<String, dynamic>) return data;
+  if (data is Map) return Map<String, dynamic>.from(data);
+  if (data is String && data.trim().isNotEmpty) {
+    final decoded = jsonDecode(data);
+    return _map(decoded);
+  }
+  return null;
+}
+
+String _formatXonUrl(String url) {
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  return '${XonStreamProvider._archiveBaseUrl}$url';
+}
+
+String _cleanXonLanguage(String? value) {
+  final raw = value?.trim() ?? '';
+  if (raw.isEmpty) return '';
+  for (final language in const [
+    'Tamil',
+    'Telugu',
+    'Hindi',
+    'Malayalam',
+    'Kannada',
+    'English',
+    'Japanese',
+    'Korean',
+  ]) {
+    if (raw.toLowerCase().contains(language.toLowerCase())) return language;
+  }
+  final parenthesized = RegExp(r'\(([^)]+)\)').firstMatch(raw)?.group(1);
+  final candidate = (parenthesized ?? raw).trim();
+  return candidate;
+}
+
+String _normalizedLanguage(String value) {
+  final clean = _cleanXonLanguage(value);
+  return clean.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
+}
+
+String _normalizeTitle(String value) {
+  return value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .trim()
+      .replaceAll(RegExp(r'\s+'), ' ');
+}
+
+int? _intValue(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '');
+}
+
+int? _xonSeasonNumber(String value) {
+  final match = RegExp(
+    r'\bseason\s*0*(\d+)\b',
+    caseSensitive: false,
+  ).firstMatch(value);
+  final raw = match?.group(1);
+  return raw == null ? null : int.tryParse(raw);
+}
+
+bool _isXonM3u8(String url) => url.toLowerCase().contains('.m3u8');
 
 Map<String, dynamic>? _map(Object? value) {
   if (value is Map<String, dynamic>) return value;

@@ -43,6 +43,13 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
   bool _disposed = false;
   Stopwatch? _loadClock;
   bool _firstFrameLogged = false;
+  String? _pendingAudioTrackId;
+  String? _pendingSubtitleTrackId;
+  String? _pendingSubtitleExternalUrl;
+  Duration _subtitleDelay = Duration.zero;
+  SubtitleStyle _subtitleStyle = const SubtitleStyle();
+  bool _debandingEnabled = false;
+  bool _applyingPendingTracks = false;
 
   @override
   ValueListenable<PlaybackState> get state => _state;
@@ -101,6 +108,7 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
           audioTracks: tracks.audio.map(_audioOption).toList(),
           subtitleTracks: tracks.subtitle.map(_subtitleOption).toList(),
         );
+        unawaited(_applyPendingTrackSelections());
       }),
       _player.stream.track.listen((track) {
         _mpvLog(
@@ -136,6 +144,14 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
       }),
       _player.stream.error.listen((message) {
         _mpvLog('Lifecycle: Error $message');
+        if (_isRecoverableSubtitleError(message)) {
+          _mpvLog('Subtitle load failed without stopping playback: $message');
+          _pendingSubtitleTrackId = null;
+          _pendingSubtitleExternalUrl = null;
+          unawaited(_disableFailedSubtitle());
+          _update(selectedSubtitleTrackId: 'no', clearError: true);
+          return;
+        }
         _update(
           status: PlaybackStatus.error,
           isPlaying: false,
@@ -225,6 +241,8 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
         play: true,
       );
       PlaybackRuntimeDiagnostics.mpvLog('open() completed', clock: _loadClock);
+      await _applyNativePlaybackOptions();
+      await _applyPendingTrackSelections();
       unawaited(_dumpNativeState('after-open'));
     } catch (error) {
       _mpvLog('open() failed: $error');
@@ -282,10 +300,8 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
 
   @override
   Future<void> selectAudioTrack(String trackId) async {
-    final track = _player.state.tracks.audio.firstWhere(
-      (track) => track.id == trackId,
-      orElse: () => trackId == 'no' ? AudioTrack.no() : AudioTrack.auto(),
-    );
+    _pendingAudioTrackId = trackId;
+    final track = _findAudioTrack(trackId);
     final position = _player.state.position;
     final wasPlaying = _player.state.playing;
     await _player.setAudioTrack(track);
@@ -299,26 +315,31 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
     String trackId, {
     String? externalUrl,
   }) async {
+    _pendingSubtitleTrackId = trackId;
+    _pendingSubtitleExternalUrl = externalUrl;
     final SubtitleTrack track;
     if (externalUrl != null && externalUrl.trim().isNotEmpty) {
       track = SubtitleTrack.uri(externalUrl, title: trackId, language: trackId);
     } else {
-      track = _player.state.tracks.subtitle.firstWhere(
-        (track) => track.id == trackId,
-        orElse: () =>
-            trackId == 'no' ? SubtitleTrack.no() : SubtitleTrack.auto(),
-      );
+      track = _findSubtitleTrack(trackId);
     }
     final position = _player.state.position;
     final wasPlaying = _player.state.playing;
-    await _player.setSubtitleTrack(track);
+    final selected = await _setSubtitleTrackSafely(track);
+    if (!selected) return;
     if (position > Duration.zero) await _player.seek(position);
     if (wasPlaying) await _player.play();
-    _update(selectedSubtitleTrackId: trackId);
+    _update(
+      selectedSubtitleTrackId:
+          externalUrl != null && externalUrl.trim().isNotEmpty
+          ? trackId
+          : track.id,
+    );
   }
 
   @override
   Future<void> setSubtitleDelay(Duration delay) async {
+    _subtitleDelay = delay;
     final platform = _player.platform;
     if (platform is NativePlayer) {
       await platform.setProperty(
@@ -330,6 +351,7 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
 
   @override
   Future<void> setSubtitleStyle(SubtitleStyle style) async {
+    _subtitleStyle = style;
     final platform = _player.platform;
     if (platform is! NativePlayer) return;
     await platform.setProperty('sub-scale', style.scale.toStringAsFixed(2));
@@ -346,6 +368,7 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
 
   @override
   Future<void> setDebanding(bool enabled) async {
+    _debandingEnabled = enabled;
     final platform = _player.platform;
     if (platform is NativePlayer) {
       await platform.setProperty('deband', enabled ? 'yes' : 'no');
@@ -416,14 +439,202 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
     await platform.setProperty('volume-max', '200');
     await platform.setProperty('cache', 'yes');
     await platform.setProperty('demuxer-readahead-secs', '20');
+    await _applyNativePlaybackOptions();
     await _configureHttpOptions(platform, request);
     unawaited(_dumpNativeState('before-open'));
+  }
+
+  Future<void> _applyNativePlaybackOptions() async {
+    await setSubtitleDelay(_subtitleDelay);
+    await setSubtitleStyle(_subtitleStyle);
+    await setDebanding(_debandingEnabled);
+  }
+
+  Future<void> _applyPendingTrackSelections() async {
+    if (_applyingPendingTracks) return;
+    _applyingPendingTracks = true;
+    try {
+      final audio = _pendingAudioTrackId;
+      if (audio != null && audio.isNotEmpty) {
+        final current = _player.state.track.audio.id;
+        final next = _findAudioTrack(audio);
+        if (next.id != current) {
+          await _player.setAudioTrack(next);
+          _update(selectedAudioTrackId: next.id);
+        }
+      }
+
+      final subtitle = _pendingSubtitleTrackId;
+      if (subtitle != null && subtitle.isNotEmpty) {
+        final current = _player.state.track.subtitle.id;
+        final externalUrl = _pendingSubtitleExternalUrl;
+        final alreadySelected =
+            _state.value.selectedSubtitleTrackId == subtitle;
+        final next = externalUrl != null && externalUrl.trim().isNotEmpty
+            ? SubtitleTrack.uri(
+                externalUrl,
+                title: subtitle,
+                language: subtitle,
+              )
+            : _findSubtitleTrack(subtitle);
+        final shouldSelect =
+            externalUrl != null && externalUrl.trim().isNotEmpty
+            ? !alreadySelected
+            : next.id != current;
+        if (shouldSelect) {
+          final selected = await _setSubtitleTrackSafely(next);
+          if (!selected) return;
+          _update(
+            selectedSubtitleTrackId:
+                externalUrl != null && externalUrl.trim().isNotEmpty
+                ? subtitle
+                : next.id,
+          );
+        }
+      }
+    } finally {
+      _applyingPendingTracks = false;
+    }
+  }
+
+  Future<bool> _setSubtitleTrackSafely(SubtitleTrack track) async {
+    try {
+      await _player.setSubtitleTrack(track);
+      return true;
+    } catch (error) {
+      _mpvLog('Subtitle selection failed: $error');
+      _pendingSubtitleTrackId = null;
+      _pendingSubtitleExternalUrl = null;
+      await _disableFailedSubtitle();
+      _update(selectedSubtitleTrackId: 'no', clearError: true);
+      return false;
+    }
+  }
+
+  Future<void> _disableFailedSubtitle() async {
+    try {
+      await _player.setSubtitleTrack(SubtitleTrack.no());
+    } catch (_) {}
+  }
+
+  bool _isRecoverableSubtitleError(String message) {
+    final lower = message.toLowerCase();
+    final mentionsSubtitle =
+        lower.contains('external file') ||
+        lower.contains('subtitle') ||
+        lower.contains('.srt') ||
+        lower.contains('.vtt') ||
+        lower.contains('.ass') ||
+        lower.contains('.ssa');
+    final failedOpen =
+        lower.contains('can not open') ||
+        lower.contains('cannot open') ||
+        lower.contains('failed to open') ||
+        lower.contains('error loading');
+    return mentionsSubtitle && failedOpen;
+  }
+
+  AudioTrack _findAudioTrack(String trackId) {
+    final normalized = _normalizeTrackLookup(trackId);
+    if (normalized == 'no') return AudioTrack.no();
+    if (normalized == 'auto' || normalized.isEmpty) return AudioTrack.auto();
+
+    for (final track in _player.state.tracks.audio) {
+      if (_matchesTrack(track.id, track.title, track.language, normalized)) {
+        return track;
+      }
+    }
+    return AudioTrack.auto();
+  }
+
+  SubtitleTrack _findSubtitleTrack(String trackId) {
+    final normalized = _normalizeTrackLookup(trackId);
+    if (normalized == 'no' || normalized == 'off') return SubtitleTrack.no();
+    if (normalized == 'auto' || normalized.isEmpty) return SubtitleTrack.auto();
+
+    for (final track in _player.state.tracks.subtitle) {
+      if (_matchesTrack(track.id, track.title, track.language, normalized)) {
+        return track;
+      }
+    }
+    return SubtitleTrack.auto();
+  }
+
+  bool _matchesTrack(
+    String id,
+    String? title,
+    String? language,
+    String normalized,
+  ) {
+    final label = _trackLabel(id, title, language, fallbackPrefix: '');
+    return _normalizeTrackLookup(id) == normalized ||
+        _normalizeTrackLookup(title) == normalized ||
+        _normalizeTrackLookup(language) == normalized ||
+        _normalizeTrackLookup(label).contains(normalized) ||
+        _isLanguageMatch(title, normalized) ||
+        _isLanguageMatch(language, normalized) ||
+        _isLanguageMatch(label, normalized);
+  }
+
+  String _normalizeTrackLookup(String? value) {
+    return (value ?? '').trim().toLowerCase();
+  }
+
+  bool _isLanguageMatch(String? trackValue, String preferredValue) {
+    final track = _normalizeTrackLookup(trackValue);
+    final preferred = _normalizeTrackLookup(preferredValue);
+    if (track.isEmpty || preferred.isEmpty) return false;
+    if (track == preferred ||
+        track.contains(preferred) ||
+        preferred.contains(track)) {
+      return true;
+    }
+
+    const aliases = <String, List<String>>{
+      'english': ['en', 'eng'],
+      'japanese': ['ja', 'jpn'],
+      'hindi': ['hi', 'hin'],
+      'tamil': ['ta', 'tam'],
+      'telugu': ['te', 'tel'],
+      'spanish': ['es', 'spa'],
+      'french': ['fr', 'fre', 'fra'],
+      'korean': ['ko', 'kor'],
+      'german': ['de', 'ger', 'deu'],
+      'italian': ['it', 'ita'],
+      'arabic': ['ar', 'ara'],
+      'malayalam': ['ml', 'mal'],
+      'portuguese': ['pt', 'por'],
+      'chinese': ['zh', 'chi', 'zho'],
+    };
+
+    final preferredCodes = aliases[preferred] ?? [preferred];
+    final trackCodes = aliases[track] ?? [track];
+    if (preferredCodes.any((code) => track == code || track.contains(code))) {
+      return true;
+    }
+    if (trackCodes.any(
+      (code) => preferred == code || preferred.contains(code),
+    )) {
+      return true;
+    }
+
+    return preferredCodes.any((code) {
+      final escaped = RegExp.escape(code);
+      return RegExp(
+        '(^|[^a-z])$escaped([^a-z]|\$)',
+        caseSensitive: false,
+      ).hasMatch(track);
+    });
   }
 
   Future<void> _configureHttpOptions(
     NativePlayer platform,
     PlaybackRequest request,
   ) async {
+    await platform.setProperty('http-header-fields', '');
+    await platform.setProperty('referrer', '');
+    await platform.setProperty('user-agent', '');
+
     final headers = request.httpHeaders;
     if (headers.isEmpty) {
       _mpvLog('HTTP headers: none');

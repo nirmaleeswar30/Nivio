@@ -17,8 +17,8 @@ class _RightPlayerDrawer extends StatelessWidget {
     required this.debandingEnabled,
     required this.subtitleDelay,
     required this.subtitleScale,
-    required this.subtitleBackgroundEnabled,
-    required this.subtitleOutlineEnabled,
+    required this.subtitleBackground,
+    required this.subtitleOutline,
     required this.onClose,
     required this.onSourceSelected,
     required this.onQualitySelected,
@@ -60,8 +60,8 @@ class _RightPlayerDrawer extends StatelessWidget {
   final bool debandingEnabled;
   final Duration subtitleDelay;
   final double subtitleScale;
-  final bool subtitleBackgroundEnabled;
-  final bool subtitleOutlineEnabled;
+  final String subtitleBackground;
+  final String subtitleOutline;
   final VoidCallback onClose;
   final ValueChanged<PlaybackSourceOption> onSourceSelected;
   final ValueChanged<_QualityOption> onQualitySelected;
@@ -72,8 +72,8 @@ class _RightPlayerDrawer extends StatelessWidget {
   final VoidCallback onLoadRemoteSubtitle;
   final ValueChanged<Duration> onSubtitleDelayChanged;
   final ValueChanged<double> onSubtitleScaleChanged;
-  final ValueChanged<bool> onSubtitleBackgroundChanged;
-  final ValueChanged<bool> onSubtitleOutlineChanged;
+  final ValueChanged<String> onSubtitleBackgroundChanged;
+  final ValueChanged<String> onSubtitleOutlineChanged;
   final ValueChanged<BoxFit> onDisplayFitChanged;
   final ValueChanged<bool> onDebandingChanged;
   final ValueChanged<double> onVolumeChanged;
@@ -84,6 +84,19 @@ class _RightPlayerDrawer extends StatelessWidget {
   final bool autoplayNextEpisode;
   final bool inline;
   final ValueChanged<bool>? onAutoplayChanged;
+
+  static const _subtitleSizeOptions = <_SubtitleSizeOption>[
+    _SubtitleSizeOption('Small', 14.0 / 18.0),
+    _SubtitleSizeOption('Medium', 1.0),
+    _SubtitleSizeOption('Large', 24.0 / 18.0),
+    _SubtitleSizeOption('Extra Large', 30.0 / 18.0),
+  ];
+  static const _subtitleBackgroundOptions = [
+    'Transparent',
+    'Semi-Transparent',
+    'Solid',
+  ];
+  static const _subtitleOutlineOptions = ['None', 'Subtle Shadow', 'Outline'];
 
   static bool _sameAudioLabel(String a, String b) {
     return a.trim().toLowerCase() == b.trim().toLowerCase();
@@ -215,15 +228,25 @@ class _RightPlayerDrawer extends StatelessWidget {
   Widget _buildSettingsDrawer(BuildContext context) {
     final subtitleItems = <({String id, String label, String? externalUrl})>[
       for (final track in playback.subtitleTracks)
-        if (!track.isAuto && !track.isOff)
-          (id: track.id, label: track.label, externalUrl: null),
+        (id: track.id, label: track.label, externalUrl: null),
       for (final track in externalSubtitles)
         (
           id: 'external:${track.lang}:${track.url}',
-          label: track.lang,
+          label: _subtitleLabel(track),
           externalUrl: track.url,
         ),
     ];
+    final hasOffSubtitle = subtitleItems.any((track) => track.id == 'no');
+    final hasAutoSubtitle = subtitleItems.any((track) => track.id == 'auto');
+    final nativeAudioTracks = streamAudioOptions.isEmpty
+        ? playback.audioTracks
+        : playback.audioTracks
+              .where(
+                (track) => !streamAudioOptions.any(
+                  (audio) => _sameAudioLabel(audio, track.label),
+                ),
+              )
+              .toList(growable: false);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -278,118 +301,152 @@ class _RightPlayerDrawer extends StatelessWidget {
                 icon: Icons.audiotrack,
                 title: 'AUDIO',
                 children: [
-                  if (streamAudioOptions.isNotEmpty)
+                  if (streamAudioOptions.isNotEmpty) ...[
+                    const _DrawerSubheading('STREAM AUDIO'),
                     for (final audio in streamAudioOptions)
                       _DrawerOptionTile(
                         title: audio,
                         selected: _sameAudioLabel(audio, selectedStreamAudio),
                         onTap: () => onStreamAudioSelected(audio),
-                      )
-                  else if (playback.audioTracks.isEmpty)
-                    const _DrawerMutedText('No audio tracks found'),
-                  if (streamAudioOptions.isEmpty)
-                    for (final track in playback.audioTracks)
-                      _DrawerOptionTile(
-                        title: track.label,
-                        selected: track.id == playback.selectedAudioTrackId,
-                        onTap: () => onAudioSelected(track.id),
                       ),
+                  ],
+                  if (streamAudioOptions.isNotEmpty &&
+                      nativeAudioTracks.isNotEmpty)
+                    const _DrawerSubheading('NATIVE TRACKS'),
+                  if (nativeAudioTracks.isEmpty && streamAudioOptions.isEmpty)
+                    const _DrawerMutedText('No audio tracks found'),
+                  for (final track in nativeAudioTracks)
+                    _DrawerOptionTile(
+                      title: track.label,
+                      selected: track.id == playback.selectedAudioTrackId,
+                      onTap: () => onAudioSelected(track.id),
+                    ),
                 ],
               ),
               _DrawerSection(
                 icon: Icons.subtitles,
                 title: 'SUBTITLE SETTINGS',
                 children: [
-                  const _DrawerSubheading('TRACKS'),
-                  _DrawerOptionTile(
-                    title: 'Off',
-                    selected: playback.selectedSubtitleTrackId == 'no',
-                    onTap: () => onSubtitleSelected('no', null),
-                  ),
-                  _DrawerOptionTile(
-                    title: 'Load from Local File (.srt, .vtt)',
-                    leading: Icons.folder_open,
-                    selected: false,
-                    onTap: onLoadLocalSubtitle,
-                  ),
-                  _DrawerOptionTile(
-                    title: 'Load from URL (Internet)',
-                    leading: Icons.link,
-                    selected: false,
-                    onTap: onLoadRemoteSubtitle,
-                  ),
-                  if (subtitleItems.isEmpty)
-                    const _DrawerMutedText('No subtitle tracks found'),
-                  for (final track in subtitleItems)
-                    _DrawerOptionTile(
-                      title: track.label,
-                      selected: track.id == playback.selectedSubtitleTrackId,
-                      onTap: () =>
-                          onSubtitleSelected(track.id, track.externalUrl),
-                    ),
-                  const _DrawerSubheading('SIZE'),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Slider(
-                      min: 0.75,
-                      max: 1.5,
-                      divisions: 3,
-                      value: subtitleScale,
-                      activeColor: AppColors.primary,
-                      label: '${(subtitleScale * 100).round()}%',
-                      onChanged: onSubtitleScaleChanged,
-                    ),
-                  ),
-                  SwitchListTile(
-                    value: subtitleBackgroundEnabled,
-                    onChanged: onSubtitleBackgroundChanged,
-                    activeThumbColor: AppColors.primary,
-                    title: const Text(
-                      'Semi-Transparent Background',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  ),
-                  SwitchListTile(
-                    value: subtitleOutlineEnabled,
-                    onChanged: onSubtitleOutlineChanged,
-                    activeThumbColor: AppColors.primary,
-                    title: const Text(
-                      'Outline / Shadow',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  ),
-                  const _DrawerSubheading('SYNC'),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 6,
-                    ),
-                    child: Row(
-                      children: [
-                        IconButton(
-                          onPressed: () => onSubtitleDelayChanged(
-                            const Duration(milliseconds: -250),
-                          ),
-                          icon: const Icon(Icons.remove, color: Colors.white),
+                  _DrawerSubsection(
+                    title: 'TRACKS',
+                    initiallyExpanded: true,
+                    children: [
+                      if (!hasAutoSubtitle)
+                        _DrawerOptionTile(
+                          title: 'Auto',
+                          selected: playback.selectedSubtitleTrackId == 'auto',
+                          onTap: () => onSubtitleSelected('auto', null),
                         ),
-                        Expanded(
-                          child: Text(
-                            '${subtitleDelay.inMilliseconds > 0 ? '+' : ''}${subtitleDelay.inMilliseconds} ms',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
+                      if (!hasOffSubtitle)
+                        _DrawerOptionTile(
+                          title: 'Off',
+                          selected: playback.selectedSubtitleTrackId == 'no',
+                          onTap: () => onSubtitleSelected('no', null),
+                        ),
+                      _DrawerOptionTile(
+                        title: 'Load from Local File (.srt, .vtt)',
+                        leading: Icons.folder_open,
+                        selected: false,
+                        onTap: onLoadLocalSubtitle,
+                      ),
+                      _DrawerOptionTile(
+                        title: 'Load from URL (Internet)',
+                        leading: Icons.link,
+                        selected: false,
+                        onTap: onLoadRemoteSubtitle,
+                      ),
+                      if (subtitleItems.isEmpty)
+                        const _DrawerMutedText('No subtitle tracks found'),
+                      for (final track in subtitleItems)
+                        _DrawerOptionTile(
+                          title: track.label,
+                          selected:
+                              track.id == playback.selectedSubtitleTrackId,
+                          onTap: () =>
+                              onSubtitleSelected(track.id, track.externalUrl),
+                        ),
+                    ],
+                  ),
+                  _DrawerSubsection(
+                    title: 'SIZE',
+                    children: [
+                      for (final option in _subtitleSizeOptions)
+                        _DrawerOptionTile(
+                          title: option.label,
+                          selected: (subtitleScale - option.scale).abs() < 0.01,
+                          onTap: () => onSubtitleScaleChanged(option.scale),
+                        ),
+                    ],
+                  ),
+                  _DrawerSubsection(
+                    title: 'BACKGROUND',
+                    children: [
+                      for (final option in _subtitleBackgroundOptions)
+                        _DrawerOptionTile(
+                          title: option,
+                          selected: subtitleBackground == option,
+                          onTap: () => onSubtitleBackgroundChanged(option),
+                        ),
+                    ],
+                  ),
+                  _DrawerSubsection(
+                    title: 'TEXT STYLE',
+                    children: [
+                      for (final option in _subtitleOutlineOptions)
+                        _DrawerOptionTile(
+                          title: option,
+                          selected: subtitleOutline == option,
+                          onTap: () => onSubtitleOutlineChanged(option),
+                        ),
+                    ],
+                  ),
+                  _DrawerSubsection(
+                    title: 'SYNC',
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 6,
+                        ),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              onPressed: () => onSubtitleDelayChanged(
+                                const Duration(milliseconds: -250),
+                              ),
+                              icon: const Icon(
+                                Icons.remove,
+                                color: Colors.white,
+                              ),
                             ),
-                          ),
+                            Expanded(
+                              child: Text(
+                                '${subtitleDelay.inMilliseconds > 0 ? '+' : ''}${subtitleDelay.inMilliseconds} ms',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => onSubtitleDelayChanged(
+                                const Duration(milliseconds: 250),
+                              ),
+                              icon: const Icon(Icons.add, color: Colors.white),
+                            ),
+                          ],
                         ),
-                        IconButton(
-                          onPressed: () => onSubtitleDelayChanged(
-                            const Duration(milliseconds: 250),
-                          ),
-                          icon: const Icon(Icons.add, color: Colors.white),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(24, 0, 24, 10),
+                        child: Text(
+                          'Negative values show subtitles earlier, positive values show them later.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.white38, fontSize: 11),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -420,21 +477,44 @@ class _RightPlayerDrawer extends StatelessWidget {
   }
 
   String _providerGroup(String provider) {
+    if (provider.startsWith('Xon')) return 'Xon';
     if (provider.startsWith('Animetsu')) return 'Animetsu';
     if (provider.startsWith('Miruro')) return 'Miruro';
     if (provider.startsWith('Animex')) return 'Animex';
     return provider;
   }
 
+  String _subtitleLabel(stream_models.SubtitleTrack track) {
+    final language = track.lang.trim();
+    if (language.isNotEmpty) return language;
+    final uri = Uri.tryParse(track.url);
+    final lastSegment = uri?.pathSegments.isNotEmpty == true
+        ? uri!.pathSegments.last
+        : '';
+    return lastSegment.trim().isEmpty ? 'External subtitle' : lastSegment;
+  }
+
   String _serverTitle(PlaybackSourceOption option) {
     var server = option.server;
-    for (final prefix in const ['Animetsu (', 'Miruro (', 'Animex (']) {
+    for (final prefix in const [
+      'Xon (',
+      'Animetsu (',
+      'Miruro (',
+      'Animex (',
+    ]) {
       if (server.startsWith(prefix) && server.endsWith(')')) {
         server = server.substring(prefix.length, server.length - 1);
       }
     }
     return server.isEmpty ? option.provider : server;
   }
+}
+
+class _SubtitleSizeOption {
+  const _SubtitleSizeOption(this.label, this.scale);
+
+  final String label;
+  final double scale;
 }
 
 class _DrawerSection extends StatelessWidget {
@@ -466,6 +546,42 @@ class _DrawerSection extends StatelessWidget {
             fontSize: 12,
             fontWeight: FontWeight.w800,
             letterSpacing: 1.2,
+          ),
+        ),
+        children: children,
+      ),
+    );
+  }
+}
+
+class _DrawerSubsection extends StatelessWidget {
+  const _DrawerSubsection({
+    required this.title,
+    required this.children,
+    this.initiallyExpanded = false,
+  });
+
+  final String title;
+  final List<Widget> children;
+  final bool initiallyExpanded;
+
+  @override
+  Widget build(BuildContext context) {
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        initiallyExpanded: initiallyExpanded,
+        tilePadding: const EdgeInsets.symmetric(horizontal: 24),
+        childrenPadding: EdgeInsets.zero,
+        iconColor: AppColors.primary,
+        collapsedIconColor: Colors.white54,
+        title: Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.0,
           ),
         ),
         children: children,

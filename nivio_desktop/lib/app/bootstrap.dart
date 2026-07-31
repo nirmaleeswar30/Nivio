@@ -23,6 +23,7 @@ Future<void> bootstrap() async {
     'Flutter binding initialized',
     clock: startupClock,
   );
+  runApp(const NivioStartupSplashApp());
   await AppEnvironment.load();
   PlaybackRuntimeDiagnostics.lifecycleLog(
     'Environment loaded',

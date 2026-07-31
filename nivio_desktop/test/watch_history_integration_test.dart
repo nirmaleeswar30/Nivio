@@ -205,6 +205,41 @@ void main() {
     expect(saved?['episodes'], isEmpty);
   });
 
+  test(
+    'clear watch history removes saved progress and notifies listeners',
+    () async {
+      var notifications = 0;
+      void listener() => notifications++;
+      repository.addListener(listener);
+      addTearDown(() => repository.removeListener(listener));
+
+      await repository.saveWatchProgress(
+        progress(position: 120, duration: 1000),
+      );
+      expect(await repository.getWatchHistory(), isNotEmpty);
+
+      await repository.clearWatchHistory();
+
+      expect(await repository.getWatchHistory(), isEmpty);
+      expect(notifications, greaterThanOrEqualTo(2));
+    },
+  );
+
+  test('remove watch progress deletes the saved record', () async {
+    await repository.saveWatchProgress(progress(position: 120, duration: 1000));
+    expect(
+      await repository.getWatchProgress(mediaId: 42, mediaType: 'movie'),
+      isNotNull,
+    );
+
+    await repository.removeWatchProgress(mediaId: 42, mediaType: 'movie');
+
+    expect(
+      await repository.getWatchProgress(mediaId: 42, mediaType: 'movie'),
+      isNull,
+    );
+  });
+
   test('resumes three seconds early for the matching episode', () async {
     await repository.saveWatchProgress(
       progress(

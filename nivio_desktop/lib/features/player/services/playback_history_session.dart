@@ -42,9 +42,15 @@ class PlaybackHistorySession {
       providerIndex:
           request.providerIndex ??
           _integer(_existing?['preferredProviderIndex']),
-      preferredAudioTrack: _string(_existing?['preferredAudioTrack']),
-      preferredSubtitleTrack: _string(_existing?['preferredSubtitleTrack']),
-      preferredQuality: _string(_existing?['preferredResolution']),
+      preferredAudioTrack:
+          request.preferredAudioTrack ??
+          _string(_existing?['preferredAudioTrack']),
+      preferredSubtitleTrack:
+          request.preferredSubtitleTrack ??
+          _string(_existing?['preferredSubtitleTrack']),
+      preferredQuality:
+          request.preferredQuality ??
+          _string(_existing?['preferredResolution']),
     );
     return resume > Duration.zero
         ? preferredRequest.copyWith(startPosition: resume)

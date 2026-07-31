@@ -27,6 +27,8 @@ class WatchPartyServiceSupabase {
   final Map<String, WatchPartyParticipant> _participants = {};
   WatchPartyPlaybackState? _playbackState;
   WatchPartySession? _session;
+  final Set<String> _seenChatMessageIds = {};
+  final Set<String> _seenReactionIds = {};
 
   final StreamController<WatchPartySession?> _sessionController =
       StreamController<WatchPartySession?>.broadcast();
@@ -53,6 +55,14 @@ class WatchPartyServiceSupabase {
   Stream<String> get errorStream => _errorController.stream;
   Stream<WatchPartyChatMessage> get chatStream => _chatController.stream;
   Stream<WatchPartyReaction> get reactionStream => _reactionController.stream;
+
+  String get _displayName {
+    final normalized = userName.trim();
+    final fallbackId = userId.length <= 6 ? userId : userId.substring(0, 6);
+    return normalized.isEmpty
+        ? 'Guest ${fallbackId.toUpperCase()}'
+        : normalized;
+  }
 
   String generateSessionCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -243,13 +253,15 @@ class WatchPartyServiceSupabase {
     if (_channel == null || _sessionCode == null || text.trim().isEmpty) return;
 
     final message = WatchPartyChatMessage(
+      id: _eventId('chat'),
       senderId: userId,
-      senderName: userName,
+      senderName: _displayName,
       senderPhotoUrl: userPhotoUrl,
       text: text.trim(),
       timestamp: DateTime.now(),
     );
 
+    _emitChatMessage(message);
     await _channel!.sendBroadcastMessage(
       event: 'chat',
       payload: message.toJson(),
@@ -262,12 +274,14 @@ class WatchPartyServiceSupabase {
     }
 
     final reaction = WatchPartyReaction(
+      id: _eventId('reaction'),
       senderId: userId,
-      senderName: userName,
+      senderName: _displayName,
       emoji: emoji.trim(),
       timestamp: DateTime.now(),
     );
 
+    _emitReaction(reaction);
     await _channel!.sendBroadcastMessage(
       event: 'reaction',
       payload: reaction.toJson(),
@@ -334,7 +348,7 @@ class WatchPartyServiceSupabase {
         try {
           await _channel!.track({
             'user_id': userId,
-            'user_name': userName,
+            'user_name': _displayName,
             'photo_url': userPhotoUrl,
             'is_host': _isHost,
             'joined_at': DateTime.now().toIso8601String(),
@@ -458,7 +472,7 @@ class WatchPartyServiceSupabase {
           final map = Map<String, dynamic>.from(raw);
           final participant = WatchPartyParticipant(
             id: (map['id'] as String? ?? '').trim(),
-            name: (map['name'] as String? ?? 'Guest').trim(),
+            name: _safeDisplayName(map['name'] as String?),
             photoUrl: map['photoUrl'] as String?,
             isHost: map['isHost'] == true,
             joinedAt:
@@ -594,7 +608,7 @@ class WatchPartyServiceSupabase {
 
     return WatchPartyParticipant(
       id: id,
-      name: (payload['user_name'] as String? ?? 'Guest').trim(),
+      name: _safeDisplayName(payload['user_name'] as String?),
       photoUrl: payload['photo_url'] as String?,
       isHost: payload['is_host'] == true,
       joinedAt:
@@ -615,7 +629,7 @@ class WatchPartyServiceSupabase {
 
     final hostParticipant = participants.where((p) => p.isHost).firstOrNull;
     final hostId = hostParticipant?.id ?? (_isHost ? userId : '');
-    final hostName = hostParticipant?.name ?? (_isHost ? userName : 'Host');
+    final hostName = hostParticipant?.name ?? (_isHost ? _displayName : 'Host');
 
     _session = WatchPartySession(
       sessionCode: code,
@@ -635,7 +649,7 @@ class WatchPartyServiceSupabase {
 
   void _handleChatBroadcast(Map<String, dynamic> payload) {
     try {
-      _chatController.add(WatchPartyChatMessage.fromJson(payload));
+      _emitChatMessage(WatchPartyChatMessage.fromJson(payload));
     } catch (error) {
       if (kDebugMode) debugPrint('Failed to parse chat message: $error');
     }
@@ -643,10 +657,53 @@ class WatchPartyServiceSupabase {
 
   void _handleReactionBroadcast(Map<String, dynamic> payload) {
     try {
-      _reactionController.add(WatchPartyReaction.fromJson(payload));
+      _emitReaction(WatchPartyReaction.fromJson(payload));
     } catch (error) {
       if (kDebugMode) debugPrint('Failed to parse reaction: $error');
     }
+  }
+
+  String _eventId(String prefix) {
+    final random = Random.secure();
+    final suffix = List.generate(
+      8,
+      (_) => random.nextInt(16).toRadixString(16),
+    ).join();
+    return '$prefix-$userId-${DateTime.now().microsecondsSinceEpoch}-$suffix';
+  }
+
+  String _safeDisplayName(String? value) {
+    final normalized = (value ?? '').trim();
+    return normalized.isEmpty ? 'Guest' : normalized;
+  }
+
+  void _emitChatMessage(WatchPartyChatMessage message) {
+    final id = message.id?.trim();
+    if (id != null && id.isNotEmpty && !_seenChatMessageIds.add(id)) return;
+    _chatController.add(
+      WatchPartyChatMessage(
+        id: message.id,
+        senderId: message.senderId,
+        senderName: _safeDisplayName(message.senderName),
+        senderPhotoUrl: message.senderPhotoUrl,
+        text: message.text,
+        timestamp: message.timestamp,
+      ),
+    );
+  }
+
+  void _emitReaction(WatchPartyReaction reaction) {
+    final id = reaction.id?.trim();
+    if (id != null && id.isNotEmpty && !_seenReactionIds.add(id)) return;
+    _reactionController.add(
+      WatchPartyReaction(
+        id: reaction.id,
+        senderId: reaction.senderId,
+        senderName: _safeDisplayName(reaction.senderName),
+        emoji: reaction.emoji,
+        timestamp: reaction.timestamp,
+      ),
+    );
   }
 
   void dispose() {

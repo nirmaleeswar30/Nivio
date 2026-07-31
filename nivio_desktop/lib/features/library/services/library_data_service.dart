@@ -43,11 +43,10 @@ class LibraryWatchlistService {
     }
   }
 
-  Future<void> remove(int mediaId) {
-    if (!LibraryPersistence.isReady) return Future<void>.value();
-    return _box.delete(mediaId).then((_) {
-      unawaited(DesktopCloudSyncService.instance.removeWatchlistItem(mediaId));
-    });
+  Future<void> remove(int mediaId) async {
+    if (!LibraryPersistence.isReady) return;
+    await _box.delete(mediaId);
+    await DesktopCloudSyncService.instance.removeWatchlistItem(mediaId);
   }
 
   Future<void> add(LibraryWatchlistItem item) {

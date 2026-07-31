@@ -152,6 +152,7 @@ class _EmbeddedWebServerDrawer extends StatelessWidget {
   }
 
   String _providerGroup(String provider) {
+    if (provider.startsWith('Xon')) return 'Xon';
     if (provider.startsWith('Animetsu')) return 'Animetsu';
     if (provider.startsWith('Miruro')) return 'Miruro';
     if (provider.startsWith('Animex')) return 'Animex';
@@ -160,7 +161,12 @@ class _EmbeddedWebServerDrawer extends StatelessWidget {
 
   String _serverTitle(PlaybackSourceOption option) {
     var server = option.server;
-    for (final prefix in const ['Animetsu (', 'Miruro (', 'Animex (']) {
+    for (final prefix in const [
+      'Xon (',
+      'Animetsu (',
+      'Miruro (',
+      'Animex (',
+    ]) {
       if (server.startsWith(prefix) && server.endsWith(')')) {
         server = server.substring(prefix.length, server.length - 1);
       }
@@ -180,7 +186,6 @@ class _EmbeddedWebTopBar extends StatelessWidget {
     this.serverLabel,
     this.onRetry,
     this.onMiniPlayer,
-    this.onPictureInPicture,
   });
 
   final PlaybackState playback;
@@ -192,7 +197,6 @@ class _EmbeddedWebTopBar extends StatelessWidget {
   final VoidCallback onServer;
   final VoidCallback? onRetry;
   final VoidCallback? onMiniPlayer;
-  final VoidCallback? onPictureInPicture;
 
   @override
   Widget build(BuildContext context) {
@@ -272,12 +276,6 @@ class _EmbeddedWebTopBar extends StatelessWidget {
                       Icons.picture_in_picture_alt,
                       color: Colors.white,
                     ),
-                  ),
-                if (onPictureInPicture != null)
-                  IconButton(
-                    tooltip: 'Compact window',
-                    onPressed: onPictureInPicture,
-                    icon: const Icon(Icons.open_in_new, color: Colors.white),
                   ),
                 if (canSwitchServer)
                   IconButton(

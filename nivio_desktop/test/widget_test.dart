@@ -5,7 +5,7 @@ import 'package:nivio_desktop/app/app.dart';
 
 import 'package:nivio_desktop/features/search/models/search_media_item.dart';
 import 'package:nivio_desktop/core/interfaces/home_repository.dart';
-import 'package:nivio_desktop/features/search/controllers/mock_search_repository.dart';
+import 'fakes/media_test_fakes.dart';
 import 'test_helper.dart';
 
 class MockHomeRepository implements HomeRepository {
@@ -63,7 +63,7 @@ void main() {
     await tester.pumpWidget(
       NivioDesktopApp(
         requireAuthentication: false,
-        searchRepository: MockSearchRepository(),
+        searchRepository: FakeSearchRepository(),
         homeRepository: MockHomeRepository(),
       ),
     );

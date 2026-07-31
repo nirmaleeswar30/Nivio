@@ -211,6 +211,8 @@ class AdaptivePlaybackEngine implements PlaybackSurfaceEngine {
     required BuildContext context,
     required BoxFit fit,
     required PlaybackControlsBuilder controls,
+    Future<void> Function()? onEnterFullscreen,
+    Future<void> Function()? onExitFullscreen,
   }) {
     final active = _active;
     PlaybackRuntimeDiagnostics.engineLog(
@@ -223,6 +225,8 @@ class AdaptivePlaybackEngine implements PlaybackSurfaceEngine {
         context: context,
         fit: fit,
         controls: controls,
+        onEnterFullscreen: onEnterFullscreen,
+        onExitFullscreen: onExitFullscreen,
       );
     }
     if (active is MediaKitPlaybackEngine) {
@@ -231,6 +235,8 @@ class AdaptivePlaybackEngine implements PlaybackSurfaceEngine {
         fit: fit,
         fill: Colors.black,
         controls: controls,
+        onEnterFullscreen: onEnterFullscreen ?? defaultEnterNativeFullscreen,
+        onExitFullscreen: onExitFullscreen ?? defaultExitNativeFullscreen,
       );
     }
     return const ColoredBox(color: Colors.black);

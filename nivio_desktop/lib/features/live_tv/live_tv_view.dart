@@ -30,12 +30,14 @@ class _LiveTvViewState extends State<LiveTvView> {
 
   bool _isLoading = false;
   bool _hasLoadError = false;
+  bool _hasLoadedOnce = false;
   String? _error;
   List<IptvChannel> _channels = const [];
   List<IptvChannel> _filteredChannels = const [];
   Map<String, List<IptvChannel>> _groupedChannels = const {};
   String _searchQuery = '';
   String? _selectedGroup;
+  LiveTvSourceFilter _selectedSource = LiveTvSourceFilter.iptv;
 
   @override
   void initState() {
@@ -54,7 +56,9 @@ class _LiveTvViewState extends State<LiveTvView> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_isLoading && !_hasLoadError && _channels.isNotEmpty) {
+    if (!_isLoading &&
+        !_hasLoadError &&
+        (_channels.isNotEmpty || _hasLoadedOnce)) {
       return _buildLoadedView();
     }
 
@@ -111,6 +115,7 @@ class _LiveTvViewState extends State<LiveTvView> {
               child: _LiveTvToolbar(
                 searchController: _searchController,
                 selectedGroup: _selectedGroup ?? 'All',
+                selectedSource: _selectedSource,
                 groups: groups,
                 onSearchChanged: (value) {
                   _searchQuery = value;
@@ -122,6 +127,17 @@ class _LiveTvViewState extends State<LiveTvView> {
                     _filteredChannels = _filteredChannelsFor();
                   });
                   _resetListScroll();
+                },
+                onSourceSelected: (value) {
+                  if (value == _selectedSource) return;
+                  setState(() {
+                    _selectedSource = value;
+                    _selectedGroup = null;
+                    _channels = const [];
+                    _filteredChannels = const [];
+                    _groupedChannels = const {};
+                  });
+                  _loadSavedPlaylist();
                 },
                 onManagePlaylists: _showPlaylistManager,
               ),
@@ -159,10 +175,13 @@ class _LiveTvViewState extends State<LiveTvView> {
       _error = null;
     });
     try {
-      final channels = await _service.loadAllChannels().timeout(_loadTimeout);
+      final channels = await _service
+          .loadAllChannels(sourceFilter: _selectedSource)
+          .timeout(_loadTimeout);
       _log('loadSavedPlaylist service complete channels=${channels.length}');
       if (!mounted) return;
       _processChannels(channels);
+      _hasLoadedOnce = true;
       _log(
         'loadSavedPlaylist end state=${channels.isEmpty ? 'empty' : 'loaded'}',
       );
@@ -286,8 +305,10 @@ class _LiveTvViewState extends State<LiveTvView> {
             _filteredChannels = const [];
             _groupedChannels = const {};
             _selectedGroup = null;
+            _selectedSource = LiveTvSourceFilter.iptv;
             _searchQuery = '';
             _hasLoadError = false;
+            _hasLoadedOnce = false;
             _error = null;
             _searchController.clear();
           });
@@ -302,8 +323,10 @@ class _LiveTvViewState extends State<LiveTvView> {
       _filteredChannels = const [];
       _groupedChannels = const {};
       _selectedGroup = null;
+      _selectedSource = LiveTvSourceFilter.iptv;
       _searchQuery = '';
       _hasLoadError = false;
+      _hasLoadedOnce = false;
       _error = null;
       _isLoading = false;
       _searchController.clear();
@@ -399,7 +422,7 @@ class _EmptyPlaylistState extends StatelessWidget {
               controller: controller,
               style: AppTypography.body.copyWith(color: AppColors.textPrimary),
               decoration: _referenceInputDecoration(
-                hintText: 'https://example.com/playlist.m3u',
+                hintText: 'Paste playlist URL',
                 prefixIcon: LucideIcons.link,
               ),
               onSubmitted: (_) => onLoad(),
@@ -490,62 +513,132 @@ class _LiveTvToolbar extends StatelessWidget {
   const _LiveTvToolbar({
     required this.searchController,
     required this.selectedGroup,
+    required this.selectedSource,
     required this.groups,
     required this.onSearchChanged,
     required this.onGroupSelected,
+    required this.onSourceSelected,
     required this.onManagePlaylists,
   });
 
   final TextEditingController searchController;
   final String selectedGroup;
+  final LiveTvSourceFilter selectedSource;
   final List<String> groups;
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onGroupSelected;
+  final ValueChanged<LiveTvSourceFilter> onSourceSelected;
   final VoidCallback onManagePlaylists;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          flex: 2,
-          child: TextField(
-            controller: searchController,
-            style: AppTypography.body.copyWith(color: AppColors.textPrimary),
-            decoration: _referenceInputDecoration(
-              hintText: 'Search channels...',
-              prefixIcon: LucideIcons.search,
+        Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: TextField(
+                controller: searchController,
+                style: AppTypography.body.copyWith(
+                  color: AppColors.textPrimary,
+                ),
+                decoration: _referenceInputDecoration(
+                  hintText: 'Search channels...',
+                  prefixIcon: LucideIcons.search,
+                ),
+                onChanged: onSearchChanged,
+              ),
             ),
-            onChanged: onSearchChanged,
-          ),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: _CategoryButton(
-            selectedGroup: selectedGroup,
-            groups: groups,
-            onGroupSelected: onGroupSelected,
-          ),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        DecoratedBox(
-          decoration: BoxDecoration(
-            color: AppColors.textPrimary.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(AppRadius.medium),
-          ),
-          child: IconButton(
-            tooltip: 'Manage Playlists',
-            onPressed: onManagePlaylists,
-            icon: const Icon(
-              LucideIcons.list,
-              color: AppColors.textSecondary,
-              size: 20,
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: _CategoryButton(
+                selectedGroup: selectedGroup,
+                groups: groups,
+                onGroupSelected: onGroupSelected,
+              ),
             ),
-          ),
+            const SizedBox(width: AppSpacing.sm),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: AppColors.textPrimary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(AppRadius.medium),
+              ),
+              child: IconButton(
+                tooltip: 'Manage Playlists',
+                onPressed: onManagePlaylists,
+                icon: const Icon(
+                  LucideIcons.list,
+                  color: AppColors.textSecondary,
+                  size: 20,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        _LiveTvSourceSelector(
+          selectedSource: selectedSource,
+          onSourceSelected: onSourceSelected,
         ),
       ],
     );
   }
+}
+
+class _LiveTvSourceSelector extends StatelessWidget {
+  const _LiveTvSourceSelector({
+    required this.selectedSource,
+    required this.onSourceSelected,
+  });
+
+  final LiveTvSourceFilter selectedSource;
+  final ValueChanged<LiveTvSourceFilter> onSourceSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: LiveTvSourceFilter.values
+            .map((source) {
+              final selected = source == selectedSource;
+              return Padding(
+                padding: const EdgeInsets.only(right: AppSpacing.sm),
+                child: ChoiceChip(
+                  selected: selected,
+                  label: Text(_sourceLabel(source)),
+                  onSelected: (_) => onSourceSelected(source),
+                  labelStyle: AppTypography.caption.copyWith(
+                    color: selected ? Colors.black : AppColors.textSecondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  selectedColor: AppColors.primary,
+                  backgroundColor: AppColors.textPrimary.withValues(
+                    alpha: 0.08,
+                  ),
+                  side: BorderSide(
+                    color: selected
+                        ? AppColors.primary
+                        : AppColors.textPrimary.withValues(alpha: 0.1),
+                  ),
+                ),
+              );
+            })
+            .toList(growable: false),
+      ),
+    );
+  }
+}
+
+String _sourceLabel(LiveTvSourceFilter source) {
+  return switch (source) {
+    LiveTvSourceFilter.all => 'All',
+    LiveTvSourceFilter.iptv => 'IPTV',
+    LiveTvSourceFilter.tamilUltra => 'TamilUltra / Tamil',
+    LiveTvSourceFilter.sportzx => 'SportzX / Sports',
+  };
 }
 
 class _CategoryButton extends StatelessWidget {
@@ -688,68 +781,71 @@ class _ChannelList extends StatelessWidget {
         itemBuilder: (context, index) {
           final channel = channels[index];
           return RepaintBoundary(
-            child: Container(
-              margin: const EdgeInsets.only(
+            child: Padding(
+              padding: const EdgeInsets.only(
                 left: AppSpacing.xxl,
                 right: AppSpacing.xxl,
                 bottom: AppSpacing.md,
               ),
-              decoration: BoxDecoration(
+              child: Material(
                 color: AppColors.textPrimary.withValues(alpha: 0.05),
-                border: Border.all(
-                  color: AppColors.textPrimary.withValues(alpha: 0.1),
-                ),
-                borderRadius: BorderRadius.circular(AppRadius.large),
-              ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.lg,
-                  vertical: AppSpacing.sm,
-                ),
-                leading: _ChannelLogo(channel: channel),
-                title: Text(
-                  channel.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.body.copyWith(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w500,
+                shape: RoundedRectangleBorder(
+                  side: BorderSide(
+                    color: AppColors.textPrimary.withValues(alpha: 0.1),
                   ),
+                  borderRadius: BorderRadius.circular(AppRadius.large),
                 ),
-                subtitle: Text(
-                  channel.group,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.caption.copyWith(
-                    color: AppColors.textPrimary.withValues(alpha: 0.5),
+                clipBehavior: Clip.antiAlias,
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.sm,
                   ),
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: channel.isFavorite
-                          ? 'Remove favorite'
-                          : 'Add favorite',
-                      onPressed: () => onToggleFavorite(channel),
-                      icon: Icon(
-                        channel.isFavorite
-                            ? Icons.favorite
-                            : Icons.favorite_border,
-                        color: channel.isFavorite
-                            ? AppColors.danger
-                            : AppColors.textSecondary.withValues(alpha: 0.65),
+                  leading: _ChannelLogo(channel: channel),
+                  title: Text(
+                    channel.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.body.copyWith(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  subtitle: Text(
+                    channel.group,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.textPrimary.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: channel.isFavorite
+                            ? 'Remove favorite'
+                            : 'Add favorite',
+                        onPressed: () => onToggleFavorite(channel),
+                        icon: Icon(
+                          channel.isFavorite
+                              ? Icons.favorite
+                              : Icons.favorite_border,
+                          color: channel.isFavorite
+                              ? AppColors.danger
+                              : AppColors.textSecondary.withValues(alpha: 0.65),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Icon(
-                      LucideIcons.circlePlay,
-                      color: AppColors.primary,
-                      size: 24,
-                    ),
-                  ],
+                      const SizedBox(width: AppSpacing.sm),
+                      Icon(
+                        LucideIcons.circlePlay,
+                        color: AppColors.primary,
+                        size: 24,
+                      ),
+                    ],
+                  ),
+                  onTap: () => onPlay(channel),
                 ),
-                onTap: () => onPlay(channel),
               ),
             ),
           );

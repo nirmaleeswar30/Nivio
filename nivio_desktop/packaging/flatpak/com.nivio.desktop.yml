@@ -1,0 +1,36 @@
+app-id: com.nivio.desktop
+runtime: org.gnome.Platform
+runtime-version: "48"
+sdk: org.gnome.Sdk
+command: nivio-desktop
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --device=dri
+  - --filesystem=xdg-download
+modules:
+  - name: nivio-desktop
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/opt/nivio-desktop /app/bin /app/share/applications /app/share/icons
+      - cp -a bundle/. /app/opt/nivio-desktop/
+      - install -Dm755 nivio-desktop-flatpak /app/bin/nivio-desktop
+      - install -Dm644 com.nivio.desktop.desktop /app/share/applications/com.nivio.desktop.desktop
+      - cp -a icons/hicolor /app/share/icons/
+    sources:
+      - type: dir
+        path: ../../build/linux/x64/release/bundle
+        dest: bundle
+      - type: file
+        path: ../linux/com.nivio.desktop.desktop
+      - type: dir
+        path: ../../linux/runner/resources/icons
+        dest: icons
+      - type: script
+        dest-filename: nivio-desktop-flatpak
+        commands:
+          - export LD_LIBRARY_PATH=/app/opt/nivio-desktop/lib:${LD_LIBRARY_PATH:-}
+          - exec /app/opt/nivio-desktop/nivio_desktop "$@"

@@ -952,13 +952,30 @@ class _DetailViewState extends State<DetailView> {
   void _playMedia({int? season, int? episode}) {
     final media = _media;
     if (media == null) return;
+    final totalEpisodes = _selectedSeasonEpisodeCount(media, season);
     widget.onPlay(
       PlaybackRequestFactory.fromDetail(
         media,
         season: season,
         episode: episode,
+        totalEpisodes: totalEpisodes == 0 ? null : totalEpisodes,
       ),
     );
+  }
+
+  int? _selectedSeasonEpisodeCount(DetailMedia media, int? season) {
+    if (!media.isSeries) return null;
+    final selected = season ?? _selectedSeason;
+    if (selected == _selectedSeason && widget.controller.episodes.isNotEmpty) {
+      return widget.controller.episodes.length;
+    }
+    for (final item in media.seasons) {
+      if (item.number != selected) continue;
+      if (item.episodes.isNotEmpty) return item.episodes.length;
+      final count = item.episodeCount;
+      return count != null && count > 0 ? count : null;
+    }
+    return null;
   }
 
   void _selectSeason(int season) {
@@ -1827,14 +1844,18 @@ class _EpisodePlaybackSectionState extends State<_EpisodePlaybackSection> {
                 child: Center(
                   child: Column(
                     children: [
-                      const Icon(
-                        Icons.search_off,
+                      Icon(
+                        _query.isEmpty
+                            ? Icons.event_busy_outlined
+                            : Icons.search_off,
                         color: AppColors.textMuted,
                         size: 48,
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'No episodes match "$_query"',
+                        _query.isEmpty
+                            ? 'Season ${widget.selectedSeason} episodes are not available yet.'
+                            : 'No episodes match "$_query"',
                         style: AppTypography.body.copyWith(
                           color: AppColors.textMuted,
                         ),
@@ -1863,22 +1884,18 @@ class _EpisodePlaybackSectionState extends State<_EpisodePlaybackSection> {
     List<DetailEpisode> episodes,
   ) {
     if (widget.controller.isLoadingEpisodes) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
-        child: Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
+      return _buildModalShell(
+        child: const Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
+            child: CircularProgressIndicator(color: AppColors.primary),
+          ),
         ),
       );
     }
 
     if (widget.controller.episodesError != null) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.huge,
-          AppSpacing.xl,
-          AppSpacing.huge,
-          AppSpacing.xxxl,
-        ),
+      return _buildModalShell(
         child: Text(
           'Episodes unavailable: ${widget.controller.episodesError}',
           style: AppTypography.caption.copyWith(color: AppColors.danger),
@@ -1887,16 +1904,22 @@ class _EpisodePlaybackSectionState extends State<_EpisodePlaybackSection> {
     }
 
     if (episodes.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.huge,
-          AppSpacing.xl,
-          AppSpacing.huge,
-          AppSpacing.xxxl,
-        ),
-        child: Text(
-          'Episodes unavailable.',
-          style: AppTypography.body.copyWith(color: AppColors.textMuted),
+      return _buildModalShell(
+        child: Row(
+          children: [
+            const Icon(
+              Icons.event_busy_outlined,
+              color: AppColors.textMuted,
+              size: 22,
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(
+                'Season ${widget.selectedSeason} episodes are not available yet.',
+                style: AppTypography.body.copyWith(color: AppColors.textMuted),
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -1915,48 +1938,8 @@ class _EpisodePlaybackSectionState extends State<_EpisodePlaybackSection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (widget.media.seasons.length > 1) ...[
-            SizedBox(
-              height: 34,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: widget.media.seasons.length,
-                separatorBuilder: (_, _) =>
-                    const SizedBox(width: AppSpacing.xxxl),
-                itemBuilder: (context, index) {
-                  final season = widget.media.seasons[index];
-                  final selected = season.number == widget.selectedSeason;
-                  return InkWell(
-                    onTap: () {
-                      setState(() {
-                        _expanded = false;
-                        _query = '';
-                      });
-                      _searchController.clear();
-                      widget.onSeasonSelected(season.number);
-                    },
-                    borderRadius: BorderRadius.circular(4),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.xs,
-                        vertical: AppSpacing.xs,
-                      ),
-                      child: Text(
-                        season.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.body.copyWith(
-                          color: selected ? Colors.white : AppColors.textMuted,
-                          fontWeight: selected
-                              ? FontWeight.w900
-                              : FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
+          if (_hasModalSeasonTabs) ...[
+            _buildModalSeasonTabs(),
             const SizedBox(height: AppSpacing.xl),
           ],
           Stack(
@@ -2024,6 +2007,70 @@ class _EpisodePlaybackSectionState extends State<_EpisodePlaybackSection> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  bool get _hasModalSeasonTabs => widget.media.seasons.length > 1;
+
+  Widget _buildModalShell({required Widget child}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.huge,
+        AppSpacing.xl,
+        AppSpacing.huge,
+        AppSpacing.xxxl,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_hasModalSeasonTabs) ...[
+            _buildModalSeasonTabs(),
+            const SizedBox(height: AppSpacing.xl),
+          ],
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModalSeasonTabs() {
+    return SizedBox(
+      height: 34,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: widget.media.seasons.length,
+        separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.xxxl),
+        itemBuilder: (context, index) {
+          final season = widget.media.seasons[index];
+          final selected = season.number == widget.selectedSeason;
+          return InkWell(
+            onTap: () {
+              setState(() {
+                _expanded = false;
+                _query = '';
+              });
+              _searchController.clear();
+              widget.onSeasonSelected(season.number);
+            },
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.xs,
+                vertical: AppSpacing.xs,
+              ),
+              child: Text(
+                season.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.body.copyWith(
+                  color: selected ? Colors.white : AppColors.textMuted,
+                  fontWeight: selected ? FontWeight.w900 : FontWeight.w800,
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -2304,7 +2351,11 @@ class _DetailBadgesSection extends StatelessWidget {
   String _episodeCountLabel(DetailMedia media) {
     final total = media.seasons.fold<int>(
       0,
-      (sum, season) => sum + season.episodes.length,
+      (sum, season) =>
+          sum +
+          (season.episodes.isNotEmpty
+              ? season.episodes.length
+              : season.episodeCount ?? 0),
     );
     if (total > 0) return '$total Episodes';
     final seasonCount = media.seasons
