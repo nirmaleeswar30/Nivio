@@ -16,46 +16,44 @@ import 'package:pointycastle/export.dart';
 
 void main() {
   group('NetMirror desktop parity', () {
-    test('returns movie dub variants and resolves the requested dub', () async {
+    test('resolves NetMirror Android API proxy stream for movies', () async {
       final requestedUrls = <Uri>[];
       final dio = Dio()
         ..httpClientAdapter = _JsonAdapter((options) {
           requestedUrls.add(options.uri);
-          if (options.uri.path == '/api/variants-tmdb/movie/781732') {
+          if (options.uri.path == '/api/variants-tmdb/movie/1367220') {
             return {
               'ok': true,
               'defaultSubjectId': 'default-subject',
-              'defaultDetailPath': 'animal-default',
+              'defaultDetailPath': 'karuppu-default',
               'variants': [
                 {
                   'dubSubjectId': 'default-subject',
                   'language': 'Default',
-                  'detailPath': 'animal-default',
-                },
-                {
-                  'dubSubjectId': 'hindi-subject',
-                  'language': 'Hindi dub',
-                  'detailPath': 'animal-hindi',
-                },
-                {
-                  'dubSubjectId': 'telugu-subject',
-                  'language': 'Telugu dub',
-                  'detailPath': 'animal-telugu',
+                  'detailPath': 'karuppu-default',
                 },
               ],
             };
           }
-          if (options.uri.path == '/api/embed-tmdb/781732') {
+          if (options.uri.path == '/api/embed-tmdb/1367220') {
             return {
               'ok': true,
+              'tmdbId': 1367220,
+              'title': 'Karuppu',
+              'mode': 'proxy',
+              'mp4': 'https://bcdnw.hakunaymatata.com/karuppu-1080.mp4',
+              'resolution': 1080,
+              'direct': false,
+              'exp': 1785675681,
+              'sig': 'signed',
               'streams': [
                 {
-                  'url': 'https://cdn.example/animal-hindi.m3u8',
-                  'resolution': '1080',
+                  'url': 'https://bcdnw.hakunaymatata.com/karuppu-1080.mp4',
+                  'resolution': 1080,
                 },
               ],
               'captions': [
-                {'url': '/subs/en.vtt', 'name': 'English'},
+                {'url': 'https://subs.example/karuppu.vtt', 'name': 'English'},
               ],
             };
           }
@@ -64,26 +62,175 @@ void main() {
 
       final result = await NetMirrorStreamProvider(dio: dio).resolve(
         const PlaybackRequest(
-          mediaId: 'movie:781732',
-          title: 'Animal',
+          mediaId: 'movie:1367220',
+          title: 'Karuppu',
           mediaType: PlaybackMediaType.movie,
-          preferredAudioTrack: 'Hindi',
         ),
       );
 
       expect(result, isNotNull);
-      expect(result!.availableAudios, ['Default', 'Hindi dub', 'Telugu dub']);
-      expect(result.selectedAudio, 'Hindi dub');
-      expect(result.url, 'https://cdn.example/animal-hindi.m3u8');
-      expect(result.subtitles.single.url, 'https://net27.cc/subs/en.vtt');
-
-      final embed = requestedUrls.singleWhere(
-        (uri) => uri.path == '/api/embed-tmdb/781732',
+      expect(result!.url, 'https://bcdnw.hakunaymatata.com/karuppu-1080.mp4');
+      expect(result.isM3U8, isFalse);
+      expect(result.headers['Referer'], 'https://net27.cc/');
+      expect(result.headers['Origin'], 'https://net27.cc');
+      expect(result.headers['User-Agent'], contains('Android 13'));
+      expect(result.sources.single.url, result.url);
+      expect(result.subtitles.single.url, 'https://subs.example/karuppu.vtt');
+      expect(
+        requestedUrls.map((uri) => uri.path),
+        contains('/api/embed-tmdb/1367220'),
       );
-      expect(embed.queryParameters['dub'], 'hindi-subject');
-      expect(embed.queryParameters['dubdp'], 'animal-hindi');
+      final embed = requestedUrls.singleWhere(
+        (uri) => uri.path == '/api/embed-tmdb/1367220',
+      );
+      expect(embed.queryParameters['type'], 'movie');
+      expect(embed.queryParameters['se'], '0');
+      expect(embed.queryParameters['ep'], '0');
       expect(embed.queryParameters['sid'], 'default-subject');
-      expect(embed.queryParameters['dp'], 'animal-default');
+      expect(embed.queryParameters['dp'], 'karuppu-default');
+    });
+
+    test('returns null when NetMirror Android API reports no source', () async {
+      final dio = Dio()
+        ..httpClientAdapter = _JsonAdapter((options) {
+          if (options.uri.path == '/api/variants-tmdb/movie/1367220') {
+            return {
+              'ok': true,
+              'defaultSubjectId': 'default-subject',
+              'defaultDetailPath': 'karuppu-default',
+              'variants': [
+                {
+                  'dubSubjectId': 'default-subject',
+                  'language': 'Default',
+                  'detailPath': 'karuppu-default',
+                },
+              ],
+            };
+          }
+          if (options.uri.path == '/api/embed-tmdb/1367220') {
+            return {
+              'ok': true,
+              'tmdbId': 1367220,
+              'mode': 'none',
+              'noSource': true,
+              'error': 'This title is still being added to NetMirror.',
+            };
+          }
+          fail('Unexpected NetMirror request: ${options.uri}');
+        });
+
+      final result = await NetMirrorStreamProvider(dio: dio).resolve(
+        const PlaybackRequest(
+          mediaId: 'movie:1367220',
+          title: 'Karuppu',
+          mediaType: PlaybackMediaType.movie,
+        ),
+      );
+
+      expect(result, isNull);
+    });
+
+    test('passes browser headers for direct NetMirror media', () async {
+      final dio = Dio()
+        ..httpClientAdapter = _JsonAdapter((options) {
+          if (options.uri.path == '/api/variants-tmdb/movie/1367220') {
+            return {
+              'ok': true,
+              'defaultSubjectId': 'default-subject',
+              'defaultDetailPath': 'karuppu-default',
+              'variants': [
+                {
+                  'dubSubjectId': 'default-subject',
+                  'language': 'Default',
+                  'detailPath': 'karuppu-default',
+                },
+              ],
+            };
+          }
+          if (options.uri.path == '/api/embed-tmdb/1367220') {
+            return {
+              'ok': true,
+              'mode': 'proxy',
+              'mp4': 'https://net27-r2-cache.example/v1/movie/480.mp4',
+              'resolution': 480,
+              'direct': true,
+              'streams': [
+                {
+                  'url': 'https://watch21.com/karuppu-480.mp4',
+                  'resolution': 480,
+                },
+              ],
+            };
+          }
+          fail('Unexpected NetMirror request: ${options.uri}');
+        });
+
+      final result = await NetMirrorStreamProvider(dio: dio).resolve(
+        const PlaybackRequest(
+          mediaId: 'movie:1367220',
+          title: 'Karuppu',
+          mediaType: PlaybackMediaType.movie,
+        ),
+      );
+
+      expect(result, isNotNull);
+      expect(result!.url, 'https://net27-r2-cache.example/v1/movie/480.mp4');
+      expect(result.headers['Referer'], 'https://net27.cc');
+      expect(result.headers['User-Agent'], contains('Mozilla/5.0'));
+      expect(result.sources.single.url, result.url);
+    });
+
+    test('passes Android headers for raw CDN URLs marked direct', () async {
+      final dio = Dio()
+        ..httpClientAdapter = _JsonAdapter((options) {
+          if (options.uri.path == '/api/variants-tmdb/movie/1367220') {
+            return {
+              'ok': true,
+              'defaultSubjectId': 'default-subject',
+              'defaultDetailPath': 'karuppu-default',
+              'variants': [
+                {
+                  'dubSubjectId': 'default-subject',
+                  'language': 'Default',
+                  'detailPath': 'karuppu-default',
+                },
+              ],
+            };
+          }
+          if (options.uri.path == '/api/embed-tmdb/1367220') {
+            return {
+              'ok': true,
+              'mode': 'proxy',
+              'mp4': 'https://bcdnw.hakunaymatata.com/bt/blast.mp4',
+              'resolution': 480,
+              'direct': true,
+              'exp': 1785675681,
+              'sig': 'signed',
+              'streams': [
+                {
+                  'url': 'https://bcdnw.hakunaymatata.com/bt/blast.mp4',
+                  'resolution': 480,
+                },
+              ],
+            };
+          }
+          fail('Unexpected NetMirror request: ${options.uri}');
+        });
+
+      final result = await NetMirrorStreamProvider(dio: dio).resolve(
+        const PlaybackRequest(
+          mediaId: 'movie:1367220',
+          title: 'Blast',
+          mediaType: PlaybackMediaType.movie,
+        ),
+      );
+
+      expect(result, isNotNull);
+      expect(result!.url, 'https://bcdnw.hakunaymatata.com/bt/blast.mp4');
+      expect(result.headers['Referer'], 'https://net27.cc/');
+      expect(result.headers['Origin'], 'https://net27.cc');
+      expect(result.headers['User-Agent'], contains('Android 13'));
+      expect(result.sources.single.url, result.url);
     });
   });
 
@@ -322,6 +469,8 @@ void main() {
         expect(result!.provider, 'MovieBox');
         expect(result.url, 'https://cdn.example/animal-1080.mp4');
         expect(result.quality, '1080p');
+        expect(result.headers['Referer'], 'https://api3.aoneroom.com');
+        expect(result.headers['User-Agent'], contains('com.community.mbox.in'));
         expect(result.selectedAudio, 'Tamil');
         expect(result.availableAudios, ['Hindi', 'Tamil']);
         expect(result.availableQualities, ['1080p', '480p']);
@@ -418,6 +567,98 @@ void main() {
         expect(result, isNotNull);
         expect(result!.selectedAudio, 'Hindi');
         expect(result.availableAudios, ['Hindi']);
+      },
+    );
+
+    test(
+      'falls back to play-info streams when details have no detectors',
+      () async {
+        final requestedUrls = <Uri>[];
+        final dio = Dio()
+          ..httpClientAdapter = _MovieBoxAdapter((options) {
+            requestedUrls.add(options.uri);
+            if (options.uri.path == '/wefeed-mobile-bff/tab/ranking-list') {
+              return _MovieBoxResponse(
+                body: {'code': 200, 'data': {}},
+                headers: {
+                  'x-user': ['{"token":"moviebox-token"}'],
+                },
+              );
+            }
+            if (options.uri.path ==
+                '/wefeed-mobile-bff/subject-api/search/v2') {
+              return _MovieBoxResponse(
+                body: {
+                  'code': 200,
+                  'data': {
+                    'subjects': [
+                      {
+                        'subjectId': 'fallback-movie',
+                        'title': 'Fallback Movie',
+                        'language': 'English',
+                        'releaseDate': '2026-01-01',
+                        'subjectType': 1,
+                      },
+                    ],
+                  },
+                },
+              );
+            }
+            if (options.uri.path == '/wefeed-mobile-bff/subject-api/get') {
+              return _MovieBoxResponse(
+                body: {
+                  'code': 200,
+                  'data': {'title': 'Fallback Movie', 'resourceDetectors': []},
+                },
+              );
+            }
+            if (options.uri.path ==
+                '/wefeed-mobile-bff/subject-api/play-info') {
+              expect(options.headers['authorization'], 'Bearer moviebox-token');
+              expect(options.headers['x-play-mode'], '2');
+              return _MovieBoxResponse(
+                body: {
+                  'code': 200,
+                  'data': {
+                    'streams': [
+                      {
+                        'format': 'MP4',
+                        'resolutionList': [
+                          {
+                            'resolution': '720p',
+                            'resourceLink':
+                                'https://cdn.example/fallback-720.mp4',
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                },
+              );
+            }
+            fail('Unexpected MovieBox request: ${options.uri}');
+          });
+
+        final result =
+            await MovieBoxStreamProvider(
+              dio: dio,
+              deviceId: '00112233445566778899aabbccddeeff',
+            ).resolve(
+              const PlaybackRequest(
+                mediaId: 'movie:fallback',
+                title: 'Fallback Movie',
+                mediaType: PlaybackMediaType.movie,
+              ),
+            );
+
+        expect(result, isNotNull);
+        expect(result!.url, 'https://cdn.example/fallback-720.mp4');
+        expect(result.quality, '720p');
+        expect(result.headers['Referer'], 'https://api3.aoneroom.com');
+        expect(
+          requestedUrls.map((uri) => uri.path),
+          contains('/wefeed-mobile-bff/subject-api/play-info'),
+        );
       },
     );
   });

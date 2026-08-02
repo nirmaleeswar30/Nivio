@@ -11,7 +11,9 @@ class _AndroidPlayerControls extends StatelessWidget {
     required this.onSeek,
     required this.onSettings,
     required this.onServer,
+    required this.onToggleFullscreen,
     required this.canSwitchServer,
+    required this.isFullscreen,
     this.watchPartyMemberCount,
     this.onWatchParty,
     this.serverLabel,
@@ -29,7 +31,9 @@ class _AndroidPlayerControls extends StatelessWidget {
   final ValueChanged<Duration> onSeek;
   final VoidCallback onSettings;
   final VoidCallback onServer;
+  final VoidCallback onToggleFullscreen;
   final bool canSwitchServer;
+  final bool isFullscreen;
   final int? watchPartyMemberCount;
   final VoidCallback? onWatchParty;
   final VoidCallback? onEpisodes;
@@ -178,6 +182,19 @@ class _AndroidPlayerControls extends StatelessWidget {
                           size: 27,
                         ),
                       ),
+                      IconButton(
+                        tooltip: isFullscreen
+                            ? 'Exit fullscreen'
+                            : 'Enter fullscreen',
+                        onPressed: onToggleFullscreen,
+                        icon: Icon(
+                          isFullscreen
+                              ? Icons.fullscreen_exit
+                              : Icons.fullscreen,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -259,15 +276,17 @@ class _AndroidProgressBarState extends State<_AndroidProgressBar> {
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 15),
             ),
-            child: Slider(
-              value: value,
-              secondaryTrackValue: buffered,
-              max: max,
-              onChanged: (next) => setState(() => _dragValue = next),
-              onChangeEnd: (next) {
-                setState(() => _dragValue = null);
-                widget.onSeek(Duration(milliseconds: next.round()));
-              },
+            child: ExcludeFocus(
+              child: Slider(
+                value: value,
+                secondaryTrackValue: buffered,
+                max: max,
+                onChanged: (next) => setState(() => _dragValue = next),
+                onChangeEnd: (next) {
+                  setState(() => _dragValue = null);
+                  widget.onSeek(Duration(milliseconds: next.round()));
+                },
+              ),
             ),
           ),
         ),

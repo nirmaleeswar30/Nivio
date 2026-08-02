@@ -50,6 +50,15 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
   SubtitleStyle _subtitleStyle = const SubtitleStyle();
   bool _debandingEnabled = false;
   bool _applyingPendingTracks = false;
+  DateTime? _lastPositionNotificationAt;
+  DateTime? _lastBufferNotificationAt;
+  Duration _lastPublishedPosition = Duration.zero;
+  Duration _lastPublishedBuffer = Duration.zero;
+
+  static const Duration _positionNotificationInterval = Duration(
+    milliseconds: 500,
+  );
+  static const Duration _bufferNotificationInterval = Duration(seconds: 1);
 
   @override
   ValueListenable<PlaybackState> get state => _state;
@@ -67,7 +76,7 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
         logLevel: PlaybackRuntimeDiagnostics.enabled
             ? MPVLogLevel.v
             : MPVLogLevel.error,
-        bufferSize: 128 * 1024 * 1024,
+        bufferSize: 64 * 1024 * 1024,
       ),
     );
   }
@@ -82,6 +91,7 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
         );
       }),
       _player.stream.position.listen((position) {
+        if (!_shouldPublishPosition(position)) return;
         if (position.inSeconds > 0 && position.inSeconds % 10 == 0) {
           _mpvLog('Position: ${position.inSeconds}s');
         }
@@ -92,6 +102,7 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
         _update(duration: duration);
       }),
       _player.stream.buffer.listen((buffer) {
+        if (!_shouldPublishBuffer(buffer)) return;
         _mpvLog('Buffer: ${buffer.inMilliseconds}ms');
         _update(bufferedPosition: buffer);
       }),
@@ -207,6 +218,10 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
     _request = request;
     _loadClock = Stopwatch()..start();
     _firstFrameLogged = false;
+    _lastPositionNotificationAt = null;
+    _lastBufferNotificationAt = null;
+    _lastPublishedPosition = Duration.zero;
+    _lastPublishedBuffer = Duration.zero;
     if (!request.hasPlayableSource) {
       _update(
         status: PlaybackStatus.error,
@@ -435,13 +450,29 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
   Future<void> _configureNativeDefaults(PlaybackRequest request) async {
     final platform = _player.platform;
     if (platform is! NativePlayer) return;
-    await platform.setProperty('hwdec', 'auto');
-    await platform.setProperty('volume-max', '200');
-    await platform.setProperty('cache', 'yes');
-    await platform.setProperty('demuxer-readahead-secs', '20');
+    await _setNativeProperty(platform, 'hwdec', 'auto-safe');
+    await _setNativeProperty(platform, 'hwdec-codecs', 'all');
+    await _setNativeProperty(platform, 'vd-lavc-dr', 'yes');
+    await _setNativeProperty(platform, 'video-sync', 'audio');
+    await _setNativeProperty(platform, 'interpolation', 'no');
+    await _setNativeProperty(platform, 'volume-max', '200');
+    await _setNativeProperty(platform, 'cache', 'yes');
+    await _setNativeProperty(platform, 'demuxer-readahead-secs', '12');
     await _applyNativePlaybackOptions();
     await _configureHttpOptions(platform, request);
     unawaited(_dumpNativeState('before-open'));
+  }
+
+  Future<void> _setNativeProperty(
+    NativePlayer platform,
+    String name,
+    String value,
+  ) async {
+    try {
+      await platform.setProperty(name, value);
+    } catch (error) {
+      _mpvLog('Ignoring unsupported native option $name=$value: $error');
+    }
   }
 
   Future<void> _applyNativePlaybackOptions() async {
@@ -721,6 +752,42 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
     PlaybackRuntimeDiagnostics.mpvLog(message);
   }
 
+  bool _shouldPublishPosition(Duration position) {
+    final now = DateTime.now();
+    if (position <= Duration.zero) {
+      if (position == _lastPublishedPosition) return false;
+      _lastPositionNotificationAt = now;
+      _lastPublishedPosition = position;
+      return true;
+    }
+    final lastAt = _lastPositionNotificationAt;
+    final movedBackwards = position < _lastPublishedPosition;
+    final movedEnough =
+        (position - _lastPublishedPosition).abs() >=
+        _positionNotificationInterval;
+    final waitedEnough =
+        lastAt == null ||
+        now.difference(lastAt) >= _positionNotificationInterval;
+    if (!movedBackwards && !movedEnough && !waitedEnough) return false;
+    _lastPositionNotificationAt = now;
+    _lastPublishedPosition = position;
+    return true;
+  }
+
+  bool _shouldPublishBuffer(Duration buffer) {
+    if (buffer == _lastPublishedBuffer) return false;
+    final now = DateTime.now();
+    final lastAt = _lastBufferNotificationAt;
+    final changedEnough =
+        (buffer - _lastPublishedBuffer).abs() >= _bufferNotificationInterval;
+    final waitedEnough =
+        lastAt == null || now.difference(lastAt) >= _bufferNotificationInterval;
+    if (!changedEnough && !waitedEnough) return false;
+    _lastBufferNotificationAt = now;
+    _lastPublishedBuffer = buffer;
+    return true;
+  }
+
   void _update({
     PlaybackStatus? status,
     bool? isPlaying,
@@ -739,7 +806,7 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
     bool clearError = false,
   }) {
     if (_disposed) return;
-    _state.value = _state.value.copyWith(
+    final next = _state.value.copyWith(
       status: status,
       isPlaying: isPlaying,
       position: position,
@@ -756,6 +823,25 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
       errorMessage: errorMessage,
       clearError: clearError,
     );
+    if (_sameState(_state.value, next)) return;
+    _state.value = next;
+  }
+
+  bool _sameState(PlaybackState a, PlaybackState b) {
+    return a.status == b.status &&
+        a.isPlaying == b.isPlaying &&
+        a.position == b.position &&
+        a.duration == b.duration &&
+        a.bufferedPosition == b.bufferedPosition &&
+        a.volume == b.volume &&
+        a.isMuted == b.isMuted &&
+        a.playbackSpeed == b.playbackSpeed &&
+        a.repeatMode == b.repeatMode &&
+        identical(a.audioTracks, b.audioTracks) &&
+        identical(a.subtitleTracks, b.subtitleTracks) &&
+        a.selectedAudioTrackId == b.selectedAudioTrackId &&
+        a.selectedSubtitleTrackId == b.selectedSubtitleTrackId &&
+        a.errorMessage == b.errorMessage;
   }
 
   PlaybackTrackOption _audioOption(AudioTrack track) {

@@ -37,6 +37,8 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
   VoidCallback? onServerRequested;
   VoidCallback? onEpisodesRequested;
   ValueChanged<int>? onSourceIndexRequested;
+  Future<void> Function()? _onEnterFullscreen;
+  Future<void> Function()? _onExitFullscreen;
   late WebViewController _controller;
   late Future<void> _configured;
   final ValueNotifier<PlaybackState> _state = ValueNotifier(
@@ -329,6 +331,8 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
     Future<void> Function()? onEnterFullscreen,
     Future<void> Function()? onExitFullscreen,
   }) {
+    _onEnterFullscreen = onEnterFullscreen;
+    _onExitFullscreen = onExitFullscreen;
     PlaybackRuntimeDiagnostics.webLog(
       'WebPlaybackEngine#$debugInstanceId buildSurface '
       'generation=$_surfaceGeneration disposed=$_disposed '
@@ -670,6 +674,7 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
       'selectedSourceIndex': _selectedAppControlSourceIndex,
       'providerLabel': _appControlProviderLabel,
       'serverLabel': _appControlServerLabel,
+      'canShowEpisodes': onEpisodesRequested != null,
     });
   }
 
@@ -811,16 +816,15 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
           root.id = 'nivio-app-controls';
           root.style.all = 'initial';
           root.style.position = 'fixed';
-          root.style.top = '18px';
+          root.style.top = '12px';
           root.style.left = '0';
           root.style.right = '0';
           root.style.height = '44px';
           root.style.zIndex = '2147483647';
           root.style.display = 'block';
           root.style.pointerEvents = 'none';
-          root.style.opacity = '0';
-          root.style.visibility = 'hidden';
-          root.style.transition = 'opacity 180ms ease, visibility 0ms linear 180ms';
+          root.style.opacity = '1';
+          root.style.visibility = 'visible';
           root.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif';
 
           function slot(side) {
@@ -830,9 +834,15 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
             box.style.top = '0';
             box.style.pointerEvents = 'auto';
             if (side === 'left') {
-              box.style.left = '84px';
+              box.style.left = '12px';
             } else {
-              box.style.right = '24px';
+              box.style.right = '12px';
+              box.style.display = 'inline-flex';
+              box.style.alignItems = 'center';
+              box.style.gap = '8px';
+              box.style.opacity = '0';
+              box.style.visibility = 'hidden';
+              box.style.transition = 'opacity 180ms ease, visibility 0ms linear 180ms';
             }
             return box;
           }
@@ -842,7 +852,8 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
               sources: [],
               selectedSourceIndex: null,
               providerLabel: '',
-              serverLabel: ''
+              serverLabel: '',
+              canShowEpisodes: false
             };
           }
 
@@ -893,20 +904,20 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
             btn.style.all = 'initial';
             btn.type = 'button';
             btn.setAttribute('aria-label', label);
-            btn.textContent = icon + (label === 'Server' ? '  Server' : '');
+            btn.textContent = icon + (label === 'Back' ? '' : '  ' + label);
             btn.style.boxSizing = 'border-box';
             btn.style.display = 'inline-flex';
             btn.style.alignItems = 'center';
             btn.style.justifyContent = 'center';
-            btn.style.minWidth = label === 'Server' ? '92px' : '46px';
+            btn.style.minWidth = label === 'Back' ? '46px' : '96px';
             btn.style.height = '42px';
             btn.style.pointerEvents = 'auto';
             btn.style.border = '0';
             btn.style.borderRadius = '8px';
             btn.style.background = 'rgba(0,0,0,0.62)';
             btn.style.color = '#fff';
-            btn.style.padding = label === 'Server' ? '0 12px' : '0';
-            btn.style.fontSize = label === 'Server' ? '14px' : '24px';
+            btn.style.padding = label === 'Back' ? '0' : '0 12px';
+            btn.style.fontSize = label === 'Back' ? '24px' : '14px';
             btn.style.fontWeight = '800';
             btn.style.lineHeight = '1';
             btn.style.cursor = 'pointer';
@@ -950,11 +961,32 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
             return next.length ? next : (fallback || '');
           }
 
-          function setServerTriggerVisible(visible) {
-            if (!rightSlot) return;
+          var serverButton = null;
+          var episodesButton = null;
+
+          function hasAlternateServers() {
             var config = controlsConfig();
             var sources = Array.isArray(config.sources) ? config.sources : [];
-            rightSlot.style.display = visible && sources.length > 1 ? 'block' : 'none';
+            return sources.length > 1;
+          }
+
+          function setActionSlotVisible(visible) {
+            if (!rightSlot) return;
+            var config = controlsConfig();
+            var showServer = hasAlternateServers();
+            var showEpisodes = config.canShowEpisodes === true;
+            if (serverButton) {
+              serverButton.style.display = showServer ? 'inline-flex' : 'none';
+            }
+            if (episodesButton) {
+              episodesButton.style.display = showEpisodes ? 'inline-flex' : 'none';
+            }
+            rightSlot.style.display = showServer || showEpisodes ? 'inline-flex' : 'none';
+            if (visible && (showServer || showEpisodes)) {
+              rightSlot.style.visibility = 'visible';
+              rightSlot.style.opacity = '1';
+              rightSlot.style.transition = 'opacity 180ms ease';
+            }
           }
 
           function closeServerDrawer() {
@@ -962,7 +994,7 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
             var shade = document.getElementById('nivio-server-shade');
             if (drawer) drawer.style.display = 'none';
             if (shade) shade.style.display = 'none';
-            setServerTriggerVisible(true);
+            setActionSlotVisible(true);
           }
 
           function isServerDrawerVisible() {
@@ -970,12 +1002,17 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
             return !!drawer && drawer.style.display !== 'none';
           }
 
+          var lastServerToggleAt = 0;
+
           function toggleServerDrawer(event) {
             if (event) {
               event.preventDefault();
               event.stopPropagation();
               if (event.stopImmediatePropagation) event.stopImmediatePropagation();
             }
+            var now = Date.now();
+            if (now - lastServerToggleAt < 280) return;
+            lastServerToggleAt = now;
             window.__nivioRenderServerDrawer();
             var drawer = document.getElementById('nivio-server-drawer');
             var shade = document.getElementById('nivio-server-shade');
@@ -983,7 +1020,7 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
             var show = drawer.style.display === 'none';
             drawer.style.display = show ? 'block' : 'none';
             shade.style.display = show ? 'block' : 'none';
-            setServerTriggerVisible(!show);
+            setActionSlotVisible(!show);
             if (show) wakeControls();
           }
 
@@ -1136,17 +1173,19 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
 
             drawer.style.display = wasVisible ? 'block' : 'none';
             shade.style.display = wasVisible ? 'block' : 'none';
-            setServerTriggerVisible(!wasVisible);
+            setActionSlotVisible(!wasVisible);
           };
 
           var leftSlot = slot('left');
           var rightSlot = slot('right');
           leftSlot.appendChild(button('Back', '\\u2190', 'app_back'));
-          var serverButton = button('Server', '\\u25A4', '');
+          serverButton = button('Server', '\\u25A4', '');
           serverButton.addEventListener('pointerup', toggleServerDrawer, true);
           serverButton.addEventListener('mouseup', toggleServerDrawer, true);
           serverButton.addEventListener('touchend', toggleServerDrawer, true);
           rightSlot.appendChild(serverButton);
+          episodesButton = button('Episodes', '\\u2630', 'app_episodes');
+          rightSlot.appendChild(episodesButton);
           root.appendChild(leftSlot);
           root.appendChild(rightSlot);
           document.body.appendChild(root);
@@ -1159,8 +1198,16 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
               activate('app_back', event);
               return;
             }
-            if (rectContains(rightSlot.getBoundingClientRect(), point)) {
+            if (serverButton &&
+                serverButton.style.display !== 'none' &&
+                rectContains(serverButton.getBoundingClientRect(), point)) {
               toggleServerDrawer(event);
+              return;
+            }
+            if (episodesButton &&
+                episodesButton.style.display !== 'none' &&
+                rectContains(episodesButton.getBoundingClientRect(), point)) {
+              activate('app_episodes', event);
             }
           };
           document.addEventListener('pointerup', appControlCapture, true);
@@ -1169,19 +1216,22 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
 
           var controlsHideTimer;
           var controlsVisibilityTimer;
+          var lastWakeControlsAt = 0;
           var wakeControls = function() {
+            var now = Date.now();
+            if (now - lastWakeControlsAt < 120) return;
+            lastWakeControlsAt = now;
             clearTimeout(controlsVisibilityTimer);
-            root.style.visibility = 'visible';
-            root.style.opacity = '1';
-            root.style.transition = 'opacity 180ms ease';
+            setActionSlotVisible(true);
             clearTimeout(controlsHideTimer);
             controlsHideTimer = setTimeout(function() {
-              root.style.opacity = '0';
-              root.style.transition = 'opacity 180ms ease, visibility 0ms linear 180ms';
+              if (isServerDrawerVisible()) return;
+              rightSlot.style.opacity = '0';
+              rightSlot.style.transition = 'opacity 180ms ease, visibility 0ms linear 180ms';
               controlsVisibilityTimer = setTimeout(function() {
-                root.style.visibility = 'hidden';
+                rightSlot.style.visibility = 'hidden';
               }, 220);
-            }, 3000);
+            }, 2500);
           };
           var pointerWake = function() { wakeControls(); };
           document.addEventListener('mousemove', pointerWake, true);
@@ -1299,6 +1349,7 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
         function hook(video) {
           if (!video || video.__nivioHooked) return;
           video.__nivioHooked = true;
+          window.__nivioMediaHooked = true;
           post('video_found', {
             readyState: readyStateName(video),
             tag: video.tagName || 'video',
@@ -1390,9 +1441,17 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
         }
 
         scan();
-        var scanInterval = setInterval(scan, 1000);
+        var scanCount = 0;
+        var scanInterval = setInterval(function() {
+          scanCount++;
+          scan();
+          if ((window.__nivioMediaHooked || scanCount >= 20) && scanInterval) {
+            clearInterval(scanInterval);
+            scanInterval = null;
+          }
+        }, 1000);
         window.__nivioCleanupCallbacks.push(function() {
-          clearInterval(scanInterval);
+          if (scanInterval) clearInterval(scanInterval);
         });
 
         if (document.readyState === 'interactive' || document.readyState === 'complete') {
@@ -1484,6 +1543,10 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
           );
         case 'pointer_activity':
           onPointerActivity?.call();
+        case 'fullscreen_enter':
+          unawaited(_onEnterFullscreen?.call());
+        case 'fullscreen_exit':
+          unawaited(_onExitFullscreen?.call());
         case 'app_back':
           _handleAppControlEvent(event);
         case 'app_server':

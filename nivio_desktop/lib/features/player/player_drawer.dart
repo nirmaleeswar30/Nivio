@@ -210,8 +210,7 @@ class _RightPlayerDrawer extends StatelessWidget {
             padding: EdgeInsets.zero,
             children: [
               for (final entry in grouped.entries) ...[
-                if (grouped.length > 1 || entry.value.length > 1)
-                  _DrawerGroupTitle(entry.key),
+                if (entry.value.length > 1) _DrawerGroupTitle(entry.key),
                 for (final option in entry.value)
                   _DrawerOptionTile(
                     title: _serverTitle(option),

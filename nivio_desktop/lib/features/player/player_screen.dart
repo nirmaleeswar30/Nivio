@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../../shared/theme/index.dart';
 import '../../core/interfaces/watch_history_repository.dart';
@@ -88,7 +89,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final FocusNode _videoControlsFocusNode = FocusNode(
     debugLabel: 'Nivio video controls',
   );
-  Future<void> Function()? _toggleNativeFullscreen;
+  Future<void> Function()? _exitNativeFullscreen;
   late final bool _ownsEngine = widget.engine == null;
   late final PlaybackEngine _engine =
       widget.engine ??
@@ -122,6 +123,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _watchPartyPanelExpanded = false;
   String? _sourceSwitchMessage;
   bool _isNativeFullscreenActive = false;
+  bool _isWindowFullscreen = false;
+  bool _windowFullscreenManagedByPlayer = false;
   String _subtitleBackground = 'Transparent';
   String _subtitleOutline = 'Outline';
   bool _subtitleBackgroundEnabled = false;
@@ -181,6 +184,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     unawaited(_setPlaybackWakelock(enabled: true));
     _engine.state.addListener(_onPlaybackChanged);
     _scheduleControlsHide();
+    unawaited(_syncWindowFullscreenState());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _requestPlayerKeyboardFocus();
     });
@@ -860,6 +864,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     unawaited(_watchPartyReactionSub?.cancel());
     unawaited(_watchPartyErrorSub?.cancel());
     unawaited(_setPlaybackWakelock(enabled: false));
+    if (_windowFullscreenManagedByPlayer) {
+      unawaited(_setWindowFullscreen(false, restoreFocus: false));
+    }
     _videoControlsFocusNode.dispose();
     if (_ownsEngine) {
       unawaited(_controller.close());
@@ -886,6 +893,59 @@ class _PlayerScreenState extends State<PlayerScreen> {
         'Wakelock ${enabled ? 'enable' : 'disable'} failed: $error',
       );
     }
+  }
+
+  Future<void> _syncWindowFullscreenState() async {
+    try {
+      await windowManager.ensureInitialized();
+      final fullscreen = await windowManager.isFullScreen();
+      if (!mounted) return;
+      setState(() => _isWindowFullscreen = fullscreen);
+    } catch (error) {
+      PlaybackRuntimeDiagnostics.lifecycleLog(
+        'Window fullscreen state sync failed: $error',
+      );
+    }
+  }
+
+  Future<void> _setWindowFullscreen(
+    bool fullscreen, {
+    bool restoreFocus = true,
+  }) async {
+    try {
+      await windowManager.ensureInitialized();
+      await windowManager.setFullScreen(fullscreen);
+      if (!mounted) return;
+      setState(() {
+        _isWindowFullscreen = fullscreen;
+        _windowFullscreenManagedByPlayer = fullscreen;
+      });
+      _showControls();
+      if (restoreFocus) _requestPlayerKeyboardFocus();
+    } catch (error) {
+      PlaybackRuntimeDiagnostics.lifecycleLog(
+        'Window fullscreen ${fullscreen ? 'enter' : 'exit'} failed: $error',
+      );
+    }
+  }
+
+  Future<void> _togglePlayerFullscreen() async {
+    if (_isNativeFullscreenActive) {
+      final exitFullscreen = _exitNativeFullscreen;
+      if (exitFullscreen != null) {
+        await exitFullscreen();
+        return;
+      }
+    }
+
+    bool currentlyFullscreen;
+    try {
+      await windowManager.ensureInitialized();
+      currentlyFullscreen = await windowManager.isFullScreen();
+    } catch (_) {
+      currentlyFullscreen = _isWindowFullscreen;
+    }
+    await _setWindowFullscreen(!currentlyFullscreen);
   }
 
   void _minimizeToMiniPlayer() {
@@ -1123,8 +1183,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     } else if (key == LogicalKeyboardKey.arrowDown) {
       _changeVolume(-0.05);
     } else if (key == LogicalKeyboardKey.keyF) {
-      final toggleFullscreen = _toggleNativeFullscreen;
-      if (toggleFullscreen != null) unawaited(toggleFullscreen());
+      unawaited(_togglePlayerFullscreen());
     } else if (key == LogicalKeyboardKey.keyS) {
       if (widget.sourceOptions.length > 1) {
         if (_usesEmbeddedWebPlayback) {
@@ -1139,10 +1198,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (_watchPartyPanelExpanded) {
         _setWatchPartyPanelExpanded(false);
       } else if (_isNativeFullscreenActive) {
-        final toggleFullscreen = _toggleNativeFullscreen;
-        if (toggleFullscreen != null) {
-          unawaited(toggleFullscreen());
-        }
+        final exitFullscreen = _exitNativeFullscreen;
+        if (exitFullscreen != null) unawaited(exitFullscreen());
+      } else if (_isWindowFullscreen) {
+        unawaited(_setWindowFullscreen(false));
       } else {
         _close();
       }
@@ -1378,7 +1437,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
         'positionMs=${nextRequest.startPosition.inMilliseconds}',
       );
       await _controller.prepareForSourceSwitch(nextRequest);
-      await _controller.stop();
       if (!mounted) return;
       PlaybackRuntimeDiagnostics.uiLog(
         'Source switch callback dispatch mounted=$mounted next=${option.index} '
@@ -1770,7 +1828,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Widget _buildVideoControls(VideoState videoState) {
-    _toggleNativeFullscreen = videoState.toggleFullscreen;
+    _exitNativeFullscreen = videoState.exitFullscreen;
     return _isNativeFullscreenActive
         ? ValueListenableBuilder<PlaybackState>(
             valueListenable: _engine.state,
@@ -1800,6 +1858,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           providerLabel: _providerLabel,
                           serverLabel: _serverLabel,
                           canSwitchServer: widget.sourceOptions.length > 1,
+                          isFullscreen:
+                              _isWindowFullscreen || _isNativeFullscreenActive,
                           watchPartyMemberCount: _hasWatchPartyContext
                               ? _watchPartySession?.participantCount ?? 0
                               : null,
@@ -1819,6 +1879,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           },
                           onSettings: () => _openDrawer(_PlayerDrawer.settings),
                           onServer: () => _openDrawer(_PlayerDrawer.server),
+                          onToggleFullscreen: () =>
+                              unawaited(_togglePlayerFullscreen()),
                           onEpisodes: _episodeSelectorCallback,
                         ),
                       if (_sourceSwitchInFlight)
@@ -1917,6 +1979,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       setState(() => _isNativeFullscreenActive = true);
     }
     await defaultEnterNativeFullscreen();
+    if (mounted) _requestPlayerKeyboardFocus();
   }
 
   Future<void> _handleExitNativeFullscreen() async {
@@ -1927,6 +1990,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       });
     }
     await defaultExitNativeFullscreen();
+    if (mounted) _requestPlayerKeyboardFocus();
   }
 
   Widget _buildRightDrawer(PlaybackState playback, {bool inline = false}) {
@@ -1960,13 +2024,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
       subtitleScale: _subtitleScale,
       subtitleBackground: _subtitleBackground,
       subtitleOutline: _subtitleOutline,
-      onClose: () => setState(() => _drawer = _PlayerDrawer.none),
+      onClose: () {
+        setState(() => _drawer = _PlayerDrawer.none);
+        _requestPlayerKeyboardFocus();
+      },
       onSourceSelected: (option) {
         PlaybackRuntimeDiagnostics.overlayLog(
           'Drawer source tile tap received index=${option.index} '
           'server=${option.server}',
         );
         setState(() => _drawer = _PlayerDrawer.none);
+        _requestPlayerKeyboardFocus();
         unawaited(_switchSource(option));
       },
       onQualitySelected: (option) => unawaited(_switchQuality(option)),
@@ -2065,6 +2133,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       providerLabel: _providerLabel,
                       serverLabel: _serverLabel,
                       canSwitchServer: widget.sourceOptions.length > 1,
+                      isFullscreen:
+                          _isWindowFullscreen || _isNativeFullscreenActive,
                       onClose: _close,
                       onMiniPlayer: widget.onMinimize == null
                           ? null
@@ -2074,6 +2144,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       onSeek: (position) => unawaited(_engine.seek(position)),
                       onSettings: () => _openDrawer(_PlayerDrawer.settings),
                       onServer: () => _openDrawer(_PlayerDrawer.server),
+                      onToggleFullscreen: () =>
+                          unawaited(_togglePlayerFullscreen()),
                       onEpisodes: _episodeSelectorCallback,
                     ),
                     if (_sourceSwitchInFlight)
@@ -2128,6 +2200,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         providerLabel: _providerLabel,
                         serverLabel: _serverLabel,
                         canSwitchServer: widget.sourceOptions.length > 1,
+                        isFullscreen:
+                            _isWindowFullscreen || _isNativeFullscreenActive,
                         watchPartyMemberCount: _hasWatchPartyContext
                             ? _watchPartySession?.participantCount ?? 0
                             : null,
@@ -2150,6 +2224,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         },
                         onSettings: () => _openDrawer(_PlayerDrawer.settings),
                         onServer: () => _openDrawer(_PlayerDrawer.server),
+                        onToggleFullscreen: () =>
+                            unawaited(_togglePlayerFullscreen()),
                         onEpisodes: _episodeSelectorCallback,
                       ),
                     if (playback.status == PlaybackStatus.buffering)
@@ -2209,9 +2285,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Widget _buildEmbeddedWebLayout(PlaybackState playback) {
     final shouldInsertServerButton = playback.status != PlaybackStatus.loading;
     final shouldShowServerButton = shouldInsertServerButton;
-    final showEmbeddedEscapeBar =
-        playback.status != PlaybackStatus.ready &&
-        playback.status != PlaybackStatus.completed;
     PlaybackRuntimeDiagnostics.overlayLog(
       'Embedded WebView layout rebuild owner=PlayerScreen#$_instanceId '
       'mounted=$mounted contextMounted=${context.mounted} '
@@ -2226,7 +2299,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       '${_engineDisposedLabel()}',
     );
     final snapshotKey =
-        '${playback.status.name}|$_drawer|$_webDrawer|'
+        '${playback.status.name}|$_drawer|$_webDrawer|$_controlsVisible|'
         '$_webOverlayGeneration|${widget.request.providerIndex}|'
         '${PlaybackRuntimeDiagnostics.webViewsCreated}|'
         '${PlaybackRuntimeDiagnostics.webViewsDestroyed}';
@@ -2250,24 +2323,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
             );
             return Column(
               children: [
-                if (showEmbeddedEscapeBar)
-                  _EmbeddedWebTopBar(
-                    playback: playback,
-                    title: widget.request.title,
-                    providerLabel: _providerLabel,
-                    serverLabel:
-                        _serverLabel ??
-                        widget.request.streamResult?.providerGroup,
-                    canSwitchServer: widget.sourceOptions.length > 1,
-                    onBack: _close,
-                    onServer: _toggleEmbeddedWebServerDrawer,
-                    onMiniPlayer: widget.onMinimize == null
-                        ? null
-                        : _minimizeToMiniPlayer,
-                    onRetry: playback.status == PlaybackStatus.error
-                        ? () => unawaited(_controller.retry())
-                        : null,
-                  ),
                 Expanded(
                   child: Row(
                     children: [

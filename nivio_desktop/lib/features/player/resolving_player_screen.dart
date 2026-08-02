@@ -86,16 +86,6 @@ class _ResolvingPlayerScreenState extends State<ResolvingPlayerScreen> {
     final hadResolvedPlayer = _resolvedRequest != null;
     final existingEngine = _engine;
     final resolveClock = Stopwatch()..start();
-    if (hadResolvedPlayer) {
-      PlaybackRuntimeDiagnostics.lifecycleLog(
-        'Provider switch UI contract teardown start '
-        'generation=${_playerGeneration + 1} '
-        'engine=${_sessionEngineLabel(existingEngine)} '
-        '${PlaybackRuntimeDiagnostics.lifecycleSummary()}',
-        clock: resolveClock,
-      );
-      if (existingEngine != null) unawaited(existingEngine.stop());
-    }
     PlaybackRuntimeDiagnostics.streamLog(
       'Resolution started ${_requestLabel(widget.request)} attempt=$attempt',
       clock: resolveClock,
@@ -108,6 +98,30 @@ class _ResolvingPlayerScreenState extends State<ResolvingPlayerScreen> {
       _isResolving = true;
       _status = _initialResolvingStatus(widget.request);
     });
+
+    if (hadResolvedPlayer && existingEngine != null) {
+      PlaybackRuntimeDiagnostics.lifecycleLog(
+        'Provider switch current engine stop start '
+        'generation=$_playerGeneration '
+        'engine=${_sessionEngineLabel(existingEngine)} '
+        '${PlaybackRuntimeDiagnostics.lifecycleSummary()}',
+        clock: resolveClock,
+      );
+      try {
+        await existingEngine.stop();
+      } catch (error) {
+        PlaybackRuntimeDiagnostics.lifecycleLog(
+          'Provider switch current engine stop failed: $error',
+          clock: resolveClock,
+        );
+      }
+      if (!mounted || attempt != _attempt) return;
+      PlaybackRuntimeDiagnostics.lifecycleLog(
+        'Provider switch current engine stop complete '
+        'generation=$_playerGeneration',
+        clock: resolveClock,
+      );
+    }
 
     try {
       final effectiveRequest = await _requestWithHistoryPreferences(

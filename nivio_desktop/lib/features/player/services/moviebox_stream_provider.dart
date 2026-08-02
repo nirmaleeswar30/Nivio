@@ -24,14 +24,18 @@ class MovieBoxStreamProvider {
 
   static const String providerName = 'MovieBox';
   static const String _mainUrl = 'https://api3.aoneroom.com';
-  static const String _packageName = 'com.community.oneroom';
+  static const String _packageName = 'com.community.mbox.in';
   static const int _versionCode = 50020042;
-  static const String _versionName = '3.0.13.0325.03';
-  static const String _brand = 'Samsung';
-  static const String _model = 'SM-S918B';
+  static const String _versionName = '3.0.03.0529.03';
+  static const String _brand = 'google';
+  static const String _model = 'sdk_gphone64_x86_64';
   static const String _userAgent =
-      'com.community.oneroom/$_versionCode (Linux; U; Android 13; en_US; '
-      '$_brand; Build/TQ3A.230901.001; Cronet/145.0.7582.0)';
+      'com.community.mbox.in/$_versionCode (Linux; U; Android 16; en_IN; '
+      '$_model; Build/BP22.250325.006; Cronet/133.0.6876.3)';
+  static const Map<String, String> _mediaHeaders = {
+    'Referer': _mainUrl,
+    'User-Agent': _userAgent,
+  };
   static const String _defaultSecretEncoded =
       'NzZpUmwwN3MweFNOOWpxbUVXQXQ3OUVCSlp1bElRSXNWNjRGWnIyTw==';
 
@@ -52,7 +56,11 @@ class MovieBoxStreamProvider {
         final details = await _details(candidate.subjectId, token);
         if (details == null) continue;
 
-        final sources = _sourcesFrom(details);
+        var sources = _sourcesFrom(details);
+        if (sources.isEmpty) {
+          final playInfo = await _playInfo(candidate.subjectId, token);
+          if (playInfo != null) sources = _sourcesFrom(playInfo);
+        }
         if (sources.isEmpty) continue;
 
         final selected = _selectSource(sources, request.preferredQuality);
@@ -76,7 +84,7 @@ class MovieBoxStreamProvider {
           availableAudios: languages,
           selectedAudio: selectedAudio,
           isM3U8: _isHls(selected.url),
-          headers: const {},
+          headers: _mediaHeaders,
           sources: sources,
         );
       }
@@ -185,6 +193,30 @@ class MovieBoxStreamProvider {
     return _asMap(root?['data']);
   }
 
+  Future<Map<String, dynamic>?> _playInfo(
+    String subjectId,
+    String token,
+  ) async {
+    final path =
+        '/wefeed-mobile-bff/subject-api/play-info?subjectId=${Uri.encodeQueryComponent(subjectId)}';
+    final response = await _dio.get<String>(
+      path,
+      options: Options(
+        responseType: ResponseType.plain,
+        headers: _headers(
+          method: 'GET',
+          url: '$_mainUrl$path',
+          accept: 'application/json',
+          contentType: 'application/json',
+          token: token,
+        ),
+      ),
+    );
+    if (response.statusCode != 200 || response.data == null) return null;
+    final root = _asMap(jsonDecode(response.data!));
+    return _asMap(root?['data']);
+  }
+
   Map<String, String> _headers({
     required String method,
     required String url,
@@ -208,6 +240,7 @@ class MovieBoxStreamProvider {
       ),
       'x-client-info': _clientInfo(),
       'x-client-status': '0',
+      'x-play-mode': '2',
       if (token != null && token.isNotEmpty) 'authorization': 'Bearer $token',
     };
   }
@@ -218,22 +251,18 @@ class MovieBoxStreamProvider {
       'version_name': _versionName,
       'version_code': _versionCode,
       'os': 'android',
-      'os_version': '13',
+      'os_version': '16',
       'install_ch': 'ps',
       'device_id': _deviceId,
       'install_store': 'ps',
-      'gaid': '1b2212c1-dadf-43c3-a0c8-bd6ce48ae22d',
+      'gaid': 'd7578036d13336cc',
       'brand': _brand,
       'model': _model,
       'system_language': 'en',
       'net': 'NETWORK_WIFI',
-      'region': 'US',
+      'region': 'IN',
       'timezone': 'Asia/Calcutta',
       'sp_code': '',
-      'X-Play-Mode': '1',
-      'X-Idle-Data': '1',
-      'X-Family-Mode': '0',
-      'X-Content-Mode': '0',
     });
   }
 
@@ -323,9 +352,8 @@ class MovieBoxStreamProvider {
 
   List<StreamSource> _sourcesFrom(Map<String, dynamic> details) {
     final sources = <StreamSource>[];
-    for (final detector in _asList(details['resourceDetectors'])) {
-      final detectorMap = _asMap(detector);
-      for (final raw in _asList(detectorMap?['resolutionList'])) {
+    void collectResolutionList(List<Object?> values) {
+      for (final raw in values) {
         final item = _asMap(raw);
         final url = _firstUrl(item);
         if (url == null || sources.any((source) => source.url == url)) {
@@ -339,6 +367,26 @@ class MovieBoxStreamProvider {
           ),
         );
       }
+    }
+
+    for (final detector in _asList(details['resourceDetectors'])) {
+      final detectorMap = _asMap(detector);
+      collectResolutionList(_asList(detectorMap?['resolutionList']));
+    }
+    for (final stream in _asList(details['streams'])) {
+      final streamMap = _asMap(stream);
+      final streamUrl = _firstUrl(streamMap);
+      if (streamUrl != null &&
+          !sources.any((source) => source.url == streamUrl)) {
+        sources.add(
+          StreamSource(
+            url: streamUrl,
+            quality: _qualityLabel(streamMap) ?? 'Auto',
+            isM3U8: _isHls(streamUrl),
+          ),
+        );
+      }
+      collectResolutionList(_asList(streamMap?['resolutionList']));
     }
     sources.sort(
       (a, b) => _resolution(b.quality).compareTo(_resolution(a.quality)),
@@ -497,6 +545,7 @@ class MovieBoxStreamProvider {
     for (final key in const [
       'url',
       'resourceLink',
+      'streamUrl',
       'link',
       'file',
       'videoUrl',
