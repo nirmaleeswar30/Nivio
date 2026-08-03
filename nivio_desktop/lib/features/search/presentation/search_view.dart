@@ -284,50 +284,69 @@ class _SearchResultsPane extends StatelessWidget {
     }
 
     if (controller.viewMode == SearchViewMode.list) {
-      return DesktopScrollbar(
-        controller: scrollController,
-        child: ListView.separated(
-          controller: scrollController,
-          itemCount:
-              controller.results.length + (controller.isLoadingMore ? 1 : 0),
-          separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
-          itemBuilder: (context, index) {
-            if (index == controller.results.length) {
-              return const Padding(
-                padding: EdgeInsets.all(AppSpacing.md),
-                child: Center(child: CircularProgressIndicator()),
-              );
-            }
-            return _SearchResultListItem(
-              item: controller.results[index],
-              onOpenDetail: onOpenDetail,
-              onPlay: onPlay,
-            );
-          },
-        ),
+      final watchlist = WatchlistSyncController.instance;
+      return ListenableBuilder(
+        listenable: watchlist,
+        builder: (context, _) {
+          return DesktopScrollbar(
+            controller: scrollController,
+            child: ListView.separated(
+              controller: scrollController,
+              itemCount:
+                  controller.results.length +
+                  (controller.isLoadingMore ? 1 : 0),
+              separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
+              itemBuilder: (context, index) {
+                if (index == controller.results.length) {
+                  return const Padding(
+                    padding: EdgeInsets.all(AppSpacing.md),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                final item = controller.results[index];
+                return _SearchResultListItem(
+                  item: item,
+                  isInWatchlist: watchlist.isInWatchlist(item.id),
+                  onWatchlist: () => watchlist.toggleSearchItem(item),
+                  onOpenDetail: onOpenDetail,
+                  onPlay: onPlay,
+                );
+              },
+            ),
+          );
+        },
       );
     }
 
-    return DesktopScrollbar(
-      controller: scrollController,
-      child: MediaGrid(
-        controller: scrollController,
-        itemCount:
-            controller.results.length + (controller.isLoadingMore ? 1 : 0),
-        minItemWidth: 236,
-        mainAxisSpacing: AppSpacing.xl,
-        crossAxisSpacing: AppSpacing.sm,
-        itemBuilder: (context, index) {
-          if (index == controller.results.length) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          return _SearchResultPosterCard(
-            item: controller.results[index],
-            onOpenDetail: onOpenDetail,
-            onPlay: onPlay,
-          );
-        },
-      ),
+    final watchlist = WatchlistSyncController.instance;
+    return ListenableBuilder(
+      listenable: watchlist,
+      builder: (context, _) {
+        return DesktopScrollbar(
+          controller: scrollController,
+          child: MediaGrid(
+            controller: scrollController,
+            itemCount:
+                controller.results.length + (controller.isLoadingMore ? 1 : 0),
+            minItemWidth: 236,
+            mainAxisSpacing: AppSpacing.xl,
+            crossAxisSpacing: AppSpacing.sm,
+            itemBuilder: (context, index) {
+              if (index == controller.results.length) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final item = controller.results[index];
+              return _SearchResultPosterCard(
+                item: item,
+                isInWatchlist: watchlist.isInWatchlist(item.id),
+                onWatchlist: () => watchlist.toggleSearchItem(item),
+                onOpenDetail: onOpenDetail,
+                onPlay: onPlay,
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }
@@ -335,38 +354,34 @@ class _SearchResultsPane extends StatelessWidget {
 class _SearchResultPosterCard extends StatelessWidget {
   const _SearchResultPosterCard({
     required this.item,
+    required this.isInWatchlist,
+    required this.onWatchlist,
     this.onOpenDetail,
     this.onPlay,
   });
 
   final SearchMediaItem item;
+  final bool isInWatchlist;
+  final VoidCallback onWatchlist;
   final ValueChanged<String>? onOpenDetail;
   final ValueChanged<PlaybackRequest>? onPlay;
 
   @override
   Widget build(BuildContext context) {
-    final watchlist = WatchlistSyncController.instance;
-    return ListenableBuilder(
-      listenable: watchlist,
-      builder: (context, _) {
-        final isInWatchlist = watchlist.isInWatchlist(item.id);
-        return MediaCard(
-          mediaId: item.id,
-          title: item.title,
-          year: item.year > 0 ? item.yearLabel : null,
-          rating: item.rating > 0 ? item.ratingLabel : null,
-          subtitle: item.mediaTypeLabel,
-          posterPath: item.posterPath,
-          backdropPath: item.backdropPath,
-          overview: item.overview,
-          onTap: () => onOpenDetail?.call(item.id),
-          onPlay: () =>
-              onPlay?.call(PlaybackRequestFactory.fromSearchItem(item)),
-          isInWatchlist: isInWatchlist,
-          onWatchlist: () => watchlist.toggleSearchItem(item),
-          onMore: () => onOpenDetail?.call(item.id),
-        );
-      },
+    return MediaCard(
+      mediaId: item.id,
+      title: item.title,
+      year: item.year > 0 ? item.yearLabel : null,
+      rating: item.rating > 0 ? item.ratingLabel : null,
+      subtitle: item.mediaTypeLabel,
+      posterPath: item.posterPath,
+      backdropPath: item.backdropPath,
+      overview: item.overview,
+      onTap: () => onOpenDetail?.call(item.id),
+      onPlay: () => onPlay?.call(PlaybackRequestFactory.fromSearchItem(item)),
+      isInWatchlist: isInWatchlist,
+      onWatchlist: onWatchlist,
+      onMore: () => onOpenDetail?.call(item.id),
     );
   }
 }
@@ -374,42 +389,39 @@ class _SearchResultPosterCard extends StatelessWidget {
 class _SearchResultListItem extends StatelessWidget {
   const _SearchResultListItem({
     required this.item,
+    required this.isInWatchlist,
+    required this.onWatchlist,
     this.onOpenDetail,
     this.onPlay,
   });
 
   final SearchMediaItem item;
+  final bool isInWatchlist;
+  final VoidCallback onWatchlist;
   final ValueChanged<String>? onOpenDetail;
   final ValueChanged<PlaybackRequest>? onPlay;
 
   @override
   Widget build(BuildContext context) {
-    final watchlist = WatchlistSyncController.instance;
-    return ListenableBuilder(
-      listenable: watchlist,
-      builder: (context, _) {
-        final isInWatchlist = watchlist.isInWatchlist(item.id);
-        return LandscapeCard(
-          title: item.title,
-          subtitle: item.overview,
-          metadata: [
-            item.yearLabel,
-            item.ratingLabel,
-            item.mediaTypeLabel,
-            item.languageLabel,
-            item.provider,
-          ],
-          semanticLabel:
-              '${item.title}, ${item.yearLabel}, ${item.ratingLabel} rating, ${item.languageLabel}, ${item.provider}',
-          onTap: () => onOpenDetail?.call(item.id),
-          onSecondaryTap: () => onOpenDetail?.call(item.id),
-          onDoubleTap: () =>
-              onPlay?.call(PlaybackRequestFactory.fromSearchItem(item)),
-          isInWatchlist: isInWatchlist,
-          onWatchlist: () => watchlist.toggleSearchItem(item),
-          onMore: () => onOpenDetail?.call(item.id),
-        );
-      },
+    return LandscapeCard(
+      title: item.title,
+      subtitle: item.overview,
+      metadata: [
+        item.yearLabel,
+        item.ratingLabel,
+        item.mediaTypeLabel,
+        item.languageLabel,
+        item.provider,
+      ],
+      semanticLabel:
+          '${item.title}, ${item.yearLabel}, ${item.ratingLabel} rating, ${item.languageLabel}, ${item.provider}',
+      onTap: () => onOpenDetail?.call(item.id),
+      onSecondaryTap: () => onOpenDetail?.call(item.id),
+      onDoubleTap: () =>
+          onPlay?.call(PlaybackRequestFactory.fromSearchItem(item)),
+      isInWatchlist: isInWatchlist,
+      onWatchlist: onWatchlist,
+      onMore: () => onOpenDetail?.call(item.id),
     );
   }
 }
@@ -421,7 +433,9 @@ class _LoadingGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return MediaGrid(
       itemCount: 12,
-      minItemWidth: 240,
+      minItemWidth: 236,
+      mainAxisSpacing: AppSpacing.xl,
+      crossAxisSpacing: AppSpacing.sm,
       itemBuilder: (context, index) => const PosterSkeleton(),
     );
   }

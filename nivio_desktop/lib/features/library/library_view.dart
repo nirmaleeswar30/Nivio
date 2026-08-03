@@ -38,6 +38,7 @@ class LibraryView extends StatefulWidget {
 
 class _LibraryViewState extends State<LibraryView> {
   final ScrollController _scrollController = ScrollController();
+  final ScrollController _watchlistScrollController = ScrollController();
   final LibraryScheduleService _scheduleService = LibraryScheduleService();
   final LibraryWatchlistService _watchlistService = LibraryWatchlistService();
   final LibraryDownloadsService _downloadsService = LibraryDownloadsService();
@@ -70,6 +71,7 @@ class _LibraryViewState extends State<LibraryView> {
       listenable.removeListener(_onHistoryChanged);
     }
     _scrollController.dispose();
+    _watchlistScrollController.dispose();
     super.dispose();
   }
 
@@ -88,6 +90,39 @@ class _LibraryViewState extends State<LibraryView> {
 
   @override
   Widget build(BuildContext context) {
+    if (_selectedTab == LibraryTab.watchlist) {
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final availableHeight = constraints.maxHeight.isFinite
+              ? constraints.maxHeight
+              : MediaQuery.sizeOf(context).height;
+          return Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: AppBreakpoints.contentMaxWidth,
+              ),
+              child: SizedBox(
+                height: availableHeight,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: AppSpacing.xxl),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: _buildLibraryTabs(),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    Expanded(child: _buildSelectedTab()),
+                    const SizedBox(height: AppSpacing.xxl),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    }
+
     return DesktopScrollbar(
       controller: _scrollController,
       child: SingleChildScrollView(
@@ -145,6 +180,7 @@ class _LibraryViewState extends State<LibraryView> {
       LibraryTab.watchlist => _WatchlistTab(
         service: _watchlistService,
         historyByMediaId: _historyByMediaId,
+        scrollController: _watchlistScrollController,
         onOpenDetail: widget.onOpenDetail,
         onPlay: widget.onPlay,
       ),
@@ -386,12 +422,14 @@ class _WatchlistTab extends StatelessWidget {
   const _WatchlistTab({
     required this.service,
     required this.historyByMediaId,
+    required this.scrollController,
     this.onOpenDetail,
     this.onPlay,
   });
 
   final LibraryWatchlistService service;
   final Map<int, Map<String, dynamic>> historyByMediaId;
+  final ScrollController scrollController;
   final ValueChanged<String>? onOpenDetail;
   final ValueChanged<PlaybackRequest>? onPlay;
 
@@ -423,12 +461,15 @@ class _WatchlistTab extends StatelessWidget {
                       'Saved locally and ready for cloud sync when account sync is available.',
                 ),
                 const SizedBox(height: AppSpacing.lg),
-                WatchlistGrid(
-                  items: result.data ?? const [],
-                  service: service,
-                  historyByMediaId: historyByMediaId,
-                  onOpenDetail: onOpenDetail,
-                  onPlay: onPlay,
+                Expanded(
+                  child: WatchlistGrid(
+                    items: result.data ?? const [],
+                    service: service,
+                    historyByMediaId: historyByMediaId,
+                    scrollController: scrollController,
+                    onOpenDetail: onOpenDetail,
+                    onPlay: onPlay,
+                  ),
                 ),
               ],
             );

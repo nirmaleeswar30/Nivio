@@ -15,6 +15,7 @@ class WatchlistGrid extends StatefulWidget {
     required this.items,
     required this.service,
     required this.historyByMediaId,
+    required this.scrollController,
     this.onOpenDetail,
     this.onPlay,
   });
@@ -22,6 +23,7 @@ class WatchlistGrid extends StatefulWidget {
   final List<LibraryWatchlistItem> items;
   final LibraryWatchlistService service;
   final Map<int, Map<String, dynamic>> historyByMediaId;
+  final ScrollController scrollController;
   final ValueChanged<String>? onOpenDetail;
   final ValueChanged<PlaybackRequest>? onPlay;
 
@@ -110,56 +112,74 @@ class _WatchlistGridState extends State<WatchlistGrid> {
           ],
         ),
         const SizedBox(height: AppSpacing.lg),
-        if (filtered.isEmpty)
-          LibraryEmptyState(
-            title: _query.isEmpty
-                ? 'Your watchlist is empty'
-                : 'No results found for "$_query"',
-            message: _query.isEmpty
-                ? 'Add movies and TV shows to watch later.'
-                : 'Try a different title.',
-          )
-        else if (_isListView)
-          Column(
-            children: [
-              for (final item in filtered)
-                _WatchlistListItem(
-                  item: item,
-                  service: widget.service,
-                  onOpenDetail: widget.onOpenDetail,
-                  onPlay: widget.onPlay,
-                ),
-            ],
-          )
-        else
-          ResponsiveGrid(
-            minItemWidth: 236,
-            crossAxisSpacing: AppSpacing.sm,
-            mainAxisSpacing: AppSpacing.xl,
-            children: [
-              for (final item in filtered)
-                MediaCard(
-                  mediaId: '${item.mediaType}:${item.id}',
-                  title: item.title,
-                  posterPath: item.posterPath,
-                  year: _year(item.releaseDate),
-                  rating: item.voteAverage?.toStringAsFixed(1),
-                  subtitle: _subtitle(item),
-                  overview: item.overview,
-                  progress: _progress(item.id),
-                  onTap: () =>
-                      widget.onOpenDetail?.call('${item.mediaType}:${item.id}'),
-                  onPlay: () => widget.onPlay?.call(
-                    PlaybackRequestFactory.fromWatchlist(item),
-                  ),
-                  onMore: () =>
-                      widget.onOpenDetail?.call('${item.mediaType}:${item.id}'),
-                  isInWatchlist: true,
-                  onWatchlist: () => widget.service.remove(item.id),
-                ),
-            ],
-          ),
+        Expanded(child: _buildResults(filtered)),
       ],
+    );
+  }
+
+  Widget _buildResults(List<LibraryWatchlistItem> filtered) {
+    if (filtered.isEmpty) {
+      return Center(
+        child: LibraryEmptyState(
+          title: _query.isEmpty
+              ? 'Your watchlist is empty'
+              : 'No results found for "$_query"',
+          message: _query.isEmpty
+              ? 'Add movies and TV shows to watch later.'
+              : 'Try a different title.',
+        ),
+      );
+    }
+
+    if (_isListView) {
+      return DesktopScrollbar(
+        controller: widget.scrollController,
+        child: ListView.separated(
+          controller: widget.scrollController,
+          itemCount: filtered.length,
+          separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
+          itemBuilder: (context, index) {
+            return _WatchlistListItem(
+              item: filtered[index],
+              service: widget.service,
+              onOpenDetail: widget.onOpenDetail,
+              onPlay: widget.onPlay,
+            );
+          },
+        ),
+      );
+    }
+
+    return DesktopScrollbar(
+      controller: widget.scrollController,
+      child: MediaGrid(
+        controller: widget.scrollController,
+        itemCount: filtered.length,
+        minItemWidth: 236,
+        mainAxisSpacing: AppSpacing.xl,
+        crossAxisSpacing: AppSpacing.sm,
+        itemBuilder: (context, index) {
+          final item = filtered[index];
+          return MediaCard(
+            mediaId: '${item.mediaType}:${item.id}',
+            title: item.title,
+            posterPath: item.posterPath,
+            year: _year(item.releaseDate),
+            rating: item.voteAverage?.toStringAsFixed(1),
+            subtitle: _subtitle(item),
+            overview: item.overview,
+            progress: _progress(item.id),
+            onTap: () =>
+                widget.onOpenDetail?.call('${item.mediaType}:${item.id}'),
+            onPlay: () =>
+                widget.onPlay?.call(PlaybackRequestFactory.fromWatchlist(item)),
+            onMore: () =>
+                widget.onOpenDetail?.call('${item.mediaType}:${item.id}'),
+            isInWatchlist: true,
+            onWatchlist: () => widget.service.remove(item.id),
+          );
+        },
+      ),
     );
   }
 

@@ -280,8 +280,9 @@ class _PosterCardState extends State<PosterCard> {
   bool _isPointerOverCard(Offset globalPosition) {
     final targetContext = _targetKey.currentContext;
     if (targetContext == null || !targetContext.mounted) return false;
-    final targetBox = targetContext.findRenderObject() as RenderBox?;
-    if (targetBox == null || !targetBox.hasSize) return false;
+    final renderObject = targetContext.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return false;
+    final targetBox = renderObject;
     final localPosition = targetBox.globalToLocal(globalPosition);
     return (Offset.zero & targetBox.size).contains(localPosition);
   }
@@ -292,8 +293,9 @@ class _PosterCardState extends State<PosterCard> {
     if (layout == null || offset == null) return false;
     final overlayContext = Overlay.maybeOf(context)?.context;
     if (overlayContext == null || !overlayContext.mounted) return false;
-    final overlayBox = overlayContext.findRenderObject() as RenderBox?;
-    if (overlayBox == null || !overlayBox.hasSize) return false;
+    final renderObject = overlayContext.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return false;
+    final overlayBox = renderObject;
     final localPosition = overlayBox.globalToLocal(globalPosition);
     return Rect.fromLTWH(
       offset.dx,
@@ -365,14 +367,16 @@ class _PosterCardState extends State<PosterCard> {
       return;
     }
 
-    final targetBox = targetContext.findRenderObject() as RenderBox?;
-    final overlayBox = overlayContext.findRenderObject() as RenderBox?;
-    if (targetBox == null ||
-        overlayBox == null ||
-        !targetBox.hasSize ||
-        !overlayBox.hasSize) {
+    final targetRenderObject = targetContext.findRenderObject();
+    final overlayRenderObject = overlayContext.findRenderObject();
+    if (targetRenderObject is! RenderBox ||
+        overlayRenderObject is! RenderBox ||
+        !targetRenderObject.hasSize ||
+        !overlayRenderObject.hasSize) {
       return;
     }
+    final targetBox = targetRenderObject;
+    final overlayBox = overlayRenderObject;
 
     final targetOffset = targetBox.localToGlobal(
       Offset.zero,

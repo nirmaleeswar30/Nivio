@@ -300,6 +300,10 @@ class DesktopDownloadService {
       '-i',
       streams.videoUrl,
       if (streams.audioUrl != null) ...[
+        '-allowed_extensions',
+        'ALL',
+        '-protocol_whitelist',
+        'file,http,https,tcp,tls,crypto',
         if ((item.headers ?? const {}).isNotEmpty) ...[
           '-headers',
           _ffmpegHeaders(item.headers!),
@@ -325,16 +329,20 @@ class DesktopDownloadService {
       outputPart,
     ];
 
+    final ffmpegErrors = <String>[];
     final exitCode = await _runFfmpeg(
       item: item,
       args: args,
       token: token,
       durationMs: durationMs,
+      stderrLines: ffmpegErrors,
     );
 
     if (token.isCancelled) throw const _DownloadPaused();
     if (exitCode != 0 || !await File(outputPart).exists()) {
-      throw _DownloadFailure('ffmpeg stream download failed');
+      throw _DownloadFailure(
+        'ffmpeg stream download failed${_ffmpegErrorSuffix(ffmpegErrors)}',
+      );
     }
     await File(outputPart).rename(item.savePath);
     await _downloadSubtitleFromUrl(item, streams.subtitleUrl);
@@ -503,6 +511,8 @@ class DesktopDownloadService {
       if (audioM3u8 != null) ...[
         '-allowed_extensions',
         'ALL',
+        '-protocol_whitelist',
+        'file,http,https,tcp,tls,crypto',
         '-i',
         audioM3u8,
         '-map',
@@ -529,15 +539,19 @@ class DesktopDownloadService {
       '9999',
       outputPart,
     ];
+    final ffmpegErrors = <String>[];
     final exitCode = await _runFfmpeg(
       item: item,
       args: args,
       token: token,
       durationMs: 0,
+      stderrLines: ffmpegErrors,
     );
     if (token.isCancelled) throw const _DownloadPaused();
     if (exitCode != 0 || !await File(outputPart).exists()) {
-      throw const _DownloadFailure('ffmpeg failed while merging HLS segments');
+      throw _DownloadFailure(
+        'ffmpeg failed while merging HLS segments${_ffmpegErrorSuffix(ffmpegErrors)}',
+      );
     }
     await File(outputPart).rename(item.savePath);
     await _downloadSubtitleFromUrl(item, streams.subtitleUrl);
@@ -678,6 +692,7 @@ class DesktopDownloadService {
     required List<String> args,
     required CancelToken token,
     required int durationMs,
+    List<String>? stderrLines,
   }) async {
     Process process;
     try {
@@ -697,6 +712,13 @@ class DesktopDownloadService {
         .transform(const LineSplitter())
         .listen((line) {
           final progress = _progressFromFfmpegLine(line, durationMs);
+          final trimmed = line.trim();
+          if (stderrLines != null &&
+              trimmed.isNotEmpty &&
+              !_isFfmpegProgressLine(trimmed)) {
+            stderrLines.add(trimmed);
+            if (stderrLines.length > 12) stderrLines.removeAt(0);
+          }
           if (progress == null) return;
           final now = DateTime.now();
           if (now.difference(lastUpdate).inMilliseconds < 500) return;
@@ -872,6 +894,34 @@ class DesktopDownloadService {
     final outTimeUs = int.tryParse(line.substring('out_time_ms='.length));
     if (outTimeUs == null) return null;
     return (outTimeUs / 1000 / durationMs).clamp(0.0, 1.0);
+  }
+
+  bool _isFfmpegProgressLine(String line) {
+    final key = line.split('=').first;
+    return const {
+      'bitrate',
+      'dup_frames',
+      'drop_frames',
+      'fps',
+      'frame',
+      'out_time',
+      'out_time_ms',
+      'out_time_us',
+      'progress',
+      'speed',
+      'stream_0_0_q',
+      'total_size',
+    }.contains(key);
+  }
+
+  String _ffmpegErrorSuffix(List<String> lines) {
+    final message = lines
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .join(' ')
+        .trim();
+    if (message.isEmpty) return '';
+    return ': $message';
   }
 
   String _ffmpegHeaders(Map<String, String> headers) {
