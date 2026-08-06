@@ -24,14 +24,15 @@ class MovieBoxStreamProvider {
 
   static const String providerName = 'MovieBox';
   static const String _mainUrl = 'https://api3.aoneroom.com';
-  static const String _packageName = 'com.community.mbox.in';
+  static const String _packageName = 'com.community.oneroom';
   static const int _versionCode = 50020042;
-  static const String _versionName = '3.0.03.0529.03';
+  static const int _tokenVersionCode = 50020088;
+  static const String _versionName = '3.0.13.0325.03';
   static const String _brand = 'google';
-  static const String _model = 'sdk_gphone64_x86_64';
+  static const String _model = 'Pixel 7';
   static const String _userAgent =
-      'com.community.mbox.in/$_versionCode (Linux; U; Android 16; en_IN; '
-      '$_model; Build/BP22.250325.006; Cronet/133.0.6876.3)';
+      '$_packageName/$_versionCode (Linux; U; Android 13; en_US; '
+      '$_model; Build/TQ3A.230901.001; Cronet/145.0.7582.0)';
   static const Map<String, String> _mediaHeaders = {
     'Referer': _mainUrl,
     'User-Agent': _userAgent,
@@ -238,32 +239,40 @@ class MovieBoxStreamProvider {
         url: url,
         body: body,
       ),
-      'x-client-info': _clientInfo(),
+      'x-client-info': _clientInfo(tokenClient: token == null),
       'x-client-status': '0',
-      'x-play-mode': '2',
       if (token != null && token.isNotEmpty) 'authorization': 'Bearer $token',
     };
   }
 
-  String _clientInfo() {
-    return jsonEncode({
+  String _clientInfo({required bool tokenClient}) {
+    final info = <String, Object>{
       'package_name': _packageName,
       'version_name': _versionName,
-      'version_code': _versionCode,
+      'version_code': tokenClient ? _tokenVersionCode : _versionCode,
       'os': 'android',
-      'os_version': '16',
-      'install_ch': 'ps',
+      'os_version': '13',
       'device_id': _deviceId,
       'install_store': 'ps',
-      'gaid': 'd7578036d13336cc',
-      'brand': _brand,
-      'model': _model,
       'system_language': 'en',
       'net': 'NETWORK_WIFI',
-      'region': 'IN',
+      'region': 'US',
       'timezone': 'Asia/Calcutta',
       'sp_code': '',
-    });
+    };
+    if (!tokenClient) {
+      info.addAll({
+        'install_ch': 'ps',
+        'gaid': '1b2212c1-dadf-43c3-a0c8-bd6ce48ae22d',
+        'brand': _brand,
+        'model': _model,
+        'X-Play-Mode': '1',
+        'X-Idle-Data': '1',
+        'X-Family-Mode': '0',
+        'X-Content-Mode': '0',
+      });
+    }
+    return jsonEncode(info);
   }
 
   static String _xClientToken() {

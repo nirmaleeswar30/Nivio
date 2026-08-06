@@ -42,6 +42,14 @@ install -Dm644 "$ROOT_DIR/packaging/linux/${APP_ID}.desktop" \
   "$DEB_ROOT/usr/share/applications/${APP_ID}.desktop"
 cp -a "$ROOT_DIR/linux/runner/resources/icons/hicolor/." \
   "$DEB_ROOT/usr/share/icons/hicolor/"
+while IFS= read -r -d '' icon; do
+  install -Dm644 "$icon" \
+    "${icon/nivio_desktop.png/com.nivio.desktop.png}"
+done < <(find "$DEB_ROOT/usr/share/icons/hicolor" -type f -name 'nivio_desktop.png' -print0)
+install -Dm644 "$ROOT_DIR/assets/images/app-icon.png" \
+  "$DEB_ROOT/usr/share/pixmaps/com.nivio.desktop.png"
+install -Dm644 "$ROOT_DIR/assets/images/app-icon.png" \
+  "$DEB_ROOT/usr/share/pixmaps/nivio_desktop.png"
 
 INSTALLED_SIZE="$(du -sk "$DEB_ROOT" | awk '{print $1}')"
 

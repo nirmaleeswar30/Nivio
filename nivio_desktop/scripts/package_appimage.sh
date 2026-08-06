@@ -56,12 +56,13 @@ Type=Application
 Name=Nivio
 Comment=Nivio Desktop
 Exec=AppRun
-Icon=$BINARY_NAME
+Icon=$APP_ID
 Categories=AudioVideo;Video;Player;
 Terminal=false
 StartupNotify=true
 EOF
 cp "$APPDIR/$APP_ID.desktop" "$APPDIR/usr/share/applications/$APP_ID.desktop"
+cp "$ROOT_DIR/assets/images/app-icon.png" "$APPDIR/$APP_ID.png"
 
 ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL" \
   "$APPDIR" "$DIST_DIR/Nivio-x86_64.AppImage"

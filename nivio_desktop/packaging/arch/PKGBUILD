@@ -54,4 +54,12 @@ package() {
     "$pkgdir/usr/share/applications/com.nivio.desktop.desktop"
   cp -R --no-preserve=ownership "$root/linux/runner/resources/icons/hicolor" \
     "$pkgdir/usr/share/icons/"
+  while IFS= read -r -d '' icon; do
+    install -Dm644 "$icon" \
+      "${icon/nivio_desktop.png/com.nivio.desktop.png}"
+  done < <(find "$pkgdir/usr/share/icons/hicolor" -type f -name 'nivio_desktop.png' -print0)
+  install -Dm644 "$root/assets/images/app-icon.png" \
+    "$pkgdir/usr/share/pixmaps/com.nivio.desktop.png"
+  install -Dm644 "$root/assets/images/app-icon.png" \
+    "$pkgdir/usr/share/pixmaps/nivio_desktop.png"
 }

@@ -470,7 +470,7 @@ void main() {
         expect(result.url, 'https://cdn.example/animal-1080.mp4');
         expect(result.quality, '1080p');
         expect(result.headers['Referer'], 'https://api3.aoneroom.com');
-        expect(result.headers['User-Agent'], contains('com.community.mbox.in'));
+        expect(result.headers['User-Agent'], contains('com.community.oneroom'));
         expect(result.selectedAudio, 'Tamil');
         expect(result.availableAudios, ['Hindi', 'Tamil']);
         expect(result.availableQualities, ['1080p', '480p']);
@@ -615,7 +615,7 @@ void main() {
             if (options.uri.path ==
                 '/wefeed-mobile-bff/subject-api/play-info') {
               expect(options.headers['authorization'], 'Bearer moviebox-token');
-              expect(options.headers['x-play-mode'], '2');
+              expect(options.headers['x-client-info'], contains('X-Play-Mode'));
               return _MovieBoxResponse(
                 body: {
                   'code': 200,
