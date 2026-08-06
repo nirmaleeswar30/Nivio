@@ -200,12 +200,19 @@ class _DownloadCardState extends State<_DownloadCard> {
                               _DownloadProgress(item: item, color: statusColor),
                               const SizedBox(height: AppSpacing.sm),
                             ],
-                            Text(
-                              _detailStatusText(size),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTypography.caption.copyWith(
-                                color: AppColors.textSecondary,
+                            Tooltip(
+                              message: _detailStatusText(size),
+                              waitDuration: const Duration(milliseconds: 350),
+                              child: Text(
+                                _detailStatusText(size),
+                                maxLines:
+                                    item.status == LibraryDownloadStatus.failed
+                                    ? 3
+                                    : 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTypography.caption.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
                               ),
                             ),
                           ],

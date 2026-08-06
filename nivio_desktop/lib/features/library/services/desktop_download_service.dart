@@ -319,13 +319,13 @@ class DesktopDownloadService {
       '-c:v',
       'copy',
       '-c:a',
-      'aac',
-      '-b:a',
-      '128k',
+      'copy',
       '-c:s',
       'srt',
       '-max_muxing_queue_size',
       '9999',
+      '-f',
+      'matroska',
       outputPart,
     ];
 
@@ -492,7 +492,7 @@ class DesktopDownloadService {
 
     item
       ..status = LibraryDownloadStatus.extracting
-      ..progress = 1;
+      ..progress = 0;
     await _putIfPresent(item);
 
     final outputPart = '${item.savePath}.part';
@@ -530,13 +530,13 @@ class DesktopDownloadService {
       '-c:v',
       'copy',
       '-c:a',
-      'aac',
-      '-b:a',
-      '128k',
+      'copy',
       '-c:s',
       'srt',
       '-max_muxing_queue_size',
       '9999',
+      '-f',
+      'matroska',
       outputPart,
     ];
     final ffmpegErrors = <String>[];
@@ -544,7 +544,8 @@ class DesktopDownloadService {
       item: item,
       args: args,
       token: token,
-      durationMs: 0,
+      durationMs: _segmentsDurationMs(videoSegments),
+      progressStatus: LibraryDownloadStatus.extracting,
       stderrLines: ffmpegErrors,
     );
     if (token.isCancelled) throw const _DownloadPaused();
@@ -692,6 +693,7 @@ class DesktopDownloadService {
     required List<String> args,
     required CancelToken token,
     required int durationMs,
+    LibraryDownloadStatus progressStatus = LibraryDownloadStatus.downloading,
     List<String>? stderrLines,
   }) async {
     Process process;
@@ -724,7 +726,7 @@ class DesktopDownloadService {
           if (now.difference(lastUpdate).inMilliseconds < 500) return;
           lastUpdate = now;
           item
-            ..status = LibraryDownloadStatus.downloading
+            ..status = progressStatus
             ..progress = progress;
           unawaited(_putIfPresent(item));
         });
@@ -831,6 +833,14 @@ class DesktopDownloadService {
       if (duration > maxDuration) maxDuration = duration;
     }
     return maxDuration;
+  }
+
+  int _segmentsDurationMs(List<M3u8Segment> segments) {
+    final seconds = segments.fold<double>(
+      0,
+      (total, segment) => total + segment.duration,
+    );
+    return (seconds * 1000).round();
   }
 
   bool _keyChanged(M3u8EncryptionKey? previous, M3u8EncryptionKey? current) {
