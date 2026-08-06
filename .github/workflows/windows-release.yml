@@ -1,0 +1,86 @@
+name: Windows Release Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_name:
+        description: Windows artifact zip name
+        required: false
+        default: Nivio-Windows-x64
+  push:
+    tags:
+      - "desktop-v*"
+
+jobs:
+  build:
+    name: Build Windows x64
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: nivio_desktop
+    env:
+      TMDB_API_KEY: ${{ secrets.TMDB_API_KEY || vars.TMDB_API_KEY }}
+      TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN || vars.TMDB_READ_ACCESS_TOKEN }}
+      ANILIST_API_URL: ${{ secrets.ANILIST_API_URL || vars.ANILIST_API_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL || vars.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY }}
+      IPTV_PLAYLIST_URL: ${{ secrets.IPTV_PLAYLIST_URL || vars.IPTV_PLAYLIST_URL }}
+      IPTV_EPG_URL: ${{ secrets.IPTV_EPG_URL || vars.IPTV_EPG_URL }}
+      FIREBASE_WEB_API_KEY: ${{ secrets.FIREBASE_WEB_API_KEY || vars.FIREBASE_WEB_API_KEY }}
+      FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID || vars.FIREBASE_PROJECT_ID }}
+      FIREBASE_GOOGLE_CLIENT_ID: ${{ secrets.FIREBASE_GOOGLE_CLIENT_ID || vars.FIREBASE_GOOGLE_CLIENT_ID }}
+      AUTH_EXCHANGE_URL: ${{ secrets.AUTH_EXCHANGE_URL || vars.AUTH_EXCHANGE_URL }}
+      FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID || vars.FIREBASE_APP_ID }}
+      FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID || vars.FIREBASE_MESSAGING_SENDER_ID }}
+      FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET || vars.FIREBASE_STORAGE_BUCKET }}
+      API_BASE_URL: ${{ secrets.API_BASE_URL || vars.API_BASE_URL }}
+      IMAGE_PROXY_URL: ${{ secrets.IMAGE_PROXY_URL || vars.IMAGE_PROXY_URL }}
+      LOG_LEVEL: ${{ vars.LOG_LEVEL || 'info' }}
+      DESKTOP_UPDATE_REPO_OWNER: ${{ vars.DESKTOP_UPDATE_REPO_OWNER || github.repository_owner }}
+      DESKTOP_UPDATE_REPO_NAME: ${{ vars.DESKTOP_UPDATE_REPO_NAME || github.event.repository.name }}
+      DESKTOP_UPDATE_ASSET_PATTERN: ${{ vars.DESKTOP_UPDATE_ASSET_PATTERN || 'Nivio-Windows-x64.zip' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.35.7"
+          channel: stable
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Build Windows release
+        shell: pwsh
+        run: ./scripts/build_windows_release.ps1
+
+      - name: Package zip
+        shell: pwsh
+        run: |
+          $artifactName = "${{ github.event.inputs.artifact_name }}"
+          if ([string]::IsNullOrWhiteSpace($artifactName)) {
+            $artifactName = "Nivio-Windows-x64"
+          }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive `
+            -Path build/windows/x64/runner/Release/* `
+            -DestinationPath "dist/$artifactName.zip" `
+            -Force
+          Get-FileHash "dist/$artifactName.zip" -Algorithm SHA256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.inputs.artifact_name || 'Nivio-Windows-x64' }}
+          path: nivio_desktop/dist/*.zip
+          if-no-files-found: error

@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_all/webview_all.dart';
-import 'package:webview_all_linux/webview_all_linux.dart';
 
 import 'models/playback_request.dart';
 import 'models/playback_state.dart';
@@ -378,11 +377,7 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
     } catch (_) {}
     _disposed = true;
     WebRuntimeService.instance.markDestroyed();
-    if (_controller.platform is LinuxWebViewController) {
-      try {
-        await (_controller.platform as LinuxWebViewController).dispose();
-      } catch (_) {}
-    }
+    await WebRuntimeService.instance.disposeController(_controller);
     _state.dispose();
     PlaybackRuntimeDiagnostics.webEnginesDisposed++;
     PlaybackRuntimeDiagnostics.webLog(
@@ -407,8 +402,7 @@ class WebPlaybackEngine implements PlaybackSurfaceEngine {
     await _controller.setBackgroundColor(Colors.black);
     await _controller.enableZoom(false);
     await _controller.setUserAgent(
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
-      '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      WebRuntimeService.instance.webViewUserAgent(),
     );
     await _controller.addJavaScriptChannel(
       'NivioPlayer',

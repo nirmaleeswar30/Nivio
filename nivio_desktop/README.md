@@ -1,10 +1,11 @@
 <div align="center">
   <img src="assets/images/app-icon.png" alt="Nivio Desktop Logo" width="150" />
 
-  **A Linux desktop streaming application for Movies, TV Shows, Anime, and Live IPTV, with watch history, desktop playback, built-in providers, and cross-distro packages.**
+  **A desktop streaming application for Movies, TV Shows, Anime, and Live IPTV, with watch history, desktop playback, built-in providers, and Linux packages.**
 
   [![Flutter](https://img.shields.io/badge/Built_with-Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev/)
   [![Linux](https://img.shields.io/badge/Desktop-Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://www.linux.org/)
+  [![Windows](https://img.shields.io/badge/Desktop-Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://www.microsoft.com/windows/)
   [![MPV](https://img.shields.io/badge/Playback-libmpv-691F74?style=for-the-badge)](https://mpv.io/)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
@@ -41,22 +42,23 @@
 
 ## Features
 
-* **Desktop-first Linux UI**: Sidebar navigation, wide-screen layouts, hover states, keyboard-aware controls, and Linux window integration.
+* **Desktop-first UI**: Sidebar navigation, wide-screen layouts, hover states, keyboard-aware controls, and native desktop window integration.
 * **Unified Discovery**: Browse movies, TV shows, anime, providers, and details from a desktop-focused interface.
 * **Hover Preview Cards**: Inspect media quickly from poster grids with preview artwork, metadata, and instant actions.
 * **Continue Watching**: Resume movies and episodes from saved playback progress.
 * **Mini Player**: Keep playback visible while browsing other desktop sections.
-* **High-performance Playback**: Uses `media_kit` with `libmpv` for native Linux video playback.
+* **High-performance Playback**: Uses `media_kit` with native MPV-backed desktop video playback.
 * **Skip Intro / Outro Support**: Uses skip-time metadata where available to jump over intros and ending segments.
 * **Provider Fallbacks**: Resolves streams through multiple providers and falls back when a source fails.
 * **Custom Subtitles**: Load subtitle files or remote subtitle URLs and keep playback preferences.
-* **Embedded Web Fallback**: Uses WebKitGTK when a provider requires embedded playback.
+* **Embedded Web Fallback**: Uses WebKitGTK on Linux and WebView2 on Windows when a provider requires embedded playback.
 * **Live IPTV**: Supports custom M3U/M3U8 playlists, favorites, source filters, and built-in live TV providers.
 * **Watch History & Library**: Continue watching, local history, watchlist, and desktop persistence.
 * **Watch Parties**: Supabase-backed session support for synced watch rooms.
 * **Profile & Cloud Sync**: Sync watch activity and account data when cloud sync is configured.
 * **Desktop Settings**: Playback, subtitle appearance, downloads, content feed, app updates, and account controls.
 * **Linux Packaging**: AppImage, `.deb`, Arch package, and prepared Flatpak manifest.
+* **Windows Build Pipeline**: GitHub Actions workflow prepared for Windows x64 release zips.
 
 ---
 
@@ -84,7 +86,7 @@ archives.
 * **State Management**: Riverpod
 * **Routing**: GoRouter
 * **Playback**: `media_kit`, `media_kit_video`, `libmpv`
-* **Embedded Web**: WebKitGTK through `webview_all_linux`
+* **Embedded Web**: WebKitGTK on Linux, WebView2 on Windows
 * **Local Storage**: Hive, SharedPreferences
 * **Realtime**: Supabase for watch-party sessions
 * **Packaging**: AppImage, Debian package, Arch package, Flatpak manifest
@@ -112,6 +114,14 @@ Packaging scripts:
 scripts/package_appimage.sh
 scripts/package_deb.sh
 scripts/package_arch.sh
+```
+
+Windows builds are produced through GitHub Actions with
+`.github/workflows/windows-release.yml`. Locally, Windows release builds require
+a Windows machine with Visual Studio Build Tools:
+
+```powershell
+scripts/build_windows_release.ps1
 ```
 
 Flatpak packaging is prepared in `packaging/flatpak/`, but it is not included

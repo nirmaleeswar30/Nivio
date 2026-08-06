@@ -46,7 +46,7 @@ class NivioStartupErrorApp extends StatelessWidget {
   }
 }
 
-/// Root widget for the Nivio Linux desktop application.
+/// Root widget for the Nivio desktop application.
 class NivioDesktopApp extends StatefulWidget {
   final SearchRepository? searchRepository;
   final HomeRepository? homeRepository;
@@ -286,7 +286,7 @@ class _StartupUpdateGateState extends State<_StartupUpdateGate> {
           latestVersion: fullRelease.latestVersion,
           releaseNotes: fullRelease.releaseNotes?.trim().isNotEmpty == true
               ? fullRelease.releaseNotes!
-              : 'A new Linux desktop release is available.',
+              : 'A new desktop release is available.',
           onLater: () => Navigator.of(context).maybePop(),
           onInstall: () {
             Navigator.of(context).maybePop();

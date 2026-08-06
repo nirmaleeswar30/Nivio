@@ -35,7 +35,7 @@ class AppEnvironment {
     throw StateError(
       'Missing required desktop environment variable(s): ${missing.join(', ')}. '
       'Set them in your OS environment or create .env in the project folder, '
-      'next to the executable, or at ~/.config/nivio/.env.',
+      'next to the executable, or in the Nivio config folder.',
     );
   }
 
@@ -183,6 +183,14 @@ class AppEnvironment {
     final home = Platform.environment['HOME']?.trim();
     if (home != null && home.isNotEmpty) {
       add(File('$home/.config/$_configDirName/$fileName'));
+    }
+    final appData = Platform.environment['APPDATA']?.trim();
+    if (appData != null && appData.isNotEmpty) {
+      add(File('$appData/$_configDirName/$fileName'));
+    }
+    final userProfile = Platform.environment['USERPROFILE']?.trim();
+    if (userProfile != null && userProfile.isNotEmpty) {
+      add(File('$userProfile/AppData/Roaming/$_configDirName/$fileName'));
     }
 
     return files.values.toList(growable: false);
