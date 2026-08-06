@@ -54,8 +54,22 @@ jobs:
       - name: Enable Windows desktop
         run: flutter config --enable-windows-desktop
 
+      - name: Clean Flutter generated files
+        shell: pwsh
+        run: |
+          flutter clean
+          if (Test-Path windows/flutter/ephemeral) {
+            Remove-Item windows/flutter/ephemeral -Recurse -Force
+          }
+          if (Test-Path .dart_tool) {
+            Remove-Item .dart_tool -Recurse -Force
+          }
+
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Patch Windows plugin sources
+        run: dart run tool/patch_window_manager_windows.dart
 
       - name: Analyze
         run: flutter analyze

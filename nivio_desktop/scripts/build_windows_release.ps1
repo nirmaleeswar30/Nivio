@@ -55,4 +55,6 @@ $Defines = @(
   "--dart-define=DESKTOP_UPDATE_ASSET_PATTERN=$env:DESKTOP_UPDATE_ASSET_PATTERN"
 )
 
+dart run tool/patch_window_manager_windows.dart
+
 flutter build windows --release @Defines
