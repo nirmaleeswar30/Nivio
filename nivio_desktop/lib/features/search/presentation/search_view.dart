@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart' hide SearchController;
 
+import '../../../core/network/image/tmdb_image_builder.dart';
 import '../../../shared/theme/index.dart';
 import '../../../shared/widgets/widgets.dart';
 import '../../library/services/watchlist_sync_controller.dart';
@@ -403,8 +404,10 @@ class _SearchResultListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final imageProvider = _landscapeImageProvider(item);
     return LandscapeCard(
       title: item.title,
+      imageProvider: imageProvider,
       subtitle: item.overview,
       metadata: [
         item.yearLabel,
@@ -423,6 +426,18 @@ class _SearchResultListItem extends StatelessWidget {
       onWatchlist: onWatchlist,
       onMore: () => onOpenDetail?.call(item.id),
     );
+  }
+
+  ImageProvider? _landscapeImageProvider(SearchMediaItem item) {
+    final backdropPath = item.backdropPath?.trim();
+    if (backdropPath != null && backdropPath.isNotEmpty) {
+      return NetworkImage(TmdbImageBuilder.backdrop(backdropPath));
+    }
+    final posterPath = item.posterPath?.trim();
+    if (posterPath != null && posterPath.isNotEmpty) {
+      return NetworkImage(TmdbImageBuilder.poster(posterPath));
+    }
+    return null;
   }
 }
 

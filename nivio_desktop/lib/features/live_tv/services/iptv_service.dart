@@ -18,11 +18,19 @@ class DesktopIptvService {
     : _builtInProviders = builtInProviders ?? BuiltInLiveTvProviders();
 
   static const String playlistsKey = 'iptv_playlists';
+  static const String defaultPlaylistUrlKey = 'iptv_playlist_url';
   static const String favoritesKey = 'iptv_favorites';
   static const Duration operationTimeout = Duration(seconds: 35);
   static final Map<String, List<IptvChannel>> _playlistChannelCache = {};
 
   final BuiltInLiveTvProviders _builtInProviders;
+
+  Future<String> defaultPlaylistUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(defaultPlaylistUrlKey)?.trim();
+    if (saved != null && saved.isNotEmpty) return saved;
+    return AppEnvironment.iptvPlaylistUrl;
+  }
 
   Future<List<IptvPlaylist>> getPlaylists() async {
     _log('getPlaylists start');
@@ -331,7 +339,7 @@ class DesktopIptvService {
   Future<void> migrateLegacyPlaylist() async {
     _log('migrateLegacyPlaylist start');
     final prefs = await SharedPreferences.getInstance();
-    final oldUrl = prefs.getString('iptv_playlist_url');
+    final oldUrl = prefs.getString(defaultPlaylistUrlKey);
     final oldRaw = prefs.getString('iptv_playlist_raw');
     if (oldUrl == null || oldRaw == null || oldUrl.isEmpty || oldRaw.isEmpty) {
       _log('migrateLegacyPlaylist end migrated=false');
@@ -346,7 +354,7 @@ class DesktopIptvService {
     playlists.add(IptvPlaylist(id: id, name: 'Legacy Playlist', url: oldUrl));
     await _savePlaylists(playlists);
 
-    await prefs.remove('iptv_playlist_url');
+    await prefs.remove(defaultPlaylistUrlKey);
     await prefs.remove('iptv_playlist_raw');
     _log('migrateLegacyPlaylist end migrated=true');
   }

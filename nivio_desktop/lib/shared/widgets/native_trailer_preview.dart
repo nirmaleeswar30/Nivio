@@ -9,6 +9,19 @@ import '../../core/services/trailer_preview_service.dart';
 
 enum NativeTrailerPreviewTrigger { immediate, hover }
 
+typedef NativeTrailerScrollHandler =
+    void Function(NativeTrailerScrollEvent event);
+
+class NativeTrailerScrollEvent {
+  const NativeTrailerScrollEvent({
+    required this.scrollDelta,
+    required this.globalPosition,
+  });
+
+  final Offset scrollDelta;
+  final Offset globalPosition;
+}
+
 class NativeTrailerPreviewOverlay extends StatefulWidget {
   const NativeTrailerPreviewOverlay({
     super.key,
@@ -16,12 +29,18 @@ class NativeTrailerPreviewOverlay extends StatefulWidget {
     this.isLoading = false,
     this.startDelay = const Duration(milliseconds: 320),
     this.trigger = NativeTrailerPreviewTrigger.immediate,
+    this.showCloseButton = false,
+    this.onCloseRequested,
   });
 
   final String? mediaId;
   final bool isLoading;
   final Duration startDelay;
   final NativeTrailerPreviewTrigger trigger;
+  final bool showCloseButton;
+  final VoidCallback? onCloseRequested;
+
+  static NativeTrailerScrollHandler? onNativeScroll;
 
   @override
   State<NativeTrailerPreviewOverlay> createState() =>
@@ -59,7 +78,8 @@ class _NativeTrailerPreviewOverlayState
     if (oldWidget.mediaId == widget.mediaId &&
         oldWidget.isLoading == widget.isLoading &&
         oldWidget.startDelay == widget.startDelay &&
-        oldWidget.trigger == widget.trigger) {
+        oldWidget.trigger == widget.trigger &&
+        oldWidget.showCloseButton == widget.showCloseButton) {
       return;
     }
     if (_shouldPreview) {
@@ -139,6 +159,10 @@ class _NativeTrailerPreviewOverlayState
 
     final token = _linuxPreviewToken ??= _SharedLinuxTrailerPreview.instance
         .claim();
+    _SharedLinuxTrailerPreview.instance.registerCloseHandler(
+      token,
+      _handleCloseRequested,
+    );
     final prepared = await _SharedLinuxTrailerPreview.instance.prepare(
       token: token,
     );
@@ -188,6 +212,7 @@ class _NativeTrailerPreviewOverlayState
       rect: rect,
       muted: true,
       visible: false,
+      showCloseButton: widget.showCloseButton,
     );
   }
 
@@ -250,7 +275,11 @@ class _NativeTrailerPreviewOverlayState
     final rect = _currentPreviewRect();
     if (token == null || rect == null) return;
     unawaited(
-      _SharedLinuxTrailerPreview.instance.updateRect(token: token, rect: rect),
+      _SharedLinuxTrailerPreview.instance.updateRect(
+        token: token,
+        rect: rect,
+        showCloseButton: widget.showCloseButton,
+      ),
     );
   }
 
@@ -371,10 +400,18 @@ class _NativeTrailerPreviewOverlayState
     _validationTimer?.cancel();
     _playbackKickTimer?.cancel();
     _rectUpdateTimer?.cancel();
-    unawaited(
-      _SharedLinuxTrailerPreview.instance.stop(token: _linuxPreviewToken),
-    );
+    final token = _linuxPreviewToken;
+    if (token != null) {
+      _SharedLinuxTrailerPreview.instance.unregisterCloseHandler(token);
+    }
+    unawaited(_SharedLinuxTrailerPreview.instance.stop(token: token));
     _youtubeVideoId = null;
+  }
+
+  void _handleCloseRequested() {
+    if (_disposed || !mounted) return;
+    widget.onCloseRequested?.call();
+    _stopPreview();
   }
 
   @override
@@ -406,7 +443,9 @@ class _NativeTrailerPreviewOverlayState
 }
 
 final class _SharedLinuxTrailerPreview {
-  _SharedLinuxTrailerPreview._();
+  _SharedLinuxTrailerPreview._() {
+    _channel.setMethodCallHandler(_handleNativeMethodCall);
+  }
 
   static final _SharedLinuxTrailerPreview instance =
       _SharedLinuxTrailerPreview._();
@@ -417,10 +456,49 @@ final class _SharedLinuxTrailerPreview {
   int _activeToken = 0;
   bool _disabled = false;
   String? _loadedVideoId;
+  final Map<int, VoidCallback> _closeHandlers = <int, VoidCallback>{};
+
+  Future<Object?> _handleNativeMethodCall(MethodCall call) async {
+    final args = call.arguments;
+    if (args is! Map) return null;
+    if (call.method == 'nativeClose') {
+      final token = _readInt(args, 'token');
+      _closeHandlers[token]?.call();
+      return null;
+    }
+    if (call.method != 'nativeScroll') return null;
+    NativeTrailerPreviewOverlay.onNativeScroll?.call(
+      NativeTrailerScrollEvent(
+        scrollDelta: Offset(_readDouble(args, 'dx'), _readDouble(args, 'dy')),
+        globalPosition: Offset(_readDouble(args, 'x'), _readDouble(args, 'y')),
+      ),
+    );
+    return null;
+  }
+
+  double _readDouble(Map<dynamic, dynamic> args, String key) {
+    final value = args[key];
+    if (value is num) return value.toDouble();
+    return 0;
+  }
+
+  int _readInt(Map<dynamic, dynamic> args, String key) {
+    final value = args[key];
+    if (value is num) return value.toInt();
+    return 0;
+  }
 
   int claim() {
     _activeToken++;
     return _activeToken;
+  }
+
+  void registerCloseHandler(int token, VoidCallback handler) {
+    _closeHandlers[token] = handler;
+  }
+
+  void unregisterCloseHandler(int token) {
+    _closeHandlers.remove(token);
   }
 
   Future<bool> prepare({required int token}) async {
@@ -445,6 +523,7 @@ final class _SharedLinuxTrailerPreview {
     required Rect rect,
     required bool muted,
     required bool visible,
+    required bool showCloseButton,
   }) async {
     if (!_isSupported || _disabled || token != _activeToken) return false;
     try {
@@ -457,6 +536,7 @@ final class _SharedLinuxTrailerPreview {
         'height': rect.height,
         'muted': muted,
         'visible': visible,
+        'showCloseButton': showCloseButton,
       });
       if (shown == true) {
         _loadedVideoId = videoId;
@@ -470,7 +550,11 @@ final class _SharedLinuxTrailerPreview {
     }
   }
 
-  Future<void> updateRect({required int token, required Rect rect}) async {
+  Future<void> updateRect({
+    required int token,
+    required Rect rect,
+    required bool showCloseButton,
+  }) async {
     if (!_isSupported || _disabled || token != _activeToken) return;
     try {
       await _channel.invokeMethod<void>('updateRect', {
@@ -479,6 +563,7 @@ final class _SharedLinuxTrailerPreview {
         'y': rect.top,
         'width': rect.width,
         'height': rect.height,
+        'showCloseButton': showCloseButton,
       });
     } on MissingPluginException {
       _disabled = true;
@@ -532,5 +617,7 @@ final class _SharedLinuxTrailerPreview {
     }
   }
 
-  bool get _isSupported => defaultTargetPlatform == TargetPlatform.linux;
+  bool get _isSupported =>
+      defaultTargetPlatform == TargetPlatform.linux ||
+      defaultTargetPlatform == TargetPlatform.windows;
 }

@@ -61,6 +61,18 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+if(TARGET webview_all_windows_deps)
+  add_dependencies(${BINARY_NAME} webview_all_windows_deps)
+  target_include_directories(${BINARY_NAME} PRIVATE
+    "${CMAKE_BINARY_DIR}/packages/Microsoft.Web.WebView2/build/native/include"
+    "${CMAKE_BINARY_DIR}/packages/Microsoft.Windows.ImplementationLibrary/include"
+  )
+  target_link_libraries(${BINARY_NAME} PRIVATE
+    "${CMAKE_BINARY_DIR}/packages/Microsoft.Web.WebView2/build/native/Microsoft.Web.WebView2.targets"
+    "${CMAKE_BINARY_DIR}/packages/Microsoft.Windows.ImplementationLibrary/build/native/Microsoft.Windows.ImplementationLibrary.targets"
+  )
+endif()
+
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can

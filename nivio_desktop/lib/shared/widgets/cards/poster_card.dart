@@ -61,6 +61,7 @@ class PosterCard extends StatefulWidget {
 class _PosterCardState extends State<PosterCard> {
   static Offset? _lastPointerPosition;
   static _PosterCardState? _activeOverlayOwner;
+  static bool _nativeTrailerScrollHookInstalled = false;
 
   final GlobalKey _targetKey = GlobalKey();
 
@@ -79,6 +80,15 @@ class _PosterCardState extends State<PosterCard> {
   bool get _isActive => _isHovered || _isFocused;
 
   @override
+  void initState() {
+    super.initState();
+    if (!_nativeTrailerScrollHookInstalled) {
+      NativeTrailerPreviewOverlay.onNativeScroll = _handleNativeTrailerScroll;
+      _nativeTrailerScrollHookInstalled = true;
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant PosterCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (_overlayEntry != null) {
@@ -89,17 +99,25 @@ class _PosterCardState extends State<PosterCard> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _refreshScrollPositions();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isDeactivated) return;
+      _refreshScrollPositions();
+    });
+    _isScrolling = _isAnyScrollPositionActive;
+  }
+
+  void _refreshScrollPositions() {
     _syncScrollPosition(
       current: _horizontalScrollPosition,
-      next: Scrollable.maybeOf(context, axis: Axis.horizontal)?.position,
+      next: _findAncestorScrollPosition(Axis.horizontal),
       update: (position) => _horizontalScrollPosition = position,
     );
     _syncScrollPosition(
       current: _verticalScrollPosition,
-      next: Scrollable.maybeOf(context, axis: Axis.vertical)?.position,
+      next: _findAncestorScrollPosition(Axis.vertical),
       update: (position) => _verticalScrollPosition = position,
     );
-    _isScrolling = _isAnyScrollPositionActive;
   }
 
   @override
@@ -186,6 +204,23 @@ class _PosterCardState extends State<PosterCard> {
     });
   }
 
+  static void _handleNativeTrailerScroll(NativeTrailerScrollEvent event) {
+    final owner = _activeOverlayOwner;
+    if (owner == null || !owner.mounted || owner._isDeactivated) return;
+    owner._handleNativeTrailerScrollEvent(event);
+  }
+
+  void _handleNativeTrailerScrollEvent(NativeTrailerScrollEvent event) {
+    _lastPointerPosition = event.globalPosition;
+    if (!_isPointerOverHoverRegion(event.globalPosition)) return;
+    final position = _scrollPositionForPointerDelta(event.scrollDelta);
+    if (position == null) return;
+    position.pointerScroll(
+      _scrollDeltaForPosition(position, event.scrollDelta),
+    );
+    _forceCloseHover();
+  }
+
   void _forceCloseHover() {
     _showTimer?.cancel();
     _postScrollHoverTimer?.cancel();
@@ -199,32 +234,52 @@ class _PosterCardState extends State<PosterCard> {
   }
 
   ScrollPosition? _scrollPositionForPointerDelta(Offset delta) {
-    final verticalDelta = delta.dy;
-    final horizontalDelta = delta.dx;
-    final preferVertical = verticalDelta.abs() >= horizontalDelta.abs();
     final verticalPosition = _resolveScrollPosition(Axis.vertical);
     final horizontalPosition = _resolveScrollPosition(Axis.horizontal);
-
-    if (preferVertical) {
-      return _scrollablePositionForDelta(verticalPosition, verticalDelta) ??
-          _scrollablePositionForDelta(horizontalPosition, verticalDelta) ??
-          _scrollablePositionForDelta(horizontalPosition, horizontalDelta);
-    }
+    final horizontalDelta = _horizontalScrollDelta(delta);
 
     return _scrollablePositionForDelta(horizontalPosition, horizontalDelta) ??
-        _scrollablePositionForDelta(verticalPosition, verticalDelta);
+        _scrollablePositionForDelta(verticalPosition, delta.dy);
   }
 
   ScrollPosition? _resolveScrollPosition(Axis axis) {
-    final targetContext = _targetKey.currentContext;
-    final resolved = targetContext == null
-        ? null
-        : Scrollable.maybeOf(targetContext, axis: axis)?.position;
+    final resolved = _findAncestorScrollPosition(axis);
     return resolved ??
         switch (axis) {
           Axis.horizontal => _horizontalScrollPosition,
           Axis.vertical => _verticalScrollPosition,
         };
+  }
+
+  ScrollPosition? _findAncestorScrollPosition(Axis axis) {
+    final startContext = _targetKey.currentContext ?? context;
+    ScrollPosition? fallback;
+    ScrollPosition? scrollable;
+
+    startContext.visitAncestorElements((element) {
+      final widget = element.widget;
+      if (widget is! Scrollable ||
+          axisDirectionToAxis(widget.axisDirection) != axis) {
+        return true;
+      }
+      if (element is StatefulElement && element.state is ScrollableState) {
+        final position = (element.state as ScrollableState).position;
+        fallback ??= position;
+        if (_positionCanScroll(position)) {
+          scrollable = position;
+          return false;
+        }
+      }
+      return true;
+    });
+
+    return scrollable ?? fallback;
+  }
+
+  bool _positionCanScroll(ScrollPosition position) {
+    return position.hasPixels &&
+        position.hasContentDimensions &&
+        position.maxScrollExtent > position.minScrollExtent;
   }
 
   ScrollPosition? _scrollablePositionForDelta(
@@ -242,13 +297,17 @@ class _PosterCardState extends State<PosterCard> {
   }
 
   double _scrollDeltaForPosition(ScrollPosition position, Offset delta) {
+    if (identical(position, _resolveScrollPosition(Axis.horizontal))) {
+      return _horizontalScrollDelta(delta);
+    }
     if (identical(position, _resolveScrollPosition(Axis.vertical))) {
       return delta.dy;
     }
-    if (delta.dx != 0 && delta.dx.abs() > delta.dy.abs()) {
-      return delta.dx;
-    }
-    return delta.dy;
+    return _horizontalScrollDelta(delta);
+  }
+
+  double _horizontalScrollDelta(Offset delta) {
+    return delta.dx.abs() > delta.dy.abs() ? delta.dx : delta.dy;
   }
 
   void _setHovered(bool value) {

@@ -42,7 +42,7 @@ class _LiveTvViewState extends State<LiveTvView> {
   @override
   void initState() {
     super.initState();
-    _log('env playlistUrl=${AppEnvironment.iptvPlaylistUrl}');
+    _urlController.text = AppEnvironment.iptvPlaylistUrl;
     _loadSavedPlaylist();
   }
 
@@ -87,10 +87,7 @@ class _LiveTvViewState extends State<LiveTvView> {
                     controller: _urlController,
                     error: _error,
                     onLoad: () => _fetchPlaylist(_urlController.text.trim()),
-                    onLoadPublic: () {
-                      _urlController.text = AppEnvironment.iptvPlaylistUrl;
-                      _fetchPlaylist(_urlController.text);
-                    },
+                    onLoadPublic: _loadDefaultPlaylist,
                   ),
           ),
         ),
@@ -201,6 +198,13 @@ class _LiveTvViewState extends State<LiveTvView> {
         _log('loadSavedPlaylist finally loading=false');
       }
     }
+  }
+
+  Future<void> _loadDefaultPlaylist() async {
+    final url = await _service.defaultPlaylistUrl();
+    if (!mounted) return;
+    _urlController.text = url;
+    await _fetchPlaylist(url, name: 'Default Playlist');
   }
 
   Future<void> _fetchPlaylist(

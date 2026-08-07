@@ -415,6 +415,18 @@ class DesktopUpdateService {
   }
 
   static Future<DesktopVersionInfo> _readPubspecVersion() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      final version = packageInfo.version.trim();
+      final buildNumber = packageInfo.buildNumber.trim();
+      if (version.isNotEmpty) {
+        return DesktopVersionInfo(
+          version: version,
+          buildNumber: buildNumber.isEmpty ? '1' : buildNumber,
+        );
+      }
+    } catch (_) {}
+
     final file = File('pubspec.yaml');
     if (!file.existsSync()) {
       return const DesktopVersionInfo(version: '1.0.0', buildNumber: '1');

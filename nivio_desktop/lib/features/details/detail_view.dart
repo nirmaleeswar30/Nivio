@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:lucide_flutter/lucide_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../shared/theme/index.dart';
 import '../../shared/widgets/widgets.dart';
@@ -61,6 +60,7 @@ class _DetailViewState extends State<DetailView> {
   double _watchProgress = 0;
   int _selectedSeason = 1;
   int _resumeEpisode = 1;
+  bool _inlineTrailerActive = false;
 
   @override
   void initState() {
@@ -110,6 +110,9 @@ class _DetailViewState extends State<DetailView> {
   void _syncMedia() {
     final m = widget.controller.media;
     if (m != null) {
+      if (_media?.id != m.id) {
+        _inlineTrailerActive = false;
+      }
       _media = _withWatchlistState(m);
       _watchProgress = m.resumeProgress;
       if (m.seasons.isNotEmpty) {
@@ -403,9 +406,11 @@ class _DetailViewState extends State<DetailView> {
                         ),
                         onToggleWatchlist: _toggleWatchlist,
                         onDownload: () => _downloadFromHero(displayMedia),
+                        inlineTrailerActive: _inlineTrailerActive,
+                        onInlineTrailerExit: _stopInlineTrailer,
                         onWatchTrailer: displayMedia.trailers.isEmpty
                             ? null
-                            : () => _openTrailer(displayMedia),
+                            : () => _playInlineTrailer(displayMedia),
                         onWatchTogether: () => widget.onWatchTogether(
                           displayMedia,
                           _selectedSeason,
@@ -526,9 +531,11 @@ class _DetailViewState extends State<DetailView> {
                                   onToggleWatchlist: _toggleWatchlist,
                                   onDownload: () =>
                                       _downloadFromHero(displayMedia),
+                                  inlineTrailerActive: _inlineTrailerActive,
+                                  onInlineTrailerExit: _stopInlineTrailer,
                                   onWatchTrailer: displayMedia.trailers.isEmpty
                                       ? null
-                                      : () => _openTrailer(displayMedia),
+                                      : () => _playInlineTrailer(displayMedia),
                                   onWatchTogether: () => widget.onWatchTogether(
                                     displayMedia,
                                     _selectedSeason,
@@ -936,17 +943,18 @@ class _DetailViewState extends State<DetailView> {
     await _queueDownload(media);
   }
 
-  Future<void> _openTrailer(DetailMedia media) async {
+  void _playInlineTrailer(DetailMedia media) {
     final trailerKey = media.trailers.firstOrNull;
     if (trailerKey == null || trailerKey.trim().isEmpty) {
       _showActionFeedback('Trailer unavailable');
       return;
     }
-    final uri = Uri.https('www.youtube.com', '/watch', {'v': trailerKey});
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!opened && mounted) {
-      _showActionFeedback('Unable to open trailer');
-    }
+    setState(() => _inlineTrailerActive = true);
+  }
+
+  void _stopInlineTrailer() {
+    if (!_inlineTrailerActive || !mounted) return;
+    setState(() => _inlineTrailerActive = false);
   }
 
   void _playMedia({int? season, int? episode}) {
@@ -1141,6 +1149,8 @@ class _HotstarModalHero extends StatelessWidget {
     required this.onToggleWatchlist,
     required this.onDownload,
     required this.onWatchTogether,
+    required this.inlineTrailerActive,
+    required this.onInlineTrailerExit,
     this.onWatchTrailer,
     this.height = 470,
     this.contentLeft = AppSpacing.huge,
@@ -1156,6 +1166,8 @@ class _HotstarModalHero extends StatelessWidget {
   final VoidCallback onToggleWatchlist;
   final VoidCallback onDownload;
   final VoidCallback onWatchTogether;
+  final bool inlineTrailerActive;
+  final VoidCallback onInlineTrailerExit;
   final VoidCallback? onWatchTrailer;
   final double height;
   final double contentLeft;
@@ -1241,15 +1253,31 @@ class _HotstarModalHero extends StatelessWidget {
                     top: 0,
                     right: 0,
                     bottom: 0,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        NativeTrailerPreviewOverlay(
-                          mediaId: media.id,
-                          startDelay: const Duration(seconds: 2),
-                          trigger: NativeTrailerPreviewTrigger.hover,
-                        ),
-                      ],
+                    child: MouseRegion(
+                      onExit: (_) {
+                        if (inlineTrailerActive) onInlineTrailerExit();
+                      },
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          NativeTrailerPreviewOverlay(
+                            key: ValueKey(
+                              inlineTrailerActive
+                                  ? 'inline-${media.id}'
+                                  : 'hover-${media.id}',
+                            ),
+                            mediaId: media.id,
+                            startDelay: inlineTrailerActive
+                                ? Duration.zero
+                                : const Duration(seconds: 2),
+                            trigger: inlineTrailerActive
+                                ? NativeTrailerPreviewTrigger.immediate
+                                : NativeTrailerPreviewTrigger.hover,
+                            showCloseButton: inlineTrailerActive,
+                            onCloseRequested: onInlineTrailerExit,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   DecoratedBox(

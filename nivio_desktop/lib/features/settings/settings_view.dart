@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:lucide_flutter/lucide_flutter.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -695,6 +696,10 @@ class _SettingsViewState extends State<SettingsView> {
         'account',
         'history',
         'metadata',
+        'party',
+        'watch party',
+        'supabase',
+        'realtime',
       ]))
         _Section(
           title: 'Data & Account',
@@ -702,6 +707,15 @@ class _SettingsViewState extends State<SettingsView> {
           error: state.sectionErrors['storage'],
           child: Column(
             children: [
+              _InfoTile(title: 'Watch Party Name', value: state.partyUserName),
+              _InfoTile(
+                title: 'Supabase Service',
+                value: state.serviceStatus.supabase,
+              ),
+              _InfoTile(
+                title: 'Realtime Service',
+                value: state.serviceStatus.realtime,
+              ),
               _DestructiveTile(
                 title: 'Clear Watch History',
                 onConfirm: _controller.clearWatchHistory,
@@ -718,6 +732,9 @@ class _SettingsViewState extends State<SettingsView> {
         'cache',
         'storage',
         'network',
+        'live tv',
+        'iptv',
+        'playlist',
         'partial',
         'missing',
       ]))
@@ -735,6 +752,20 @@ class _SettingsViewState extends State<SettingsView> {
               _InfoTile(
                 title: 'Network Status',
                 value: state.cacheStats.networkOnline ? 'Online' : 'Offline',
+              ),
+              _InfoTile(title: 'IPTV Service', value: state.serviceStatus.iptv),
+              _TextSettingTile(
+                title: 'Default IPTV Playlist',
+                value: state.settings.iptvPlaylistUrl,
+                hint: 'Paste M3U playlist URL',
+                validator: _validateHttpUrl,
+                onSubmitted: (value) => unawaited(
+                  _controller.updateString(SettingsKeys.iptvPlaylistUrl, value),
+                ),
+              ),
+              _InfoTile(
+                title: 'Saved IPTV Playlists',
+                value: state.iptvPlaylistCount.toString(),
               ),
               _InfoTile(
                 title: 'API Cache',
@@ -1615,7 +1646,7 @@ abstract final class SettingsKeys {
   static const wifiOnlyDownloads = 'download_wifi_only';
   static const imageQuality = 'image_quality';
   static const imageProxyUrl = 'image_proxy_url';
-  static const iptvPlaylistUrl = 'iptv_playlist_url';
+  static const iptvPlaylistUrl = DesktopIptvService.defaultPlaylistUrlKey;
   static const iptvCacheHours = 'iptv_cache_hours';
   static const episodeCheckEnabled = 'desktop_episode_check_enabled';
   static const episodeCheckFrequencyHours =
@@ -1993,8 +2024,20 @@ class _TextSettingTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      title: Text(title),
-      subtitle: Text(value.isEmpty ? hint : value),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      title: Text(
+        title,
+        style: AppTypography.body.copyWith(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      subtitle: Text(
+        value.isEmpty ? hint : value,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+      ),
       trailing: IconButton(
         tooltip: 'Edit $title',
         icon: const Icon(LucideIcons.pencil),
@@ -2239,6 +2282,15 @@ Future<String> _defaultDownloadDirectory() async {
 }
 
 Future<(String, String)> _readVersionInfo() async {
+  try {
+    final packageInfo = await PackageInfo.fromPlatform();
+    final version = packageInfo.version.trim();
+    final buildNumber = packageInfo.buildNumber.trim();
+    if (version.isNotEmpty) {
+      return (version, buildNumber.isEmpty ? '1' : buildNumber);
+    }
+  } catch (_) {}
+
   final file = File('pubspec.yaml');
   if (!file.existsSync()) return ('1.0.0', '1');
   final content = await file.readAsString();

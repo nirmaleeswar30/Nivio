@@ -13,6 +13,7 @@ constexpr char kPreviewOrigin[] = "https://nivio.local";
 constexpr char kPreviewDocumentUrl[] = "https://nivio.local/trailer-preview.html";
 constexpr int kMuteBadgeSize = 32;
 constexpr int kMuteBadgeInset = 10;
+constexpr int kTrailerBadgeGap = 8;
 constexpr char kBlankHtml[] =
     "<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head>"
     "<body style=\"margin:0;background:#000;\"></body></html>";
@@ -21,6 +22,9 @@ struct NativeTrailerOverlay;
 gboolean window_button_press_cb(GtkWidget* widget,
                                 GdkEventButton* event,
                                 gpointer user_data);
+gboolean trailer_scroll_cb(GtkWidget* widget,
+                           GdkEventScroll* event,
+                           gpointer user_data);
 
 typedef struct _NivioFixedBin NivioFixedBin;
 typedef struct _NivioFixedBinClass NivioFixedBinClass;
@@ -358,9 +362,13 @@ struct NativeTrailerOverlay {
   GtkWidget* web_view = nullptr;
   GtkWidget* mute_badge = nullptr;
   GtkWidget* mute_icon = nullptr;
+  GtkWidget* close_badge = nullptr;
+  GtkWidget* close_icon = nullptr;
   GtkWidget* toplevel = nullptr;
+  FlMethodChannel* channel = nullptr;
   int active_token = 0;
   bool muted = true;
+  bool show_close_button = false;
   std::string loaded_video_id;
 
   explicit NativeTrailerOverlay(GtkWidget* overlay_widget)
@@ -379,6 +387,9 @@ struct NativeTrailerOverlay {
     gtk_widget_set_halign(web_host, GTK_ALIGN_START);
     gtk_widget_set_valign(web_host, GTK_ALIGN_START);
     gtk_widget_set_no_show_all(web_host, TRUE);
+    gtk_widget_add_events(web_host, GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK);
+    g_signal_connect(web_host, "scroll-event", G_CALLBACK(trailer_scroll_cb),
+                     this);
 
     web_view = webkit_web_view_new();
     gtk_widget_set_name(web_view, "nivio-native-trailer-preview");
@@ -386,6 +397,9 @@ struct NativeTrailerOverlay {
     gtk_widget_set_focus_on_click(web_view, FALSE);
     gtk_widget_set_hexpand(web_view, FALSE);
     gtk_widget_set_vexpand(web_view, FALSE);
+    gtk_widget_add_events(web_view, GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK);
+    g_signal_connect(web_view, "scroll-event", G_CALLBACK(trailer_scroll_cb),
+                     this);
 
     WebKitSettings* settings =
         webkit_web_view_get_settings(WEBKIT_WEB_VIEW(web_view));
@@ -422,14 +436,32 @@ struct NativeTrailerOverlay {
     gtk_widget_show(this->mute_icon);
     gtk_container_add(GTK_CONTAINER(mute_badge), this->mute_icon);
 
+    close_badge = gtk_event_box_new();
+    gtk_widget_set_name(close_badge, "nivio-native-trailer-close-badge");
+    gtk_widget_set_can_focus(close_badge, FALSE);
+    gtk_widget_set_focus_on_click(close_badge, FALSE);
+    gtk_widget_set_halign(close_badge, GTK_ALIGN_START);
+    gtk_widget_set_valign(close_badge, GTK_ALIGN_START);
+    gtk_widget_set_no_show_all(close_badge, TRUE);
+    gtk_widget_set_size_request(close_badge, kMuteBadgeSize, kMuteBadgeSize);
+
+    GtkWidget* close_icon =
+        gtk_image_new_from_icon_name("window-close-symbolic",
+                                     GTK_ICON_SIZE_MENU);
+    this->close_icon = close_icon;
+    gtk_widget_show(this->close_icon);
+    gtk_container_add(GTK_CONTAINER(close_badge), this->close_icon);
+
     GtkCssProvider* provider = gtk_css_provider_new();
     gtk_css_provider_load_from_data(
         provider,
-        "#nivio-native-trailer-mute-badge {"
+        "#nivio-native-trailer-mute-badge,"
+        "#nivio-native-trailer-close-badge {"
         "background-color: rgba(0,0,0,0.68);"
         "border-radius: 16px;"
         "}"
-        "#nivio-native-trailer-mute-badge image {"
+        "#nivio-native-trailer-mute-badge image,"
+        "#nivio-native-trailer-close-badge image {"
         "color: #ffffff;"
         "}",
         -1, nullptr);
@@ -437,10 +469,17 @@ struct NativeTrailerOverlay {
         gtk_widget_get_style_context(mute_badge),
         GTK_STYLE_PROVIDER(provider),
         GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    gtk_style_context_add_provider(
+        gtk_widget_get_style_context(close_badge),
+        GTK_STYLE_PROVIDER(provider),
+        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(provider);
 
     gtk_overlay_add_overlay(GTK_OVERLAY(overlay), mute_badge);
     gtk_overlay_set_overlay_pass_through(GTK_OVERLAY(overlay), mute_badge,
+                                         TRUE);
+    gtk_overlay_add_overlay(GTK_OVERLAY(overlay), close_badge);
+    gtk_overlay_set_overlay_pass_through(GTK_OVERLAY(overlay), close_badge,
                                          TRUE);
 
     if (GTK_IS_WIDGET(toplevel)) {
@@ -460,6 +499,7 @@ struct NativeTrailerOverlay {
     double y = map_lookup_double(args, "y", 0);
     double width = map_lookup_double(args, "width", 0);
     double height = map_lookup_double(args, "height", 0);
+    show_close_button = map_lookup_bool(args, "showCloseButton", FALSE);
 
     gint left = static_cast<gint>(std::round(x));
     gint top = static_cast<gint>(std::round(y));
@@ -470,6 +510,9 @@ struct NativeTrailerOverlay {
       gtk_widget_set_opacity(web_host, 0.0);
       if (mute_badge != nullptr) {
         gtk_widget_hide(mute_badge);
+      }
+      if (close_badge != nullptr) {
+        gtk_widget_hide(close_badge);
       }
       return;
     }
@@ -487,6 +530,14 @@ struct NativeTrailerOverlay {
       gtk_widget_set_margin_top(mute_badge, top + kMuteBadgeInset);
       gtk_widget_set_size_request(mute_badge, kMuteBadgeSize, kMuteBadgeSize);
     }
+    if (close_badge != nullptr) {
+      gint close_left = left + request_width - (kMuteBadgeSize * 2) -
+                        kMuteBadgeInset - kTrailerBadgeGap;
+      gtk_widget_set_margin_start(close_badge,
+                                  close_left > left ? close_left : left);
+      gtk_widget_set_margin_top(close_badge, top + kMuteBadgeInset);
+      gtk_widget_set_size_request(close_badge, kMuteBadgeSize, kMuteBadgeSize);
+    }
   }
 
   void hide(bool clear_page) {
@@ -497,6 +548,9 @@ struct NativeTrailerOverlay {
     gtk_widget_hide(web_host);
     if (mute_badge != nullptr) {
       gtk_widget_hide(mute_badge);
+    }
+    if (close_badge != nullptr) {
+      gtk_widget_hide(close_badge);
     }
     loaded_video_id.clear();
     if (clear_page) {
@@ -526,10 +580,11 @@ struct NativeTrailerOverlay {
                                         nullptr);
   }
 
-  bool is_root_point_inside_mute_badge(gdouble x_root, gdouble y_root) {
-    if (mute_badge == nullptr || toplevel == nullptr ||
-        !gtk_widget_get_visible(mute_badge) ||
-        !gtk_widget_get_mapped(mute_badge)) {
+  bool is_root_point_inside_badge(GtkWidget* badge,
+                                  gdouble x_root,
+                                  gdouble y_root) {
+    if (badge == nullptr || toplevel == nullptr ||
+        !gtk_widget_get_visible(badge) || !gtk_widget_get_mapped(badge)) {
       return false;
     }
 
@@ -544,17 +599,35 @@ struct NativeTrailerOverlay {
 
     gint badge_x = 0;
     gint badge_y = 0;
-    if (!gtk_widget_translate_coordinates(mute_badge, toplevel, 0, 0,
+    if (!gtk_widget_translate_coordinates(badge, toplevel, 0, 0,
                                           &badge_x, &badge_y)) {
       return false;
     }
 
     GtkAllocation allocation;
-    gtk_widget_get_allocation(mute_badge, &allocation);
+    gtk_widget_get_allocation(badge, &allocation);
     const gdouble local_x = x_root - window_x;
     const gdouble local_y = y_root - window_y;
     return local_x >= badge_x && local_x <= badge_x + allocation.width &&
            local_y >= badge_y && local_y <= badge_y + allocation.height;
+  }
+
+  bool is_root_point_inside_mute_badge(gdouble x_root, gdouble y_root) {
+    return is_root_point_inside_badge(mute_badge, x_root, y_root);
+  }
+
+  bool is_root_point_inside_close_badge(gdouble x_root, gdouble y_root) {
+    return is_root_point_inside_badge(close_badge, x_root, y_root);
+  }
+
+  void request_close() {
+    if (channel == nullptr) {
+      return;
+    }
+    g_autoptr(FlValue) args = fl_value_new_map();
+    fl_value_set_string_take(args, "token", fl_value_new_int(active_token));
+    fl_method_channel_invoke_method(channel, "nativeClose", args, nullptr,
+                                    nullptr, nullptr);
   }
 };
 
@@ -566,12 +639,70 @@ gboolean window_button_press_cb(GtkWidget*,
   }
   NativeTrailerOverlay* controller =
       static_cast<NativeTrailerOverlay*>(user_data);
-  if (event == nullptr ||
-      !controller->is_root_point_inside_mute_badge(event->x_root,
+  if (event == nullptr) {
+    return FALSE;
+  }
+  if (controller->is_root_point_inside_close_badge(event->x_root,
+                                                  event->y_root)) {
+    controller->request_close();
+    return TRUE;
+  }
+  if (!controller->is_root_point_inside_mute_badge(event->x_root,
                                                   event->y_root)) {
     return FALSE;
   }
   controller->set_muted(!controller->muted);
+  return TRUE;
+}
+
+gboolean trailer_scroll_cb(GtkWidget*, GdkEventScroll* event, gpointer user_data) {
+  NativeTrailerOverlay* controller =
+      static_cast<NativeTrailerOverlay*>(user_data);
+  if (controller == nullptr || controller->channel == nullptr ||
+      event == nullptr) {
+    return FALSE;
+  }
+
+  double dx = 0.0;
+  double dy = 0.0;
+  if (event->direction == GDK_SCROLL_SMOOTH) {
+    constexpr double kSmoothScrollScale = 80.0;
+    dx = event->delta_x * kSmoothScrollScale;
+    dy = event->delta_y * kSmoothScrollScale;
+  } else if (event->direction == GDK_SCROLL_UP) {
+    dy = -72.0;
+  } else if (event->direction == GDK_SCROLL_DOWN) {
+    dy = 72.0;
+  } else if (event->direction == GDK_SCROLL_LEFT) {
+    dx = -72.0;
+  } else if (event->direction == GDK_SCROLL_RIGHT) {
+    dx = 72.0;
+  }
+
+  if (dx == 0.0 && dy == 0.0) {
+    return FALSE;
+  }
+
+  double x = event->x_root;
+  double y = event->y_root;
+  if (controller->toplevel != nullptr) {
+    GdkWindow* window = gtk_widget_get_window(controller->toplevel);
+    if (window != nullptr) {
+      gint window_x = 0;
+      gint window_y = 0;
+      gdk_window_get_origin(window, &window_x, &window_y);
+      x -= window_x;
+      y -= window_y;
+    }
+  }
+
+  g_autoptr(FlValue) args = fl_value_new_map();
+  fl_value_set_string_take(args, "dx", fl_value_new_float(dx));
+  fl_value_set_string_take(args, "dy", fl_value_new_float(dy));
+  fl_value_set_string_take(args, "x", fl_value_new_float(x));
+  fl_value_set_string_take(args, "y", fl_value_new_float(y));
+  fl_method_channel_invoke_method(controller->channel, "nativeScroll", args,
+                                  nullptr, nullptr, nullptr);
   return TRUE;
 }
 
@@ -649,12 +780,20 @@ void method_call_cb(FlMethodChannel*,
       controller->loaded_video_id = video_id;
     }
     gtk_widget_show(controller->web_host);
-    gtk_widget_set_opacity(controller->web_host,
-                           map_lookup_bool(args, "visible", FALSE) ? 1.0
-                                                                   : 0.0);
-    if (controller->mute_badge != nullptr &&
-        map_lookup_bool(args, "visible", FALSE)) {
-      gtk_widget_show(controller->mute_badge);
+    bool visible = map_lookup_bool(args, "visible", FALSE);
+    gtk_widget_set_opacity(controller->web_host, visible ? 1.0 : 0.0);
+    if (controller->mute_badge != nullptr) {
+      if (visible) {
+        gtk_widget_show(controller->mute_badge);
+      } else {
+        gtk_widget_hide(controller->mute_badge);
+      }
+    }
+    if (controller->close_badge != nullptr && visible &&
+        controller->show_close_button) {
+      gtk_widget_show(controller->close_badge);
+    } else if (controller->close_badge != nullptr) {
+      gtk_widget_hide(controller->close_badge);
     }
     respond_success(method_call, fl_value_new_bool(TRUE));
     return;
@@ -680,8 +819,17 @@ void method_call_cb(FlMethodChannel*,
         if (controller->mute_badge != nullptr) {
           gtk_widget_show(controller->mute_badge);
         }
-      } else if (controller->mute_badge != nullptr) {
-        gtk_widget_hide(controller->mute_badge);
+        if (controller->close_badge != nullptr &&
+            controller->show_close_button) {
+          gtk_widget_show(controller->close_badge);
+        }
+      } else {
+        if (controller->mute_badge != nullptr) {
+          gtk_widget_hide(controller->mute_badge);
+        }
+        if (controller->close_badge != nullptr) {
+          gtk_widget_hide(controller->close_badge);
+        }
       }
     }
     respond_success(method_call);
@@ -738,6 +886,7 @@ void nivio_native_trailer_overlay_register(FlView* view, GtkWidget* overlay) {
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   FlMethodChannel* channel = fl_method_channel_new(
       messenger, kChannelName, FL_METHOD_CODEC(codec));
+  controller->channel = channel;
   fl_method_channel_set_method_call_handler(channel, method_call_cb, controller,
                                             nullptr);
   g_object_set_data_full(G_OBJECT(view), "nivio-native-trailer-channel",

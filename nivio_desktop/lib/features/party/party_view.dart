@@ -97,13 +97,15 @@ class _PartyViewState extends State<PartyView> {
     }
 
     if (!WatchPartySupabaseConfig.isAvailable || _service == null) {
+      final unavailableMessage = WatchPartySupabaseConfig.isConfigured
+          ? 'Supabase is configured, but the realtime service did not initialize. Check network access and restart the desktop app.'
+          : 'Build the Windows release with SUPABASE_URL and SUPABASE_ANON_KEY, or add them to .env next to Nivio.exe.';
       return NivioPageBackdrop(
         child: PageContainer(
           child: Center(
             child: EmptyState(
               title: 'Watch Party unavailable',
-              message:
-                  'Add SUPABASE_URL and SUPABASE_ANON_KEY to .env, then restart the desktop app.',
+              message: unavailableMessage,
               actionLabel: 'Retry',
               onAction: _initialize,
             ),
