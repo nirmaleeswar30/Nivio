@@ -602,7 +602,13 @@ private:
                 CompletePrepare(false);
                 return S_OK;
               }
-              environment_.copy_from(environment);
+              HRESULT copy_environment_hr =
+                  environment->QueryInterface(IID_PPV_ARGS(environment_.put()));
+              if (FAILED(copy_environment_hr)) {
+                creating_webview_ = false;
+                CompletePrepare(false);
+                return S_OK;
+              }
               HRESULT controller_hr = environment_->CreateCoreWebView2Controller(
                   host_window_,
                   Callback<
@@ -615,7 +621,12 @@ private:
                           CompletePrepare(false);
                           return S_OK;
                         }
-                        controller_.copy_from(controller);
+                        HRESULT copy_controller_hr = controller->QueryInterface(
+                            IID_PPV_ARGS(controller_.put()));
+                        if (FAILED(copy_controller_hr)) {
+                          CompletePrepare(false);
+                          return S_OK;
+                        }
                         controller_->get_CoreWebView2(webview_.put());
                         ConfigureWebView();
                         UpdateBounds();

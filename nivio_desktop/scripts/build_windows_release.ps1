@@ -58,5 +58,11 @@ $Defines = @(
 )
 
 dart run tool/patch_window_manager_windows.dart
+if ($LASTEXITCODE -ne 0) {
+  exit $LASTEXITCODE
+}
 
 flutter build windows --release @Defines
+if ($LASTEXITCODE -ne 0) {
+  exit $LASTEXITCODE
+}
