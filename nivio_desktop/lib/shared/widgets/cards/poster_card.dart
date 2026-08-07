@@ -171,8 +171,19 @@ class _PosterCardState extends State<PosterCard> {
   void _handleOverlayPointerSignal(PointerSignalEvent event) {
     if (event is! PointerScrollEvent) return;
     _lastPointerPosition = event.position;
-    if (!_scrollFromPointerDelta(event.scrollDelta)) return;
-    _forceCloseHover();
+    final position = _scrollPositionForPointerDelta(event.scrollDelta);
+    if (position == null) return;
+
+    GestureBinding.instance.pointerSignalResolver.register(event, (
+      resolvedEvent,
+    ) {
+      if (resolvedEvent is PointerScrollEvent) {
+        position.pointerScroll(
+          _scrollDeltaForPosition(position, resolvedEvent.scrollDelta),
+        );
+        _forceCloseHover();
+      }
+    });
   }
 
   void _forceCloseHover() {
@@ -187,7 +198,7 @@ class _PosterCardState extends State<PosterCard> {
     }
   }
 
-  bool _scrollFromPointerDelta(Offset delta) {
+  ScrollPosition? _scrollPositionForPointerDelta(Offset delta) {
     final verticalDelta = delta.dy;
     final horizontalDelta = delta.dx;
     final preferVertical = verticalDelta.abs() >= horizontalDelta.abs();
@@ -195,13 +206,13 @@ class _PosterCardState extends State<PosterCard> {
     final horizontalPosition = _resolveScrollPosition(Axis.horizontal);
 
     if (preferVertical) {
-      return _scrollPositionBy(verticalPosition, verticalDelta) ||
-          _scrollPositionBy(horizontalPosition, verticalDelta) ||
-          _scrollPositionBy(horizontalPosition, horizontalDelta);
+      return _scrollablePositionForDelta(verticalPosition, verticalDelta) ??
+          _scrollablePositionForDelta(horizontalPosition, verticalDelta) ??
+          _scrollablePositionForDelta(horizontalPosition, horizontalDelta);
     }
 
-    return _scrollPositionBy(horizontalPosition, horizontalDelta) ||
-        _scrollPositionBy(verticalPosition, verticalDelta);
+    return _scrollablePositionForDelta(horizontalPosition, horizontalDelta) ??
+        _scrollablePositionForDelta(verticalPosition, verticalDelta);
   }
 
   ScrollPosition? _resolveScrollPosition(Axis axis) {
@@ -216,16 +227,28 @@ class _PosterCardState extends State<PosterCard> {
         };
   }
 
-  bool _scrollPositionBy(ScrollPosition? position, double delta) {
+  ScrollPosition? _scrollablePositionForDelta(
+    ScrollPosition? position,
+    double delta,
+  ) {
     if (position == null || delta == 0 || !position.hasPixels) {
-      return false;
+      return null;
     }
     final target = (position.pixels + delta)
         .clamp(position.minScrollExtent, position.maxScrollExtent)
         .toDouble();
-    if (target == position.pixels) return false;
-    position.jumpTo(target);
-    return true;
+    if (target == position.pixels) return null;
+    return position;
+  }
+
+  double _scrollDeltaForPosition(ScrollPosition position, Offset delta) {
+    if (identical(position, _resolveScrollPosition(Axis.vertical))) {
+      return delta.dy;
+    }
+    if (delta.dx != 0 && delta.dx.abs() > delta.dy.abs()) {
+      return delta.dx;
+    }
+    return delta.dy;
   }
 
   void _setHovered(bool value) {
