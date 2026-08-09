@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_flutter/lucide_flutter.dart';
 
 import '../../theme/index.dart';
 import '../common/hover_card.dart';
@@ -45,46 +46,85 @@ class ProviderCard extends StatelessWidget {
       autofocus: autofocus,
       semanticLabel: semanticLabel ?? name,
       onTap: onTap,
-      borderRadius: AppRadius.large,
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.start,
+      borderRadius: AppRadius.medium,
+      hoverScale: 1.015,
+      padding: EdgeInsets.zero,
+      backgroundColor: AppColors.surface.withValues(alpha: 0.82),
+      borderColor: AppColors.borderSubtle.withValues(alpha: 0.74),
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: AppColors.surfaceVariant,
-              borderRadius: BorderRadius.circular(AppRadius.medium),
-              border: Border.all(color: AppColors.borderSubtle),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppRadius.medium),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.white.withValues(alpha: 0.045),
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.08),
+                  ],
+                ),
+              ),
             ),
-            clipBehavior: Clip.antiAlias,
-            child: logoImage != null
-                ? Image(
-                    image: logoImage!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) =>
-                        _ProviderFallback(name: name),
-                  )
-                : _ProviderFallback(name: name),
           ),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            name,
-            style: AppTypography.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          if (label != null) ...[
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              label!,
-              style: AppTypography.caption,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceVariant,
+                        borderRadius: BorderRadius.circular(AppRadius.medium),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.10),
+                        ),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: logoImage != null
+                          ? Image(
+                              image: logoImage!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  _ProviderFallback(name: name),
+                            )
+                          : _ProviderFallback(name: name),
+                    ),
+                    const Spacer(),
+                    Icon(
+                      LucideIcons.arrowUpRight,
+                      size: 18,
+                      color: AppColors.textMuted.withValues(alpha: 0.72),
+                    ),
+                  ],
+                ),
+                const Spacer(),
+                Text(
+                  name,
+                  style: AppTypography.title.copyWith(fontSize: 15),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (label != null) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    label!,
+                    style: AppTypography.caption,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
             ),
-          ],
+          ),
         ],
       ),
     );

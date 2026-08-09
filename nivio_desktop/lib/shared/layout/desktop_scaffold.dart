@@ -482,6 +482,10 @@ class _DesktopScaffoldState extends State<DesktopScaffold> {
                 _closeDetail();
                 return null;
               }
+              if (_isProviderBrowserOpen) {
+                _closeProviderBrowser();
+                return null;
+              }
               _clearFocus();
               return null;
             },
@@ -508,16 +512,18 @@ class _DesktopScaffoldState extends State<DesktopScaffold> {
     }
 
     if (_selectedIndex == _homeIndex) {
+      final showHomeTopbar = !_isProviderBrowserOpen && !_isMoviesBrowserOpen;
       return Stack(
         children: [
           Positioned.fill(child: _buildContentStack()),
-          const Positioned(
-            left: 0,
-            right: 0,
-            top: 0,
-            height: AppBreakpoints.topbarHeight,
-            child: DesktopTopbar(isOverlay: true),
-          ),
+          if (showHomeTopbar)
+            const Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              height: AppBreakpoints.topbarHeight,
+              child: DesktopTopbar(isOverlay: true),
+            ),
           if (_homeDetailOverlayMounted && _detailRouteArgs != null)
             Positioned.fill(child: _buildHomeDetailOverlay()),
         ],

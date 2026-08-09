@@ -338,6 +338,20 @@ void main() {
                 },
               });
             }
+            if (options.uri.toString() ==
+                'https://cdn.example/animal-tamil.m3u8') {
+              return '''
+#EXTM3U
+#EXT-X-VERSION:3
+#EXTINF:8.333333,
+segment-000.ts
+#EXTINF:3.000000,
+segment-001.ts
+#EXTINF:120.000000,
+segment-002.ts
+#EXT-X-ENDLIST
+''';
+            }
             fail('Unexpected CastleTV request: ${options.uri}');
           });
 
@@ -361,6 +375,10 @@ void main() {
           result.subtitles.single.url,
           'https://cdn.example/animal-en.vtt',
         );
+        expect(result.duration, const Duration(milliseconds: 131333));
+        expect(result.segments, hasLength(3));
+        expect(result.segments[1].start, const Duration(milliseconds: 8333));
+        expect(result.segments[2].url, 'https://cdn.example/segment-002.ts');
         expect(
           requestedUrls.map((uri) => uri.path),
           contains('/film-api/v2.0.1/movie/getVideo2'),
@@ -445,6 +463,15 @@ void main() {
                       },
                     ],
                   },
+                },
+              );
+            }
+            if (options.uri.path ==
+                '/wefeed-mobile-bff/subject-api/play-info') {
+              return _MovieBoxResponse(
+                body: {
+                  'code': 200,
+                  'data': {'streams': []},
                 },
               );
             }
@@ -548,6 +575,15 @@ void main() {
                 },
               );
             }
+            if (options.uri.path ==
+                '/wefeed-mobile-bff/subject-api/play-info') {
+              return _MovieBoxResponse(
+                body: {
+                  'code': 200,
+                  'data': {'streams': []},
+                },
+              );
+            }
             fail('Unexpected MovieBox request: ${options.uri}');
           });
 
@@ -623,6 +659,8 @@ void main() {
                     'streams': [
                       {
                         'format': 'MP4',
+                        'signCookie':
+                            'CloudFront-Policy=policy;CloudFront-Signature=sig;CloudFront-Key-Pair-Id=key;',
                         'resolutionList': [
                           {
                             'resolution': '720p',
@@ -655,6 +693,10 @@ void main() {
         expect(result!.url, 'https://cdn.example/fallback-720.mp4');
         expect(result.quality, '720p');
         expect(result.headers['Referer'], 'https://api3.aoneroom.com');
+        expect(
+          result.headers['Cookie'],
+          'CloudFront-Policy=policy;CloudFront-Signature=sig;CloudFront-Key-Pair-Id=key;',
+        );
         expect(
           requestedUrls.map((uri) => uri.path),
           contains('/wefeed-mobile-bff/subject-api/play-info'),

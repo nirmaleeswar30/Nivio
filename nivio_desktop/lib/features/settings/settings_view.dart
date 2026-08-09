@@ -27,6 +27,8 @@ import '../live_tv/services/iptv_service.dart';
 import '../party/services/watch_party_identity.dart';
 import '../party/services/watch_party_supabase_config.dart';
 
+const String _nivioStreamServerUrl = 'https://net27.cc';
+
 class SettingsView extends StatefulWidget {
   const SettingsView({
     super.key,
@@ -696,10 +698,6 @@ class _SettingsViewState extends State<SettingsView> {
         'account',
         'history',
         'metadata',
-        'party',
-        'watch party',
-        'supabase',
-        'realtime',
       ]))
         _Section(
           title: 'Data & Account',
@@ -707,15 +705,6 @@ class _SettingsViewState extends State<SettingsView> {
           error: state.sectionErrors['storage'],
           child: Column(
             children: [
-              _InfoTile(title: 'Watch Party Name', value: state.partyUserName),
-              _InfoTile(
-                title: 'Supabase Service',
-                value: state.serviceStatus.supabase,
-              ),
-              _InfoTile(
-                title: 'Realtime Service',
-                value: state.serviceStatus.realtime,
-              ),
               _DestructiveTile(
                 title: 'Clear Watch History',
                 onConfirm: _controller.clearWatchHistory,
@@ -732,6 +721,9 @@ class _SettingsViewState extends State<SettingsView> {
         'cache',
         'storage',
         'network',
+        'nivio',
+        'stream',
+        'server',
         'live tv',
         'iptv',
         'playlist',
@@ -752,6 +744,10 @@ class _SettingsViewState extends State<SettingsView> {
               _InfoTile(
                 title: 'Network Status',
                 value: state.cacheStats.networkOnline ? 'Online' : 'Offline',
+              ),
+              _InfoTile(
+                title: 'Nivio Stream Server',
+                value: state.serviceStatus.nivio,
               ),
               _InfoTile(title: 'IPTV Service', value: state.serviceStatus.iptv),
               _TextSettingTile(
@@ -1017,6 +1013,7 @@ class SettingsController extends ChangeNotifier {
     var serviceStatus = const ServiceStatus(
       tmdb: 'Checking',
       anilist: 'Checking',
+      nivio: 'Checking',
       iptv: 'Checking',
       supabase: 'Checking',
       realtime: 'Checking',
@@ -1140,6 +1137,7 @@ class SettingsController extends ChangeNotifier {
     final previous = current.serviceStatus;
     final tmdb = _checkGet('${AppEnvironment.imageProxyUrl}/3/configuration');
     final anilist = _checkPost(AppEnvironment.anilistApiUrl);
+    final nivio = _checkReachable(_nivioStreamServerUrl);
     final iptv = _checkGet(current.settings.iptvPlaylistUrl);
     final supabase = Future.value(
       WatchPartySupabaseConfig.isConfigured
@@ -1149,7 +1147,7 @@ class SettingsController extends ChangeNotifier {
           : 'Not configured',
     );
 
-    final results = await Future.wait([tmdb, anilist, iptv, supabase]);
+    final results = await Future.wait([tmdb, anilist, nivio, iptv, supabase]);
     if (_isDisposed ||
         refreshGeneration != _refreshGeneration ||
         (loadGeneration != null && loadGeneration != _loadGeneration)) {
@@ -1159,8 +1157,9 @@ class SettingsController extends ChangeNotifier {
       serviceStatus: ServiceStatus(
         tmdb: results[0],
         anilist: results[1],
-        iptv: results[2],
-        supabase: results[3],
+        nivio: results[2],
+        iptv: results[3],
+        supabase: results[4],
         realtime: WatchPartySupabaseConfig.isAvailable
             ? 'Available'
             : previous.realtime == 'Checking'
@@ -1349,6 +1348,7 @@ class SettingsState {
     serviceStatus: const ServiceStatus(
       tmdb: 'Checking',
       anilist: 'Checking',
+      nivio: 'Checking',
       iptv: 'Checking',
       supabase: 'Checking',
       realtime: 'Checking',
@@ -1731,6 +1731,7 @@ class ServiceStatus {
   const ServiceStatus({
     required this.tmdb,
     required this.anilist,
+    required this.nivio,
     required this.iptv,
     required this.supabase,
     required this.realtime,
@@ -1738,6 +1739,7 @@ class ServiceStatus {
 
   final String tmdb;
   final String anilist;
+  final String nivio;
   final String iptv;
   final String supabase;
   final String realtime;
@@ -2242,6 +2244,19 @@ Future<String> _checkGet(String url) async {
         .get(Uri.parse(url))
         .timeout(const Duration(seconds: 6));
     return response.statusCode < 500 ? 'Online' : 'Offline';
+  } catch (_) {
+    return 'Offline';
+  }
+}
+
+Future<String> _checkReachable(String url) async {
+  final validation = _validateHttpUrl(url);
+  if (validation != null) return 'Invalid';
+  try {
+    final response = await http
+        .get(Uri.parse(url))
+        .timeout(const Duration(seconds: 6));
+    return response.statusCode > 0 ? 'Online' : 'Offline';
   } catch (_) {
     return 'Offline';
   }

@@ -37,6 +37,20 @@ class StreamSource {
   }
 }
 
+class StreamSegment {
+  final String url;
+  final Duration start;
+  final Duration duration;
+
+  const StreamSegment({
+    required this.url,
+    required this.start,
+    required this.duration,
+  });
+
+  Duration get end => start + duration;
+}
+
 class StreamResult {
   final String url;
   final String quality;
@@ -49,6 +63,8 @@ class StreamResult {
   final Map<String, String> headers;
   final List<StreamSource> sources;
   final List<SkipTime> skipTimes;
+  final Duration? duration;
+  final List<StreamSegment> segments;
   final int? providerIndex;
   final String? providerGroup;
   final String? serverName;
@@ -68,6 +84,8 @@ class StreamResult {
     this.headers = const {},
     this.sources = const [],
     this.skipTimes = const [],
+    this.duration,
+    this.segments = const [],
     this.providerIndex,
     this.providerGroup,
     this.serverName,
@@ -88,6 +106,8 @@ class StreamResult {
     Map<String, String>? headers,
     List<StreamSource>? sources,
     List<SkipTime>? skipTimes,
+    Duration? duration,
+    List<StreamSegment>? segments,
     int? providerIndex,
     String? providerGroup,
     String? serverName,
@@ -107,6 +127,8 @@ class StreamResult {
       headers: headers ?? this.headers,
       sources: sources ?? this.sources,
       skipTimes: skipTimes ?? this.skipTimes,
+      duration: duration ?? this.duration,
+      segments: segments ?? this.segments,
       providerIndex: providerIndex ?? this.providerIndex,
       providerGroup: providerGroup ?? this.providerGroup,
       serverName: serverName ?? this.serverName,

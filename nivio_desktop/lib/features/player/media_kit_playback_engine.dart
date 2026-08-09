@@ -6,6 +6,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../shared/models/stream_result.dart' show StreamSegment;
 import 'models/playback_request.dart';
 import 'models/playback_state.dart';
 import 'playback_engine.dart';
@@ -54,6 +55,10 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
   DateTime? _lastBufferNotificationAt;
   Duration _lastPublishedPosition = Duration.zero;
   Duration _lastPublishedBuffer = Duration.zero;
+  int? _activeSegmentIndex;
+  Duration _activeSegmentStart = Duration.zero;
+  bool _usingSegmentPlaylist = false;
+  Duration _segmentPlaylistBaseStart = Duration.zero;
 
   static const Duration _positionNotificationInterval = Duration(
     milliseconds: 500,
@@ -77,6 +82,18 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
             ? MPVLogLevel.v
             : MPVLogLevel.error,
         bufferSize: 64 * 1024 * 1024,
+        protocolWhitelist: const [
+          'udp',
+          'rtp',
+          'tcp',
+          'tls',
+          'data',
+          'file',
+          'http',
+          'https',
+          'crypto',
+          'httpproxy',
+        ],
       ),
     );
   }
@@ -91,20 +108,30 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
         );
       }),
       _player.stream.position.listen((position) {
-        if (!_shouldPublishPosition(position)) return;
-        if (position.inSeconds > 0 && position.inSeconds % 10 == 0) {
-          _mpvLog('Position: ${position.inSeconds}s');
+        final effectivePosition = _effectivePosition(position);
+        if (!_shouldPublishPosition(effectivePosition)) return;
+        if (effectivePosition.inSeconds > 0 &&
+            effectivePosition.inSeconds % 10 == 0) {
+          _mpvLog('Position: ${effectivePosition.inSeconds}s');
         }
-        _update(position: position);
+        _update(position: effectivePosition);
       }),
       _player.stream.duration.listen((duration) {
-        _mpvLog('Duration: ${duration.inMilliseconds}ms');
-        _update(duration: duration);
+        final effectiveDuration = _effectiveDuration(duration);
+        _mpvLog(
+          'Duration: ${duration.inMilliseconds}ms'
+          '${effectiveDuration == duration ? '' : ' -> ${effectiveDuration.inMilliseconds}ms'}',
+        );
+        _update(duration: effectiveDuration);
       }),
       _player.stream.buffer.listen((buffer) {
-        if (!_shouldPublishBuffer(buffer)) return;
-        _mpvLog('Buffer: ${buffer.inMilliseconds}ms');
-        _update(bufferedPosition: buffer);
+        final effectiveBuffer = _effectivePosition(buffer);
+        if (!_shouldPublishBuffer(effectiveBuffer)) return;
+        _mpvLog(
+          'Buffer: ${buffer.inMilliseconds}ms'
+          '${effectiveBuffer == buffer ? '' : ' -> ${effectiveBuffer.inMilliseconds}ms'}',
+        );
+        _update(bufferedPosition: effectiveBuffer);
       }),
       _player.stream.volume.listen((volume) {
         final normalized = (volume / 100).clamp(0.0, 2.0);
@@ -149,6 +176,10 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
       }),
       _player.stream.completed.listen((completed) {
         if (completed) {
+          if (_shouldIgnoreCompletedEvent()) {
+            _mpvLog('Lifecycle: Ignored premature ended event');
+            return;
+          }
           _mpvLog('Lifecycle: Ended');
           _update(status: PlaybackStatus.completed, isPlaying: false);
         }
@@ -175,6 +206,7 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
       _player.stream.log.listen((event) {
         final text = event.text.trim();
         if (text.isEmpty) return;
+        _trackSegmentFromLog(text);
         final lower = text.toLowerCase();
         if (!_firstFrameLogged &&
             lower.contains('first video frame after restart shown')) {
@@ -213,6 +245,72 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
     };
   }
 
+  Duration _effectiveDuration(Duration duration) {
+    final override = _request?.streamResult?.duration;
+    if (override == null || override <= Duration.zero) return duration;
+    if (duration <= Duration.zero) return override;
+    if (duration + const Duration(seconds: 30) < override) return override;
+    return duration;
+  }
+
+  Duration _effectivePosition(Duration position) {
+    final segments = _request?.streamResult?.segments ?? const [];
+    if (_usingSegmentPlaylist) {
+      final mapped = _segmentPlaylistBaseStart + position;
+      final duration = _request?.streamResult?.duration;
+      if (duration != null && mapped > duration) return duration;
+      return mapped;
+    }
+    final index = _activeSegmentIndex;
+    if (segments.isEmpty || index == null || index >= segments.length) {
+      return position;
+    }
+    final segment = segments[index];
+    final mapped = segment.start + position;
+    final duration = _request?.streamResult?.duration;
+    if (duration != null && mapped > duration) return duration;
+    return mapped;
+  }
+
+  void _trackSegmentFromLog(String text) {
+    final marker = 'Playing: ';
+    final markerIndex = text.indexOf(marker);
+    if (markerIndex < 0) return;
+    final url = text.substring(markerIndex + marker.length).trim();
+    if (url.isEmpty) return;
+    final segments = _request?.streamResult?.segments ?? const [];
+    if (segments.isEmpty) return;
+    final normalized = _normalizedSegmentUrl(url);
+    for (var i = 0; i < segments.length; i += 1) {
+      if (_normalizedSegmentUrl(segments[i].url) != normalized) continue;
+      if (_usingSegmentPlaylist) {
+        if (_activeSegmentIndex != i) {
+          _activeSegmentIndex = i;
+          _activeSegmentStart = segments[i].start;
+          _mpvLog(
+            'Castle playlist segment index=$i start=${_activeSegmentStart.inMilliseconds}ms',
+          );
+        }
+        return;
+      }
+      if (_activeSegmentIndex != i) {
+        _activeSegmentIndex = i;
+        _activeSegmentStart = segments[i].start;
+        _mpvLog(
+          'Castle segment mapped index=$i start=${_activeSegmentStart.inMilliseconds}ms',
+        );
+      }
+      return;
+    }
+  }
+
+  bool _shouldIgnoreCompletedEvent() {
+    final override = _request?.streamResult?.duration;
+    if (override == null || override <= Duration.zero) return false;
+    final position = _state.value.position;
+    return position + const Duration(seconds: 30) < override;
+  }
+
   @override
   Future<void> load(PlaybackRequest request) async {
     _request = request;
@@ -222,6 +320,10 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
     _lastBufferNotificationAt = null;
     _lastPublishedPosition = Duration.zero;
     _lastPublishedBuffer = Duration.zero;
+    _activeSegmentIndex = null;
+    _activeSegmentStart = Duration.zero;
+    _usingSegmentPlaylist = false;
+    _segmentPlaylistBaseStart = Duration.zero;
     if (!request.hasPlayableSource) {
       _update(
         status: PlaybackStatus.error,
@@ -288,7 +390,87 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
   }
 
   @override
-  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) async {
+    if (_request?.streamResult?.segments.isNotEmpty == true) {
+      final request = _request;
+      if (request?.source?.trim().isNotEmpty == true) {
+        await _openSegmentedSeek(request!, position);
+        return;
+      }
+    }
+    await _player.seek(position);
+  }
+
+  Future<void> _openSegmentedSeek(
+    PlaybackRequest request,
+    Duration position,
+  ) async {
+    final segments = request.streamResult?.segments ?? const [];
+    if (segments.isEmpty) return;
+
+    final clamped = _clampToStreamDuration(position);
+    final index = _segmentIndexFor(segments, clamped);
+    final segment = segments[index];
+    final localOffset = _clampToSegmentOffset(clamped - segment.start, segment);
+    final wasPlaying = _player.state.playing;
+    final medias = segments
+        .skip(index)
+        .map((segment) => Media(segment.url, httpHeaders: request.httpHeaders))
+        .toList(growable: false);
+
+    _activeSegmentIndex = index;
+    _activeSegmentStart = segment.start;
+    _usingSegmentPlaylist = true;
+    _segmentPlaylistBaseStart = segment.start;
+    _lastPublishedPosition = clamped;
+    _lastPublishedBuffer = clamped;
+    _mpvLog(
+      'Castle segmented seek target=${clamped.inMilliseconds}ms '
+      'segment=$index local=${localOffset.inMilliseconds}ms',
+    );
+    _update(
+      status: PlaybackStatus.buffering,
+      position: clamped,
+      bufferedPosition: clamped,
+    );
+    await _player.open(Playlist(medias), play: wasPlaying);
+    if (localOffset > Duration.zero) {
+      try {
+        await _player.seek(localOffset);
+      } catch (error) {
+        _mpvLog('Castle segment local seek failed: $error');
+      }
+    }
+    await _applyPendingTrackSelections();
+    if (!wasPlaying) await _player.pause();
+  }
+
+  Duration _clampToStreamDuration(Duration position) {
+    final duration = _request?.streamResult?.duration;
+    if (position < Duration.zero) return Duration.zero;
+    if (duration == null || duration <= Duration.zero) return position;
+    final max = duration - const Duration(milliseconds: 500);
+    if (max <= Duration.zero) return Duration.zero;
+    return position > max ? max : position;
+  }
+
+  static Duration _clampToSegmentOffset(
+    Duration offset,
+    StreamSegment segment,
+  ) {
+    if (offset <= Duration.zero) return Duration.zero;
+    final max = segment.duration - const Duration(milliseconds: 200);
+    if (max <= Duration.zero) return Duration.zero;
+    return offset > max ? max : offset;
+  }
+
+  static int _segmentIndexFor(List<StreamSegment> segments, Duration position) {
+    for (var i = 0; i < segments.length; i += 1) {
+      final segment = segments[i];
+      if (position >= segment.start && position < segment.end) return i;
+    }
+    return segments.length - 1;
+  }
 
   @override
   Future<void> setVolume(double volume) {
@@ -748,8 +930,34 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
     );
   }
 
+  static String _normalizedSegmentUrl(String url) {
+    final parsed = Uri.tryParse(url.trim());
+    if (parsed == null) return url.trim();
+    return '${parsed.host}${parsed.path}';
+  }
+
   static void _mpvLog(String message) {
-    PlaybackRuntimeDiagnostics.mpvLog(message);
+    PlaybackRuntimeDiagnostics.mpvLog(_redactSensitive(message));
+  }
+
+  static String _redactSensitive(String message) {
+    return message
+        .replaceAll(
+          RegExp(r'Cookie: [^"\]]+', caseSensitive: false),
+          'Cookie: <redacted>',
+        )
+        .replaceAll(
+          RegExp(r'CloudFront-Policy=[^;,"\]]+'),
+          'CloudFront-Policy=<redacted>',
+        )
+        .replaceAll(
+          RegExp(r'CloudFront-Signature=[^;,"\]]+'),
+          'CloudFront-Signature=<redacted>',
+        )
+        .replaceAll(
+          RegExp(r'CloudFront-Key-Pair-Id=[^;,"\]]+'),
+          'CloudFront-Key-Pair-Id=<redacted>',
+        );
   }
 
   bool _shouldPublishPosition(Duration position) {

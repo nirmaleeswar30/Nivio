@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -73,6 +74,9 @@ class CastleTvStreamProvider {
 
       final subtitles = [..._subtitlesFrom(episode), ..._subtitlesFrom(video)];
       final selected = _selectSource(sources, request.preferredQuality);
+      final playlist = selected.isM3U8
+          ? await _hlsPlaylistInfo(selected.url)
+          : null;
 
       return StreamResult(
         url: selected.url,
@@ -89,6 +93,8 @@ class CastleTvStreamProvider {
           'User-Agent': _desktopUserAgent,
         },
         sources: sources,
+        duration: playlist?.duration,
+        segments: playlist?.segments ?? const [],
       );
     } on DioException {
       return null;
@@ -412,6 +418,60 @@ class CastleTvStreamProvider {
     return sources.first;
   }
 
+  Future<_HlsPlaylistInfo?> _hlsPlaylistInfo(String url) async {
+    try {
+      final response = await _dio
+          .get<Object?>(
+            url,
+            options: Options(
+              responseType: ResponseType.plain,
+              receiveTimeout: const Duration(seconds: 8),
+              validateStatus: (status) => status != null && status < 500,
+            ),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) return null;
+      final body = response.data?.toString() ?? '';
+      if (!body.contains('#EXTM3U')) return null;
+      final segments = <StreamSegment>[];
+      var start = Duration.zero;
+      double? pendingSeconds;
+      final playlistUri = Uri.parse(url);
+      for (final rawLine in const LineSplitter().convert(body)) {
+        final line = rawLine.trim();
+        if (line.isEmpty) continue;
+        final match = RegExp(
+          r'^#EXTINF:([0-9]+(?:\.[0-9]+)?)',
+        ).firstMatch(line);
+        if (match != null) {
+          pendingSeconds = double.tryParse(match.group(1)!);
+          continue;
+        }
+        if (line.startsWith('#') || pendingSeconds == null) continue;
+        final duration = Duration(
+          milliseconds: (pendingSeconds * 1000).round(),
+        );
+        segments.add(
+          StreamSegment(
+            url: playlistUri.resolve(line).toString(),
+            start: start,
+            duration: duration,
+          ),
+        );
+        start += duration;
+        pendingSeconds = null;
+      }
+      if (start < const Duration(seconds: 60)) return null;
+      return _HlsPlaylistInfo(duration: start, segments: segments);
+    } on DioException {
+      return null;
+    } on FormatException {
+      return null;
+    } on TimeoutException {
+      return null;
+    }
+  }
+
   List<SubtitleTrack> _subtitlesFrom(Object? raw) {
     final container = raw is _CastleEpisode ? raw.raw : _asMap(raw);
     final subtitles = <SubtitleTrack>[];
@@ -597,4 +657,11 @@ class _CastleQuality {
       premiumOnly: json?['premiumProPermission'] == true,
     );
   }
+}
+
+class _HlsPlaylistInfo {
+  const _HlsPlaylistInfo({required this.duration, required this.segments});
+
+  final Duration duration;
+  final List<StreamSegment> segments;
 }

@@ -52,16 +52,34 @@ class MovieBoxStreamProvider {
       if (token == null || token.isEmpty) return null;
 
       final results = await _search(request.title, token);
-      final candidates = _rankCandidates(results, request).take(6);
+      final candidates = _rankCandidates(results, request).take(15);
       for (final candidate in candidates) {
         final details = await _details(candidate.subjectId, token);
         if (details == null) continue;
 
-        var sources = _sourcesFrom(details);
-        if (sources.isEmpty) {
-          final playInfo = await _playInfo(candidate.subjectId, token);
-          if (playInfo != null) sources = _sourcesFrom(playInfo);
-        }
+        final playInfo = await _playInfo(candidate.subjectId, token);
+        final sourcePayload = <String, dynamic>{'details': details};
+        if (playInfo != null) sourcePayload['playInfo'] = playInfo;
+        final rawPlayInfoSources = playInfo == null
+            ? const <StreamSource>[]
+            : _sourcesFrom(playInfo);
+        final rawDetailSources = _sourcesFrom(details);
+        final playInfoSources = rawPlayInfoSources.where(
+          (source) => !_isStaleDetectorSource(source.url),
+        );
+        final detailSources = rawDetailSources.where(
+          (source) => !_isStaleDetectorSource(source.url),
+        );
+        final sources = _dedupeSources([
+          if (playInfoSources.isNotEmpty)
+            ...playInfoSources
+          else if (detailSources.isNotEmpty)
+            ...detailSources
+          else if (rawPlayInfoSources.isNotEmpty)
+            ...rawPlayInfoSources
+          else
+            ...rawDetailSources,
+        ]);
         if (sources.isEmpty) continue;
 
         final selected = _selectSource(sources, request.preferredQuality);
@@ -85,7 +103,7 @@ class MovieBoxStreamProvider {
           availableAudios: languages,
           selectedAudio: selectedAudio,
           isM3U8: _isHls(selected.url),
-          headers: _mediaHeaders,
+          headers: _mediaHeadersFor(sourcePayload, selected.url),
           sources: sources,
         );
       }
@@ -442,8 +460,15 @@ class MovieBoxStreamProvider {
   StreamSource _selectSource(List<StreamSource> sources, String? preferred) {
     final target = preferred?.trim().toLowerCase();
     if (target != null && target.isNotEmpty) {
+      final targetResolution = _resolution(target);
       for (final source in sources) {
-        if (source.quality.toLowerCase().contains(target)) return source;
+        final quality = source.quality.toLowerCase();
+        if (quality.contains(target) || target.contains(quality)) {
+          return source;
+        }
+        if (targetResolution > 0 && _resolution(quality) == targetResolution) {
+          return source;
+        }
       }
     }
     return sources.first;
@@ -568,22 +593,84 @@ class MovieBoxStreamProvider {
     return null;
   }
 
+  static Map<String, String> _mediaHeadersFor(
+    Map<String, dynamic> payload,
+    String selectedUrl,
+  ) {
+    final headers = <String, String>{..._mediaHeaders};
+    final cookie = _signCookieFor(payload, selectedUrl);
+    if (cookie != null && cookie.isNotEmpty) {
+      headers['Cookie'] = cookie;
+    }
+    return headers;
+  }
+
+  static String? _signCookieFor(Object? value, String selectedUrl) {
+    if (value is List) {
+      for (final item in value) {
+        final cookie = _signCookieFor(item, selectedUrl);
+        if (cookie != null) return cookie;
+      }
+      return null;
+    }
+    final map = _asMap(value);
+    if (map == null) return null;
+    final url = _firstUrl(map);
+    final cookie = map['signCookie']?.toString().trim();
+    if (cookie != null &&
+        cookie.isNotEmpty &&
+        (url == selectedUrl || _containsUrl(map, selectedUrl))) {
+      return cookie;
+    }
+    for (final item in map.values) {
+      if (item is! List && item is! Map) continue;
+      final nested = _signCookieFor(item, selectedUrl);
+      if (nested != null) return nested;
+    }
+    return null;
+  }
+
+  static bool _containsUrl(Object? value, String selectedUrl) {
+    if (value is List) {
+      return value.any((item) => _containsUrl(item, selectedUrl));
+    }
+    final map = _asMap(value);
+    if (map == null) return false;
+    if (_firstUrl(map) == selectedUrl) return true;
+    return map.values.any((item) => _containsUrl(item, selectedUrl));
+  }
+
   static String? _qualityLabel(Map<String, dynamic>? data) {
     if (data == null) return null;
     for (final key in const [
       'resolution',
+      'resolutions',
       'quality',
       'qualityName',
       'description',
       'title',
     ]) {
       final value = data[key]?.toString().trim();
-      if (value != null && value.isNotEmpty) return value;
+      if (value == null || value.isEmpty) continue;
+      if (key == 'resolutions' && RegExp(r'^\d{3,4}$').hasMatch(value)) {
+        return '${value}p';
+      }
+      return value;
     }
     return null;
   }
 
   static bool _isHls(String url) => Uri.parse(url).path.endsWith('.m3u8');
+
+  static bool _isStaleDetectorSource(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return false;
+    final host = uri.host.toLowerCase();
+    final path = uri.path.toLowerCase();
+    return host.endsWith('hakunaymatata.com') &&
+        path.startsWith('/resource/') &&
+        path.endsWith('.mp4');
+  }
 
   static int _resolution(String quality) {
     final match = RegExp(r'(\d{3,4})').firstMatch(quality);
@@ -623,6 +710,16 @@ class MovieBoxStreamProvider {
     final random = Random.secure();
     final bytes = List<int>.generate(16, (_) => random.nextInt(256));
     return bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+  }
+
+  static List<StreamSource> _dedupeSources(Iterable<StreamSource> sources) {
+    final seen = <String>{};
+    final deduped = <StreamSource>[];
+    for (final source in sources) {
+      if (source.url.trim().isEmpty || !seen.add(source.url)) continue;
+      deduped.add(source);
+    }
+    return deduped;
   }
 }
 

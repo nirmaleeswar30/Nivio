@@ -52,6 +52,7 @@ package() {
     "$pkgdir/usr/bin/nivio-desktop"
   install -Dm644 "$root/packaging/linux/com.nivio.desktop.desktop" \
     "$pkgdir/usr/share/applications/com.nivio.desktop.desktop"
+  install -d "$pkgdir/usr/share/icons"
   cp -R --no-preserve=ownership "$root/linux/runner/resources/icons/hicolor" \
     "$pkgdir/usr/share/icons/"
   while IFS= read -r -d '' icon; do

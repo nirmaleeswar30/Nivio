@@ -791,12 +791,7 @@ class _MediaSection extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SectionHeader(
-            title: title,
-            onSeeAllPressed: onOpenSection == null
-                ? null
-                : () => onOpenSection!(sectionId),
-          ),
+          SectionHeader(title: title),
           const SizedBox(height: AppSpacing.lg),
           _SectionStatus(
             icon: Icons.warning_amber_rounded,
@@ -811,12 +806,7 @@ class _MediaSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader(
-          title: title,
-          onSeeAllPressed: onOpenSection == null
-              ? null
-              : () => onOpenSection!(sectionId),
-        ),
+        SectionHeader(title: title),
         const SizedBox(height: AppSpacing.lg),
         if (!isLoading && items.isEmpty)
           _SectionStatus(

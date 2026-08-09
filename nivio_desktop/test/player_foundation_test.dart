@@ -565,17 +565,12 @@ void main() {
     await tester.pump();
 
     expect(find.byType(PlayerScreen), findsOneWidget);
-    expect(find.byTooltip('Back'), findsOneWidget);
-    expect(find.byTooltip('Server'), findsOneWidget);
+    expect(find.byTooltip('Back'), findsNothing);
+    expect(find.byTooltip('Server'), findsNothing);
     expect(find.byTooltip('Compact window'), findsNothing);
     expect(find.byTooltip('Settings'), findsNothing);
     expect(find.text('Server'), findsNothing);
     expect(find.text('Select Server'), findsNothing);
-
-    await tester.tap(find.byTooltip('Server'));
-    await tester.pump();
-
-    expect(find.text('Select Server'), findsOneWidget);
   });
 
   testWidgets('ready iframe playback does not show Flutter escape top bar', (

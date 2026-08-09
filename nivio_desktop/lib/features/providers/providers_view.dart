@@ -50,36 +50,43 @@ class _ProvidersViewState extends State<ProvidersView> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.controller,
-      builder: (context, _) {
-        return DesktopScrollbar(
-          controller: _scrollController,
-          child: SingleChildScrollView(
+    return PopScope(
+      canPop: widget.onBack == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) widget.onBack?.call();
+      },
+      child: ListenableBuilder(
+        listenable: widget.controller,
+        builder: (context, _) {
+          return DesktopScrollbar(
             controller: _scrollController,
-            physics: const BouncingScrollPhysics(),
-            child: PageContainer(
-              child: Padding(
-                padding: const EdgeInsets.only(
-                  top: AppSpacing.xxl,
-                  bottom: AppSpacing.massive,
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              physics: const BouncingScrollPhysics(),
+              child: PageContainer(
+                maxWidth: 1520,
+                child: Padding(
+                  padding: const EdgeInsets.only(
+                    top: AppSpacing.xxl,
+                    bottom: AppSpacing.massive,
+                  ),
+                  child: widget.controller.selectedProvider == null
+                      ? _AllProvidersPane(
+                          controller: widget.controller,
+                          searchController: _searchController,
+                          onBack: widget.onBack,
+                        )
+                      : _ProviderContentPane(
+                          controller: widget.controller,
+                          onOpenDetail: widget.onOpenDetail,
+                          onPlay: widget.onPlay,
+                        ),
                 ),
-                child: widget.controller.selectedProvider == null
-                    ? _AllProvidersPane(
-                        controller: widget.controller,
-                        searchController: _searchController,
-                        onBack: widget.onBack,
-                      )
-                    : _ProviderContentPane(
-                        controller: widget.controller,
-                        onOpenDetail: widget.onOpenDetail,
-                        onPlay: widget.onPlay,
-                      ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -113,6 +120,12 @@ class _AllProvidersPane extends StatelessWidget {
               const SizedBox(width: AppSpacing.md),
             ],
             Expanded(child: Text('Providers', style: AppTypography.pageTitle)),
+            Text(
+              '${providers.length} services',
+              style: AppTypography.metadata.copyWith(
+                color: AppColors.textMuted,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: AppSpacing.xs),
@@ -143,9 +156,11 @@ class _AllProvidersPane extends StatelessWidget {
           )
         else
           ResponsiveGrid(
-            minItemWidth: 150,
+            minItemWidth: 168,
             maxCrossAxisCount: 6,
-            childAspectRatio: 1.05,
+            mainAxisSpacing: AppSpacing.lg,
+            crossAxisSpacing: AppSpacing.lg,
+            childAspectRatio: 1.10,
             children: [
               for (final provider in providers)
                 ProviderCard(
