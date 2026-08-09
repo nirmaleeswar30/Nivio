@@ -71,3 +71,11 @@ flutter_launcher_icons:
 
 dependency_overrides:
   freezed_annotation: ^3.1.0
+  firebase_core:
+    path: ../../packages/stubs/firebase_core
+  firebase_auth:
+    path: ../../packages/stubs/firebase_auth
+  cloud_firestore:
+    path: ../../packages/stubs/cloud_firestore
+  google_sign_in:
+    path: ../../packages/stubs/google_sign_in

@@ -78,6 +78,7 @@ dependencies:
   material_color_utilities: any
   app_links: any
   flutter_inappwebview_linux: any
+  pointycastle: ^4.0.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

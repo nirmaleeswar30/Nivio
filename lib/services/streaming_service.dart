@@ -1,9 +1,13 @@
+import 'package:nivio/services/scrapers/xon/xon_scraper.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/services/scrapers/animetsu/animetsu_scraper.dart';
 import 'package:nivio/services/scrapers/newtv/newtv_scraper.dart';
 
+import 'package:nivio/services/scrapers/streamflix/streamflix_scraper.dart';
+import 'package:nivio/services/scrapers/moviebox/moviebox_scraper.dart';
+import 'package:nivio/services/scrapers/castletv/castletv_scraper.dart';
 import 'package:nivio/services/tmdb_service.dart';
 import 'package:nivio/services/scrapers/miruro/miruro_scraper.dart';
 import 'package:nivio/services/scrapers/animex/animex_scraper.dart';
@@ -16,6 +20,10 @@ class StreamingService {
   final NetMirrorScraperService netMirrorScraper;
   final MiruroScraperService miruroScraper;
   final AnimexScraperService animexScraper;
+  final XonScraperService xonScraper;
+  final StreamFlixScraperService streamFlixScraper;
+  final MovieBoxScraperService movieBoxScraper;
+  final CastleTvScraperService castleTvScraper;
   final Ref ref;
 
   StreamingService({
@@ -24,11 +32,18 @@ class StreamingService {
     required this.netMirrorScraper,
     required this.miruroScraper,
     required this.animexScraper,
+    required this.xonScraper,
+    required this.streamFlixScraper,
+    required this.movieBoxScraper,
+    required this.castleTvScraper,
     required this.ref,
   });
 
   static const List<String> _premiumProviders = [
     'Nivio',
+    'StreamFlix',
+    'MovieBox',
+    'CastleTV',
     'VidUp (FAST)',
     'VidLink',
     'VidCore (ACTIVE)',
@@ -39,6 +54,7 @@ class StreamingService {
 
   List<String> _dynamicAnimexServers = ['Animex (Auto)'];
   List<String> _dynamicMiruroServers = ['Miruro (Auto)'];
+  List<String> _dynamicXonServers = ['Xon (Default)'];
 
   Future<void> prepareProviders({
     required SearchResult media,
@@ -58,10 +74,18 @@ class StreamingService {
         episode: episode,
         preferredAudio: subDubPreference == 'dub' ? 'english' : 'japanese',
       ),
+      xonScraper.fetchAvailableServers(
+        tmdbId: tmdbId,
+        title: media.title ?? media.name ?? '',
+        season: season,
+        episode: episode,
+        isTv: media.mediaType == 'tv' || isAnimeMedia(media),
+      ),
     ]);
 
     final miruroResult = results[0];
     final animexResult = results[1];
+    final xonResult = results[2];
 
     if (miruroResult.isNotEmpty) {
       miruroResult.sort((a, b) {
@@ -79,6 +103,9 @@ class StreamingService {
       });
       _dynamicAnimexServers = animexResult.map((id) => 'Animex ($id)').toList();
     }
+    if (xonResult.isNotEmpty) {
+      _dynamicXonServers = xonResult.map((id) => 'Xon ($id)').toList();
+    }
   }
 
   // Dynamic getter for anime providers based on user preference
@@ -87,6 +114,7 @@ class StreamingService {
     
     final miruroServers = _dynamicMiruroServers; 
     final animexServers = _dynamicAnimexServers;
+    final xonServers = _dynamicXonServers;
     final animetsuServers = [
       'Animetsu (Auto)',
       'Animetsu (Kite)',
@@ -96,11 +124,11 @@ class StreamingService {
     ];
 
     if (pref == 'Miruro') {
-      return [...miruroServers, ...animexServers, ...animetsuServers];
+      return [...miruroServers, ...xonServers, ...animexServers, ...animetsuServers];
     } else if (pref == 'Animex') {
-      return [...animexServers, ...miruroServers, ...animetsuServers];
+      return [...animexServers, ...xonServers, ...miruroServers, ...animetsuServers];
     } else { // Animetsu
-      return [...animetsuServers, ...miruroServers, ...animexServers];
+      return [...animetsuServers, ...xonServers, ...miruroServers, ...animexServers];
     }
   }
 
@@ -166,6 +194,25 @@ class StreamingService {
         return streamResult;
       }
 
+      // Handle Xon
+      if (providerName.startsWith('Xon (')) {
+        String server = providerName.substring('Xon ('.length);
+        if (server.endsWith(')')) server = server.substring(0, server.length - 1);
+        
+        if (server == 'Default') server = 'Default';
+
+        final streamResult = await xonScraper.fetchStreamUrl(
+          tmdbId: media.id.toString(),
+          title: media.title ?? media.name ?? '',
+          season: season,
+          episode: episode,
+          isTv: media.mediaType == 'tv' || isAnimeMedia(media),
+          server: server,
+          preferredAudio: preferredAudio ?? (subDubPreference == 'dub' ? 'English' : 'Japanese'),
+        );
+        return streamResult;
+      }
+
       // Handle Animetsu
       if (providerName.startsWith('Animetsu')) {
         String server = 'auto';
@@ -206,6 +253,61 @@ class StreamingService {
           season: season, 
           episode: episode, 
           preferredAudio: audio
+        );
+      }
+
+      // Handle StreamFlix
+      if (providerName == 'StreamFlix') {
+        final tmdbId = media.id.toString();
+        final title = media.title ?? media.name ?? '';
+        final type = isAnimeMedia(media) ? 'tv' : media.mediaType;
+        final year = media.releaseDate?.split('-').firstOrNull ?? media.firstAirDate?.split('-').firstOrNull;
+        return await streamFlixScraper.fetchStreamUrl(
+          tmdbId: tmdbId,
+          title: title,
+          mediaType: type,
+          year: year,
+          season: season,
+          episode: episode,
+          preferredAudio: preferredAudio,
+        );
+      }
+
+      // Handle MovieBox
+      if (providerName == 'MovieBox') {
+        final tmdbId = media.id.toString();
+        final title = media.title ?? media.name ?? '';
+        final type = isAnimeMedia(media) ? 'tv' : media.mediaType;
+        if (type == 'tv') {
+          appDebugLog('MovieBox does not support TV shows.');
+          return null;
+        }
+        final year = media.releaseDate?.split('-').firstOrNull ?? media.firstAirDate?.split('-').firstOrNull;
+        return await movieBoxScraper.fetchStreamUrl(
+          tmdbId: tmdbId,
+          title: title,
+          mediaType: type,
+          year: year,
+          season: season,
+          episode: episode,
+          preferredAudio: preferredAudio,
+        );
+      }
+
+      // Handle CastleTV
+      if (providerName == 'CastleTV') {
+        final tmdbId = media.id.toString();
+        final title = media.title ?? media.name ?? '';
+        final type = isAnimeMedia(media) ? 'tv' : media.mediaType;
+        final year = media.releaseDate?.split('-').firstOrNull ?? media.firstAirDate?.split('-').firstOrNull;
+        return await castleTvScraper.fetchStreamUrl(
+          tmdbId: tmdbId,
+          title: title,
+          mediaType: type,
+          year: year,
+          season: season,
+          episode: episode,
+          preferredAudio: preferredAudio,
         );
       }
 
@@ -295,16 +397,16 @@ class StreamingService {
 
   bool isDirectStream(int providerIndex, {required bool isAnime}) {
     final providerName = getProviderName(providerIndex, isAnime: isAnime);
-    if (providerName == 'Nivio') return true;
-    if (providerName.startsWith('Animetsu') || providerName.startsWith('Miruro') || providerName.startsWith('Animex')) return true;
+    if (['Nivio', 'StreamFlix', 'MovieBox', 'CastleTV'].contains(providerName)) return true;
+    if (providerName.startsWith('Animetsu') || providerName.startsWith('Miruro') || providerName.startsWith('Animex') || providerName.startsWith('Xon')) return true;
     return false; // All other providers use WebView fallback
   }
 
   bool isDownloadable(int providerIndex, {required bool isAnime}) {
     final providerName = getProviderName(providerIndex, isAnime: isAnime);
-    // NewTV provides M3U8 streams which our custom downloader can parse and concatenate
-    if (providerName == 'Nivio') return true;
-    if (providerName.startsWith('Animetsu') || providerName.startsWith('Miruro') || providerName.startsWith('Animex')) return true;
+    // These providers yield raw direct streams which our custom downloader can parse and concatenate
+    if (['Nivio', 'StreamFlix', 'MovieBox', 'CastleTV'].contains(providerName)) return true;
+    if (providerName.startsWith('Animetsu') || providerName.startsWith('Miruro') || providerName.startsWith('Animex') || providerName.startsWith('Xon')) return true;
     
     // Iframe providers cannot be natively downloaded because we don't have the raw stream URL
     return false;

@@ -255,44 +255,32 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
     final sizeSegment = isDesktop ? 'original' : posterSize;
 
     final staticImageContent = activePath != null
-        ? CachedNetworkImage(
-            imageUrl: activePath.startsWith('http') 
-                ? activePath 
-                : '$tmdbImageBaseUrl/$sizeSegment$activePath',
-            fit: BoxFit.cover,
-            width: double.infinity,
-            height: double.infinity,
-            memCacheWidth: 360,
-            imageBuilder: (context, imageProvider) => Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(4),
-                image: DecorationImage(
-                  image: imageProvider,
-                  fit: BoxFit.cover,
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: CachedNetworkImage(
+              imageUrl: activePath.startsWith('http') 
+                  ? activePath 
+                  : '$tmdbImageBaseUrl/$sizeSegment$activePath',
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+              memCacheWidth: 360,
+              placeholder: (context, url) => Container(
+                color: const Color(0xFF2F2F2F),
+                child: const Center(
+                  child: CircularProgressIndicator(
+                    color: Color(0xFFE50914),
+                    strokeWidth: 2,
+                  ),
                 ),
               ),
-            ),
-            placeholder: (context, url) => Container(
-              decoration: BoxDecoration(
+              errorWidget: (context, url, error) => Container(
                 color: const Color(0xFF2F2F2F),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: const Center(
-                child: CircularProgressIndicator(
-                  color: Color(0xFFE50914),
-                  strokeWidth: 2,
+                child: const Icon(
+                  Icons.movie,
+                  color: Colors.white30,
+                  size: 40,
                 ),
-              ),
-            ),
-            errorWidget: (context, url, error) => Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF2F2F2F),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: const Icon(
-                Icons.movie,
-                color: Colors.white30,
-                size: 40,
               ),
             ),
           )

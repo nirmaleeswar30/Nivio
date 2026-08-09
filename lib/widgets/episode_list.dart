@@ -328,24 +328,18 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                           fit: StackFit.expand,
                           children: [
                             stillUrl.isNotEmpty
-                                ? CachedNetworkImage(
-                                    imageUrl: stillUrl,
-                                    width: 140,
-                                    height: 90,
-                                    fit: BoxFit.cover,
-                                    memCacheWidth: 280,
-                                    placeholder: (context, url) =>
-                                        _thumbPlaceholder(),
-                                    errorWidget: (context, url, error) =>
-                                        _thumbError(),
-                                    imageBuilder: (context, imageProvider) => Container(
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(8),
-                                        image: DecorationImage(
-                                          image: imageProvider,
-                                          fit: BoxFit.cover,
-                                        ),
-                                      ),
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: CachedNetworkImage(
+                                      imageUrl: stillUrl,
+                                      width: 140,
+                                      height: 90,
+                                      fit: BoxFit.cover,
+                                      memCacheWidth: 280,
+                                      placeholder: (context, url) =>
+                                          _thumbPlaceholder(),
+                                      errorWidget: (context, url, error) =>
+                                          _thumbError(),
                                     ),
                                   )
                                 : _thumbError(),

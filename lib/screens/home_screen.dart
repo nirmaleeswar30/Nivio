@@ -122,19 +122,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ? posterPath 
           : '$tmdbImageBaseUrl/w200$posterPath';
       
-      final cacheManager = DefaultCacheManager();
-      final fileInfo = await cacheManager.getFileFromCache(url);
-      Uint8List bytes;
-      if (fileInfo != null) {
-        bytes = await fileInfo.file.readAsBytes();
-      } else {
-        final file = await cacheManager.getSingleFile(url);
-        bytes = await file.readAsBytes();
-      }
-
-      final seedColorValue = await compute(extractSeedColor, bytes);
-      final colorScheme = ColorScheme.fromSeed(
-        seedColor: Color(seedColorValue),
+      final colorScheme = await ColorScheme.fromImageProvider(
+        provider: NetworkImage(url),
         brightness: Brightness.dark,
       );
       final color = colorScheme.primary;

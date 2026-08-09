@@ -11,7 +11,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:animations/animations.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -279,12 +278,7 @@ final appRouter = GoRouter(
         opaque: false,
         transitionDuration: const Duration(milliseconds: 300),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return SharedAxisTransition(
-            animation: animation,
-            secondaryAnimation: secondaryAnimation,
-            transitionType: SharedAxisTransitionType.scaled,
-            child: child,
-          );
+          return FadeTransition(opacity: animation, child: child);
         },
         child: const SearchScreen(),
       ),
@@ -379,22 +373,10 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/media/:id',
-      pageBuilder: (context, state) {
+      builder: (context, state) {
         final id = state.pathParameters['id']!;
         final mediaType = state.uri.queryParameters['type'];
-        return CustomTransitionPage(
-          opaque: false,
-          transitionDuration: const Duration(milliseconds: 300),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return SharedAxisTransition(
-              animation: animation,
-              secondaryAnimation: secondaryAnimation,
-              transitionType: SharedAxisTransitionType.scaled,
-              child: child,
-            );
-          },
-          child: MediaDetailScreen(mediaId: int.parse(id), mediaType: mediaType),
-        );
+        return MediaDetailScreen(mediaId: int.parse(id), mediaType: mediaType);
       },
     ),
     GoRoute(
@@ -407,12 +389,7 @@ final appRouter = GoRouter(
           opaque: false,
           transitionDuration: const Duration(milliseconds: 300),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return SharedAxisTransition(
-              animation: animation,
-              secondaryAnimation: secondaryAnimation,
-              transitionType: SharedAxisTransitionType.horizontal,
-              child: child,
-            );
+            return FadeTransition(opacity: animation, child: child);
           },
           child: SimilarContentScreen(
             mediaId: int.parse(id),
@@ -484,8 +461,7 @@ class _NivioAppState extends ConsumerState<NivioApp> {
     final appTheme = NivioTheme.buildDarkTheme(accentColor: accentColor);
 
     return MaterialApp.router(
-      scrollBehavior: MyCustomScrollBehavior(),
-      showPerformanceOverlay: false,
+      scrollBehavior: DesktopScrollBehavior(),
       title: 'Nivio',
       theme: appTheme,
       darkTheme: appTheme,
@@ -577,16 +553,11 @@ class _GitHubReleasePromptGateState extends State<_GitHubReleasePromptGate> {
   }
 }
 
-class MyCustomScrollBehavior extends MaterialScrollBehavior {
+class DesktopScrollBehavior extends MaterialScrollBehavior {
   @override
   Set<PointerDeviceKind> get dragDevices => {
         PointerDeviceKind.touch,
         PointerDeviceKind.mouse,
         PointerDeviceKind.trackpad,
       };
-
-  @override
-  ScrollPhysics getScrollPhysics(BuildContext context) {
-    return const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics());
-  }
 }

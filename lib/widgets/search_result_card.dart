@@ -39,53 +39,37 @@ class SearchResultCard extends ConsumerWidget {
                 fit: StackFit.expand,
                 children: [
                     if (posterUrl.isNotEmpty)
-                    CachedNetworkImage(
-                      imageUrl: posterUrl,
-                      fit: BoxFit.cover,
-                      width: double.infinity,
-                      imageBuilder: (context, imageProvider) => Container(
-                        decoration: BoxDecoration(
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(10),
-                          ),
-                          image: DecorationImage(
-                            image: imageProvider,
-                            fit: BoxFit.cover,
-                          ),
+                      ClipRRect(
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(10),
                         ),
-                      ),
-                      placeholder: (context, url) => Container(
-                        decoration: BoxDecoration(
-                          color: NivioTheme.netflixDarkGrey,
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(10),
+                        child: CachedNetworkImage(
+                          imageUrl: posterUrl,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          placeholder: (context, url) => Container(
+                            color: NivioTheme.netflixDarkGrey,
+                            child: Center(
+                              child: SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  color: NivioTheme.accentColorOf(context),
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
-                        child: Center(
-                          child: SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              color: NivioTheme.accentColorOf(context),
-                              strokeWidth: 2,
+                          errorWidget: (context, url, error) => Container(
+                            color: NivioTheme.netflixDarkGrey,
+                            child: Icon(
+                              Icons.movie_creation_outlined,
+                              color: NivioTheme.netflixGrey,
+                              size: 42,
                             ),
                           ),
                         ),
-                      ),
-                      errorWidget: (context, url, error) => Container(
-                        decoration: BoxDecoration(
-                          color: NivioTheme.netflixDarkGrey,
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(10),
-                          ),
-                        ),
-                        child: Icon(
-                          Icons.movie_creation_outlined,
-                          color: NivioTheme.netflixGrey,
-                          size: 42,
-                        ),
-                      ),
-                    )
+                      )
                   else
                     Container(
                       decoration: BoxDecoration(

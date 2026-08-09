@@ -1499,7 +1499,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
 
   Future<void> _showPreferredAnimeSourceDialog() async {
     final currentSource = ref.read(preferredAnimeSourceProvider);
-    final sources = ['Miruro', 'Animex', 'Animetsu'];
+    final sources = ['Miruro', 'Animex', 'Animetsu', 'Xon'];
     
     await showModalBottomSheet<void>(
       context: context,

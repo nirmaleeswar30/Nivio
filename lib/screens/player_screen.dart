@@ -674,6 +674,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           
           final request = http.Request('GET', Uri.parse(result.url));
           request.headers.addAll(result.headers);
+          request.headers['Range'] = 'bytes=0-100'; // Use range request to avoid buffering entire video
           final client = http.Client();
           final streamedResponse = await client.send(request).timeout(const Duration(seconds: 8));
           final status = streamedResponse.statusCode;
@@ -2594,7 +2595,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return '${twoDigits(m)}:${twoDigits(s)}';
   }
 
-  Widget _buildSingleProviderTile(int index, SearchResult? media) {
+  Widget _buildSingleProviderTile(int index, SearchResult? media, {bool isStandalone = false}) {
     final isCurrent = index == _currentProviderIndex;
     String providerName = ref.read(streamingServiceProvider).getProviderName(index, isAnime: _isAnimeMedia(media));
     
@@ -2606,6 +2607,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (providerName.endsWith(')')) providerName = providerName.substring(0, providerName.length - 1);
     } else if (providerName.startsWith('Animex (')) {
       providerName = providerName.substring('Animex ('.length);
+      if (providerName.endsWith(')')) providerName = providerName.substring(0, providerName.length - 1);
+    } else if (providerName.startsWith('Xon (')) {
+      providerName = providerName.substring('Xon ('.length);
       if (providerName.endsWith(')')) providerName = providerName.substring(0, providerName.length - 1);
     }
     
@@ -2644,6 +2648,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (name.startsWith('Animetsu')) groupName = 'Animetsu';
         else if (name.startsWith('Miruro')) groupName = 'Miruro';
         else if (name.startsWith('Animex')) groupName = 'Animex';
+        else if (name.startsWith('Xon')) groupName = 'Xon';
         
         groups.putIfAbsent(groupName, () => []).add(i);
       }
@@ -2652,30 +2657,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         final groupName = entry.key;
         final indices = entry.value;
 
-        if (indices.length == 1) {
-          widgets.add(_buildSingleProviderTile(indices.first, media));
-        } else {
-          bool containsCurrent = indices.contains(_currentProviderIndex);
-          widgets.add(
-            Theme(
-              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                initiallyExpanded: containsCurrent,
-                iconColor: Theme.of(context).primaryColor,
-                collapsedIconColor: Colors.white70,
-                title: Text(
-                  groupName,
-                  style: TextStyle(
-                    color: containsCurrent ? Theme.of(context).primaryColor : Colors.white,
-                    fontWeight: containsCurrent ? FontWeight.bold : FontWeight.w600,
-                    fontSize: 16,
-                  ),
+        bool containsCurrent = indices.contains(_currentProviderIndex);
+        widgets.add(
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              initiallyExpanded: containsCurrent,
+              iconColor: Theme.of(context).primaryColor,
+              collapsedIconColor: Colors.white70,
+              title: Text(
+                groupName,
+                style: TextStyle(
+                  color: containsCurrent ? Theme.of(context).primaryColor : Colors.white,
+                  fontWeight: containsCurrent ? FontWeight.bold : FontWeight.w600,
+                  fontSize: 16,
                 ),
-                children: indices.map((i) => _buildSingleProviderTile(i, media)).toList(),
               ),
+              children: indices.map((i) => _buildSingleProviderTile(i, media)).toList(),
             ),
-          );
-        }
+          ),
+        );
       }
     } else {
       for (int i = 0; i < _maxProviders; i++) {
@@ -3661,10 +3662,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // ─── WebView player (embed fallback) ───────────────────────────────────────
   Widget _buildWebViewPlayer() {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: WebViewPlayer(
+    return RepaintBoundary(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: Listener(
+              onPointerDown: (_) => _toggleWebViewControls(),
+              behavior: HitTestBehavior.translucent,
+              child: WebViewPlayer(
                 key: ValueKey(_streamResult!.url),
                     streamUrl: _streamResult!.url,
                     headers: _streamResult!.headers,
@@ -3715,6 +3720,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     _showEpisodesBottomSheet();
                   },
                 ),
+              ),
             ),
             // Back / exit button (always visible)
             Positioned(
@@ -3759,8 +3765,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ),
             ),
           ),
-        ],
-      );
+          ],
+        ),
+    );
   }
 
   Widget _buildEpisodesFloatingButton() {

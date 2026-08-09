@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:animations/animations.dart';
 
 class NivioTheme {
   const NivioTheme._();
@@ -42,30 +41,11 @@ class NivioTheme {
       fontFamily: fontFamily,
       scaffoldBackgroundColor: netflixBlack,
       primaryColor: accentColor,
-      colorScheme: ColorScheme.dark(
-        primary: accentColor,
-        secondary: secondaryColor,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: accentColor,
+        brightness: Brightness.dark,
         surface: netflixDarkGrey,
         surfaceContainer: netflixDarkGrey,
-      ),
-      pageTransitionsTheme: const PageTransitionsTheme(
-        builders: <TargetPlatform, PageTransitionsBuilder>{
-          TargetPlatform.android: SharedAxisPageTransitionsBuilder(
-            transitionType: SharedAxisTransitionType.horizontal,
-          ),
-          TargetPlatform.iOS: SharedAxisPageTransitionsBuilder(
-            transitionType: SharedAxisTransitionType.horizontal,
-          ),
-          TargetPlatform.windows: SharedAxisPageTransitionsBuilder(
-            transitionType: SharedAxisTransitionType.horizontal,
-          ),
-          TargetPlatform.macOS: SharedAxisPageTransitionsBuilder(
-            transitionType: SharedAxisTransitionType.horizontal,
-          ),
-          TargetPlatform.linux: SharedAxisPageTransitionsBuilder(
-            transitionType: SharedAxisTransitionType.horizontal,
-          ),
-        },
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,

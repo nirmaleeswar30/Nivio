@@ -195,36 +195,24 @@ class _ContinueWatchingCardState extends ConsumerState<ContinueWatchingCard>
                       child: Stack(
                         children: [
                           imageUrl.isNotEmpty
-                              ? CachedNetworkImage(
-                                  imageUrl: imageUrl,
-                                  width: 220,
-                                  height: 124,
-                                  alignment: Alignment.topCenter,
-                                  imageBuilder: (context, imageProvider) => Container(
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(10),
-                                      image: DecorationImage(
-                                        image: imageProvider,
-                                        fit: BoxFit.cover,
-                                        alignment: Alignment.topCenter,
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: CachedNetworkImage(
+                                    imageUrl: imageUrl,
+                                    width: 220,
+                                    height: 124,
+                                    alignment: Alignment.topCenter,
+                                    fit: BoxFit.cover,
+                                    placeholder: (context, url) => Container(
+                                      color: NivioTheme.netflixDarkGrey,
+                                      child: const Center(
+                                        child: CircularProgressIndicator(),
                                       ),
                                     ),
-                                  ),
-                                  placeholder: (context, url) => Container(
-                                    decoration: BoxDecoration(
+                                    errorWidget: (context, url, error) => Container(
                                       color: NivioTheme.netflixDarkGrey,
-                                      borderRadius: BorderRadius.circular(10),
+                                      child: const Icon(Icons.movie, size: 32, color: Colors.grey),
                                     ),
-                                    child: const Center(
-                                      child: CircularProgressIndicator(),
-                                    ),
-                                  ),
-                                  errorWidget: (context, url, error) => Container(
-                                    decoration: BoxDecoration(
-                                      color: NivioTheme.netflixDarkGrey,
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: const Icon(Icons.movie, size: 32, color: Colors.grey),
                                   ),
                                 )
                               : Container(

@@ -56,20 +56,8 @@ class _MediaCardState extends ConsumerState<MediaCard>
             width: 130,
             fit: BoxFit.cover,
             memCacheWidth: 390,
-            imageBuilder: (context, imageProvider) => Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(4),
-                image: DecorationImage(
-                  image: imageProvider,
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ),
             placeholder: (context, url) => Container(
-              decoration: BoxDecoration(
-                color: NivioTheme.netflixDarkGrey,
-                borderRadius: BorderRadius.circular(4),
-              ),
+              color: NivioTheme.netflixDarkGrey,
               child: Center(
                 child: CircularProgressIndicator(
                   color: NivioTheme.accentColorOf(context),
@@ -77,10 +65,7 @@ class _MediaCardState extends ConsumerState<MediaCard>
               ),
             ),
             errorWidget: (context, url, error) => Container(
-              decoration: BoxDecoration(
-                color: NivioTheme.netflixDarkGrey,
-                borderRadius: BorderRadius.circular(4),
-              ),
+              color: NivioTheme.netflixDarkGrey,
               child: Icon(
                 Icons.movie,
                 color: NivioTheme.netflixGrey,
@@ -91,10 +76,7 @@ class _MediaCardState extends ConsumerState<MediaCard>
         : Container(
             height: 180,
             width: 130,
-            decoration: BoxDecoration(
-              color: NivioTheme.netflixDarkGrey,
-              borderRadius: BorderRadius.circular(4),
-            ),
+            color: NivioTheme.netflixDarkGrey,
             child: Icon(
               Icons.movie,
               color: NivioTheme.netflixGrey,
@@ -144,7 +126,10 @@ class _MediaCardState extends ConsumerState<MediaCard>
                       ),
                       child: Stack(
                         children: [
-                          child!,
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: child!,
+                          ),
                           // Progress bar at bottom
                           Positioned(
                             bottom: 0,
