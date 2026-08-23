@@ -102,6 +102,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  Future<void> _updateSubtitleScalingForPip(bool isPip) async {
+    if (_player.platform is NativePlayer) {
+      try {
+        final np = _player.platform as NativePlayer;
+        final fontSize = ref.read(subtitleFontSizeProvider);
+        final baseScale = fontSize / 18.0;
+        final scale = isPip ? (baseScale * 0.45) : baseScale;
+        await np.setProperty('sub-ass-override', 'scale');
+        await np.setProperty('sub-scale', '$scale');
+      } catch (e) {
+        appDebugLog('Failed to update subtitle scale for PiP: $e');
+      }
+    }
+  }
+
   static const List<String> _displayFitOrder = [
     'bestFit',
     'fitScreen',
@@ -237,8 +252,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _cachedHistoryService = ref.read(watchHistoryServiceProvider);
     _cachedMedia = ref.read(selectedMediaProvider);
     _cachedPlayerActiveNotifier = ref.read(isPlayerActiveProvider.notifier);
-    
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
 
     // Check if the mini player has an active player we can reclaim
     // (user tapped expand on mini player or navigated back to same media)
@@ -271,8 +284,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           const MethodChannel('puntito.simple_pip_mode').setMethodCallHandler((call) async {
             if (call.method == 'onPipEntered') {
               setState(() => _isPipMode = true);
+              _updateSubtitleScalingForPip(true);
             } else if (call.method == 'onPipExited') {
               setState(() => _isPipMode = false);
+              _updateSubtitleScalingForPip(false);
             } else if (call.method == 'onPipAction') {
               final String arg = call.arguments as String;
               final actionStr = arg.toLowerCase();
@@ -772,7 +787,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         await np.setProperty('demuxer-readahead-secs', '120'); // Buffer 2 mins ahead
         await np.setProperty('sub-delay', '${_subtitleDelayMs / 1000.0}');
         final fontSize = ref.read(subtitleFontSizeProvider);
-        final scale = fontSize / 18.0;
+        final baseScale = fontSize / 18.0;
+        final scale = _isPipMode ? (baseScale * 0.45) : baseScale;
         await np.setProperty('sub-ass-override', 'scale');
         await np.setProperty('sub-scale', '$scale');
         
@@ -2595,7 +2611,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return '${twoDigits(m)}:${twoDigits(s)}';
   }
 
-  Widget _buildSingleProviderTile(int index, SearchResult? media, {bool isStandalone = false}) {
+  Widget _buildSingleProviderTile(int index, SearchResult? media) {
     final isCurrent = index == _currentProviderIndex;
     String providerName = ref.read(streamingServiceProvider).getProviderName(index, isAnime: _isAnimeMedia(media));
     
@@ -3446,7 +3462,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                                     onTap: () async {
                                                       await ref.read(subtitleFontSizeProvider.notifier).setSize(entry.value);
                                                       if (_player.platform is NativePlayer) {
-                                                        final scale = entry.value / 18.0;
+                                                        final baseScale = entry.value / 18.0;
+                                                        final scale = _isPipMode ? (baseScale * 0.45) : baseScale;
                                                         await (_player.platform as NativePlayer).setProperty('sub-scale', '$scale');
                                                       }
                                                       setDialogState(() {});
@@ -4409,16 +4426,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ),
               ),
             ),
-          // Back button (Desktop/Web fallback)
-          if (!Platform.isAndroid && !Platform.isIOS)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 16,
-              left: 16,
+          // Back button
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 16,
+            left: 16,
+            child: _PlayerHoverScale(
               child: IconButton(
                 icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
-                onPressed: _forceExitPlayer,
+                onPressed: _handleBackNavigation,
+                tooltip: 'Go Back',
               ),
             ),
+          ),
           // Content
           Center(
             child: Column(
@@ -4501,18 +4520,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ],
             ),
           ),
-          if (Platform.isLinux || Platform.isWindows || Platform.isMacOS)
-            Positioned(
-              top: 40,
-              left: 24,
-              child: _PlayerHoverScale(
-                child: IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
-                  onPressed: _handleBackNavigation,
-                  tooltip: 'Go Back',
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -4719,7 +4726,54 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
 
     if (isPipMode) {
-      return RepaintBoundary(child: videoWidget);
+      final pipFontSize = (ref.watch(subtitleFontSizeProvider) * 1.1) * 0.45;
+      return RepaintBoundary(
+        child: Stack(
+          children: [
+            videoWidget,
+            Positioned(
+              left: 8,
+              right: 8,
+              bottom: 4,
+              child: IgnorePointer(
+                child: StreamBuilder<List<String>>(
+                  stream: _player.stream.subtitle,
+                  initialData: const [],
+                  builder: (context, snapshot) {
+                    final subtitleLines = snapshot.data ?? const [];
+                    if (subtitleLines.isEmpty) return const SizedBox.shrink();
+
+                    final cleanedLines = subtitleLines.map((line) {
+                      return line.trim().replaceAll('\r', '').replaceAll('\u0000', '');
+                    }).where((line) => line.isNotEmpty).toList();
+
+                    if (cleanedLines.isEmpty) return const SizedBox.shrink();
+
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: cleanedLines.map((line) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 1.0),
+                          child: Text(
+                            line,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: pipFontSize,
+                              color: Colors.white,
+                              backgroundColor: backgroundColor,
+                              shadows: shadows,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
     final media = ref.read(selectedMediaProvider);

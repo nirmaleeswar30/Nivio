@@ -7,47 +7,10 @@ set -e
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT/packages/nivio_desktop"
 
-echo "⚙️ Setting up desktop compilation overrides..."
+# Clean up any legacy backup files if present
+rm -f pubspec.yaml.bak pubspec.lock.bak
 
-# Self-healing: if backup exists from a previous crashed run, restore it first!
-if [ -f pubspec.yaml.bak ]; then
-  echo "🩹 Restoring previous pubspec.yaml.bak..."
-  mv pubspec.yaml.bak pubspec.yaml
-fi
-if [ -f pubspec.lock.bak ]; then
-  mv pubspec.lock.bak pubspec.lock
-fi
-
-# Back up pubspec.yaml and pubspec.lock
-cp pubspec.yaml pubspec.yaml.bak
-cp pubspec.lock pubspec.lock.bak
-
-# Function to clean up/restore files on exit
-cleanup() {
-  echo "🧹 Restoring original pubspec.yaml and pubspec.lock..."
-  if [ -f pubspec.yaml.bak ]; then
-    mv pubspec.yaml.bak pubspec.yaml
-  fi
-  if [ -f pubspec.lock.bak ]; then
-    mv pubspec.lock.bak pubspec.lock
-  fi
-  flutter pub get
-}
-trap cleanup EXIT
-
-# Append overrides to pubspec.yaml
-cat << 'EOF' >> pubspec.yaml
-  firebase_core:
-    path: ../../packages/stubs/firebase_core
-  firebase_auth:
-    path: ../../packages/stubs/firebase_auth
-  cloud_firestore:
-    path: ../../packages/stubs/cloud_firestore
-  google_sign_in:
-    path: ../../packages/stubs/google_sign_in
-EOF
-
-echo "📥 Getting local stub dependencies..."
+echo "📥 Getting desktop dependencies..."
 flutter pub get
 
 # Default target is linux, but allow overriding via args

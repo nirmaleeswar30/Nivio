@@ -49,7 +49,7 @@ class WatchHistoryService {
         ? lastPosition.inSeconds / totalDuration.inSeconds
         : 0.0;
 
-    final isMediaCompleted = mediaType == 'tv'
+    final isMediaCompleted = (mediaType == 'tv' || mediaType == 'anime')
         ? (progressPercent >= 0.95 &&
             totalSeasons > 0 &&
             currentSeason >= totalSeasons &&
@@ -100,8 +100,8 @@ class WatchHistoryService {
       );
     }
 
-    // Update episode progress for TV shows
-    if (mediaType == 'tv') {
+    // Update episode progress for TV shows and anime
+    if (mediaType == 'tv' || mediaType == 'anime') {
       final episodeKey = 's${currentSeason}e$currentEpisode';
       final episodeProgress = EpisodeProgress(
         season: currentSeason,

@@ -91,7 +91,7 @@ class MovieBoxScraperService {
           availableAudios: languages,
           selectedAudio: selectedAudio,
           isM3U8: _isHls(selected.url),
-          headers: {'User-Agent': _userAgent},
+          headers: _mediaHeaders,
           sources: sources,
         );
       }

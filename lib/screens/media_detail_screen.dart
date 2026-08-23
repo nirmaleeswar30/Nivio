@@ -471,6 +471,8 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     final continueSeason = mediaHistory?.currentSeason ?? 1;
     final continueEpisode = mediaHistory?.currentEpisode ?? 1;
     final hasHistory = mediaHistory != null && mediaHistory.progressPercent > 0.0;
+    final isMediaWatched = mediaHistory != null &&
+        (mediaHistory.isCompleted || mediaHistory.progressPercent >= 0.90);
     
     final playLabel = media.mediaType == 'movie'
         ? (hasHistory ? 'Continue' : 'Play')
@@ -784,21 +786,41 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                                       ),
                                                     );
                                                   }
+                                                  final IconData iconData;
+                                                  final Color iconColor;
+                                                  final String tooltip;
 
-                                                  return _plainIconButton(
-                                                    icon: Icon(
-                                                      allCompleted
-                                                          ? Icons.download_done_rounded
-                                                          : (media.mediaType == 'movie'
-                                                                ? Icons.download_rounded
-                                                                : Icons.file_download),
-                                                      color: allCompleted
-                                                          ? NivioTheme.accentColorOf(context)
-                                                          : NivioTheme.netflixWhite,
-                                                      size: 24,
+                                                  if (allCompleted && isMediaWatched) {
+                                                    iconData = Icons.download_done_rounded;
+                                                    iconColor = NivioTheme.accentColorOf(context);
+                                                    tooltip = 'Watched & Downloaded';
+                                                  } else if (allCompleted) {
+                                                    iconData = Icons.download_done_rounded;
+                                                    iconColor = NivioTheme.accentColorOf(context);
+                                                    tooltip = 'Downloaded';
+                                                  } else if (isMediaWatched) {
+                                                    iconData = Icons.check_circle_rounded;
+                                                    iconColor = NivioTheme.accentColorOf(context);
+                                                    tooltip = 'Watched (Click to download)';
+                                                  } else {
+                                                    iconData = media.mediaType == 'movie'
+                                                        ? Icons.download_rounded
+                                                        : Icons.file_download;
+                                                    iconColor = NivioTheme.netflixWhite;
+                                                    tooltip = 'Download';
+                                                  }
+
+                                                  return Tooltip(
+                                                    message: tooltip,
+                                                    child: _plainIconButton(
+                                                      icon: Icon(
+                                                        iconData,
+                                                        color: iconColor,
+                                                        size: 24,
+                                                      ),
+                                                      iconColor: iconColor,
+                                                      onTap: () => _handleDownload(media),
                                                     ),
-                                                    iconColor: NivioTheme.netflixWhite,
-                                                    onTap: () => _handleDownload(media),
                                                   );
                                                 },
                                               ),
@@ -1017,22 +1039,41 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                         );
                                       }
 
-                                      return _plainIconButton(
-                                        icon: Icon(
-                                          allCompleted
-                                              ? Icons.download_done_rounded
-                                              : (media.mediaType == 'movie'
-                                                    ? Icons.download_rounded
-                                                    : Icons.file_download),
-                                          color: allCompleted
-                                              ? NivioTheme.accentColorOf(
-                                                  context,
-                                                )
-                                              : NivioTheme.netflixWhite,
-                                          size: 24,
+                                      final IconData iconData;
+                                      final Color iconColor;
+                                      final String tooltip;
+
+                                      if (allCompleted && isMediaWatched) {
+                                        iconData = Icons.download_done_rounded;
+                                        iconColor = NivioTheme.accentColorOf(context);
+                                        tooltip = 'Watched & Downloaded';
+                                      } else if (allCompleted) {
+                                        iconData = Icons.download_done_rounded;
+                                        iconColor = NivioTheme.accentColorOf(context);
+                                        tooltip = 'Downloaded';
+                                      } else if (isMediaWatched) {
+                                        iconData = Icons.check_circle_rounded;
+                                        iconColor = NivioTheme.accentColorOf(context);
+                                        tooltip = 'Watched (Click to download)';
+                                      } else {
+                                        iconData = media.mediaType == 'movie'
+                                            ? Icons.download_rounded
+                                            : Icons.file_download;
+                                        iconColor = NivioTheme.netflixWhite;
+                                        tooltip = 'Download';
+                                      }
+
+                                      return Tooltip(
+                                        message: tooltip,
+                                        child: _plainIconButton(
+                                          icon: Icon(
+                                            iconData,
+                                            color: iconColor,
+                                            size: 24,
+                                          ),
+                                          iconColor: iconColor,
+                                          onTap: () => _handleDownload(media),
                                         ),
-                                        iconColor: NivioTheme.netflixWhite,
-                                        onTap: () => _handleDownload(media),
                                       );
                                     },
                                   ),

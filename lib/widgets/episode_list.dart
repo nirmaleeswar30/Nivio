@@ -18,6 +18,8 @@ import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/services/streaming_service.dart';
 import 'package:nivio/services/download_service.dart';
 import 'package:nivio/models/download_item.dart';
+import 'package:nivio/models/watch_history.dart';
+import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
 
 class EpisodeList extends ConsumerStatefulWidget {
@@ -95,6 +97,12 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
   @override
   Widget build(BuildContext context) {
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final allHistory = ref.watch(watchHistoryProvider).valueOrNull ?? [];
+    final mediaHistory = allHistory.cast<WatchHistory?>().firstWhere(
+      (h) => h?.tmdbId == widget.media.id,
+      orElse: () => null,
+    );
+
     final seasonDataAsync = ref.watch(
       seasonDataProvider((
         showId: widget.media.id,
@@ -237,12 +245,22 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
-                            child: _buildEpisodeCard(i, visibleEpisodes[i]),
+                            child: _buildEpisodeCard(
+                              i,
+                              visibleEpisodes[i],
+                              isEven: (i ~/ 2).isEven,
+                              mediaHistory: mediaHistory,
+                            ),
                           ),
                           const SizedBox(width: 16),
                           Expanded(
                             child: (i + 1 < visibleEpisodes.length)
-                                ? _buildEpisodeCard(i + 1, visibleEpisodes[i + 1])
+                                ? _buildEpisodeCard(
+                                    i + 1,
+                                    visibleEpisodes[i + 1],
+                                    isEven: (i ~/ 2).isEven,
+                                    mediaHistory: mediaHistory,
+                                  )
                                 : const SizedBox.shrink(),
                           ),
                         ],
@@ -251,7 +269,12 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                 )
               else
                 ...visibleEpisodes.asMap().entries.map(
-                  (entry) => _buildEpisodeCard(entry.key, entry.value),
+                  (entry) => _buildEpisodeCard(
+                    entry.key,
+                    entry.value,
+                    isEven: entry.key.isEven,
+                    mediaHistory: mediaHistory,
+                  ),
                 ),
               if (_hasMore)
                 Padding(
@@ -283,7 +306,12 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
     );
   }
 
-  Widget _buildEpisodeCard(int index, EpisodeData episode) {
+  Widget _buildEpisodeCard(
+    int index,
+    EpisodeData episode, {
+    bool isEven = true,
+    WatchHistory? mediaHistory,
+  }) {
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     final stillPath = episode.stillPath ?? widget.media.backdropPath ?? widget.media.posterPath;
     final stillUrl = stillPath == null || stillPath.isEmpty
@@ -292,9 +320,20 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
         ? stillPath
         : '$tmdbImageBaseUrl/${isDesktop ? 'original' : 'w500'}$stillPath';
 
-    final bgColor = index.isEven ? const Color(0x0EFFFFFF) : Colors.transparent;
+    final bgColor = isEven ? const Color(0x0EFFFFFF) : Colors.transparent;
     final isUnaired = _isUnaired(episode.airDate);
     final relDate = _relativeDate(episode.airDate);
+
+    final epKey = 's${widget.season}e${episode.episodeNumber}';
+    final epProgress = mediaHistory?.episodes[epKey];
+    final isEpisodeWatched = (epProgress != null && epProgress.isCompleted) ||
+        (epProgress != null &&
+            epProgress.totalDurationSeconds > 0 &&
+            (epProgress.lastPositionSeconds / epProgress.totalDurationSeconds) >= 0.90) ||
+        (mediaHistory != null &&
+            mediaHistory.currentSeason == widget.season &&
+            mediaHistory.currentEpisode == episode.episodeNumber &&
+            (mediaHistory.isCompleted || mediaHistory.progressPercent >= 0.90));
 
     return _HoverEpisodeCardWrapper(
       child: Padding(
@@ -397,35 +436,82 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                         builder: (context, box, _) {
                           final id = '${widget.media.id}_${widget.season}_${episode.episodeNumber}';
                           final item = box.get(id);
+                          final isDownloaded = item?.status == DownloadStatus.completed;
+                          final isDownloading = item != null &&
+                              (item.status == DownloadStatus.downloading ||
+                                  item.status == DownloadStatus.pending ||
+                                  item.status == DownloadStatus.extracting);
                           
-                          if (item != null) {
-                            if (item.status == DownloadStatus.downloading || 
-                                item.status == DownloadStatus.pending || 
-                                item.status == DownloadStatus.extracting) {
-                              return SizedBox(
-                                width: 40,
-                                height: 40,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12.0),
-                                  child: CircularProgressIndicator(
-                                    value: item.progress > 0 ? item.progress : null,
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(NivioTheme.accentColorOf(context)),
-                                  ),
+                          if (isDownloading) {
+                            return SizedBox(
+                              width: 40,
+                              height: 40,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12.0),
+                                child: CircularProgressIndicator(
+                                  value: item.progress > 0 ? item.progress : null,
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(NivioTheme.accentColorOf(context)),
                                 ),
-                              );
-                            }
-                            if (item.status == DownloadStatus.completed) {
-                              return IconButton(
-                                icon: Icon(Icons.download_done_rounded, color: NivioTheme.accentColorOf(context)),
+                              ),
+                            );
+                          }
+
+                          if (isDownloaded && isEpisodeWatched) {
+                            return Tooltip(
+                              message: 'Watched & Downloaded',
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.download_done_rounded,
+                                      color: NivioTheme.accentColorOf(context),
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      Icons.check_circle_rounded,
+                                      color: NivioTheme.accentColorOf(context),
+                                      size: 20,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+
+                          if (isDownloaded) {
+                            return Tooltip(
+                              message: 'Downloaded',
+                              child: IconButton(
+                                icon: Icon(
+                                  Icons.download_done_rounded,
+                                  color: NivioTheme.accentColorOf(context),
+                                ),
                                 onPressed: () {},
-                              );
-                            }
+                              ),
+                            );
+                          }
+
+                          if (isEpisodeWatched) {
+                            return _HoverIconScale(
+                              child: IconButton(
+                                icon: Icon(
+                                  Icons.check_circle_rounded,
+                                  color: NivioTheme.accentColorOf(context),
+                                ),
+                                tooltip: 'Watched (Click to download)',
+                                onPressed: () => _downloadEpisode(episode),
+                              ),
+                            );
                           }
                           
                           return _HoverIconScale(
                             child: IconButton(
                               icon: const Icon(Icons.file_download, color: Colors.white70),
+                              tooltip: 'Download',
                               onPressed: () => _downloadEpisode(episode),
                             ),
                           );

@@ -33,8 +33,6 @@ class NivioTheme {
     String fontFamily = 'Satoshi',
     Color accentColor = netflixRed,
   }) {
-    final secondaryColor = Color.lerp(accentColor, Colors.white, 0.22)!;
-
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
