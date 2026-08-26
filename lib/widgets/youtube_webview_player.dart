@@ -1,6 +1,8 @@
 import 'dart:collection';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:nivio/services/hls_proxy_service.dart';
 
 /// A lightweight YouTube player built on top of flutter_inappwebview.
 /// Works on all platforms that flutter_inappwebview supports (Android, iOS,
@@ -63,11 +65,54 @@ class YouTubeWebViewPlayerState extends State<YouTubeWebViewPlayer> {
   void dispose() {
     if (_isReady && _controller != null) {
       try {
-        _controller!.evaluateJavascript(source: 'if(player) player.stopVideo();');
+        _controller!.evaluateJavascript(
+          source:
+              'var mp = document.getElementById("movie_player"); if(mp && mp.stopVideo) mp.stopVideo(); else if(typeof player !== "undefined" && player && player.stopVideo) player.stopVideo(); else { var v = document.querySelector("video"); if(v) v.pause(); }',
+        );
       } catch (_) {}
     }
     _controller = null;
     super.dispose();
+  }
+
+  String _buildWindowsUrl(String videoId, {int? startAt}) {
+    final port = HlsProxyService.instance.port;
+    if (port > 0) {
+      final autoplay = widget.autoPlay ? 1 : 0;
+      final controls = widget.showControls ? 1 : 0;
+      final loop = widget.loop ? 1 : 0;
+      final mute = widget.muted ? 1 : 0;
+      final start = startAt ?? widget.startAt;
+
+      return 'http://127.0.0.1:$port/youtube_trailer?v=$videoId'
+          '&autoplay=$autoplay'
+          '&controls=$controls'
+          '&mute=$mute'
+          '&loop=$loop'
+          '&start=$start';
+    }
+    return _buildEmbedUrl(videoId, startAt: startAt);
+  }
+
+  String _buildEmbedUrl(String videoId, {int? startAt}) {
+    final autoplay = widget.autoPlay ? '1' : '0';
+    final controls = widget.showControls ? '1' : '0';
+    final mute = widget.muted ? '1' : '0';
+    final start = startAt ?? widget.startAt;
+
+    final query = <String, String>{
+      'autoplay': autoplay,
+      'controls': controls,
+      'mute': mute,
+      'playsinline': '1',
+      'rel': '0',
+      'modestbranding': '1',
+      if (start > 0) 'start': '$start',
+      if (widget.loop) 'loop': '1',
+      if (widget.loop) 'playlist': videoId,
+    };
+
+    return Uri.https('www.youtube.com', '/embed/$videoId', query).toString();
   }
 
   String _buildHtml() {
@@ -85,10 +130,11 @@ class YouTubeWebViewPlayerState extends State<YouTubeWebViewPlayer> {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
   <style>
     * { margin: 0; padding: 0; overflow: hidden; }
     html, body { width: 100%; height: 100%; background: #000; }
-    #player { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+    #player { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
   </style>
 </head>
 <body>
@@ -96,9 +142,10 @@ class YouTubeWebViewPlayerState extends State<YouTubeWebViewPlayer> {
     id="player"
     width="100%" 
     height="100%" 
-    src="https://www.youtube-nocookie.com/embed/$videoId?enablejsapi=1&autoplay=$autoplay&mute=1&controls=$controls&start=$start&playsinline=1&fs=0&iv_load_policy=3&rel=0&modestbranding=1" 
+    src="https://www.youtube-nocookie.com/embed/$videoId?enablejsapi=1&autoplay=$autoplay&mute=1&controls=$controls&start=$start&playsinline=1&fs=0&iv_load_policy=3&rel=0&modestbranding=1&loop=$loop&playlist=$videoId&origin=https://www.youtube-nocookie.com" 
     frameborder="0" 
-    allow="autoplay; encrypted-media" 
+    allow="autoplay; encrypted-media; fullscreen; picture-in-picture; accelerometer; clipboard-write; gyroscope" 
+    referrerpolicy="strict-origin-when-cross-origin"
     allowfullscreen>
   </iframe>
   <script>
@@ -138,39 +185,63 @@ class YouTubeWebViewPlayerState extends State<YouTubeWebViewPlayer> {
 
   /// Play the video.
   Future<void> play() async {
-    await _controller?.evaluateJavascript(source: 'if(player) player.playVideo();');
+    await _controller?.evaluateJavascript(
+      source:
+          'if(typeof player !== "undefined" && player && player.playVideo) player.playVideo(); else { var mp = document.getElementById("movie_player"); if(mp && mp.playVideo) mp.playVideo(); else { var v = document.querySelector("video"); if(v) v.play(); } }',
+    );
   }
 
   /// Pause the video.
   Future<void> pause() async {
-    await _controller?.evaluateJavascript(source: 'if(player) player.pauseVideo();');
+    await _controller?.evaluateJavascript(
+      source:
+          'if(typeof player !== "undefined" && player && player.pauseVideo) player.pauseVideo(); else { var mp = document.getElementById("movie_player"); if(mp && mp.pauseVideo) mp.pauseVideo(); else { var v = document.querySelector("video"); if(v) v.pause(); } }',
+    );
   }
 
   /// Seek to a position in seconds.
   Future<void> seekTo(int seconds) async {
-    await _controller?.evaluateJavascript(source: 'if(player) player.seekTo($seconds, true);');
+    await _controller?.evaluateJavascript(
+      source:
+          'if(typeof player !== "undefined" && player && player.seekTo) player.seekTo($seconds, true); else { var mp = document.getElementById("movie_player"); if(mp && mp.seekTo) mp.seekTo($seconds, true); else { var v = document.querySelector("video"); if(v) v.currentTime = $seconds; } }',
+    );
   }
 
   /// Mute the player.
   Future<void> mute() async {
-    await _controller?.evaluateJavascript(source: 'if(player) player.mute();');
+    await _controller?.evaluateJavascript(
+      source:
+          'if(typeof player !== "undefined" && player && player.mute) player.mute(); else { var mp = document.getElementById("movie_player"); if(mp && mp.mute) mp.mute(); else { var v = document.querySelector("video"); if(v) v.muted = true; } }',
+    );
   }
 
   /// Unmute the player.
   Future<void> unMute() async {
-    await _controller?.evaluateJavascript(source: 'if(player) player.unMute();');
+    await _controller?.evaluateJavascript(
+      source:
+          'if(typeof player !== "undefined" && player && player.unMute) player.unMute(); else { var mp = document.getElementById("movie_player"); if(mp && mp.unMute) mp.unMute(); else { var v = document.querySelector("video"); if(v) v.muted = false; } }',
+    );
   }
 
   /// Set volume (0-100).
   Future<void> setVolume(int volume) async {
-    await _controller?.evaluateJavascript(source: 'if(player) player.setVolume($volume);');
+    await _controller?.evaluateJavascript(
+      source:
+          'if(typeof player !== "undefined" && player && player.setVolume) player.setVolume($volume); else { var mp = document.getElementById("movie_player"); if(mp && mp.setVolume) mp.setVolume($volume); else { var v = document.querySelector("video"); if(v) v.volume = ${volume / 100.0}; } }',
+    );
   }
 
   /// Load a different video by ID.
   Future<void> loadVideo(String videoId, {int startAt = 0}) async {
-    await _controller?.evaluateJavascript(
-      source: 'if(player) player.loadVideoById("$videoId", $startAt);',
-    );
+    if (Platform.isWindows) {
+      final url = _buildWindowsUrl(videoId, startAt: startAt);
+      await _controller?.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
+    } else {
+      await _controller?.evaluateJavascript(
+        source:
+            'if(typeof player !== "undefined" && player && player.loadVideoById) player.loadVideoById("$videoId", $startAt);',
+      );
+    }
   }
 
   /// Whether the player is ready.
@@ -178,11 +249,18 @@ class YouTubeWebViewPlayerState extends State<YouTubeWebViewPlayer> {
 
   @override
   Widget build(BuildContext context) {
+    final isWindows = Platform.isWindows;
+
     return InAppWebView(
-      initialData: InAppWebViewInitialData(
-        data: _buildHtml(),
-        baseUrl: WebUri('https://youtube-nocookie.com'),
-      ),
+      initialUrlRequest: isWindows
+          ? URLRequest(url: WebUri(_buildWindowsUrl(widget.videoId)))
+          : null,
+      initialData: isWindows
+          ? null
+          : InAppWebViewInitialData(
+              data: _buildHtml(),
+              baseUrl: WebUri('https://www.youtube-nocookie.com'),
+            ),
       initialUserScripts: UnmodifiableListView([]),
       initialSettings: InAppWebViewSettings(
         javaScriptEnabled: true,
@@ -191,9 +269,11 @@ class YouTubeWebViewPlayerState extends State<YouTubeWebViewPlayer> {
         transparentBackground: true,
         supportMultipleWindows: false,
         javaScriptCanOpenWindowsAutomatically: false,
-        userAgent:
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       ),
+      onLoadStop: (controller, url) async {
+        _isReady = true;
+        widget.onReady?.call();
+      },
       onWebViewCreated: (controller) {
         _controller = controller;
 
@@ -210,22 +290,28 @@ class YouTubeWebViewPlayerState extends State<YouTubeWebViewPlayer> {
           callback: (args) {
             if (args.isNotEmpty) {
               final state = args[0] as int;
-              
+
               // Unmute workaround via native evaluateJavascript (often inherits user gesture context)
               if (state == 1 && widget.autoPlay && !widget.muted) {
                 Future.delayed(const Duration(milliseconds: 250), () {
                   if (mounted && _controller != null) {
                     _controller!.evaluateJavascript(source: """
-                      var iframe = document.getElementById('player');
-                      if (iframe) {
-                        iframe.contentWindow.postMessage('{"event":"command","func":"unMute","args":""}', '*');
-                        iframe.contentWindow.postMessage('{"event":"command","func":"setVolume","args":[100]}', '*');
+                      var mp = document.getElementById('movie_player');
+                      if (mp && mp.unMute) {
+                        mp.unMute();
+                        mp.setVolume(100);
+                      } else {
+                        var iframe = document.getElementById('player');
+                        if (iframe) {
+                          iframe.contentWindow.postMessage('{"event":"command","func":"unMute","args":""}', '*');
+                          iframe.contentWindow.postMessage('{"event":"command","func":"setVolume","args":[100]}', '*');
+                        }
                       }
                     """);
                   }
                 });
               }
-              
+
               widget.onStateChanged?.call(state);
             }
           },
@@ -245,3 +331,4 @@ class YouTubeWebViewPlayerState extends State<YouTubeWebViewPlayer> {
     );
   }
 }
+

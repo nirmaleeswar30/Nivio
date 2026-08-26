@@ -2356,7 +2356,10 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
   }
 
   Future<void> _openExternally() async {
-    final url = widget.source.watchUrl ?? widget.source.embedUrl;
+    final isYoutube = widget.source.site.toLowerCase() == 'youtube';
+    final url = widget.source.watchUrl ??
+        widget.source.embedUrl ??
+        (isYoutube ? 'https://www.youtube.com/watch?v=${widget.source.key}' : null);
     if (url == null) return;
 
     final uri = Uri.tryParse(url);
@@ -2482,7 +2485,12 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
           if (mounted) {
             setState(() {
               _hasError = true;
-              _errorMessage = 'YouTube player error (code: $code)';
+              if (code == 153 || code == 150 || code == 101) {
+                _errorMessage =
+                    'This trailer has embedding restrictions from YouTube.';
+              } else {
+                _errorMessage = 'YouTube player error (code: $code)';
+              }
             });
           }
         },
@@ -2659,7 +2667,7 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
                               style: const TextStyle(color: Colors.white70),
                               textAlign: TextAlign.center,
                             ),
-                            if (widget.source.watchUrl != null) ...[
+                            if (widget.source.watchUrl != null || isYoutube) ...[
                               const SizedBox(height: 10),
                               FilledButton(
                                 onPressed: _openExternally,

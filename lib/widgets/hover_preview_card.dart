@@ -603,6 +603,14 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
                   setState(() => _isVideoPlaying = true);
                 }
               },
+              onError: (error) {
+                if (mounted) {
+                  setState(() {
+                    _playerInitialized = false;
+                    _isVideoPlaying = false;
+                  });
+                }
+              },
             ),
           ),
           // Show backdrop image until video starts rendering

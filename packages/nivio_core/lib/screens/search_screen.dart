@@ -1,0 +1,843 @@
+import 'dart:async';
+import 'dart:ui';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:nivio/widgets/app_scroll_view.dart';
+import 'package:nivio/core/theme.dart';
+import 'package:nivio/models/search_result.dart';
+import 'package:nivio/providers/search_provider.dart';
+import 'package:nivio/providers/service_providers.dart';
+import 'package:nivio/widgets/search_result_card.dart';
+import 'package:go_router/go_router.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+class SearchScreen extends ConsumerStatefulWidget {
+  const SearchScreen({super.key});
+
+  @override
+  ConsumerState<SearchScreen> createState() => _SearchScreenState();
+}
+
+class _SearchScreenState extends ConsumerState<SearchScreen> {
+  final _controller = TextEditingController();
+  final _scrollController = ScrollController();
+  Timer? _searchDebounce;
+  bool _isLoadingMore = false;
+  bool _isInitialLoading = false;
+  List<SearchResult> _allResults = [];
+  int _currentPage = 1;
+  int _totalPages = 1;
+  int _searchRequestId = 0;
+  List<String> _recentSearches = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    _loadRecentSearches();
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _controller.dispose();
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    final scrollPosition = _scrollController.position.pixels;
+    final maxExtent = _scrollController.position.maxScrollExtent;
+
+    // Trigger when 500px from bottom
+    if (scrollPosition >= maxExtent - 500) {
+      _loadMoreResults();
+    }
+  }
+
+  Future<void> _loadMoreResults() async {
+    // Prevent multiple simultaneous loads
+    if (_isLoadingMore) return;
+
+    // Check if we have more pages to load
+    if (_currentPage >= _totalPages) return;
+
+    final query = ref.read(searchQueryProvider);
+    if (query.isEmpty) return;
+
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final language = ref.read(searchLanguageFilterProvider);
+      final sortBy = ref.read(searchSortProvider);
+      final tmdb = ref.read(tmdbServiceProvider);
+      final anilist = ref.read(aniListServiceProvider);
+
+      // Fetch next page in background
+      final nextPage = _currentPage + 1;
+      
+      final responses = await Future.wait([
+        tmdb.search(
+          query,
+          page: nextPage,
+          language: language,
+          sortBy: sortBy,
+        ),
+        anilist.searchAnime(query, page: nextPage),
+      ]);
+
+      final tmdbResults = responses[0];
+      final anilistResults = responses[1];
+      final newResults = <SearchResult>[...tmdbResults.results, ...anilistResults.results];
+
+      if (mounted) {
+        final activeQuery = ref.read(searchQueryProvider);
+        if (activeQuery != query) {
+          setState(() => _isLoadingMore = false);
+          return;
+        }
+
+        setState(() {
+          _allResults = _mergeUniqueResults(_allResults, newResults);
+          _currentPage = nextPage;
+          _isLoadingMore = false;
+        });
+
+        // If this page is sparse, auto-load one more page.
+        if (newResults.length < 10 && _currentPage < _totalPages) {
+          Future.delayed(const Duration(milliseconds: 100), _loadMoreResults);
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
+    }
+  }
+
+  Future<void> _loadRecentSearches() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _recentSearches = prefs.getStringList('recent_searches') ?? [];
+      });
+    }
+  }
+
+  Future<void> _saveToRecentSearches(String query) async {
+    if (query.trim().isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList('recent_searches') ?? [];
+    list.remove(query);
+    list.insert(0, query);
+    if (list.length > 8) {
+      list.removeRange(8, list.length);
+    }
+    await prefs.setStringList('recent_searches', list);
+    if (mounted) {
+      setState(() {
+        _recentSearches = list;
+      });
+    }
+  }
+
+  Future<void> _removeFromRecentSearches(String query) async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList('recent_searches') ?? [];
+    list.remove(query);
+    await prefs.setStringList('recent_searches', list);
+    if (mounted) {
+      setState(() {
+        _recentSearches = list;
+      });
+    }
+  }
+
+  Future<void> _clearAllRecentSearches() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('recent_searches');
+    if (mounted) {
+      setState(() {
+        _recentSearches = [];
+      });
+    }
+  }
+
+  void _performSearch(String value) {
+    final query = value.trim();
+    if (query.isEmpty) return;
+
+    _saveToRecentSearches(query);
+    _searchDebounce?.cancel();
+    ref.read(searchQueryProvider.notifier).state = query;
+    setState(() {
+      _allResults = [];
+      _currentPage = 1;
+      _totalPages = 1;
+      _isInitialLoading = true;
+    });
+    _performInitialSearch();
+  }
+
+  void _onSearch(String value) {
+    FocusScope.of(context).unfocus();
+    _performSearch(value);
+  }
+
+  void _onQueryChanged(String value) {
+    setState(() {});
+
+    _searchDebounce?.cancel();
+    final query = value.trim();
+    if (query.isEmpty) {
+      ref.read(searchQueryProvider.notifier).state = '';
+      setState(() {
+        _allResults = [];
+        _currentPage = 1;
+        _totalPages = 1;
+        _isInitialLoading = false;
+      });
+      return;
+    }
+
+    _searchDebounce = Timer(const Duration(milliseconds: 450), () {
+      if (!mounted) return;
+      _performSearch(query);
+    });
+  }
+
+  Future<void> _performInitialSearch() async {
+    final requestId = ++_searchRequestId;
+    try {
+      final query = ref.read(searchQueryProvider);
+      final language = ref.read(searchLanguageFilterProvider);
+      final sortBy = ref.read(searchSortProvider);
+      final tmdb = ref.read(tmdbServiceProvider);
+      final anilist = ref.read(aniListServiceProvider);
+
+      final responses = await Future.wait([
+        tmdb.search(
+          query,
+          page: 1,
+          language: language,
+          sortBy: sortBy,
+        ),
+        anilist.searchAnime(query, page: 1),
+      ]);
+
+      final tmdbResults = responses[0];
+      final anilistResults = responses[1];
+      
+      final interleaved = <SearchResult>[];
+      final maxLength = tmdbResults.results.length > anilistResults.results.length 
+          ? tmdbResults.results.length 
+          : anilistResults.results.length;
+          
+      for (int i = 0; i < maxLength; i++) {
+        if (i < anilistResults.results.length) interleaved.add(anilistResults.results[i]);
+        if (i < tmdbResults.results.length) interleaved.add(tmdbResults.results[i]);
+      }
+      
+      final maxTotalPages = tmdbResults.totalPages > anilistResults.totalPages ? tmdbResults.totalPages : anilistResults.totalPages;
+
+      if (mounted && requestId == _searchRequestId) {
+        setState(() {
+          _allResults = interleaved;
+          _currentPage = 1;
+          _totalPages = maxTotalPages;
+          _isInitialLoading = false;
+        });
+
+        if (interleaved.length < 10 && _totalPages > 1) {
+          Future.delayed(const Duration(milliseconds: 100), _loadMoreResults);
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isInitialLoading = false);
+      }
+    }
+  }
+
+  void _showFilterDialog() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        String? selectedLanguage = ref.read(searchLanguageFilterProvider);
+        String? selectedSort = ref.read(searchSortProvider);
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: NivioTheme.netflixDarkGrey,
+              title: const Text(
+                'Filter & Sort',
+                style: TextStyle(color: Colors.white),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Language Filter
+                    const Text(
+                      'Language',
+                      style: TextStyle(color: Colors.white70, fontSize: 16),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildFilterChip('All', selectedLanguage == null, () {
+                          setDialogState(() => selectedLanguage = null);
+                        }),
+                        _buildFilterChip(
+                          'English',
+                          selectedLanguage == 'en',
+                          () {
+                            setDialogState(() => selectedLanguage = 'en');
+                          },
+                        ),
+                        _buildFilterChip('Tamil', selectedLanguage == 'ta', () {
+                          setDialogState(() => selectedLanguage = 'ta');
+                        }),
+                        _buildFilterChip(
+                          'Telugu',
+                          selectedLanguage == 'te',
+                          () {
+                            setDialogState(() => selectedLanguage = 'te');
+                          },
+                        ),
+                        _buildFilterChip('Hindi', selectedLanguage == 'hi', () {
+                          setDialogState(() => selectedLanguage = 'hi');
+                        }),
+                        _buildFilterChip(
+                          'Korean',
+                          selectedLanguage == 'ko',
+                          () {
+                            setDialogState(() => selectedLanguage = 'ko');
+                          },
+                        ),
+                        _buildFilterChip(
+                          'Japanese',
+                          selectedLanguage == 'ja',
+                          () {
+                            setDialogState(() => selectedLanguage = 'ja');
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    // Sort Options
+                    const Text(
+                      'Sort By',
+                      style: TextStyle(color: Colors.white70, fontSize: 16),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildFilterChip('Default', selectedSort == null, () {
+                          setDialogState(() => selectedSort = null);
+                        }),
+                        _buildFilterChip(
+                          'Rating',
+                          selectedSort == 'popularity',
+                          () {
+                            setDialogState(() => selectedSort = 'popularity');
+                          },
+                        ),
+                        _buildFilterChip('Title', selectedSort == 'title', () {
+                          setDialogState(() => selectedSort = 'title');
+                        }),
+                        _buildFilterChip('Year', selectedSort == 'year', () {
+                          setDialogState(() => selectedSort = 'year');
+                        }),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    ref.read(searchLanguageFilterProvider.notifier).state =
+                        selectedLanguage;
+                    ref.read(searchSortProvider.notifier).state = selectedSort;
+                    Navigator.pop(dialogContext);
+                    if (_controller.text.trim().isNotEmpty) {
+                      _onSearch(_controller.text);
+                    }
+                  },
+                  child: Text(
+                    'Apply',
+                    style: TextStyle(color: NivioTheme.accentColorOf(context)),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFilterChip(String label, bool isSelected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? NivioTheme.accentColorOf(context)
+              : Colors.white.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected
+                ? NivioTheme.accentColorOf(context)
+                : Colors.white.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.white70,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = ref.watch(searchQueryProvider);
+    final languageFilter = ref.watch(searchLanguageFilterProvider);
+    final sortBy = ref.watch(searchSortProvider);
+    final hasFilters = languageFilter != null || sortBy != null;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          toolbarHeight: 76,
+          titleSpacing: 0,
+          leading: IconButton(
+            icon: const PhosphorIcon(PhosphorIconsRegular.caretLeft, color: Colors.white),
+            onPressed: () => context.canPop() ? context.pop() : context.go('/'),
+          ),
+          title: _buildSearchField(),
+          actions: [
+            Stack(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.tune_rounded, color: Colors.white),
+                  onPressed: _showFilterDialog,
+                ),
+                if (hasFilters)
+                  Positioned(
+                    right: 10,
+                    top: 12,
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(
+                        color: NivioTheme.accentColorOf(context),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.black, width: 1.2),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 4),
+          ],
+        ),
+        body: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+            child: SizedBox.expand(
+              child: Container(
+                color: const Color(0xFF0D0F14).withOpacity(0.65),
+                child: SafeArea(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    child: query.isEmpty
+                        ? _buildRecentSearches()
+                        : _isInitialLoading
+                        ? Center(
+                            key: const ValueKey('loading'),
+                            child: CircularProgressIndicator(
+                              color: NivioTheme.accentColorOf(context),
+                            ),
+                          )
+                        : _allResults.isEmpty
+                        ? _buildNoResultsState(query)
+                        : _buildResultsState(query, languageFilter, sortBy),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchField() {
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+      child: TextField(
+        controller: _controller,
+        autofocus: true,
+        textInputAction: TextInputAction.search,
+        textAlignVertical: TextAlignVertical.center,
+        style: const TextStyle(color: Colors.white, fontSize: 15),
+        decoration: InputDecoration(
+          hintText: 'Search titles...',
+          isDense: true,
+          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.45)),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.only(
+            left: 14,
+            right: 14,
+            bottom: 2, // Shifts text slightly up
+          ),
+          prefixIcon: IconButton(
+            icon: Icon(
+              Icons.search_rounded,
+              color: Colors.white.withValues(alpha: 0.7),
+            ),
+            onPressed: () {
+              final query = _controller.text.trim();
+              if (query.isEmpty) return;
+              FocusScope.of(context).unfocus();
+              _onSearch(query);
+            },
+          ),
+          prefixIconConstraints: const BoxConstraints(
+            minHeight: 44,
+            minWidth: 40,
+          ),
+          suffixIcon: _controller.text.isNotEmpty
+              ? IconButton(
+                  icon: Icon(
+                    Icons.close_rounded,
+                    color: Colors.white.withValues(alpha: 0.8),
+                  ),
+                  onPressed: () {
+                    _searchDebounce?.cancel();
+                    _controller.clear();
+                    ref.read(searchQueryProvider.notifier).state = '';
+                    setState(() {
+                      _allResults = [];
+                      _currentPage = 1;
+                      _totalPages = 1;
+                      _isInitialLoading = false;
+                    });
+                  },
+                )
+              : null,
+        ),
+        onChanged: _onQueryChanged,
+        onSubmitted: _onSearch,
+      ),
+    );
+  }
+
+  Widget _buildNoResultsState(String query) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 30),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.search_off_rounded,
+              size: 80,
+              color: Colors.white.withValues(alpha: 0.28),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No matches for "$query"',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Try a shorter title, different spelling, or remove filters.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Colors.white.withValues(alpha: 0.65),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResultsState(
+    String query,
+    String? languageFilter,
+    String? sortBy,
+  ) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = _getGridColumns(constraints.maxWidth);
+        return Column(
+          children: [
+            Container(
+              margin: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    '${_allResults.length} results',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    'Page $_currentPage/$_totalPages',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.72),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (languageFilter != null || sortBy != null)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (languageFilter != null)
+                      _activeFilterPill(
+                        'Lang: ${languageFilter.toUpperCase()}',
+                      ),
+                    if (sortBy != null)
+                      _activeFilterPill('Sort: ${sortBy.toUpperCase()}'),
+                  ],
+                ),
+              ),
+            Expanded(
+              child: AppGridView.builder(
+                key: PageStorageKey<String>('search_grid_$query'),
+                controller: _scrollController,
+                cacheExtent: 250,
+                scrollSpeed: 2.0,
+                silkyScrollDuration: const Duration(milliseconds: 500),
+                animationCurve: Curves.easeOutQuart,
+                padding: const EdgeInsets.fromLTRB(14, 6, 14, 20),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: columns,
+                  childAspectRatio: _getGridAspectRatio(columns),
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 14,
+                ),
+                addAutomaticKeepAlives: true,
+                addRepaintBoundaries: true,
+                itemCount: _allResults.length + (_isLoadingMore ? columns : 0),
+                itemBuilder: (context, index) {
+                  if (index >= _allResults.length) {
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.08),
+                        ),
+                      ),
+                      child: Center(
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            color: NivioTheme.accentColorOf(context),
+                            strokeWidth: 2,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
+                  final item = _allResults[index];
+                  return RepaintBoundary(
+                    child: SearchResultCard(
+                      key: ValueKey('${item.mediaType}_${item.id}'),
+                      media: item,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _activeFilterPill(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: NivioTheme.accentColorOf(context).withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: NivioTheme.accentColorOf(context).withValues(alpha: 0.55),
+        ),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  int _getGridColumns(double width) {
+    if (width >= 1300) return 6;
+    if (width >= 1050) return 5;
+    if (width >= 820) return 4;
+    if (width >= 560) return 3;
+    return 2;
+  }
+
+  double _getGridAspectRatio(int columns) {
+    if (columns >= 5) return 0.66;
+    if (columns == 4) return 0.64;
+    if (columns == 3) return 0.62;
+    return 0.60;
+  }
+
+  List<SearchResult> _mergeUniqueResults(
+    List<SearchResult> existing,
+    List<SearchResult> incoming,
+  ) {
+    final merged = List<SearchResult>.from(existing);
+    final seen = existing.map((item) => '${item.mediaType}_${item.id}').toSet();
+
+    for (final item in incoming) {
+      if (seen.add('${item.mediaType}_${item.id}')) {
+        merged.add(item);
+      }
+    }
+    return merged;
+  }
+
+  Widget _buildRecentSearches() {
+    if (_recentSearches.isEmpty) {
+      return const SizedBox.expand(key: ValueKey('empty_state'));
+    }
+
+    return Padding(
+      key: const ValueKey('recent_searches_state'),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Recent Searches',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              TextButton(
+                onPressed: _clearAllRecentSearches,
+                child: const Text(
+                  'Clear All',
+                  style: TextStyle(
+                    color: Colors.redAccent,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: ListView.separated(
+              itemCount: _recentSearches.length,
+              separatorBuilder: (context, index) => Divider(
+                color: Colors.white.withOpacity(0.08),
+                height: 1,
+              ),
+              itemBuilder: (context, index) {
+                final search = _recentSearches[index];
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(
+                    Icons.history,
+                    color: Colors.white30,
+                    size: 20,
+                  ),
+                  title: Text(
+                    search,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                    ),
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: Colors.white30,
+                      size: 20,
+                    ),
+                    onPressed: () => _removeFromRecentSearches(search),
+                  ),
+                  onTap: () {
+                    _controller.text = search;
+                    _performSearch(search);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

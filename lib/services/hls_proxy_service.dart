@@ -53,6 +53,87 @@ class HlsProxyService {
 
   Future<void> _handleRequest(HttpRequest request) async {
     appDebugLog('📥 Proxy received request: ${request.uri.toString()}');
+
+    if (request.uri.path == '/youtube_trailer') {
+      final videoId = request.uri.queryParameters['v'] ?? '';
+      final autoplay = request.uri.queryParameters['autoplay'] ?? '1';
+      final mute = request.uri.queryParameters['mute'] ?? '0';
+      final controls = request.uri.queryParameters['controls'] ?? '1';
+      final loop = request.uri.queryParameters['loop'] ?? '0';
+      final start = request.uri.queryParameters['start'] ?? '0';
+      final origin = 'http://127.0.0.1:${_server!.port}';
+
+      final html = '''
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <style>
+    * { margin: 0; padding: 0; overflow: hidden; }
+    html, body { width: 100%; height: 100%; background: #000; }
+    #player { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  </style>
+</head>
+<body>
+  <iframe 
+    id="player"
+    width="100%" 
+    height="100%" 
+    src="https://www.youtube.com/embed/$videoId?enablejsapi=1&autoplay=$autoplay&mute=$mute&controls=$controls&start=$start&playsinline=1&fs=1&iv_load_policy=3&rel=0&modestbranding=1${loop == '1' ? '&loop=1&playlist=$videoId' : ''}&origin=$origin" 
+    frameborder="0" 
+    allow="autoplay; encrypted-media; fullscreen; picture-in-picture; accelerometer; clipboard-write; gyroscope" 
+    referrerpolicy="strict-origin-when-cross-origin"
+    allowfullscreen>
+  </iframe>
+  <script>
+    var tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    var firstScriptTag = document.getElementsByTagName('script')[0];
+    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+    var player;
+    function onYouTubeIframeAPIReady() {
+      player = new YT.Player('player', {
+        events: {
+          onReady: function(e) {
+            if (window.flutter_inappwebview) {
+              window.flutter_inappwebview.callHandler('onReady');
+            }
+          },
+          onStateChange: function(e) {
+            if (e.data === 0 && $loop === 1) {
+              e.target.seekTo(0);
+              e.target.playVideo();
+            } else {
+              if (window.flutter_inappwebview) {
+                window.flutter_inappwebview.callHandler('onStateChange', e.data);
+              }
+            }
+          },
+          onError: function(e) {
+            if (window.flutter_inappwebview) {
+              window.flutter_inappwebview.callHandler('onError', e.data);
+            }
+          }
+        }
+      });
+    }
+  </script>
+</body>
+</html>
+''';
+      request.response
+        ..statusCode = HttpStatus.ok
+        ..headers.contentType = ContentType.html
+        ..headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+        ..headers.set('Access-Control-Allow-Origin', '*')
+        ..write(html);
+      await request.response.close();
+      return;
+    }
+
     if (!request.uri.path.startsWith('/proxy')) {
       request.response
         ..statusCode = HttpStatus.notFound

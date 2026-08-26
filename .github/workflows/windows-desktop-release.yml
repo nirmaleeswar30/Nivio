@@ -1,0 +1,68 @@
+name: Windows Desktop Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      desktop_ref:
+        description: Branch, tag, or SHA to build
+        required: false
+  push:
+    branches:
+      - main
+      - desktop
+    tags:
+      - 'desktop-v*'
+      - 'v*'
+
+jobs:
+  build-windows-installer:
+    runs-on: windows-latest
+
+    env:
+      TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+      TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
+      ANILIST_API_URL: ${{ secrets.ANILIST_API_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      IPTV_PLAYLIST_URL: ${{ secrets.IPTV_PLAYLIST_URL }}
+      IPTV_EPG_URL: ${{ secrets.IPTV_EPG_URL }}
+      FIREBASE_WEB_API_KEY: ${{ secrets.FIREBASE_WEB_API_KEY }}
+      FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+      FIREBASE_GOOGLE_CLIENT_ID: ${{ secrets.FIREBASE_GOOGLE_CLIENT_ID }}
+      AUTH_EXCHANGE_URL: ${{ secrets.AUTH_EXCHANGE_URL }}
+      FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+      FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
+      FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+      API_BASE_URL: ${{ secrets.API_BASE_URL }}
+      IMAGE_PROXY_URL: ${{ secrets.IMAGE_PROXY_URL }}
+      LOG_LEVEL: info
+      DESKTOP_UPDATE_REPO_OWNER: ${{ github.repository_owner }}
+      DESKTOP_UPDATE_REPO_NAME: ${{ github.event.repository.name }}
+      DESKTOP_UPDATE_ASSET_PATTERN: Nivio-Setup-*.exe
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: ./scripts/package_windows_installer.ps1
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: nivio-windows-installer
+          path: packages/nivio_desktop/dist/windows/Nivio-Setup-*.exe
+          if-no-files-found: error
