@@ -193,14 +193,24 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay>
   }
 
   void _close() {
+    FocusManager.instance.primaryFocus?.unfocus();
     _positionSub?.cancel();
     _durationSub?.cancel();
     _playingSub?.cancel();
     _positionSub = null;
     _durationSub = null;
     _playingSub = null;
-    ref.read(miniPlayerProvider.notifier).deactivate();
-    _isPositionInitialized = false;
+
+    setState(() {
+      _videoDetached = true;
+      _isHovered = false;
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(miniPlayerProvider.notifier).deactivate();
+      _isPositionInitialized = false;
+      _videoDetached = false;
+    });
   }
 
   void _togglePlayPause() {

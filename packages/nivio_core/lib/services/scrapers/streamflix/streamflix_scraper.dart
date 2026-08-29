@@ -26,7 +26,7 @@ class StreamFlixScraperService {
 
   static const String _firebaseUrl = 'https://chilflix-410be-default-rtdb.asia-southeast1.firebasedatabase.app';
   static const String _firebaseNamespace = 'chilflix-410be-default-rtdb';
-  static const String _fallbackDownloadBase = 'https://cf.streamflixserver.site/';
+  static const String _fallbackDownloadBase = 'https://s1.streamflixapi.site/';
 
   String? _downloadBase;
   List<_StreamFlixEntry>? _catalog;
@@ -50,14 +50,18 @@ class StreamFlixScraperService {
       if (link == null || link.trim().isEmpty) return null;
 
       final base = await _loadDownloadBase();
-      if (base.isEmpty || base.contains('streamflixserver.site')) {
-        appDebugLog('StreamFlix storage server is currently offline');
-        return null;
-      }
       final url = _joinUrl(base, link);
       final quality = _qualityFrom(link);
       
       final isHls = _isHls(url);
+
+      final mirrors = ['https://s1.streamflixapi.site/', 'https://s2.streamflixapi.site/', 'https://s3.streamflixapi.site/'];
+      final sources = <StreamSource>[
+        StreamSource(url: url, quality: quality, isM3U8: isHls),
+        for (final m in mirrors)
+          if (_normalizeBase(m) != _normalizeBase(base))
+            StreamSource(url: _joinUrl(m, link), quality: quality, isM3U8: isHls),
+      ];
 
       return StreamResult(
         url: url,
@@ -66,12 +70,9 @@ class StreamFlixScraperService {
         availableQualities: [quality],
         isM3U8: isHls,
         headers: const {
-          'Referer': 'https://api.streamflix.app/',
           'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
         },
-        sources: [
-          StreamSource(url: url, quality: quality, isM3U8: isHls),
-        ],
+        sources: sources,
       );
     } catch (e) {
       appDebugLog('StreamFlix error: $e');
@@ -82,12 +83,12 @@ class StreamFlixScraperService {
   Future<String> _loadDownloadBase() async {
     if (_downloadBase != null && _downloadBase!.isNotEmpty) return _downloadBase!;
     try {
-      final response = await _dio.get('/config/config-streamflixapp.json');
+      final response = await _dio.get('/config/config-streamflix2.json');
       if (response.statusCode == 200) {
         final config = _asMap(response.data);
         final download = _asList(config?['download']);
         final base = download.isNotEmpty ? download.first?.toString() : null;
-        if (base != null && base.trim().isNotEmpty) {
+        if (base != null && base.trim().isNotEmpty && !base.contains('streamflixserver.site')) {
           _downloadBase = _normalizeBase(base);
           return _downloadBase!;
         }

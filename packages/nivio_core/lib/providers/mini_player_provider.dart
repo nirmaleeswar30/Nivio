@@ -107,8 +107,10 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
       );
     }
 
-    player?.dispose();
     state = const MiniPlayerState();
+    Future.microtask(() {
+      player?.dispose();
+    });
   }
 
   /// Reclaim the player and controller when expanding back to full screen.

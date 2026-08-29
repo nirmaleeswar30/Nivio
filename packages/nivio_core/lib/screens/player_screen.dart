@@ -2976,6 +2976,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         debugPrint('🟡 [BACK_NAV] Step 1: ❌ FAILED — $e\n$st');
       }
     }
+    FocusManager.instance.primaryFocus?.unfocus();
 
     if (!_isDirectStream && _isInFullscreen) {
       debugPrint('🟡 [BACK_NAV] Step 2: exit embed fullscreen (not direct stream)...');
