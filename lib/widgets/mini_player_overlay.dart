@@ -43,6 +43,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay>
 
   // Hover
   bool _isHovered = false;
+  bool _videoDetached = false; // When true, Video is removed before navigating to full player
 
   // Progress tracking
   // ignore: unused_field
@@ -165,13 +166,30 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay>
     final state = ref.read(miniPlayerProvider);
     final info = state.mediaInfo;
     if (info == null) return;
+    if (_videoDetached) return; // Already expanding, prevent double-tap
 
-    // Navigate to the full player — the player screen will reclaim the player
-    // from the mini player provider. Using global appRouter since Overlay lacks context.
-    appRouter.push(
-      '/player/${info.mediaId}?season=${info.season}&episode=${info.episode}'
-      '${info.mediaType != null ? '&type=${info.mediaType}' : ''}',
-    );
+    // Unfocus any active element to avoid AXTree focus node corruption on Windows
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    _positionSub?.cancel();
+    _durationSub?.cancel();
+    _playingSub?.cancel();
+    _positionSub = null;
+    _durationSub = null;
+    _playingSub = null;
+
+    setState(() {
+      _videoDetached = true;
+      _isHovered = false;
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      appRouter.push(
+        '/player/${info.mediaId}?season=${info.season}&episode=${info.episode}'
+        '${info.mediaType != null ? '&type=${info.mediaType}' : ''}',
+      );
+    });
   }
 
   void _close() {
@@ -209,6 +227,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay>
       _durationSub = null;
       _playingSub = null;
       _isPositionInitialized = false;
+      _videoDetached = false;
       return const SizedBox.shrink();
     }
 
@@ -225,7 +244,8 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay>
     return Positioned(
       left: _left,
       top: _top,
-      child: GestureDetector(
+      child: ExcludeSemantics(
+        child: GestureDetector(
         onPanStart: _onPanStart,
         onPanUpdate: _onPanUpdate,
         onPanEnd: _onPanEnd,
@@ -260,11 +280,13 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay>
                 children: [
                   // Video surface
                   Positioned.fill(
-                    child: Video(
-                      controller: miniState.videoController!,
-                      controls: NoVideoControls,
-                      fill: Colors.black,
-                    ),
+                    child: _videoDetached
+                        ? Container(color: Colors.black)
+                        : Video(
+                            controller: miniState.videoController!,
+                            controls: NoVideoControls,
+                            fill: Colors.black,
+                          ),
                   ),
 
                   // Gradient overlay (always visible, stronger on hover)
@@ -347,6 +369,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay>
           ),
           ), // End Material
         ),
+      ),
       ),
     );
   }

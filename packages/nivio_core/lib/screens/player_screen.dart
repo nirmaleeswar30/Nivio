@@ -185,6 +185,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String _selectedDisplayFitKey = 'bestFit';
   bool _transferredToMiniPlayer = false; // When true, dispose skips player.dispose()
   bool _isDisposing = false; // Track disposal state to prevent ref usage
+  bool _videoDetached = false; // When true, Video widget is replaced with black box before mini player handoff
   final ValueNotifier<bool> _fullscreenTopBarVisibleNotifier = ValueNotifier(
     false,
   );
@@ -241,17 +242,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _loadSubtitleDelay();
     unawaited(WakelockPlus.enable());
     
-    // Signal to the rest of the app that the player is active
-    Future.microtask(() {
-      if (mounted) {
-        ref.read(isPlayerActiveProvider.notifier).state = true;
-      }
-    });
-    
-    // Pre-cache providers to prevent using ref after widget disposal in dispose()
+    // Pre-cache providers to prevent using ref after widget disposal in dispose() or in microtasks
     _cachedHistoryService = ref.read(watchHistoryServiceProvider);
     _cachedMedia = ref.read(selectedMediaProvider);
     _cachedPlayerActiveNotifier = ref.read(isPlayerActiveProvider.notifier);
+    final cachedActiveNotifier = _cachedPlayerActiveNotifier;
+
+    // Signal to the rest of the app that the player is active
+    if (cachedActiveNotifier != null) {
+      Future.microtask(() {
+        cachedActiveNotifier.state = true;
+      });
+    }
 
     // Check if the mini player has an active player we can reclaim
     // (user tapped expand on mini player or navigated back to same media)
@@ -259,10 +261,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (miniPlayerState.isActive && miniPlayerState.player != null) {
       _player = miniPlayerState.player!;
       _videoController = miniPlayerState.videoController!;
+      _isDirectStream = true;
+      final miniNotifier = ref.read(miniPlayerProvider.notifier);
       Future.microtask(() {
-        if (mounted) {
-          ref.read(miniPlayerProvider.notifier).reclaim();
-        }
+        miniNotifier.reclaim();
       });
     } else {
       _player = Player();
@@ -316,19 +318,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!miniPlayerState.isActive || miniPlayerState.player == null) {
       _initializePlayer(isRetry: false);
     } else {
-      // Player is already playing — just mark as loaded
+      // Player is already playing — just mark as loaded and resume progress tracking
+      _isDirectStream = true;
+      _startProgressTracking();
       setState(() {
         _isLoading = false;
       });
     }
     _initializeWatchParty();
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    if (Platform.isAndroid || Platform.isIOS) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _focusNode.requestFocus();
+      if (mounted) {
+        _focusNode.requestFocus();
+      }
     });
   }
 
@@ -368,6 +376,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_player.state.duration == Duration.zero) {
       return KeyEventResult.ignored;
     }
+
+    // Disable player keybinds when an editable text field (e.g. chat, search) has focus
+    final primaryFocus = FocusManager.instance.primaryFocus;
+    if (primaryFocus != null && primaryFocus != node) {
+      final context = primaryFocus.context;
+      if (context != null) {
+        final isTextInput = context.widget is EditableText ||
+            context.widget is TextField ||
+            context.findAncestorWidgetOfExactType<EditableText>() != null ||
+            context.findAncestorWidgetOfExactType<TextField>() != null;
+        if (isTextInput) {
+          return KeyEventResult.ignored;
+        }
+      }
+    }
+
     switch (event.logicalKey) {
       case LogicalKeyboardKey.space:
       case LogicalKeyboardKey.keyK:
@@ -2800,61 +2824,161 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   @override
   void dispose() {
+    debugPrint('🔴 [DISPOSE] Step 0: dispose() CALLED — mounted=$mounted, _transferredToMiniPlayer=$_transferredToMiniPlayer, _isDirectStream=$_isDirectStream');
     _isDisposing = true;
-    if (!Platform.isAndroid && !Platform.isIOS) {
-      windowManager.setFullScreen(false);
+
+    try {
+      if (!Platform.isAndroid && !Platform.isIOS) {
+        debugPrint('🔴 [DISPOSE] Step 1: windowManager.setFullScreen(false)...');
+        windowManager.setFullScreen(false);
+        debugPrint('🔴 [DISPOSE] Step 1: ✅ done');
+      }
+    } catch (e, st) {
+      debugPrint('🔴 [DISPOSE] Step 1: ❌ FAILED — $e\n$st');
     }
-    // device_screen_brightness manages app-level brightness lifecycle automatically.
-    unawaited(WakelockPlus.disable());
+
+    try {
+      debugPrint('🔴 [DISPOSE] Step 2: WakelockPlus.disable()...');
+      unawaited(WakelockPlus.disable());
+      debugPrint('🔴 [DISPOSE] Step 2: ✅ done');
+    } catch (e, st) {
+      debugPrint('🔴 [DISPOSE] Step 2: ❌ FAILED — $e\n$st');
+    }
+
     if (Platform.isAndroid) {
-      const MethodChannel('com.nivio/gesture_exclusion').invokeMethod('setCanEnterPip', {'value': false});
-      const MethodChannel('com.nivio/gesture_exclusion').setMethodCallHandler(null);
-      const MethodChannel('puntito.simple_pip_mode').setMethodCallHandler(null);
-      SimplePip().setAutoPipMode(aspectRatio: const (16, 9), autoEnter: false);
+      try {
+        debugPrint('🔴 [DISPOSE] Step 3: Android PIP cleanup...');
+        const MethodChannel('com.nivio/gesture_exclusion').invokeMethod('setCanEnterPip', {'value': false});
+        const MethodChannel('com.nivio/gesture_exclusion').setMethodCallHandler(null);
+        const MethodChannel('puntito.simple_pip_mode').setMethodCallHandler(null);
+        SimplePip().setAutoPipMode(aspectRatio: const (16, 9), autoEnter: false);
+        debugPrint('🔴 [DISPOSE] Step 3: ✅ done');
+      } catch (e, st) {
+        debugPrint('🔴 [DISPOSE] Step 3: ❌ FAILED — $e\n$st');
+      }
     }
-    _progressTimer?.cancel();
-    _watchPartyHostSyncTimer?.cancel();
-    _watchPartyPlaybackSub?.cancel();
-    _watchPartySessionSub?.cancel();
-    _watchPartyErrorSub?.cancel();
-    _nextEpisodeTimer?.cancel();
-    _removeOverlayEntry();
-    _removeFullscreenTopBarOverlayEntry();
-    _nextEpNotifier.dispose();
-    _fullscreenTopBarVisibleNotifier.dispose();
-    // Save progress before disposing
-    if (_player.state.duration > Duration.zero) {
-      _saveProgress();
+
+    try {
+      debugPrint('🔴 [DISPOSE] Step 4: cancel timers...');
+      _progressTimer?.cancel();
+      _watchPartyHostSyncTimer?.cancel();
+      _watchPartyPlaybackSub?.cancel();
+      _watchPartySessionSub?.cancel();
+      _watchPartyErrorSub?.cancel();
+      _nextEpisodeTimer?.cancel();
+      debugPrint('🔴 [DISPOSE] Step 4: ✅ done');
+    } catch (e, st) {
+      debugPrint('🔴 [DISPOSE] Step 4: ❌ FAILED — $e\n$st');
     }
-    // Only dispose the player if it was NOT transferred to the mini player
-    if (!_transferredToMiniPlayer) {
-      _player.dispose();
+
+    try {
+      debugPrint('🔴 [DISPOSE] Step 5: _removeOverlayEntry()...');
+      _removeOverlayEntry();
+      debugPrint('🔴 [DISPOSE] Step 5: ✅ done');
+    } catch (e, st) {
+      debugPrint('🔴 [DISPOSE] Step 5: ❌ FAILED — $e\n$st');
     }
-    for (final sub in _subscriptions) {
-      sub.cancel();
+
+    try {
+      debugPrint('🔴 [DISPOSE] Step 6: _removeFullscreenTopBarOverlayEntry()...');
+      _removeFullscreenTopBarOverlayEntry();
+      debugPrint('🔴 [DISPOSE] Step 6: ✅ done');
+    } catch (e, st) {
+      debugPrint('🔴 [DISPOSE] Step 6: ❌ FAILED — $e\n$st');
     }
-    _subscriptions.clear();
-    _hasAppliedGlobalTracks = false;
-    _focusNode.dispose();
-    // Signal to the rest of the app that the player is no longer active
-    // Use cached notifier since ref is no longer safe in dispose()
-    final cachedNotifier = _cachedPlayerActiveNotifier;
-    if (cachedNotifier != null) {
-      Future.microtask(() => cachedNotifier.state = false);
+
+    try {
+      debugPrint('🔴 [DISPOSE] Step 7: dispose notifiers...');
+      _nextEpNotifier.dispose();
+      _fullscreenTopBarVisibleNotifier.dispose();
+      debugPrint('🔴 [DISPOSE] Step 7: ✅ done');
+    } catch (e, st) {
+      debugPrint('🔴 [DISPOSE] Step 7: ❌ FAILED — $e\n$st');
     }
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-    ]);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+    try {
+      debugPrint('🔴 [DISPOSE] Step 8: _saveProgress (duration=${_player.state.duration})...');
+      if (_player.state.duration > Duration.zero) {
+        _saveProgress();
+      }
+      debugPrint('🔴 [DISPOSE] Step 8: ✅ done');
+    } catch (e, st) {
+      debugPrint('🔴 [DISPOSE] Step 8: ❌ FAILED — $e\n$st');
+    }
+
+    try {
+      debugPrint('🔴 [DISPOSE] Step 9: _player.dispose() — _transferredToMiniPlayer=$_transferredToMiniPlayer...');
+      if (!_transferredToMiniPlayer) {
+        _player.dispose();
+      }
+      debugPrint('🔴 [DISPOSE] Step 9: ✅ done');
+    } catch (e, st) {
+      debugPrint('🔴 [DISPOSE] Step 9: ❌ FAILED — $e\n$st');
+    }
+
+    try {
+      debugPrint('🔴 [DISPOSE] Step 10: cancel stream subscriptions (${_subscriptions.length})...');
+      for (final sub in _subscriptions) {
+        sub.cancel();
+      }
+      _subscriptions.clear();
+      _hasAppliedGlobalTracks = false;
+      debugPrint('🔴 [DISPOSE] Step 10: ✅ done');
+    } catch (e, st) {
+      debugPrint('🔴 [DISPOSE] Step 10: ❌ FAILED — $e\n$st');
+    }
+
+    try {
+      debugPrint('🔴 [DISPOSE] Step 11: _focusNode.dispose()...');
+      _focusNode.dispose();
+      debugPrint('🔴 [DISPOSE] Step 11: ✅ done');
+    } catch (e, st) {
+      debugPrint('🔴 [DISPOSE] Step 11: ❌ FAILED — $e\n$st');
+    }
+
+    try {
+      debugPrint('🔴 [DISPOSE] Step 12: signal player inactive...');
+      final cachedNotifier = _cachedPlayerActiveNotifier;
+      if (cachedNotifier != null) {
+        Future.microtask(() => cachedNotifier.state = false);
+      }
+      debugPrint('🔴 [DISPOSE] Step 12: ✅ done');
+    } catch (e, st) {
+      debugPrint('🔴 [DISPOSE] Step 12: ❌ FAILED — $e\n$st');
+    }
+
+    try {
+      debugPrint('🔴 [DISPOSE] Step 13: SystemChrome orientations + UI mode...');
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+      ]);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      debugPrint('🔴 [DISPOSE] Step 13: ✅ done');
+    } catch (e, st) {
+      debugPrint('🔴 [DISPOSE] Step 13: ❌ FAILED — $e\n$st');
+    }
+
+    debugPrint('🔴 [DISPOSE] Step 14: super.dispose()...');
     super.dispose();
+    debugPrint('🔴 [DISPOSE] Step 14: ✅ ALL DONE');
   }
 
   void _handleBackNavigation() {
+    debugPrint('🟡 [BACK_NAV] Step 0: _handleBackNavigation() CALLED — mounted=$mounted, _isDirectStream=$_isDirectStream, _isInFullscreen=$_isInFullscreen, _useNativePlayer=$_useNativePlayer');
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+
     if (isDesktop) {
-      windowManager.setFullScreen(false);
+      try {
+        debugPrint('🟡 [BACK_NAV] Step 1: windowManager.setFullScreen(false)...');
+        windowManager.setFullScreen(false);
+        debugPrint('🟡 [BACK_NAV] Step 1: ✅ done');
+      } catch (e, st) {
+        debugPrint('🟡 [BACK_NAV] Step 1: ❌ FAILED — $e\n$st');
+      }
     }
+
     if (!_isDirectStream && _isInFullscreen) {
+      debugPrint('🟡 [BACK_NAV] Step 2: exit embed fullscreen (not direct stream)...');
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
         DeviceOrientation.portraitDown,
@@ -2863,30 +2987,56 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _isInFullscreen = false;
       });
       _syncFullscreenTopBarVisibility();
+      debugPrint('🟡 [BACK_NAV] Step 2: ✅ done — returning early');
       return;
     }
 
-    // On desktop, enter mini player mode instead of fully closing
+    // On desktop, enter mini player mode instead of fully closing.
+    // CRITICAL FIX: We must detach the Video widget from the PlayerScreen's
+    // tree FIRST, wait one frame for the native texture to be released, and
+    // THEN activate the mini player + navigate. Otherwise, two Video widgets
+    // share the same VideoController/native texture simultaneously, causing a
+    // native DirectX crash on Windows.
     if (isDesktop && !_useNativePlayer && _player.state.duration > Duration.zero) {
-      final media = ref.read(selectedMediaProvider);
-      _transferredToMiniPlayer = true;
-      ref.read(miniPlayerProvider.notifier).activate(
-        player: _player,
-        videoController: _videoController,
-        mediaInfo: MiniPlayerMediaInfo(
-          mediaId: widget.mediaId,
-          season: widget.season,
-          episode: _currentEpisode,
-          mediaType: widget.mediaType ?? media?.mediaType,
-          title: media?.title ?? media?.name ?? 'Playing',
-          posterPath: media?.posterPath ?? media?.backdropPath,
-          totalSeasons: 1,
-          totalEpisodes: _currentSeasonData?.episodes.length,
-        ),
-      );
+      debugPrint('🟡 [BACK_NAV] Step 3: detaching Video widget before mini player handoff...');
+      setState(() {
+        _videoDetached = true;
+      });
+
+      // Wait one frame so the Video widget is fully removed from the tree
+      // and the native rendering surface is released.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        try {
+          debugPrint('🟡 [BACK_NAV] Step 3b: activating mini player (post-frame)...');
+          final media = ref.read(selectedMediaProvider);
+          _transferredToMiniPlayer = true;
+          ref.read(miniPlayerProvider.notifier).activate(
+            player: _player,
+            videoController: _videoController,
+            mediaInfo: MiniPlayerMediaInfo(
+              mediaId: widget.mediaId,
+              season: widget.season,
+              episode: _currentEpisode,
+              mediaType: widget.mediaType ?? media?.mediaType,
+              title: media?.title ?? media?.name ?? 'Playing',
+              posterPath: media?.posterPath ?? media?.backdropPath,
+              totalSeasons: 1,
+              totalEpisodes: _currentSeasonData?.episodes.length,
+            ),
+          );
+          debugPrint('🟡 [BACK_NAV] Step 3b: ✅ mini player activated');
+        } catch (e, st) {
+          debugPrint('🟡 [BACK_NAV] Step 3b: ❌ FAILED — $e\n$st');
+        }
+
+        _navigateAway(isDesktop);
+      });
+      return;
     }
 
     if (!isDesktop) {
+      debugPrint('🟡 [BACK_NAV] Step 4: mobile orientation reset...');
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
         DeviceOrientation.portraitDown,
@@ -2894,14 +3044,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
 
-    if (context.canPop()) {
-      Navigator.of(context).pop();
-      return;
+    _navigateAway(isDesktop);
+  }
+
+  void _navigateAway(bool isDesktop) {
+    try {
+      debugPrint('🟡 [BACK_NAV] Step 5: navigating away — canPop=${context.canPop()}...');
+      if (context.canPop()) {
+        Navigator.of(context).pop();
+        debugPrint('🟡 [BACK_NAV] Step 5: ✅ popped');
+        return;
+      }
+      debugPrint('🟡 [BACK_NAV] Step 5: cannot pop, using context.go("/home")...');
+      context.go('/home');
+      debugPrint('🟡 [BACK_NAV] Step 5: ✅ navigated to /home');
+    } catch (e, st) {
+      debugPrint('🟡 [BACK_NAV] Step 5: ❌ FAILED — $e\n$st');
     }
-    context.go('/home');
   }
 
   void _forceExitPlayer() {
+    debugPrint('🟠 [FORCE_EXIT] CALLED — mounted=$mounted');
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     if (!isDesktop) {
       SystemChrome.setPreferredOrientations([
@@ -2911,11 +3074,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
     
-    if (context.canPop()) {
-      Navigator.of(context).pop();
-      return;
+    try {
+      debugPrint('🟠 [FORCE_EXIT] navigating — canPop=${context.canPop()}...');
+      if (context.canPop()) {
+        Navigator.of(context).pop();
+        debugPrint('🟠 [FORCE_EXIT] ✅ popped');
+        return;
+      }
+      context.go('/home');
+      debugPrint('🟠 [FORCE_EXIT] ✅ navigated to /home');
+    } catch (e, st) {
+      debugPrint('🟠 [FORCE_EXIT] ❌ FAILED — $e\n$st');
     }
-    context.go('/home');
   }
 
   Future<void> _toggleTopActionMenu<T>({
@@ -3638,6 +3808,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
+        debugPrint('🔵 [POP_SCOPE] onPopInvokedWithResult — didPop=$didPop, mounted=$mounted');
         if (!didPop) {
           _handleBackNavigation();
         }
@@ -4197,6 +4368,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _exitPlayerFromTopBar() {
+    debugPrint('🟣 [TOPBAR_EXIT] CALLED — _isInFullscreen=$_isInFullscreen, _isDirectStream=$_isDirectStream, mounted=$mounted');
     final isFullscreen = _isInFullscreen;
     if (isFullscreen) {
       if (_isDirectStream) {
@@ -4226,7 +4398,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _removeFullscreenTopBarOverlayEntry() {
-    _fullscreenTopBarOverlayEntry?.remove();
+    try {
+      _fullscreenTopBarOverlayEntry?.remove();
+    } catch (e) {
+      debugPrint('🔴 [DISPOSE] _removeFullscreenTopBarOverlayEntry failed: $e');
+    }
     _fullscreenTopBarOverlayEntry = null;
   }
 
@@ -4394,7 +4570,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _removeOverlayEntry() {
-    _nextEpOverlayEntry?.remove();
+    try {
+      _nextEpOverlayEntry?.remove();
+    } catch (e) {
+      debugPrint('🔴 [DISPOSE] _removeOverlayEntry failed: $e');
+    }
     _nextEpOverlayEntry = null;
   }
 
@@ -4716,14 +4896,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       shadows = null;
     }
 
-    final videoWidget = Video(
-      controller: _videoController,
-      controls: NoVideoControls,
-      fit: _displayFitOptions[_selectedDisplayFitKey] ?? BoxFit.cover,
-      subtitleViewConfiguration: const SubtitleViewConfiguration(
-        visible: false,
-      ),
-    );
+    // When _videoDetached is true, the Video widget is removed from the tree
+    // to release the native rendering surface before the mini player overlay
+    // creates its own Video widget with the same controller. This prevents a
+    // native DirectX crash on Windows caused by two Video widgets sharing the
+    // same VideoController simultaneously.
+    final Widget videoWidget = _videoDetached
+        ? Container(color: Colors.black)
+        : Video(
+            controller: _videoController,
+            controls: NoVideoControls,
+            fit: _displayFitOptions[_selectedDisplayFitKey] ?? BoxFit.cover,
+            subtitleViewConfiguration: const SubtitleViewConfiguration(
+              visible: false,
+            ),
+          );
 
     if (isPipMode) {
       final pipFontSize = (ref.watch(subtitleFontSizeProvider) * 1.1) * 0.45;
