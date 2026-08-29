@@ -735,14 +735,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           }
         } catch (e) {
           appDebugLog('❌ Stream pre-verification error: $e');
-          if (e.toString().contains('dead') || e.toString().contains('Exception')) {
-             // Let it throw to the outer catch block
-             rethrow;
-          }
           if (_currentProviderIndex < _maxProviders - 1) {
             _currentProviderIndex++;
-            setState(() => _error = 'Stream verification timeout, trying next...');
-            await Future.delayed(const Duration(milliseconds: 500));
+            setState(() => _error = 'Stream unreachable, trying next provider...');
+            await Future.delayed(const Duration(milliseconds: 300));
             _initializePlayer(isRetry: true);
             return;
           } else {
@@ -800,7 +796,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // Configure mpv properties before opening
       if (_player.platform is NativePlayer) {
         final np = _player.platform as NativePlayer;
-        await np.setProperty('hwdec', 'mediacodec'); // Hardware acceleration
+        if (Platform.isAndroid) {
+          await np.setProperty('hwdec', 'mediacodec');
+        } else {
+          await np.setProperty('hwdec', 'auto-safe');
+        }
         
         final debandEnabled = ref.read(videoDebandingProvider);
         appDebugLog('🔧 Video debanding filter status during player initialization: $debandEnabled');

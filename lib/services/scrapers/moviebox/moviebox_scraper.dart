@@ -1,8 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
-import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/models/stream_result.dart';
@@ -11,18 +11,12 @@ final movieBoxScraperProvider = Provider((ref) => MovieBoxScraperService());
 
 class MovieBoxScraperService {
   final String providerName;
-  final Dio _dio;
+  final HttpClient _client;
+  final String _deviceId;
+  String? _token;
 
   MovieBoxScraperService({this.providerName = 'MovieBox'})
-      : _dio = Dio(
-          BaseOptions(
-            baseUrl: 'https://api3.aoneroom.com',
-            connectTimeout: const Duration(seconds: 15),
-            receiveTimeout: const Duration(seconds: 20),
-            validateStatus: (status) => status != null && status < 600,
-            headers: const {'Accept': 'application/json'},
-          ),
-        ),
+      : _client = HttpClient()..connectionTimeout = const Duration(seconds: 15),
         _deviceId = _generateDeviceId();
 
   static const String _packageName = 'com.community.mbox.in';
@@ -34,14 +28,10 @@ class MovieBoxScraperService {
       'com.community.mbox.in/50020042 (Linux; U; Android 16; en_IN; '
       'sdk_gphone64_x86_64; Build/BP22.250325.006; Cronet/133.0.6876.3)';
   static const Map<String, String> _mediaHeaders = {
-    'Referer': 'https://api3.aoneroom.com',
     'User-Agent': _userAgent,
   };
   static const String _defaultSecretEncoded =
       'NzZpUmwwN3MweFNOOWpxbUVXQXQ3OUVCSlp1bElRSXNWNjRGWnIyTw==';
-
-  final String _deviceId;
-  String? _token;
 
   Future<StreamResult?> fetchStreamUrl({
     required String tmdbId,
@@ -96,8 +86,63 @@ class MovieBoxScraperService {
         );
       }
       return null;
+    } catch (e, st) {
+      appDebugLog('MovieBox error: $e\n$st');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> _get(String path, {String? token}) async {
+    try {
+      final fullUrl = 'https://api3.aoneroom.com$path';
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final req = await _client.getUrl(Uri.parse(fullUrl)).timeout(const Duration(seconds: 15));
+      req.headers.set('user-agent', _userAgent);
+      req.headers.set('accept', 'application/json');
+      req.headers.set('content-type', 'application/json');
+      if (token != null && token.isNotEmpty) req.headers.set('authorization', 'Bearer $token');
+      req.headers.set('x-client-token', _xClientToken(ts));
+      req.headers.set('x-tr-signature', _signature(method: 'GET', accept: 'application/json', contentType: 'application/json', url: fullUrl, timestamp: ts));
+      req.headers.set('x-client-info', _clientInfo());
+      req.headers.set('x-client-status', '0');
+      req.headers.set('x-play-mode', '2');
+
+      final resp = await req.close().timeout(const Duration(seconds: 15));
+      final body = await utf8.decoder.bind(resp).join();
+      if (resp.statusCode != 200) return null;
+      return _asMap(jsonDecode(body));
     } catch (e) {
-      appDebugLog('MovieBox error: $e');
+      appDebugLog('MovieBox _get error: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> _post(String path, Map<String, dynamic> data, {String? token}) async {
+    try {
+      final fullUrl = 'https://api3.aoneroom.com$path';
+      final body = jsonEncode(data);
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final req = await _client.postUrl(Uri.parse(fullUrl)).timeout(const Duration(seconds: 15));
+      req.headers.set('user-agent', _userAgent);
+      req.headers.set('accept', 'application/json');
+      req.headers.set('content-type', 'application/json');
+      if (token != null && token.isNotEmpty) req.headers.set('authorization', 'Bearer $token');
+      req.headers.set('x-client-token', _xClientToken(ts));
+      req.headers.set('x-tr-signature', _signature(method: 'POST', accept: 'application/json', contentType: 'application/json', url: fullUrl, timestamp: ts));
+      req.headers.set('x-client-info', _clientInfo());
+      req.headers.set('x-client-status', '0');
+      req.headers.set('x-play-mode', '2');
+      req.write(body);
+
+      final resp = await req.close().timeout(const Duration(seconds: 15));
+      final resBody = await utf8.decoder.bind(resp).join();
+      if (resp.statusCode != 200) {
+        appDebugLog('MovieBox _post ($path) returned status ${resp.statusCode}: $resBody');
+        return null;
+      }
+      return _asMap(jsonDecode(resBody));
+    } catch (e) {
+      appDebugLog('MovieBox _post error: $e');
       return null;
     }
   }
@@ -106,50 +151,39 @@ class MovieBoxScraperService {
     final cached = _token;
     if (cached != null && cached.isNotEmpty) return cached;
 
-    const path = '/wefeed-mobile-bff/tab/ranking-list?tabId=0&categoryType=4516404531735022304&page=1&perPage=1';
-    final response = await _dio.get<String>(
-      path,
-      options: Options(
-        responseType: ResponseType.plain,
-        headers: _headers(
-          method: 'GET',
-          url: 'https://api3.aoneroom.com$path',
-          accept: 'application/json',
-          contentType: 'application/json',
-        ),
-      ),
-    );
-    if (response.statusCode != 200) return null;
-    final xUser = response.headers.value('x-user');
-    if (xUser == null || xUser.trim().isEmpty) return null;
-    final token = _asMap(jsonDecode(xUser))?['token']?.toString();
-    if (token == null || token.isEmpty) return null;
-    _token = token;
-    return token;
+    try {
+      const path = '/wefeed-mobile-bff/tab/ranking-list?tabId=0&categoryType=4516404531735022304&page=1&perPage=1';
+      final fullUrl = 'https://api3.aoneroom.com$path';
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final req = await _client.getUrl(Uri.parse(fullUrl)).timeout(const Duration(seconds: 15));
+      req.headers.set('user-agent', _userAgent);
+      req.headers.set('accept', 'application/json');
+      req.headers.set('content-type', 'application/json');
+      req.headers.set('x-client-token', _xClientToken(ts));
+      req.headers.set('x-tr-signature', _signature(method: 'GET', accept: 'application/json', contentType: 'application/json', url: fullUrl, timestamp: ts));
+      req.headers.set('x-client-info', _clientInfo());
+      req.headers.set('x-client-status', '0');
+      req.headers.set('x-play-mode', '2');
+
+      final resp = await req.close().timeout(const Duration(seconds: 15));
+      if (resp.statusCode != 200) return null;
+      final xUser = resp.headers.value('x-user');
+      if (xUser == null || xUser.trim().isEmpty) return null;
+      final token = _asMap(jsonDecode(xUser))?['token']?.toString();
+      if (token == null || token.isEmpty) return null;
+      _token = token;
+      return token;
+    } catch (e) {
+      appDebugLog('MovieBox _anonymousToken error: $e');
+      return null;
+    }
   }
 
   Future<List<_MovieBoxSearchResult>> _search(String title, String token) async {
     const path = '/wefeed-mobile-bff/subject-api/search/v2';
-    final body = jsonEncode({'page': 1, 'perPage': 20, 'keyword': title});
-    final response = await _dio.post<String>(
-      path,
-      data: body,
-      options: Options(
-        responseType: ResponseType.plain,
-        contentType: 'application/json; charset=utf-8',
-        headers: _headers(
-          method: 'POST',
-          url: 'https://api3.aoneroom.com$path',
-          accept: 'application/json',
-          contentType: 'application/json; charset=utf-8',
-          body: body,
-          token: token,
-        ),
-      ),
-    );
-    if (response.statusCode != 200 || response.data == null) return const [];
-    final root = _asMap(jsonDecode(response.data!));
-    final data = _asMap(root?['data']);
+    final root = await _post(path, {'page': 1, 'perPage': 20, 'keyword': title}, token: token);
+    if (root == null) return const [];
+    final data = _asMap(root['data']);
     final rawResults = <Object?>[
       ..._asList(data?['subjects']),
       ..._asList(data?['items']),
@@ -170,71 +204,15 @@ class MovieBoxScraperService {
   }
 
   Future<Map<String, dynamic>?> _details(String subjectId, String token) async {
-    final path = '/wefeed-mobile-bff/subject-api/get?subjectId=$subjectId';
-    final response = await _dio.get<String>(
-      path,
-      options: Options(
-        responseType: ResponseType.plain,
-        headers: _headers(
-          method: 'GET',
-          url: 'https://api3.aoneroom.com$path',
-          accept: 'application/json',
-          contentType: 'application/json',
-          token: token,
-        ),
-      ),
-    );
-    if (response.statusCode != 200 || response.data == null) return null;
-    final root = _asMap(jsonDecode(response.data!));
+    final path = '/wefeed-mobile-bff/subject-api/get?subjectId=${Uri.encodeQueryComponent(subjectId)}';
+    final root = await _get(path, token: token);
     return _asMap(root?['data']);
   }
 
   Future<Map<String, dynamic>?> _playInfo(String subjectId, String token) async {
     final path = '/wefeed-mobile-bff/subject-api/play-info?subjectId=${Uri.encodeQueryComponent(subjectId)}';
-    final response = await _dio.get<String>(
-      path,
-      options: Options(
-        responseType: ResponseType.plain,
-        headers: _headers(
-          method: 'GET',
-          url: 'https://api3.aoneroom.com$path',
-          accept: 'application/json',
-          contentType: 'application/json',
-          token: token,
-        ),
-      ),
-    );
-    if (response.statusCode != 200 || response.data == null) return null;
-    final root = _asMap(jsonDecode(response.data!));
+    final root = await _get(path, token: token);
     return _asMap(root?['data']);
-  }
-
-  Map<String, String> _headers({
-    required String method,
-    required String url,
-    required String accept,
-    required String contentType,
-    String? body,
-    String? token,
-  }) {
-    return {
-      'user-agent': _userAgent,
-      'accept': accept,
-      'content-type': contentType,
-      'connection': 'keep-alive',
-      'x-client-token': _xClientToken(),
-      'x-tr-signature': _signature(
-        method: method,
-        accept: accept,
-        contentType: contentType,
-        url: url,
-        body: body,
-      ),
-      'x-client-info': _clientInfo(),
-      'x-client-status': '0',
-      'x-play-mode': '2',
-      if (token != null && token.isNotEmpty) 'authorization': 'Bearer $token',
-    };
   }
 
   String _clientInfo() {
@@ -258,10 +236,10 @@ class MovieBoxScraperService {
     });
   }
 
-  static String _xClientToken() {
-    final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
-    final reversed = timestamp.split('').reversed.join();
-    return '$timestamp,${md5.convert(utf8.encode(reversed))}';
+  static String _xClientToken(int timestamp) {
+    final ts = timestamp.toString();
+    final reversed = ts.split('').reversed.join();
+    return '$ts,${md5.convert(utf8.encode(reversed))}';
   }
 
   static String _signature({
@@ -269,15 +247,13 @@ class MovieBoxScraperService {
     required String accept,
     required String contentType,
     required String url,
-    String? body,
+    required int timestamp,
   }) {
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
     final canonical = _canonical(
       method: method,
       accept: accept,
       contentType: contentType,
       url: url,
-      body: body,
       timestamp: timestamp,
     );
     final decodedSecret = utf8.decode(base64Decode(_defaultSecretEncoded));
@@ -292,7 +268,6 @@ class MovieBoxScraperService {
     required String contentType,
     required String url,
     required int timestamp,
-    String? body,
   }) {
     final uri = Uri.parse(url);
     final keys = uri.queryParametersAll.keys.toList()..sort();
@@ -305,18 +280,13 @@ class MovieBoxScraperService {
         .where((part) => part.isNotEmpty)
         .join('&');
     final canonicalUrl = query.isEmpty ? uri.path : '${uri.path}?$query';
-    final bodyBytes = body == null ? null : utf8.encode(body);
-    final bodyHash = bodyBytes == null
-        ? ''
-        : md5.convert(bodyBytes.take(102400).toList()).toString();
-    final bodyLength = bodyBytes?.length.toString() ?? '';
     return [
       method.toUpperCase(),
       accept,
       contentType,
-      bodyLength,
+      '',
       timestamp,
-      bodyHash,
+      '',
       canonicalUrl,
     ].join('\n');
   }

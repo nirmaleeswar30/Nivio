@@ -14,8 +14,8 @@ class StreamFlixScraperService {
       : _dio = Dio(
           BaseOptions(
             baseUrl: 'https://api.streamflix.app',
-            connectTimeout: const Duration(seconds: 15),
-            receiveTimeout: const Duration(seconds: 20),
+            connectTimeout: const Duration(seconds: 5),
+            receiveTimeout: const Duration(seconds: 5),
             validateStatus: (status) => status != null && status < 600,
             headers: const {
               'Accept': 'application/json',
@@ -50,6 +50,10 @@ class StreamFlixScraperService {
       if (link == null || link.trim().isEmpty) return null;
 
       final base = await _loadDownloadBase();
+      if (base.isEmpty || base.contains('streamflixserver.site')) {
+        appDebugLog('StreamFlix storage server is currently offline');
+        return null;
+      }
       final url = _joinUrl(base, link);
       final quality = _qualityFrom(link);
       
