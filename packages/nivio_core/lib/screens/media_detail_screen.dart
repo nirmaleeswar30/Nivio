@@ -446,10 +446,10 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       );
     }
 
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     final tmdbService = ref.read(tmdbServiceProvider);
     final fallbackBackdropUrl = tmdbService.getBackdropUrl(media.backdropPath, size: 'original');
     final fallbackPosterUrl = tmdbService.getPosterUrl(media.posterPath, size: 'original');
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     final backdropUrl = isDesktop
         ? (fallbackBackdropUrl.isNotEmpty ? fallbackBackdropUrl : fallbackPosterUrl)
         : (fallbackPosterUrl.isNotEmpty ? fallbackPosterUrl : fallbackBackdropUrl);
@@ -486,7 +486,6 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         : (screenHeight * (isTablet ? 0.58 : 0.50))
             .clamp(360.0, isTablet ? 700.0 : 560.0)
             .toDouble();
-    const detailsOverlap = 0.0;
     final rawDate = media.releaseDate ?? media.firstAirDate;
     final year = (rawDate != null && rawDate.length >= 4)
         ? rawDate.substring(0, 4)
@@ -505,670 +504,679 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           silkyScrollDuration: const Duration(milliseconds: 500),
           animationCurve: Curves.easeOutQuart,
           slivers: [
+            // ════════════════ Sliver 1: Hero Banner ════════════════
             SliverToBoxAdapter(
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  // ────────────────── Radial gradient bloom ──────────────────
-                  // Dominant color "leaks" from the hero image like light
-                  // emitting from the artwork. Fades to transparent by ~150px
-                  // below the image bottom. Very low opacity, heavily blurred.
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: heroHeight + 220,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: RadialGradient(
-                          center: Alignment.topCenter,
-                          radius: 1.4,
-                          colors: [
-                            colors.dominant.withValues(alpha: 0.20),
-                            colors.dominant.withValues(alpha: 0.07),
-                            Colors.transparent,
-                          ],
-                          stops: const [0.0, 0.40, 1.0],
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // ────────────────── Main content ──────────────────
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              child: RepaintBoundary(
+                child: SizedBox(
+                  height: heroHeight,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    clipBehavior: Clip.none,
                     children: [
-                      SizedBox(
-                        height: heroHeight,
+                      RepaintBoundary(
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            Container(
+                            if (backdropUrl.isNotEmpty)
+                              CachedNetworkImage(
+                                imageUrl: backdropUrl,
+                                fit: BoxFit.cover,
+                                fadeInDuration: Duration.zero,
+                                fadeOutDuration: Duration.zero,
+                                errorWidget: (_, __, ___) => Container(color: colors.darkMuted),
+                              )
+                            else
+                              Container(color: colors.darkMuted),
+                            // Edge darkening (replaces expensive RadialGradient vignette)
+                            const DecoratedBox(
                               decoration: BoxDecoration(
-                                image: backdropUrl.isNotEmpty
-                                    ? DecorationImage(
-                                        image: CachedNetworkImageProvider(backdropUrl),
-                                        fit: BoxFit.cover,
-                                      )
-                                    : null,
-                                color: colors.darkMuted,
-                              ),
-                            ),
-                            // Vignette overlay
-                            Container(
-                              decoration: BoxDecoration(
-                                gradient: RadialGradient(
-                                  center: Alignment.center,
-                                  radius: 1.3,
+                                gradient: LinearGradient(
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
                                   colors: [
+                                    Color(0xB3000000), // 0.7 opacity black
                                     Colors.transparent,
-                                    Colors.black.withValues(alpha: 0.8),
+                                    Colors.transparent,
+                                    Color(0xB3000000),
                                   ],
-                                  stops: const [0.25, 1.0],
+                                  stops: [0.0, 0.20, 0.80, 1.0],
                                 ),
                               ),
                             ),
-                            Container(
+                            // Bottom fade to darkMuted
+                            DecoratedBox(
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
                                   begin: Alignment.topCenter,
                                   end: Alignment.bottomCenter,
                                   colors: [
                                     Colors.transparent,
+                                    Colors.black.withValues(alpha: 0.3),
                                     colors.darkMuted.withOpacity(0.5),
                                     colors.darkMuted,
                                   ],
-                                  stops: const [0.0, 0.88, 1.0],
+                                  stops: const [0.0, 0.55, 0.88, 1.0],
                                 ),
                               ),
                             ),
-                            if (!isDesktop)
-                              Positioned(
-                                left: 14,
-                                right: 14,
-                                top: MediaQuery.paddingOf(context).top + 4,
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    _glassIconButton(
-                                      icon: const PhosphorIcon(
-                                        PhosphorIconsRegular.caretLeft,
-                                        color: NivioTheme.netflixWhite,
-                                        size: 20,
-                                      ),
-                                      onTap: _handleBackNavigation,
-                                    ),
-                                    if (!isDesktop)
-                                      Row(
-                                        children: [
-                                          _glassIconButton(
-                                            icon: const PhosphorIcon(
-                                              PhosphorIconsRegular.users,
-                                              color: NivioTheme.netflixWhite,
-                                              size: 19,
-                                            ),
-                                            onTap: () => _openWatchPartyHub(media),
-                                          ),
-                                        ],
-                                      )
-                                    else
-                                      const SizedBox.shrink(),
-                                  ],
-                                ),
-                              ),
-                            if (!isDesktop)
-                              Positioned(
-                                left: 16,
-                                bottom: 20,
-                                child: Row(
-                                  children: [
-                                    if ((media.voteAverage ?? 0) > 0) ...[
-                                      _glassTag(
-                                        '★ ${media.voteAverage!.toStringAsFixed(1)}',
-                                      ),
-                                      const SizedBox(width: 8),
-                                    ],
-                                    if (year.isNotEmpty) ...[
-                                      _glassTag(year),
-                                      const SizedBox(width: 8),
-                                    ],
-                                    _glassTag(media.mediaType.toUpperCase()),
-                                  ],
-                                ),
-                              ),
-                            // Desktop split column header overlay (at left: 72, right: 48, bottom: 24)
-                            if (isDesktop)
-                              Positioned(
-                                left: 72,
-                                right: 48,
-                                bottom: 24,
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    if (posterUrl.isNotEmpty)
-                                      Container(
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(8),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black.withOpacity(0.5),
-                                              blurRadius: 20,
-                                              spreadRadius: 2,
-                                            ),
-                                          ],
-                                        ),
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(8),
-                                          child: CachedNetworkImage(
-                                            imageUrl: posterUrl,
-                                            height: heroHeight * 0.62,
-                                            fit: BoxFit.cover,
-                                            memCacheWidth: 400,
-                                            fadeInDuration: Duration.zero,
-                                            fadeOutDuration: Duration.zero,
-                                          ),
-                                        ),
-                                      ),
-                                    const SizedBox(width: 24),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (media.title != null && media.name != null && media.title != media.name)
-                                            Text(
-                                              media.title!,
-                                              style: const TextStyle(
-                                                color: Colors.white70,
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            mediaName,
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 32,
-                                              fontWeight: FontWeight.bold,
-                                              height: 1.2,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 12),
-                                          Wrap(
-                                            spacing: 8,
-                                            runSpacing: 8,
-                                            children: _buildDetailBadges(
-                                              media,
-                                              year,
-                                              accentColor,
-                                              seriesInfo,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 16),
-                                          Text(
-                                            media.overview ?? '',
-                                            maxLines: 4,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: Colors.white.withOpacity(0.85),
-                                              fontSize: 12.5,
-                                              height: 1.4,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 20),
-                                          Row(
-                                            children: [
-                                              _playAllButton(
-                                                accentColor: accentColor,
-                                                label: playLabel,
-                                                onTap: () {
-                                                  final season = (media.mediaType == 'tv' || media.mediaType == 'anime')
-                                                      ? continueSeason
-                                                      : 1;
-                                                  context.push(
-                                                    _buildPlayerRoute(
-                                                      media: media,
-                                                      season: season,
-                                                      episode: continueEpisode,
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                              const SizedBox(width: 12),
-                                              _plainIconButton(
-                                                icon: Icon(
-                                                  isInWatchlist ? Icons.favorite : Icons.favorite_border,
-                                                  color: isInWatchlist ? colors.dominant : NivioTheme.netflixWhite,
-                                                  size: 24,
-                                                ),
-                                                iconColor: isInWatchlist ? colors.dominant : NivioTheme.netflixWhite,
-                                                onTap: () => _toggleWatchlist(media, isInWatchlist),
-                                              ),
-                                              const SizedBox(width: 12),
-                                              ValueListenableBuilder<Box<DownloadItem>>(
-                                                valueListenable: DownloadService.box.listenable(),
-                                                builder: (context, box, _) {
-                                                  final downloads = box.values
-                                                      .where((item) => item.mediaId == media.id)
-                                                      .toList();
-                                                  final isDownloading = downloads.any(
-                                                    (item) => item.status == DownloadStatus.downloading ||
-                                                        item.status == DownloadStatus.pending ||
-                                                        item.status == DownloadStatus.extracting,
-                                                  );
-                                                  final allCompleted = downloads.isNotEmpty &&
-                                                      downloads.every((item) => item.status == DownloadStatus.completed);
-
-                                                  if (isDownloading) {
-                                                    final downloadingItems = downloads
-                                                        .where((item) => item.status == DownloadStatus.downloading ||
-                                                            item.status == DownloadStatus.extracting)
-                                                        .toList();
-                                                    double progress = 0;
-                                                    if (downloadingItems.isNotEmpty) {
-                                                      progress = downloadingItems.map((e) => e.progress).reduce((a, b) => a + b) /
-                                                          downloadingItems.length;
-                                                    }
-                                                    return SizedBox(
-                                                      width: 40,
-                                                      height: 40,
-                                                      child: Padding(
-                                                        padding: const EdgeInsets.all(8.0),
-                                                        child: CircularProgressIndicator(
-                                                          value: progress > 0 ? progress : null,
-                                                          strokeWidth: 3,
-                                                          valueColor: AlwaysStoppedAnimation<Color>(
-                                                            NivioTheme.accentColorOf(context),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    );
-                                                  }
-                                                  final IconData iconData;
-                                                  final Color iconColor;
-                                                  final String tooltip;
-
-                                                  if (allCompleted && isMediaWatched) {
-                                                    iconData = Icons.download_done_rounded;
-                                                    iconColor = NivioTheme.accentColorOf(context);
-                                                    tooltip = 'Watched & Downloaded';
-                                                  } else if (allCompleted) {
-                                                    iconData = Icons.download_done_rounded;
-                                                    iconColor = NivioTheme.accentColorOf(context);
-                                                    tooltip = 'Downloaded';
-                                                  } else if (isMediaWatched) {
-                                                    iconData = Icons.check_circle_rounded;
-                                                    iconColor = NivioTheme.accentColorOf(context);
-                                                    tooltip = 'Watched (Click to download)';
-                                                  } else {
-                                                    iconData = media.mediaType == 'movie'
-                                                        ? Icons.download_rounded
-                                                        : Icons.file_download;
-                                                    iconColor = NivioTheme.netflixWhite;
-                                                    tooltip = 'Download';
-                                                  }
-
-                                                  return Tooltip(
-                                                    message: tooltip,
-                                                    child: _plainIconButton(
-                                                      icon: Icon(
-                                                        iconData,
-                                                        color: iconColor,
-                                                        size: 24,
-                                                      ),
-                                                      iconColor: iconColor,
-                                                      onTap: () => _handleDownload(media),
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                              const SizedBox(width: 12),
-                                              _plainIconButton(
-                                                icon: const Icon(
-                                                  Icons.share_rounded,
-                                                  color: NivioTheme.netflixWhite,
-                                                  size: 24,
-                                                ),
-                                                iconColor: NivioTheme.netflixWhite,
-                                                onTap: () => _shareMedia(media),
-                                              ),
-                                              if (_trailerSource != null) ...[
-                                                const SizedBox(width: 12),
-                                                _AnimatedHoverScale(
-                                                  child: TextButton.icon(
-                                                    onPressed: () => _showTrailerPlayer(context),
-                                                    icon: Icon(
-                                                      Icons.play_circle_outline,
-                                                      size: 17,
-                                                      color: accentColor,
-                                                    ),
-                                                    label: Text(
-                                                      'Watch trailer',
-                                                      style: TextStyle(color: accentColor),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                              if (isDesktop) ...[
-                                                const SizedBox(width: 12),
-                                                _AnimatedHoverScale(
-                                                  child: TextButton.icon(
-                                                    onPressed: () => _openWatchPartyHub(media),
-                                                    icon: Icon(
-                                                      PhosphorIconsRegular.users,
-                                                      size: 17,
-                                                      color: accentColor,
-                                                    ),
-                                                    label: Text(
-                                                      'Watch together',
-                                                      style: TextStyle(color: accentColor),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                              const SizedBox(width: 12),
-                                              TextButton.icon(
-                                                onPressed: () {
-                                                  final title = Uri.encodeComponent(
-                                                    media.title ?? media.name ?? '',
-                                                  );
-                                                  context.push(
-                                                    '/similar/${media.id}?type=${media.mediaType}&title=$title',
-                                                  );
-                                                },
-                                                icon: Icon(
-                                                  PhosphorIconsRegular.magicWand,
-                                                  size: 17,
-                                                  color: accentColor,
-                                                ),
-                                                label: Text(
-                                                  'More Like This',
-                                                  style: TextStyle(color: accentColor),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
                           ],
                         ),
                       ),
-
-                      Transform.translate(
-                        offset: Offset(0, -detailsOverlap),
-                        child: Container(
-                          width: double.infinity,
-                          padding: EdgeInsets.fromLTRB(isDesktop ? 72 : 16, 16, 16, 24),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (!isDesktop) ...[
-                                MarqueeText(
-                                text: mediaName,
-                                style: Theme.of(context).textTheme.displaySmall
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                      color: NivioTheme.netflixWhite,
-                                      height: 1.2,
-                                    ),
-                                blankSpace: 50.0,
+                    if (!isDesktop)
+                      Positioned(
+                        left: 14,
+                        right: 14,
+                        top: MediaQuery.paddingOf(context).top + 4,
+                        child: Row(
+                          mainAxisAlignment:
+                              MainAxisAlignment.spaceBetween,
+                          children: [
+                            _glassIconButton(
+                              icon: const PhosphorIcon(
+                                PhosphorIconsRegular.caretLeft,
+                                color: NivioTheme.netflixWhite,
+                                size: 20,
                               ),
-                              const SizedBox(height: 10),
-                              // Genre subtext — wraps to next line on overflow
-                              Text(
-                                _buildGenreMeta(year, media.voteAverage),
-                                style: TextStyle(
-                                  color: NivioTheme.netflixLightGrey,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                  height: 1.5,
-                                ),
-                              ),
-
-                              const SizedBox(height: 18),
+                              onTap: _handleBackNavigation,
+                            ),
+                            if (!isDesktop)
                               Row(
                                 children: [
-                                  Expanded(
-                                    child: _playAllButton(
-                                      accentColor: accentColor,
-                                      label: playLabel,
-                                      onTap: () {
-                                        final season =
-                                            (media.mediaType == 'tv' ||
-                                                media.mediaType == 'anime')
-                                            ? continueSeason
-                                            : 1;
-                                        context.push(
-                                          _buildPlayerRoute(
-                                            media: media,
-                                            season: season,
-                                            episode: continueEpisode,
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  // Filled heart = in watchlist, outline = not
-                                  _plainIconButton(
-                                    icon: Icon(
-                                      isInWatchlist
-                                          ? Icons.favorite
-                                          : Icons.favorite_border,
-                                      color: isInWatchlist
-                                          ? colors.dominant
-                                          : NivioTheme.netflixWhite,
-                                      size: 24,
-                                    ),
-                                    iconColor: isInWatchlist
-                                        ? colors.dominant
-                                        : NivioTheme.netflixWhite,
-                                    onTap: () =>
-                                        _toggleWatchlist(media, isInWatchlist),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  ValueListenableBuilder<Box<DownloadItem>>(
-                                    valueListenable: DownloadService.box
-                                        .listenable(),
-                                    builder: (context, box, _) {
-                                      final downloads = box.values
-                                          .where(
-                                            (item) => item.mediaId == media.id,
-                                          )
-                                          .toList();
-                                      final isDownloading = downloads.any(
-                                        (item) =>
-                                            item.status ==
-                                                DownloadStatus.downloading ||
-                                            item.status ==
-                                                DownloadStatus.pending ||
-                                            item.status ==
-                                                DownloadStatus.extracting,
-                                      );
-                                      final allCompleted =
-                                          downloads.isNotEmpty &&
-                                          downloads.every(
-                                            (item) =>
-                                                item.status ==
-                                                DownloadStatus.completed,
-                                          );
-
-                                      if (isDownloading) {
-                                        final downloadingItems = downloads
-                                            .where(
-                                              (item) =>
-                                                  item.status ==
-                                                      DownloadStatus
-                                                          .downloading ||
-                                                  item.status ==
-                                                      DownloadStatus.extracting,
-                                            )
-                                            .toList();
-                                        double progress = 0;
-                                        if (downloadingItems.isNotEmpty) {
-                                          progress =
-                                              downloadingItems
-                                                  .map((e) => e.progress)
-                                                  .reduce((a, b) => a + b) /
-                                              downloadingItems.length;
-                                        }
-                                        return SizedBox(
-                                          width: 40,
-                                          height: 40,
-                                          child: Padding(
-                                            padding: const EdgeInsets.all(8.0),
-                                            child: CircularProgressIndicator(
-                                              value: progress > 0
-                                                  ? progress
-                                                  : null,
-                                              strokeWidth: 3,
-                                              valueColor:
-                                                  AlwaysStoppedAnimation<Color>(
-                                                    NivioTheme.accentColorOf(
-                                                      context,
-                                                    ),
-                                                  ),
-                                            ),
-                                          ),
-                                        );
-                                      }
-
-                                      final IconData iconData;
-                                      final Color iconColor;
-                                      final String tooltip;
-
-                                      if (allCompleted && isMediaWatched) {
-                                        iconData = Icons.download_done_rounded;
-                                        iconColor = NivioTheme.accentColorOf(context);
-                                        tooltip = 'Watched & Downloaded';
-                                      } else if (allCompleted) {
-                                        iconData = Icons.download_done_rounded;
-                                        iconColor = NivioTheme.accentColorOf(context);
-                                        tooltip = 'Downloaded';
-                                      } else if (isMediaWatched) {
-                                        iconData = Icons.check_circle_rounded;
-                                        iconColor = NivioTheme.accentColorOf(context);
-                                        tooltip = 'Watched (Click to download)';
-                                      } else {
-                                        iconData = media.mediaType == 'movie'
-                                            ? Icons.download_rounded
-                                            : Icons.file_download;
-                                        iconColor = NivioTheme.netflixWhite;
-                                        tooltip = 'Download';
-                                      }
-
-                                      return Tooltip(
-                                        message: tooltip,
-                                        child: _plainIconButton(
-                                          icon: Icon(
-                                            iconData,
-                                            color: iconColor,
-                                            size: 24,
-                                          ),
-                                          iconColor: iconColor,
-                                          onTap: () => _handleDownload(media),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(width: 6),
-                                  _plainIconButton(
-                                    icon: const Icon(
-                                      Icons.share_rounded,
+                                  _glassIconButton(
+                                    icon: const PhosphorIcon(
+                                      PhosphorIconsRegular.users,
                                       color: NivioTheme.netflixWhite,
-                                      size: 24,
+                                      size: 19,
                                     ),
-                                    iconColor: NivioTheme.netflixWhite,
-                                    onTap: () => _shareMedia(media),
+                                    onTap: () => _openWatchPartyHub(media),
                                   ),
                                 ],
+                              )
+                            else
+                              const SizedBox.shrink(),
+                          ],
+                        ),
+                      ),
+                    if (!isDesktop)
+                      Positioned(
+                        left: 16,
+                        bottom: 20,
+                        child: Row(
+                          children: [
+                            if ((media.voteAverage ?? 0) > 0) ...[
+                              _glassTag(
+                                '★ ${media.voteAverage!.toStringAsFixed(1)}',
                               ),
-                              const SizedBox(height: 12),
-                              SizedBox(
-                                width: double.infinity,
-                                child: Wrap(
-                                alignment: WrapAlignment.spaceBetween,
-                                spacing: 8,
-                                runSpacing: 8,
-                                crossAxisAlignment: WrapCrossAlignment.center,
+                              const SizedBox(width: 8),
+                            ],
+                            if (year.isNotEmpty) ...[
+                              _glassTag(year),
+                              const SizedBox(width: 8),
+                            ],
+                            _glassTag(media.mediaType.toUpperCase()),
+                          ],
+                        ),
+                      ),
+                    // Desktop split column header overlay (at left: 72, right: 48, bottom: 24)
+                    if (isDesktop)
+                      Positioned(
+                        left: 72,
+                        right: 48,
+                        bottom: 24,
+                        child: RepaintBoundary(
+                          child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (posterUrl.isNotEmpty)
+                              DecoratedBox(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Color(0x80000000),
+                                      blurRadius: 8,
+                                      spreadRadius: 1,
+                                    ),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: CachedNetworkImage(
+                                    imageUrl: posterUrl,
+                                    height: heroHeight * 0.62,
+                                    fit: BoxFit.cover,
+                                    memCacheWidth: 400,
+                                    fadeInDuration: Duration.zero,
+                                    fadeOutDuration: Duration.zero,
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(width: 24),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  if (_trailerSource != null) ...[
-                                    _AnimatedHoverScale(
-                                      child: TextButton.icon(
-                                        onPressed: () =>
-                                            _showTrailerPlayer(context),
+                                  if (media.title != null && media.name != null && media.title != media.name)
+                                    Text(
+                                      media.title!,
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    mediaName,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 32,
+                                      fontWeight: FontWeight.bold,
+                                      height: 1.2,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: _buildDetailBadges(
+                                      media,
+                                      year,
+                                      accentColor,
+                                      seriesInfo,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    media.overview ?? '',
+                                    maxLines: 4,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.85),
+                                      fontSize: 12.5,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 20),
+                                  Row(
+                                    children: [
+                                      _playAllButton(
+                                        accentColor: accentColor,
+                                        label: playLabel,
+                                        onTap: () {
+                                          final season = (media.mediaType == 'tv' || media.mediaType == 'anime')
+                                              ? continueSeason
+                                              : 1;
+                                          context.push(
+                                            _buildPlayerRoute(
+                                              media: media,
+                                              season: season,
+                                              episode: continueEpisode,
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                      const SizedBox(width: 12),
+                                      _plainIconButton(
                                         icon: Icon(
-                                          Icons.play_circle_outline,
-                                          size: 18,
+                                          isInWatchlist ? Icons.favorite : Icons.favorite_border,
+                                          color: isInWatchlist ? colors.dominant : NivioTheme.netflixWhite,
+                                          size: 24,
+                                        ),
+                                        iconColor: isInWatchlist ? colors.dominant : NivioTheme.netflixWhite,
+                                        onTap: () => _toggleWatchlist(media, isInWatchlist),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      ValueListenableBuilder<Box<DownloadItem>>(
+                                        valueListenable: DownloadService.box.listenable(),
+                                        builder: (context, box, _) {
+                                          final downloads = box.values
+                                              .where((item) => item.mediaId == media.id)
+                                              .toList();
+                                          final isDownloading = downloads.any(
+                                            (item) => item.status == DownloadStatus.downloading ||
+                                                item.status == DownloadStatus.pending ||
+                                                item.status == DownloadStatus.extracting,
+                                          );
+                                          final allCompleted = downloads.isNotEmpty &&
+                                              downloads.every((item) => item.status == DownloadStatus.completed);
+
+                                          if (isDownloading) {
+                                            final downloadingItems = downloads
+                                                .where((item) => item.status == DownloadStatus.downloading ||
+                                                    item.status == DownloadStatus.extracting)
+                                                .toList();
+                                            double progress = 0;
+                                            if (downloadingItems.isNotEmpty) {
+                                              progress = downloadingItems.map((e) => e.progress).reduce((a, b) => a + b) /
+                                                  downloadingItems.length;
+                                            }
+                                            return SizedBox(
+                                              width: 40,
+                                              height: 40,
+                                              child: Padding(
+                                                padding: const EdgeInsets.all(8.0),
+                                                child: CircularProgressIndicator(
+                                                  value: progress > 0 ? progress : null,
+                                                  strokeWidth: 3,
+                                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                                    NivioTheme.accentColorOf(context),
+                                                  ),
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                          final IconData iconData;
+                                          final Color iconColor;
+                                          final String tooltip;
+
+                                          if (allCompleted && isMediaWatched) {
+                                            iconData = Icons.download_done_rounded;
+                                            iconColor = NivioTheme.accentColorOf(context);
+                                            tooltip = 'Watched & Downloaded';
+                                          } else if (allCompleted) {
+                                            iconData = Icons.download_done_rounded;
+                                            iconColor = NivioTheme.accentColorOf(context);
+                                            tooltip = 'Downloaded';
+                                          } else if (isMediaWatched) {
+                                            iconData = Icons.check_circle_rounded;
+                                            iconColor = NivioTheme.accentColorOf(context);
+                                            tooltip = 'Watched (Click to download)';
+                                          } else {
+                                            iconData = media.mediaType == 'movie'
+                                                ? Icons.download_rounded
+                                                : Icons.file_download;
+                                            iconColor = NivioTheme.netflixWhite;
+                                            tooltip = 'Download';
+                                          }
+
+                                          return Tooltip(
+                                            message: tooltip,
+                                            child: _plainIconButton(
+                                              icon: Icon(
+                                                iconData,
+                                                color: iconColor,
+                                                size: 24,
+                                              ),
+                                              iconColor: iconColor,
+                                              onTap: () => _handleDownload(media),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                      const SizedBox(width: 12),
+                                      _plainIconButton(
+                                        icon: const Icon(
+                                          Icons.share_rounded,
+                                          color: NivioTheme.netflixWhite,
+                                          size: 24,
+                                        ),
+                                        iconColor: NivioTheme.netflixWhite,
+                                        onTap: () => _shareMedia(media),
+                                      ),
+                                      if (_trailerSource != null) ...[
+                                        const SizedBox(width: 12),
+                                        _AnimatedHoverScale(
+                                          child: TextButton.icon(
+                                            onPressed: () => _showTrailerPlayer(context),
+                                            icon: Icon(
+                                              Icons.play_circle_outline,
+                                              size: 17,
+                                              color: accentColor,
+                                            ),
+                                            label: Text(
+                                              'Watch trailer',
+                                              style: TextStyle(color: accentColor),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                      if (isDesktop) ...[
+                                        const SizedBox(width: 12),
+                                        _AnimatedHoverScale(
+                                          child: TextButton.icon(
+                                            onPressed: () => _openWatchPartyHub(media),
+                                            icon: Icon(
+                                              PhosphorIconsRegular.users,
+                                              size: 17,
+                                              color: accentColor,
+                                            ),
+                                            label: Text(
+                                              'Watch together',
+                                              style: TextStyle(color: accentColor),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                      const SizedBox(width: 12),
+                                      TextButton.icon(
+                                        onPressed: () {
+                                          final title = Uri.encodeComponent(
+                                            media.title ?? media.name ?? '',
+                                          );
+                                          context.push(
+                                            '/similar/${media.id}?type=${media.mediaType}&title=$title',
+                                          );
+                                        },
+                                        icon: Icon(
+                                          PhosphorIconsRegular.magicWand,
+                                          size: 17,
                                           color: accentColor,
                                         ),
                                         label: Text(
-                                          'Watch trailer',
-                                          style: TextStyle(
-                                            color: accentColor,
-                                            fontSize: 15,
-                                          ),
+                                          'More Like This',
+                                          style: TextStyle(color: accentColor),
                                         ),
                                       ),
-                                    ),
-                                  ],
-                                  TextButton.icon(
-                                    onPressed: () {
-                                      final title = Uri.encodeComponent(
-                                        media.title ?? media.name ?? '',
-                                      );
-                                      context.push(
-                                        '/similar/${media.id}?type=${media.mediaType}&title=$title',
-                                      );
-                                    },
-                                    icon: PhosphorIcon(
-                                      PhosphorIconsRegular.magicWand,
-                                      size: 17,
-                                      color: accentColor,
-                                    ),
-                                    label: Text(
-                                      'More Like This',
-                                      style: TextStyle(color: accentColor),
-                                    ),
+                                    ],
                                   ),
                                 ],
-                                ),
                               ),
-                              const SizedBox(height: 14),
-                              Text(
-                                'About',
-                                style: Theme.of(context).textTheme.titleLarge
-                                    ?.copyWith(
-                                      color: NivioTheme.netflixWhite,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
-                              const SizedBox(height: 8),
-                              _buildAboutSection(
-                                media.overview?.isNotEmpty == true
-                                    ? media.overview!
-                                    : 'No description available for this title yet.',
-                                accentColor: accentColor,
-                              ),
-                              ], // end of !isDesktop group
-                              if (_cast.isNotEmpty) _buildCastRow(),
-                              const SizedBox(height: 26),
-                              if (media.mediaType == 'tv' ||
-                                  media.mediaType == 'anime')
-                                _buildTVControls(context, media, colors),
-                            ],
+                            ),
+                          ],
+                        ),
+                        ),
+                      ),
+                  ],
+                ),
+                ),
+              ),
+            ),
+            // ════════════════ Sliver 2: Details Content ════════════════
+            SliverToBoxAdapter(
+              child: RepaintBoundary(
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // ── Gradient bloom that extends from above ──
+                    Positioned(
+                      top: -220,
+                      left: 0,
+                      right: 0,
+                      height: 220,
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                colors.dominant.withValues(alpha: 0.20),
+                                colors.dominant.withValues(alpha: 0.07),
+                                Colors.transparent,
+                              ],
+                              stops: const [0.0, 0.40, 1.0],
+                            ),
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                    Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.fromLTRB(isDesktop ? 72 : 16, 16, 16, 24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (!isDesktop) ...[
+                            MarqueeText(
+                            text: mediaName,
+                            style: Theme.of(context).textTheme.displaySmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: NivioTheme.netflixWhite,
+                                  height: 1.2,
+                                ),
+                            blankSpace: 50.0,
+                          ),
+                          const SizedBox(height: 10),
+                          // Genre subtext — wraps to next line on overflow
+                          Text(
+                            _buildGenreMeta(year, media.voteAverage),
+                            style: TextStyle(
+                              color: NivioTheme.netflixLightGrey,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              height: 1.5,
+                            ),
+                          ),
+
+                          const SizedBox(height: 18),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _playAllButton(
+                                  accentColor: accentColor,
+                                  label: playLabel,
+                                  onTap: () {
+                                    final season =
+                                        (media.mediaType == 'tv' ||
+                                            media.mediaType == 'anime')
+                                        ? continueSeason
+                                        : 1;
+                                    context.push(
+                                      _buildPlayerRoute(
+                                        media: media,
+                                        season: season,
+                                        episode: continueEpisode,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              // Filled heart = in watchlist, outline = not
+                              _plainIconButton(
+                                icon: Icon(
+                                  isInWatchlist
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  color: isInWatchlist
+                                      ? colors.dominant
+                                      : NivioTheme.netflixWhite,
+                                  size: 24,
+                                ),
+                                iconColor: isInWatchlist
+                                    ? colors.dominant
+                                    : NivioTheme.netflixWhite,
+                                onTap: () =>
+                                    _toggleWatchlist(media, isInWatchlist),
+                              ),
+                              const SizedBox(width: 6),
+                              ValueListenableBuilder<Box<DownloadItem>>(
+                                valueListenable: DownloadService.box
+                                    .listenable(),
+                                builder: (context, box, _) {
+                                  final downloads = box.values
+                                      .where(
+                                        (item) => item.mediaId == media.id,
+                                      )
+                                      .toList();
+                                  final isDownloading = downloads.any(
+                                    (item) =>
+                                        item.status ==
+                                            DownloadStatus.downloading ||
+                                        item.status ==
+                                            DownloadStatus.pending ||
+                                        item.status ==
+                                            DownloadStatus.extracting,
+                                  );
+                                  final allCompleted =
+                                      downloads.isNotEmpty &&
+                                      downloads.every(
+                                        (item) =>
+                                            item.status ==
+                                            DownloadStatus.completed,
+                                      );
+
+                                  if (isDownloading) {
+                                    final downloadingItems = downloads
+                                        .where(
+                                          (item) =>
+                                              item.status ==
+                                                  DownloadStatus
+                                                      .downloading ||
+                                              item.status ==
+                                                  DownloadStatus.extracting,
+                                        )
+                                        .toList();
+                                    double progress = 0;
+                                    if (downloadingItems.isNotEmpty) {
+                                      progress =
+                                          downloadingItems
+                                              .map((e) => e.progress)
+                                              .reduce((a, b) => a + b) /
+                                          downloadingItems.length;
+                                    }
+                                    return SizedBox(
+                                      width: 40,
+                                      height: 40,
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(8.0),
+                                        child: CircularProgressIndicator(
+                                          value: progress > 0
+                                              ? progress
+                                              : null,
+                                          strokeWidth: 3,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                NivioTheme.accentColorOf(
+                                                  context,
+                                                ),
+                                              ),
+                                        ),
+                                      ),
+                                    );
+                                  }
+
+                                  final IconData iconData;
+                                  final Color iconColor;
+                                  final String tooltip;
+
+                                  if (allCompleted && isMediaWatched) {
+                                    iconData = Icons.download_done_rounded;
+                                    iconColor = NivioTheme.accentColorOf(context);
+                                    tooltip = 'Watched & Downloaded';
+                                  } else if (allCompleted) {
+                                    iconData = Icons.download_done_rounded;
+                                    iconColor = NivioTheme.accentColorOf(context);
+                                    tooltip = 'Downloaded';
+                                  } else if (isMediaWatched) {
+                                    iconData = Icons.check_circle_rounded;
+                                    iconColor = NivioTheme.accentColorOf(context);
+                                    tooltip = 'Watched (Click to download)';
+                                  } else {
+                                    iconData = media.mediaType == 'movie'
+                                        ? Icons.download_rounded
+                                        : Icons.file_download;
+                                    iconColor = NivioTheme.netflixWhite;
+                                    tooltip = 'Download';
+                                  }
+
+                                  return Tooltip(
+                                    message: tooltip,
+                                    child: _plainIconButton(
+                                      icon: Icon(
+                                        iconData,
+                                        color: iconColor,
+                                        size: 24,
+                                      ),
+                                      iconColor: iconColor,
+                                      onTap: () => _handleDownload(media),
+                                    ),
+                                  );
+                                },
+                              ),
+                              const SizedBox(width: 6),
+                              _plainIconButton(
+                                icon: const Icon(
+                                  Icons.share_rounded,
+                                  color: NivioTheme.netflixWhite,
+                                  size: 24,
+                                ),
+                                iconColor: NivioTheme.netflixWhite,
+                                onTap: () => _shareMedia(media),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: Wrap(
+                            alignment: WrapAlignment.spaceBetween,
+                            spacing: 8,
+                            runSpacing: 8,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              if (_trailerSource != null) ...[
+                                _AnimatedHoverScale(
+                                  child: TextButton.icon(
+                                    onPressed: () =>
+                                        _showTrailerPlayer(context),
+                                    icon: Icon(
+                                      Icons.play_circle_outline,
+                                      size: 18,
+                                      color: accentColor,
+                                    ),
+                                    label: Text(
+                                      'Watch trailer',
+                                      style: TextStyle(
+                                        color: accentColor,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              TextButton.icon(
+                                onPressed: () {
+                                  final title = Uri.encodeComponent(
+                                    media.title ?? media.name ?? '',
+                                  );
+                                  context.push(
+                                    '/similar/${media.id}?type=${media.mediaType}&title=$title',
+                                  );
+                                },
+                                icon: PhosphorIcon(
+                                  PhosphorIconsRegular.magicWand,
+                                  size: 17,
+                                  color: accentColor,
+                                ),
+                                label: Text(
+                                  'More Like This',
+                                  style: TextStyle(color: accentColor),
+                                ),
+                              ),
+                            ],
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            'About',
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(
+                                  color: NivioTheme.netflixWhite,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                          const SizedBox(height: 8),
+                          _buildAboutSection(
+                            media.overview?.isNotEmpty == true
+                                ? media.overview!
+                                : 'No description available for this title yet.',
+                            accentColor: accentColor,
+                          ),
+                          ], // end of !isDesktop group
+                          if (_cast.isNotEmpty) _buildCastRow(),
+                          const SizedBox(height: 26),
+                          if (media.mediaType == 'tv' ||
+                              media.mediaType == 'anime')
+                            _buildTVControls(context, media, colors),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -1284,88 +1292,90 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   Widget _buildCastRow() {
     if (_cast.isEmpty) return const SizedBox.shrink();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 24),
-        Text(
-          'Cast',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            color: NivioTheme.netflixWhite,
-            fontWeight: FontWeight.w700,
+    return RepaintBoundary(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 24),
+          Text(
+            'Cast',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              color: NivioTheme.netflixWhite,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 190,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: _cast.length > 20 ? 20 : _cast.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (context, index) {
-              final actor = _cast[index];
-              final profilePath = actor['profile_path'] as String?;
-              final name = actor['name'] as String? ?? 'Unknown';
-              final character = actor['character'] as String? ?? '';
-              final tmdbService = ref.read(tmdbServiceProvider);
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 190,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _cast.length > 20 ? 20 : _cast.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                final actor = _cast[index];
+                final profilePath = actor['profile_path'] as String?;
+                final name = actor['name'] as String? ?? 'Unknown';
+                final character = actor['character'] as String? ?? '';
+                final tmdbService = ref.read(tmdbServiceProvider);
 
-              return SizedBox(
-                width: 100,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          width: double.infinity,
-                          color: NivioTheme.netflixDarkGrey,
-                          child: profilePath != null
-                              ? CachedNetworkImage(
-                                  imageUrl:
-                                      (actor['is_anilist'] == true ||
-                                          profilePath.startsWith('http'))
-                                      ? profilePath
-                                      : tmdbService.getPosterUrl(profilePath),
-                                  fit: BoxFit.cover,
-                                  memCacheWidth: 200,
-                                )
-                              : const Icon(
-                                  Icons.person,
-                                  color: Colors.white54,
-                                  size: 40,
-                                ),
+                return SizedBox(
+                  width: 100,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            width: double.infinity,
+                            color: NivioTheme.netflixDarkGrey,
+                            child: profilePath != null
+                                ? CachedNetworkImage(
+                                    imageUrl:
+                                        (actor['is_anilist'] == true ||
+                                            profilePath.startsWith('http'))
+                                        ? profilePath
+                                        : tmdbService.getPosterUrl(profilePath),
+                                    fit: BoxFit.cover,
+                                    memCacheWidth: 200,
+                                  )
+                                : const Icon(
+                                    Icons.person,
+                                    color: Colors.white54,
+                                    size: 40,
+                                  ),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (character.isNotEmpty)
+                      const SizedBox(height: 8),
                       Text(
-                        character,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6),
-                          fontSize: 11,
+                        name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                  ],
-                ),
-              );
-            },
+                      if (character.isNotEmpty)
+                        Text(
+                          character,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.6),
+                            fontSize: 11,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -2760,8 +2770,7 @@ class _HoverGlowButtonState extends State<_HoverGlowButton> {
                 ? [
                     BoxShadow(
                       color: widget.accentColor.withValues(alpha: 0.4),
-                      blurRadius: 12,
-                      spreadRadius: 2,
+                      blurRadius: 4,
                     )
                   ]
                 : [],
