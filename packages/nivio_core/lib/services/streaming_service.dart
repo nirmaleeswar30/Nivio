@@ -133,10 +133,13 @@ class StreamingService {
     final xonServers = _dynamicXonServers;
     final animetsuServers = [
       'Animetsu (Auto)',
-      'Animetsu (Kite)',
-      'Animetsu (Dio)',
-      'Animetsu (Sage)',
-      'Animetsu (Meg)',
+      'Animetsu (Koto)',
+      'Animetsu (DB)',
+      'Animetsu (Kari)',
+      'Animetsu (Flow)',
+      'Animetsu (Zuri)',
+      'Animetsu (Gojo)',
+      'Animetsu (Mega)',
     ];
 
     if (pref == 'Miruro') {
@@ -232,10 +235,27 @@ class StreamingService {
       // Handle Animetsu
       if (providerName.startsWith('Animetsu')) {
         String server = 'auto';
-        if (providerName.contains('Kite')) server = 'kite';
-        else if (providerName.contains('Dio')) server = 'dio';
-        else if (providerName.contains('Sage')) server = 'sage';
-        else if (providerName.contains('Meg')) server = 'meg';
+        if (providerName.contains('Koto')) {
+          server = 'koto';
+        } else if (providerName.contains('DB')) {
+          server = 'db';
+        } else if (providerName.contains('Kari')) {
+          server = 'kari';
+        } else if (providerName.contains('Flow')) {
+          server = 'flow';
+        } else if (providerName.contains('Zuri')) {
+          server = 'zuri';
+        } else if (providerName.contains('Gojo')) {
+          server = 'gojo';
+        } else if (providerName.contains('Mega')) {
+          server = 'mega';
+        } else if (providerName.contains('AniChan')) {
+          server = 'koto';
+        } else if (providerName.contains('AnimeKai')) {
+          server = 'koto';
+        } else if (providerName.contains('AniDB')) {
+          server = 'db';
+        }
 
         final streamResult = await animetsuScraper.fetchStreamUrl(
           tmdbId: media.id.toString(), // Anime media ID from Anilist

@@ -1,15 +1,16 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/services/skip_times_models.dart';
 
-final animetsuScraperProvider = Provider((ref) => AnimetsuScraperService(providerName: 'Nivio-anime'));
+final animetsuScraperProvider = Provider((ref) => AnimetsuScraperService(providerName: 'Animetsu'));
 
 class AnimetsuScraperService {
   final String providerName;
 
-  AnimetsuScraperService({this.providerName = 'Nivio-anime'});
+  AnimetsuScraperService({this.providerName = 'Animetsu'});
 
   final Dio _dio = Dio(
     BaseOptions(
@@ -17,15 +18,53 @@ class AnimetsuScraperService {
       receiveTimeout: const Duration(seconds: 20),
       validateStatus: (status) => status != null && status < 600,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
-        'Referer': 'https://animetsu.live/',
-        'Origin': 'https://animetsu.live'
-      }
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+        'Referer': 'https://animetsu.site/',
+        'Origin': 'https://animetsu.site',
+      },
     ),
   );
 
-  // We default to auto which checks kite, dio, sage, meg sequentially
   final String defaultServer = 'auto';
+
+  Future<int?> _resolveAnilistId(String tmdbId, String title) async {
+    final parsed = int.tryParse(tmdbId);
+    if (parsed != null && parsed > 0) return parsed;
+
+    if (title.isEmpty) return null;
+    try {
+      const query = '''
+        query (\$search: String) {
+          Page(page: 1, perPage: 5) {
+            media(search: \$search, type: ANIME, isAdult: false) {
+              id
+              title { romaji english native }
+            }
+          }
+        }
+      ''';
+      final res = await _dio.post(
+        'https://graphql.anilist.co',
+        data: {'query': query, 'variables': {'search': title}},
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+        ),
+      );
+      if (res.statusCode == 200 && res.data != null) {
+        final data = res.data is String ? jsonDecode(res.data) : res.data;
+        final mediaList = data['data']?['Page']?['media'] as List<dynamic>?;
+        if (mediaList != null && mediaList.isNotEmpty) {
+          return mediaList.first['id'] as int?;
+        }
+      }
+    } catch (e) {
+      appDebugLog('Animetsu: AniList ID search failed: $e');
+    }
+    return null;
+  }
 
   Future<StreamResult?> fetchStreamUrl({
     required String tmdbId, // Actually Anilist ID for anime
@@ -42,153 +81,211 @@ class AnimetsuScraperService {
         appDebugLog('Animetsu: Only supports anime');
         return null;
       }
-      if (tmdbId.isEmpty) {
-        appDebugLog('Animetsu: Missing Anilist ID');
+
+      final anilistId = await _resolveAnilistId(tmdbId, title);
+      if (anilistId == null) {
+        appDebugLog('Animetsu: Missing Anilist ID for $title ($tmdbId)');
         return null;
       }
 
-      final isDub = preferredAudio != null && preferredAudio.toLowerCase() == 'english';
-      final sourceType = isDub ? 'dub' : 'sub';
-      
-      // Step 1: Find the internal MongoDB ID
-      String? internalId;
-      try {
-        final searchUrl = 'https://animetsu.live/v2/api/anime/search?query=${Uri.encodeQueryComponent(title)}';
-        final searchRes = await _dio.get(searchUrl);
-        if (searchRes.statusCode == 200 && searchRes.data != null && searchRes.data['results'] != null) {
-          final results = searchRes.data['results'] as List;
-          for (final result in results) {
-            final cover = result['cover_image']?['large']?.toString() ?? '';
-            final banner = result['banner']?.toString() ?? '';
-            // Match against Anilist ID embedded in cover/banner
-            if (cover.contains('bx$tmdbId') || banner.contains('/$tmdbId-') || banner.contains('/$tmdbId.')) {
-              internalId = result['id']?.toString();
-              break;
-            }
-          }
-        }
-      } catch (e) {
-        appDebugLog('Animetsu: Search failed: $e');
-      }
+      final prefLower = (preferredAudio ?? '').toLowerCase();
+      final isDub = prefLower == 'english' || prefLower == 'dub' || prefLower.contains('english (dub)');
+      final category = isDub ? 'dub' : 'sub';
 
-      if (internalId == null) {
-        appDebugLog('Animetsu: Could not find internal ID for $title (AniList $tmdbId)');
-        return null;
-      }
-      
-      // If we made it here, we have the internal ID.
-      // Implement server fallback logic
-      List<String> serversToTry = [];
-      if (server == 'auto') {
-        serversToTry = ['kite', 'dio', 'sage', 'meg'];
+      final requestedServer = server.toLowerCase();
+      final List<String> serversToTry;
+      if (requestedServer == 'auto' || requestedServer == 'meg' || requestedServer == 'mega') {
+        serversToTry = ['anichan', 'animekai', 'anidb'];
+      } else if (requestedServer == 'koto' || requestedServer == 'anichan' || requestedServer == 'kite') {
+        serversToTry = ['anichan', 'animekai', 'anidb'];
+      } else if (requestedServer == 'db' || requestedServer == 'anidb' || requestedServer == 'anidbapp' || requestedServer == 'sage') {
+        serversToTry = ['anidb', 'anichan', 'animekai'];
+      } else if (requestedServer == 'kari' || requestedServer == 'flow' || requestedServer == 'zuri' || requestedServer == 'gojo') {
+        serversToTry = ['anichan', 'animekai', 'anidb'];
+      } else if (requestedServer == 'animekai' || requestedServer == 'dio') {
+        serversToTry = ['animekai', 'anichan', 'anidb'];
       } else {
-        serversToTry = [server];
+        serversToTry = [requestedServer, 'anichan', 'animekai', 'anidb'];
       }
 
-      for (String currentServer in serversToTry) {
-        final url = 'https://animetsu.live/v2/api/anime/oppai/$internalId/$episode?server=$currentServer&source_type=$sourceType';
-        
-        try {
-          final response = await _dio.get(url);
-          
-          if (response.statusCode != 200 || response.data == null) {
-            appDebugLog('Animetsu ($currentServer): Failed to fetch stream (HTTP ${response.statusCode})');
-            continue;
-          }
-          
-          final data = response.data;
-          if (data is! Map<String, dynamic>) {
-            appDebugLog('Animetsu ($currentServer): Invalid response format');
-            continue;
-          }
-          
-          final sourcesData = data['sources'] as List<dynamic>? ?? [];
-          if (sourcesData.isEmpty) {
-            appDebugLog('Animetsu ($currentServer): No sources found in response');
-            continue;
-          }
-          
-          // Parse sources
-          final List<StreamSource> sources = [];
-          for (final src in sourcesData) {
-            final srcUrl = src['url'] as String? ?? '';
-            final quality = src['quality'] as String? ?? 'auto';
-            final isM3U8 = srcUrl.contains('.m3u8') || src['type'] == 'hls' || src['type'] == 'video/mpegurl' || src['type'] == 'application/x-mpegURL' || src['type'] == 'application/vnd.apple.mpegurl';
-            final needProxy = src['need_proxy'] == true;
-            
-            String finalUrl = srcUrl;
-            if (!finalUrl.startsWith('http')) {
-              finalUrl = finalUrl.startsWith('/') ? finalUrl : '/$finalUrl';
-              finalUrl = 'https://swiftstream.top/proxy$finalUrl';
-            } else if (needProxy && !finalUrl.contains('swiftstream.top/proxy')) {
-               finalUrl = 'https://swiftstream.top/proxy?url=${Uri.encodeQueryComponent(finalUrl)}';
-            }
-            
-            sources.add(StreamSource(
-              url: finalUrl,
-              quality: quality,
-              isM3U8: isM3U8,
-              isDub: isDub,
-            ));
-          }
-          
-          final primarySource = sources.firstWhere(
-            (s) => s.quality == 'auto' || s.quality == '1080p',
-            orElse: () => sources.first,
-          );
-          
-          final List<StreamSubtitleTrack> subtitles = [];
-          final subsData = data['subs'] as List<dynamic>? ?? [];
-          for (final sub in subsData) {
-            subtitles.add(StreamSubtitleTrack(
-              url: sub['url'] ?? '',
-              lang: sub['lang'] ?? 'Unknown',
-            ));
-          }
-          
-          final List<SkipTime> skipTimes = [];
-          if (data['skips'] != null) {
-            final skips = data['skips'];
-            if (skips['intro'] != null) {
-              skipTimes.add(SkipTime(
-                type: 'op',
-                startTime: Duration(seconds: skips['intro']['start'] ?? 0),
-                endTime: Duration(seconds: skips['intro']['end'] ?? 0),
-              ));
-            }
-            if (skips['outro'] != null) {
-              skipTimes.add(SkipTime(
-                type: 'ed',
-                startTime: Duration(seconds: skips['outro']['start'] ?? 0),
-                endTime: Duration(seconds: skips['outro']['end'] ?? 0),
-              ));
-            }
-          }
+      Map<String, dynamic>? anichanData;
 
-          return StreamResult(
-            url: primarySource.url,
-            quality: primarySource.quality,
-            provider: 'Nivio-anime (${currentServer[0].toUpperCase()}${currentServer.substring(1)})',
-            sources: sources,
-            subtitles: subtitles,
-            skipTimes: skipTimes,
-            availableQualities: sources.map((s) => s.quality).toSet().toList(),
-            availableAudios: ['Default', 'English'],
-            selectedAudio: isDub ? 'English' : 'Default',
-            isM3U8: primarySource.isM3U8,
-            headers: {
-              'Referer': 'https://animetsu.live/',
-              'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36'
-            },
-          );
+      for (final currentServer in serversToTry) {
+        try {
+          if (currentServer == 'anichan' || currentServer == 'animekai' || currentServer == 'animesuge') {
+            if (anichanData == null) {
+              final url = 'https://anichan.net/api/watch/servers?anilistId=$anilistId&ep=$episode&category=$category&tier=rest';
+              final response = await _dio.get(
+                url,
+                options: Options(
+                  headers: {
+                    'Referer': 'https://animetsu.site/',
+                    'Origin': 'https://animetsu.site',
+                  },
+                ),
+              );
+              if (response.statusCode == 200 && response.data != null) {
+                anichanData = response.data is String ? jsonDecode(response.data) : response.data;
+              }
+            }
+
+            if (anichanData != null && anichanData['servers'] is List) {
+              final serversList = anichanData['servers'] as List;
+              dynamic targetServerObj;
+              if (currentServer == 'anichan') {
+                targetServerObj = serversList.firstWhere(
+                  (s) => s['name'] == 'anichan',
+                  orElse: () => serversList.firstOrNull,
+                );
+              } else if (currentServer == 'animekai' || currentServer == 'animesuge') {
+                targetServerObj = serversList.firstWhere(
+                  (s) => s['name'] == 'animekai' || s['name'] == 'animesuge',
+                  orElse: () => serversList.length > 1 ? serversList[1] : null,
+                );
+              }
+
+              if (targetServerObj != null && targetServerObj['stream'] != null) {
+                String streamUrl = targetServerObj['stream'].toString();
+                if (streamUrl.startsWith('/')) {
+                  streamUrl = 'https://anichan.net$streamUrl';
+                }
+
+                final List<StreamSubtitleTrack> subtitles = [];
+                if (targetServerObj['subtitles'] is List) {
+                  for (final sub in targetServerObj['subtitles']) {
+                    final u = sub['url']?.toString() ?? '';
+                    final l = sub['lang']?.toString() ?? 'Unknown';
+                    if (u.isNotEmpty) {
+                      subtitles.add(StreamSubtitleTrack(url: u, lang: l));
+                    }
+                  }
+                }
+
+                final List<SkipTime> skipTimes = [];
+                if (targetServerObj['intro'] is Map) {
+                  final intro = targetServerObj['intro'];
+                  final start = intro['start'] as int?;
+                  final end = intro['end'] as int?;
+                  if (start != null && end != null && end > start) {
+                    skipTimes.add(SkipTime(
+                      type: 'op',
+                      startTime: Duration(seconds: start),
+                      endTime: Duration(seconds: end),
+                    ));
+                  }
+                }
+                if (targetServerObj['outro'] is Map) {
+                  final outro = targetServerObj['outro'];
+                  final start = outro['start'] as int?;
+                  final end = outro['end'] as int?;
+                  if (start != null && end != null && end > start) {
+                    skipTimes.add(SkipTime(
+                      type: 'ed',
+                      startTime: Duration(seconds: start),
+                      endTime: Duration(seconds: end),
+                    ));
+                  }
+                }
+
+                final sources = [
+                  StreamSource(
+                    url: streamUrl,
+                    quality: 'Auto',
+                    isM3U8: true,
+                    isDub: isDub,
+                  ),
+                ];
+
+                final serverNameStr = targetServerObj['name']?.toString().toLowerCase() ?? currentServer;
+                final String referer;
+                final String origin;
+                if (serverNameStr == 'anichan') {
+                  referer = 'https://anichan.net/';
+                  origin = 'https://anichan.net';
+                } else {
+                  referer = 'https://megaplay.buzz/';
+                  origin = 'https://megaplay.buzz';
+                }
+
+                final serverLabel = targetServerObj['label']?.toString() ?? currentServer;
+
+                return StreamResult(
+                  url: streamUrl,
+                  quality: 'Auto',
+                  provider: 'Animetsu ($serverLabel)',
+                  sources: sources,
+                  subtitles: subtitles,
+                  skipTimes: skipTimes,
+                  availableQualities: ['Auto', '1080p'],
+                  availableAudios: ['Default', 'English'],
+                  selectedAudio: isDub ? 'English' : 'Default',
+                  isM3U8: true,
+                  headers: {
+                    'Referer': referer,
+                    'Origin': origin,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+                  },
+                );
+              }
+            }
+          } else if (currentServer == 'anidb') {
+            final url = 'https://anivexa.pages.dev/watch/anidbapp/$anilistId/$category/anidbapp-$episode';
+            final response = await _dio.get(
+              url,
+              options: Options(
+                headers: {
+                  'Referer': 'https://anidb.app/',
+                },
+              ),
+            );
+
+            if (response.statusCode == 200 && response.data != null) {
+              final anidbData = response.data is String ? jsonDecode(response.data) : response.data;
+              if (anidbData is Map<String, dynamic> && anidbData['streams'] is List) {
+                final streamsList = anidbData['streams'] as List;
+                final hlsStream = streamsList.firstWhere(
+                  (s) => s['type'] == 'hls' && s['url'] != null,
+                  orElse: () => streamsList.firstOrNull,
+                );
+                if (hlsStream != null && hlsStream['url'] != null) {
+                  final streamUrl = hlsStream['url'].toString();
+                  final sources = [
+                    StreamSource(
+                      url: streamUrl,
+                      quality: 'Auto',
+                      isM3U8: true,
+                      isDub: isDub,
+                    ),
+                  ];
+
+                  return StreamResult(
+                    url: streamUrl,
+                    quality: 'Auto',
+                    provider: 'Animetsu (AniDB)',
+                    sources: sources,
+                    subtitles: [],
+                    skipTimes: [],
+                    availableQualities: ['Auto', '1080p'],
+                    availableAudios: ['Default', 'English'],
+                    selectedAudio: isDub ? 'English' : 'Default',
+                    isM3U8: true,
+                    headers: {
+                      'Referer': 'https://anidb.app/',
+                      'Origin': 'https://anidb.app',
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+                    },
+                  );
+                }
+              }
+            }
+          }
         } catch (e) {
           appDebugLog('Animetsu ($currentServer): Error during fetch: $e');
         }
       }
-      
+
       appDebugLog('Animetsu: All servers failed for $title');
       return null;
-      
     } catch (e) {
       appDebugLog('Animetsu Scraper Error: $e');
       return null;
