@@ -241,152 +241,216 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+
     return Scaffold(
       backgroundColor: NivioTheme.netflixBlack,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            // Background Logo
-            Center(
-              child: Opacity(
-                opacity: 0.05,
-                child: Image.asset(
-                  'assets/images/nivio-dark.png',
-                  width: MediaQuery.of(context).size.width * 0.6,
-                ),
-              ),
-            ),
-            // Content
-            _isLoading 
-                ? const Center(child: CircularProgressIndicator())
-                : _channels.isEmpty 
-                    ? _buildEmptyState()
-                    : _buildPopulatedState(),
-          ],
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF151922), NivioTheme.netflixBlack],
+          ),
+        ),
+        child: SafeArea(
+          child: _isLoading 
+              ? const Center(child: CircularProgressIndicator())
+              : _channels.isEmpty 
+                  ? Center(
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 24, 24, 24, 24),
+                        child: Container(
+                          constraints: const BoxConstraints(maxWidth: 500),
+                          child: _buildEmptyState(),
+                        ),
+                      ),
+                    )
+                  : Center(
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 850),
+                        child: _buildPopulatedState(isDesktop),
+                      ),
+                    ),
         ),
       ),
     );
   }
 
   Widget _buildEmptyState() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 60),
-          Icon(
-            PhosphorIconsRegular.television,
-            size: 80,
-            color: Colors.white.withValues(alpha: 0.2),
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'Add your IPTV Playlist',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 24.0),
+          child: Center(
+            child: Text(
+              'Live IPTV',
+              style: TextStyle(
+                color: NivioTheme.netflixWhite,
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+              ),
             ),
           ),
+        ),
+        Center(
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Icon(
+              PhosphorIconsRegular.television,
+              size: 48,
+              color: NivioTheme.accentColorOf(context),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        const Text(
+          'Add your IPTV Playlist',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Enter an M3U URL to stream live TV channels directly in the app.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white60,
+            fontSize: 14,
+          ),
+        ),
+        const SizedBox(height: 28),
+        TextField(
+          controller: _urlController,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'https://example.com/playlist.m3u',
+            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+            filled: true,
+            fillColor: Colors.white.withValues(alpha: 0.06),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: NivioTheme.accentColorOf(context)),
+            ),
+            prefixIcon: Icon(
+              PhosphorIconsRegular.link,
+              color: Colors.white.withValues(alpha: 0.5),
+            ),
+          ),
+          onSubmitted: _fetchPlaylist,
+        ),
+        if (_error != null) ...[
           const SizedBox(height: 12),
-          const Text(
-            'Enter an M3U URL to stream live TV channels directly in the app.',
+          Text(
+            _error!,
+            style: const TextStyle(color: Colors.redAccent, fontSize: 13),
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white60,
-              fontSize: 15,
-            ),
-          ),
-          const SizedBox(height: 40),
-          TextField(
-            controller: _urlController,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              hintText: 'https://example.com/playlist.m3u',
-              hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
-              filled: true,
-              fillColor: NivioTheme.netflixDarkGrey,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-              prefixIcon: Icon(
-                PhosphorIconsRegular.link,
-                color: Colors.white.withValues(alpha: 0.5),
-              ),
-            ),
-            onSubmitted: _fetchPlaylist,
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              _error!,
-              style: const TextStyle(color: Colors.red, fontSize: 13),
-              textAlign: TextAlign.center,
-            ),
-          ],
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: () => _fetchPlaylist(_urlController.text.trim()),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: NivioTheme.accentColorOf(context),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: const Text(
-              'Load Playlist',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-          ),
-          const SizedBox(height: 40),
-          const Row(
-            children: [
-              Expanded(child: Divider(color: Colors.white24)),
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Text('OR', style: TextStyle(color: Colors.white60)),
-              ),
-              Expanded(child: Divider(color: Colors.white24)),
-            ],
-          ),
-          const SizedBox(height: 40),
-          OutlinedButton.icon(
-            onPressed: () {
-              // https://iptv-org.github.io/iptv/index.m3u
-              _urlController.text = 'https://iptv-org.github.io/iptv/index.m3u';
-              _fetchPlaylist(_urlController.text);
-            },
-            icon: const PhosphorIcon(PhosphorIconsRegular.globe, size: 20),
-            label: const Text('Load Free Public Channels (iptv-org)'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.white,
-              side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
           ),
         ],
-      ),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: () => _fetchPlaylist(_urlController.text.trim()),
+          icon: const Icon(PhosphorIconsRegular.downloadSimple, size: 20),
+          label: const Text('Load Playlist'),
+          style: FilledButton.styleFrom(
+            backgroundColor: NivioTheme.accentColorOf(context),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        const Row(
+          children: [
+            Expanded(child: Divider(color: Colors.white12)),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Text('OR', style: TextStyle(color: Colors.white38, fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+            Expanded(child: Divider(color: Colors.white12)),
+          ],
+        ),
+        const SizedBox(height: 24),
+        OutlinedButton.icon(
+          onPressed: () {
+            _urlController.text = 'https://iptv-org.github.io/iptv/index.m3u';
+            _fetchPlaylist(_urlController.text);
+          },
+          icon: const PhosphorIcon(PhosphorIconsRegular.globe, size: 20),
+          label: const Text('Load Free Public Channels (iptv-org)'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.white,
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildPopulatedState() {
+  Widget _buildPopulatedState(bool isDesktop) {
     final groups = ['All', 'Favorites', ..._groupedChannels.keys];
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
 
     return Column(
       children: [
+        // Top Header
+        Padding(
+          padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16.0, 16.0, 16.0, 12.0),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Live IPTV',
+                  style: TextStyle(
+                    color: NivioTheme.netflixWhite,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: _showPlaylistManager,
+                icon: const PhosphorIcon(PhosphorIconsRegular.list, size: 18),
+                label: Text('${_channels.length} Channels'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white70,
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                ),
+              ),
+            ],
+          ),
+        ),
+
         // Search and Filter Bar
         Padding(
-          padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16.0, 16.0, 16.0, 8.0),
+          padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16.0, 0, 16.0, 12.0),
           child: Row(
             children: [
               Expanded(
@@ -397,11 +461,19 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                     hintText: 'Search channels...',
                     hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
                     filled: true,
-                    fillColor: Colors.white.withValues(alpha: 0.1),
+                    fillColor: Colors.white.withValues(alpha: 0.06),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide.none,
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: NivioTheme.accentColorOf(context)),
                     ),
                     prefixIcon: Icon(
                       PhosphorIconsRegular.magnifyingGlass,
@@ -478,20 +550,21 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                         },
                       );
                     },
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(12),
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
+                        color: Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Expanded(
                             child: Text(
                               _selectedGroup ?? 'All',
-                              style: const TextStyle(color: Colors.white, fontSize: 14),
+                              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -502,18 +575,6 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: IconButton(
-                  icon: PhosphorIcon(PhosphorIconsRegular.list, color: Colors.white70, size: 20),
-                  onPressed: _showPlaylistManager,
-                  tooltip: 'Manage Playlists',
-                ),
-              ),
             ],
           ),
         ),
@@ -522,13 +583,16 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
         Expanded(
           child: _filteredChannels.isEmpty
               ? Center(
-                  child: Text(
-                    'No channels found',
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                  child: Padding(
+                    padding: EdgeInsets.only(left: isDesktop ? 68 : 0),
+                    child: Text(
+                      'No channels found',
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 15),
+                    ),
                   ),
                 )
               : AppListView.builder(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 4, 16, 24),
                   cacheExtent: 250,
                   scrollSpeed: 2.0,
                   silkyScrollDuration: const Duration(milliseconds: 500),
@@ -538,70 +602,103 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                     final channel = _filteredChannels[index];
                     return RepaintBoundary(
                       child: Container(
-                        margin: const EdgeInsets.only(bottom: 12),
+                        margin: const EdgeInsets.only(bottom: 10),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.05),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                          borderRadius: BorderRadius.circular(12),
+                          color: Colors.white.withValues(alpha: 0.04),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                          borderRadius: BorderRadius.circular(14),
                         ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          leading: Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: Colors.black26,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: channel.logo.isNotEmpty
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: CachedNetworkImage(
-                                      imageUrl: channel.logo,
-                                      fit: BoxFit.contain,
-                                      errorWidget: (context, url, error) => Icon(
-                                        PhosphorIconsRegular.television,
-                                        color: Colors.white.withValues(alpha: 0.3),
-                                      ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(14),
+                            onTap: () => _playChannel(channel),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 46,
+                                    height: 46,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.04),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
                                     ),
-                                  )
-                                : Icon(
-                                    PhosphorIconsRegular.television,
-                                    color: Colors.white.withValues(alpha: 0.3),
+                                    child: channel.logo.isNotEmpty
+                                        ? ClipRRect(
+                                            borderRadius: BorderRadius.circular(10),
+                                            child: CachedNetworkImage(
+                                              imageUrl: channel.logo,
+                                              fit: BoxFit.contain,
+                                              errorWidget: (context, url, error) => Icon(
+                                                PhosphorIconsRegular.television,
+                                                color: Colors.white.withValues(alpha: 0.3),
+                                                size: 22,
+                                              ),
+                                            ),
+                                          )
+                                        : Icon(
+                                            PhosphorIconsRegular.television,
+                                            color: Colors.white.withValues(alpha: 0.3),
+                                            size: 22,
+                                          ),
                                   ),
-                          ),
-                          title: Text(
-                            channel.name,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w500,
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          channel.name,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          channel.group,
+                                          style: TextStyle(
+                                            color: Colors.white.withValues(alpha: 0.45),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: PhosphorIcon(
+                                      channel.isFavorite ? PhosphorIconsFill.heart : PhosphorIconsRegular.heart,
+                                      color: channel.isFavorite ? Colors.redAccent : Colors.white38,
+                                      size: 20,
+                                    ),
+                                    onPressed: () => _toggleFavorite(channel),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: NivioTheme.accentColorOf(context).withValues(alpha: 0.15),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      PhosphorIconsRegular.play,
+                                      color: NivioTheme.accentColorOf(context),
+                                      size: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                          subtitle: Text(
-                            channel.group,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.5),
-                              fontSize: 12,
-                            ),
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: PhosphorIcon(
-                                  channel.isFavorite ? PhosphorIconsFill.heart : PhosphorIconsRegular.heart,
-                                  color: channel.isFavorite ? Colors.red : Colors.white54,
-                                ),
-                                onPressed: () => _toggleFavorite(channel),
-                              ),
-                              const SizedBox(width: 8),
-                              Icon(
-                                PhosphorIconsRegular.playCircle,
-                                color: NivioTheme.accentColorOf(context),
-                              ),
-                            ],
-                          ),
-                          onTap: () => _playChannel(channel),
                         ),
                       ),
                     );

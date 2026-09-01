@@ -88,18 +88,34 @@ class StreamingService {
     final xonResult = results[2];
 
     if (miruroResult.isNotEmpty) {
+      const preferredMiruroOrder = ['zoro', 'gogo', 'pahe', 'marin'];
       miruroResult.sort((a, b) {
-        if (a.toLowerCase() == 'bonk') return -1;
-        if (b.toLowerCase() == 'bonk') return 1;
-        return 0;
+        final aLower = a.toLowerCase();
+        final bLower = b.toLowerCase();
+        if (aLower == 'bonk') return 1;
+        if (bLower == 'bonk') return -1;
+        final aIdx = preferredMiruroOrder.indexOf(aLower);
+        final bIdx = preferredMiruroOrder.indexOf(bLower);
+        if (aIdx != -1 && bIdx != -1) return aIdx.compareTo(bIdx);
+        if (aIdx != -1) return -1;
+        if (bIdx != -1) return 1;
+        return aLower.compareTo(bLower);
       });
       _dynamicMiruroServers = miruroResult.map((id) => 'Miruro ($id)').toList();
     }
     if (animexResult.isNotEmpty) {
+      const preferredAnimexOrder = ['mimi', 'zoro', 'gogo', 'pahe'];
       animexResult.sort((a, b) {
-        if (a.toLowerCase() == 'bonk') return -1;
-        if (b.toLowerCase() == 'bonk') return 1;
-        return 0;
+        final aLower = a.toLowerCase();
+        final bLower = b.toLowerCase();
+        if (aLower == 'bonk') return 1;
+        if (bLower == 'bonk') return -1;
+        final aIdx = preferredAnimexOrder.indexOf(aLower);
+        final bIdx = preferredAnimexOrder.indexOf(bLower);
+        if (aIdx != -1 && bIdx != -1) return aIdx.compareTo(bIdx);
+        if (aIdx != -1) return -1;
+        if (bIdx != -1) return 1;
+        return aLower.compareTo(bLower);
       });
       _dynamicAnimexServers = animexResult.map((id) => 'Animex ($id)').toList();
     }

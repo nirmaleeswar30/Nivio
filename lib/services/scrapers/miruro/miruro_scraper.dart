@@ -74,7 +74,7 @@ class MiruroScraperService {
       final anilistId = int.tryParse(tmdbId);
       if (anilistId == null) return [];
 
-      final episodesData = await _pipeRequest('episodes', {'anilistId': anilistId, 'version': '0.1.0'});
+      final episodesData = await _pipeRequest('episodes', {'anilistId': anilistId, 'version': '0.2.0'});
       final providers = episodesData['providers'] as Map<String, dynamic>?;
       if (providers == null) return [];
 
@@ -97,7 +97,7 @@ class MiruroScraperService {
       if (anilistId == null) return null;
 
       // 1. Fetch episodes
-      final episodesData = await _pipeRequest('episodes', {'anilistId': anilistId, 'version': '0.1.0'});
+      final episodesData = await _pipeRequest('episodes', {'anilistId': anilistId, 'version': '0.2.0'});
       final providers = episodesData['providers'] as Map<String, dynamic>?;
       if (providers == null) return null;
 
@@ -122,9 +122,9 @@ class MiruroScraperService {
       if (epsMap != null) {
         for (final key in epsMap.keys) {
           if ((epsMap[key] as List<dynamic>?)?.isNotEmpty == true) {
-             if (key.toLowerCase() == 'sub') availableAudios.add('Japanese (Sub)');
-             else if (key.toLowerCase() == 'dub') availableAudios.add('English (Dub)');
-             else availableAudios.add(key.toUpperCase());
+              if (key.toLowerCase() == 'sub') availableAudios.add('Japanese (Sub)');
+              else if (key.toLowerCase() == 'dub') availableAudios.add('English (Dub)');
+              else availableAudios.add(key.toUpperCase());
           }
         }
       }
@@ -158,7 +158,7 @@ class MiruroScraperService {
         'provider': providerName,
         'category': category,
         'anilistId': anilistId,
-        'version': '0.1.0',
+        'version': '0.2.0',
       });
 
       final streams = sourcesData['streams'] as List<dynamic>?;
@@ -172,6 +172,13 @@ class MiruroScraperService {
       for (final s in streams) {
         final url = s['url'] as String?;
         if (url != null) {
+          final referer = (s['referer'] as String? ?? '').toLowerCase();
+          // Filter out streams hosted on banned ByteDance/TikTok domain (ibyteimg.com / vivibebe)
+          if (url.contains('ibyteimg.com') || referer.contains('vivibebe.site')) {
+            appDebugLog('⚠️ Skipping dead bonk/ibyteimg stream: $url (referer: $referer)');
+            continue;
+          }
+
           final isHlsStream = url.contains('.m3u8') || s['type'] == 'hls';
           if (isHlsStream && bestStream == null) bestStream = s;
           
@@ -200,7 +207,14 @@ class MiruroScraperService {
         }
       }
       
-      bestStream ??= streams.firstWhere((s) => s['url'] != null, orElse: () => null);
+      bestStream ??= streams.firstWhere(
+        (s) {
+          final u = s['url'] as String?;
+          final ref = (s['referer'] as String? ?? '').toLowerCase();
+          return u != null && !u.contains('ibyteimg.com') && !ref.contains('vivibebe.site');
+        },
+        orElse: () => null,
+      );
       if (bestStream == null || sources.isEmpty) return null;
 
       // Subtitles
