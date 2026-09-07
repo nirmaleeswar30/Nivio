@@ -1476,28 +1476,39 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       );
     }
 
-    // Auto-select provider for downloads
-    final providerIndex = 0;
-
-    if (!streamingService.isDownloadable(providerIndex, isAnime: isAnime)) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Selected provider does not support downloading.'),
-        ),
-      );
-      return;
-    }
+    final maxProviders = streamingService.totalProvidersFor(isAnime: isAnime);
 
     if (media.mediaType == 'movie') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Preparing movie download...')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Preparing movie download...')),
+        );
+      }
 
-      final result = await streamingService.fetchStreamUrl(
-        media: media,
-        providerIndex: providerIndex,
-      );
+      StreamResult? result;
+      int? usedProviderIndex;
+
+      for (int providerIndex = 0; providerIndex < maxProviders; providerIndex++) {
+        if (!streamingService.isDownloadable(providerIndex, isAnime: isAnime)) {
+          continue;
+        }
+
+        try {
+          result = await streamingService.fetchStreamUrl(
+            media: media,
+            providerIndex: providerIndex,
+          );
+        } catch (e) {
+          debugPrint(
+            'Movie download probe failed for provider $providerIndex: $e',
+          );
+        }
+
+        if (result != null && result.url.isNotEmpty) {
+          usedProviderIndex = providerIndex;
+          break;
+        }
+      }
 
       if (result != null && result.url.isNotEmpty) {
         await DownloadPrompt.showAndQueue(
@@ -1509,24 +1520,24 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           mediaType: isAnime ? 'anime' : media.mediaType,
           posterPath: media.posterPath,
           media: media,
-          providerIndex: providerIndex,
+          providerIndex: usedProviderIndex,
         );
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Failed to find downloadable stream.'),
+              content: Text('Failed to find downloadable stream on any server.'),
             ),
           );
         }
       }
     } else {
       // Show dialog for Download All vs Season
-      _showDownloadDialog(media, providerIndex);
+      _showDownloadDialog(media);
     }
   }
 
-  void _showDownloadDialog(SearchResult media, int providerIndex) {
+  void _showDownloadDialog(SearchResult media) {
     showModal(
       context: context,
       configuration: const FadeScaleTransitionConfiguration(),
@@ -1551,7 +1562,6 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                 Navigator.pop(context);
                 _startBatchDownload(
                   media,
-                  providerIndex,
                   singleSeason: ref.read(selectedSeasonProvider),
                 );
               },
@@ -1560,7 +1570,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
             TextButton(
               onPressed: () {
                 Navigator.pop(context);
-                _startBatchDownload(media, providerIndex);
+                _startBatchDownload(media);
               },
               child: const Text('All Seasons'),
             ),
@@ -1573,8 +1583,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   /// Probes the first episode to discover available languages, shows the language picker,
   /// then queues all episodes with the selected languages.
   Future<void> _startBatchDownload(
-    SearchResult media,
-    int providerIndex, {
+    SearchResult media, {
     int? singleSeason,
   }) async {
     final isAnime = StreamingService.isAnimeMedia(media);
@@ -1628,19 +1637,40 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       orElse: () => probeSeasonData.episodes.first,
     );
 
-    final probeResult = await streamingService.fetchStreamUrl(
-      media: media,
-      season: probeSeason,
-      episode: probeEpisode.episodeNumber,
-      providerIndex: providerIndex,
-    );
+    final maxProviders = streamingService.totalProvidersFor(isAnime: isAnime);
+    StreamResult? probeResult;
+    int? usedProviderIndex;
+
+    for (int providerIndex = 0; providerIndex < maxProviders; providerIndex++) {
+      if (!streamingService.isDownloadable(providerIndex, isAnime: isAnime)) {
+        continue;
+      }
+
+      try {
+        probeResult = await streamingService.fetchStreamUrl(
+          media: media,
+          season: probeSeason,
+          episode: probeEpisode.episodeNumber,
+          providerIndex: providerIndex,
+        );
+      } catch (e) {
+        debugPrint(
+          'Batch probe failed for provider $providerIndex: $e',
+        );
+      }
+
+      if (probeResult != null && probeResult.url.isNotEmpty) {
+        usedProviderIndex = providerIndex;
+        break;
+      }
+    }
 
     if (probeResult == null || probeResult.url.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Failed to probe first episode. Cannot determine languages.',
+              'Failed to find downloadable stream on any server.',
             ),
           ),
         );
@@ -1658,7 +1688,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       media: media,
       season: singleSeason ?? 1,
       episode: 1,
-      providerIndex: providerIndex,
+      providerIndex: usedProviderIndex ?? 0,
       isAnime: media.mediaType == 'anime',
     );
 
@@ -1674,13 +1704,13 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           : 'sub';
     }
 
-    final usedProviderIndex = langChoice.finalProviderIndex ?? providerIndex;
+    final finalProviderIndex = langChoice.finalProviderIndex ?? usedProviderIndex ?? 0;
 
     // Now queue the actual downloads
     if (singleSeason != null) {
       _downloadSeason(
         media,
-        usedProviderIndex,
+        finalProviderIndex,
         singleSeason,
         langChoice.audioLang,
         langChoice.subtitleLang,
@@ -1690,7 +1720,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     } else {
       _downloadAllSeasons(
         media,
-        usedProviderIndex,
+        finalProviderIndex,
         langChoice.audioLang,
         langChoice.subtitleLang,
         preferredQuality: preferredQuality,
@@ -1842,9 +1872,11 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     final maxProviders = streamingService.totalProvidersFor(isAnime: isAnime);
 
     StreamResult? result;
-    // For Season/All Seasons download, we start at the passed initialProviderIndex and loop from there to try and find a working provider.
-    // Wait, let's just loop from 0 to maxProviders because the user's preferred provider is at index 0.
-    for (int providerIndex = 0; providerIndex < maxProviders; providerIndex++) {
+    final orderedIndices = <int>[
+      initialProviderIndex,
+      ...List.generate(maxProviders, (i) => i).where((i) => i != initialProviderIndex),
+    ];
+    for (final providerIndex in orderedIndices) {
       if (!streamingService.isDownloadable(providerIndex, isAnime: isAnime))
         continue;
 
