@@ -712,7 +712,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           if (mounted) setState(() => _loadingMessage = 'Verifying stream connection...');
           
           final request = http.Request('GET', Uri.parse(result.url));
-          request.headers.addAll(result.headers);
+          // Use the SAME headers (incl. browser User-Agent/Origin) that media_kit
+          // will use for playback. Sending the raw scraper headers here meant the
+          // Dart default User-Agent ("Dart/x (dart:io)") leaked through, which some
+          // CDNs (e.g. NetMirror/net27's hakunaymatata CDN) reject with HTTP 428,
+          // causing a false "dead stream" fallback even though playback would work.
+          request.headers.addAll(_buildPlaybackHeaders(result.headers));
           request.headers['Range'] = 'bytes=0-100'; // Use range request to avoid buffering entire video
           final client = http.Client();
           final streamedResponse = await client.send(request).timeout(const Duration(seconds: 8));

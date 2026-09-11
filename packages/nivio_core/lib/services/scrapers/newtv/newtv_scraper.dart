@@ -10,6 +10,35 @@ class NetMirrorScraperService {
 
   NetMirrorScraperService({this.providerName = 'Nivio'});
 
+  // Per-CDN Referer required to fetch the actual media files. The upstream
+  // (NetMirror / net27) gates its CDNs by Referer and rotates the expected
+  // value via its browser extension's remote profile
+  // (https://net27.cc/api/hh-profile.json). Requests with the wrong Referer
+  // are rejected (HTTP 428), so the playback host must match this map.
+  // Keep these in sync with that profile. The map key is matched as a suffix
+  // of the stream URL's host.
+  static const Map<String, String> _cdnReferers = {
+    'hakunaymatata.com': 'https://moviebox.ph/',
+    'mxcontent.net': 'https://mixdrop.top/',
+    'messycloud.ink': 'https://netmirror.hair/',
+    'juicybits.io': 'https://www.messycloud.ink/',
+  };
+
+  // Fallback Referer for any CDN host not explicitly mapped above. moviebox.ph
+  // is the primary CDN's referer and the most permissive observed default.
+  static const String _defaultReferer = 'https://moviebox.ph/';
+
+  /// Returns the Referer the playback CDN expects for [streamUrl].
+  String _refererForUrl(String streamUrl) {
+    final host = Uri.tryParse(streamUrl)?.host ?? '';
+    for (final entry in _cdnReferers.entries) {
+      if (host == entry.key || host.endsWith('.${entry.key}')) {
+        return entry.value;
+      }
+    }
+    return _defaultReferer;
+  }
+
   final Dio _dio = Dio(
     BaseOptions(
       connectTimeout: const Duration(seconds: 15),
@@ -182,7 +211,7 @@ class NetMirrorScraperService {
         availableAudios: availableAudios,
         selectedAudio: actualAudio,
         isM3U8: sources.first.isM3U8,
-        headers: {'Referer': 'https://videodownloader.site/'},
+        headers: {'Referer': _refererForUrl(sources.first.url)},
         sources: sources,
       );
     } catch (e) {
