@@ -66,6 +66,9 @@ class AnimetsuScraperService {
     return null;
   }
 
+  final Map<String, Future<int?>> _anilistCache = {};
+  final Map<String, Future<dynamic>> _serversCache = {};
+
   Future<StreamResult?> fetchStreamUrl({
     required String tmdbId, // Actually Anilist ID for anime
     required String title,
@@ -82,7 +85,13 @@ class AnimetsuScraperService {
         return null;
       }
 
-      final anilistId = await _resolveAnilistId(tmdbId, title);
+      final cacheKey = '$tmdbId:$title';
+      if (!_anilistCache.containsKey(cacheKey)) {
+        _anilistCache[cacheKey] = _resolveAnilistId(tmdbId, title);
+        Future.delayed(const Duration(minutes: 5), () { _anilistCache.remove(cacheKey); });
+      }
+      final anilistId = await _anilistCache[cacheKey];
+      
       if (anilistId == null) {
         appDebugLog('Animetsu: Missing Anilist ID for $title ($tmdbId)');
         return null;
@@ -114,19 +123,17 @@ class AnimetsuScraperService {
         try {
           if (currentServer == 'anichan' || currentServer == 'animekai' || currentServer == 'animesuge') {
             if (anichanData == null) {
-              final url = 'https://anichan.net/api/watch/servers?anilistId=$anilistId&ep=$episode&category=$category&tier=rest';
-              final response = await _dio.get(
-                url,
-                options: Options(
-                  headers: {
-                    'Referer': 'https://animetsu.site/',
-                    'Origin': 'https://animetsu.site',
-                  },
-                ),
-              );
-              if (response.statusCode == 200 && response.data != null) {
-                anichanData = response.data is String ? jsonDecode(response.data) : response.data;
+              final srvKey = '$anilistId:$episode:$category';
+              if (!_serversCache.containsKey(srvKey)) {
+                final url = 'https://anichan.net/api/watch/servers?anilistId=$anilistId&ep=$episode&category=$category&tier=rest';
+                _serversCache[srvKey] = _dio.get(url, options: Options(headers: {'Referer': 'https://animetsu.site/', 'Origin': 'https://animetsu.site'})).then((response) {
+                  return (response.statusCode == 200 && response.data != null) 
+                      ? (response.data is String ? jsonDecode(response.data) : response.data)
+                      : null;
+                });
+                Future.delayed(const Duration(seconds: 15), () { _serversCache.remove(srvKey); });
               }
+              anichanData = await _serversCache[srvKey];
             }
 
             if (anichanData != null && anichanData['servers'] is List) {

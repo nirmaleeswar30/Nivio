@@ -1,0 +1,34 @@
+name: rqbit_ffi
+description: "Embedded rqbit (librqbit) BitTorrent streaming engine for Nivio, driven from Dart over its localhost HTTP API via a tiny FFI bootstrap."
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.10.0
+  flutter: ">=3.10.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  ffi: ^2.1.0
+  http: ^1.6.0
+  path_provider: ^2.1.5
+  # Keeps the app process (and the FFI engine threads) alive for background
+  # peer connectivity via an Android foreground service.
+  flutter_foreground_task: ^9.1.0
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+
+flutter:
+  # Declared as an FFI plugin. Native libraries (rqbit_ffi.dll / librqbit_ffi.so)
+  # are produced by packages/rqbit_ffi/rust and bundled per-platform by the build
+  # integration (see rust/README build steps). ffiPlugin loads them by name.
+  plugin:
+    platforms:
+      windows:
+        ffiPlugin: true
+      linux:
+        ffiPlugin: true
+      android:
+        ffiPlugin: true

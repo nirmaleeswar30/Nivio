@@ -1,0 +1,43 @@
+# Builds the Rust `rqbit_ffi` cdylib via cargo and bundles the resulting DLL
+# next to the Flutter app so Dart FFI (DynamicLibrary.open('rqbit_ffi.dll'))
+# can load it.
+cmake_minimum_required(VERSION 3.14)
+
+set(PROJECT_NAME "rqbit_ffi")
+project(${PROJECT_NAME} LANGUAGES CXX)
+
+set(rust_manifest "${CMAKE_CURRENT_SOURCE_DIR}/../rust/Cargo.toml")
+
+# Cargo profile for the bundled native lib. Debug builds fast (reuses cached
+# artifacts) and is fine for development; switch to "release" for shipping.
+if(NOT DEFINED RQBIT_CARGO_PROFILE)
+  set(RQBIT_CARGO_PROFILE "debug")
+endif()
+set(rust_out "${CMAKE_CURRENT_SOURCE_DIR}/../rust/target/${RQBIT_CARGO_PROFILE}/rqbit_ffi.dll")
+
+# Locate cargo: on PATH, or the standard rustup bin dir if PATH wasn't updated.
+find_program(CARGO_EXE cargo
+  HINTS "$ENV{USERPROFILE}/.cargo/bin" "$ENV{HOME}/.cargo/bin")
+if(NOT CARGO_EXE)
+  message(FATAL_ERROR
+    "cargo not found. Install Rust (https://rustup.rs) to build rqbit_ffi.")
+endif()
+
+set(cargo_cmd "${CARGO_EXE}" build --manifest-path "${rust_manifest}")
+if(RQBIT_CARGO_PROFILE STREQUAL "release")
+  list(APPEND cargo_cmd --release)
+endif()
+
+add_custom_target(rqbit_ffi_rust ALL
+  COMMAND ${cargo_cmd}
+  BYPRODUCTS "${rust_out}"
+  COMMENT "Building rqbit_ffi (librqbit) via cargo [${RQBIT_CARGO_PROFILE}]"
+  USES_TERMINAL
+  VERBATIM
+)
+
+# Absolute paths to libraries Flutter should bundle with the plugin.
+set(rqbit_ffi_bundled_libraries
+  "${rust_out}"
+  PARENT_SCOPE
+)

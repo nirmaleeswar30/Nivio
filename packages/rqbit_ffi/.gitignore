@@ -1,0 +1,11 @@
+# Rust build cache
+rust/target/
+
+# cargo-ndk output (regenerated at build time)
+android/src/main/jniLibs/
+
+# Dart/Flutter
+.dart_tool/
+.packages
+build/
+pubspec.lock

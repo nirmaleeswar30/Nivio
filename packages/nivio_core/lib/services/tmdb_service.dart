@@ -478,6 +478,52 @@ class TmdbService {
     }
   }
 
+  /// One `/images` call returning both the English logo and a *textless*
+  /// backdrop (no baked-in title text — `iso_639_1 == null`). Used by the hero
+  /// banner, which overlays its own animated title art, so it wants clean art.
+  Future<Map<String, String?>> getMediaLogoAndBackdrop(int id, String mediaType) async {
+    if (mediaType == 'anime') return const {'logo_url': null, 'clean_backdrop': null};
+    try {
+      final response = await _dio.get('/3/$mediaType/$id/images', queryParameters: {
+        'api_key': tmdbApiKey,
+      });
+
+      // Logo (reuse the same rules as getMediaLogo).
+      String? logoUrl;
+      final logos = response.data['logos'] as List<dynamic>?;
+      if (logos != null && logos.isNotEmpty) {
+        final pngLogos = logos.where((logo) {
+          final path = logo['file_path'] as String?;
+          return path != null && path.toLowerCase().endsWith('.png');
+        }).toList();
+        if (pngLogos.isNotEmpty) {
+          final englishLogo = pngLogos.firstWhere(
+            (logo) => logo['iso_639_1'] == 'en',
+            orElse: () => pngLogos.first,
+          );
+          final filePath = englishLogo['file_path'] as String?;
+          if (filePath != null) logoUrl = '$tmdbImageBaseUrl/original$filePath';
+        }
+      }
+
+      // Textless backdrop: prefer language-less art, highest voted.
+      String? cleanBackdrop;
+      final backdrops = response.data['backdrops'] as List<dynamic>?;
+      if (backdrops != null && backdrops.isNotEmpty) {
+        final textless = backdrops.where((b) => b['iso_639_1'] == null).toList();
+        final pool = textless.isNotEmpty ? textless : backdrops;
+        pool.sort((a, b) => ((b['vote_average'] as num?) ?? 0)
+            .compareTo((a['vote_average'] as num?) ?? 0));
+        final filePath = pool.first['file_path'] as String?;
+        if (filePath != null) cleanBackdrop = '$tmdbImageBaseUrl/original$filePath';
+      }
+
+      return {'logo_url': logoUrl, 'clean_backdrop': cleanBackdrop};
+    } catch (e) {
+      return const {'logo_url': null, 'clean_backdrop': null};
+    }
+  }
+
   /// Search for a media item on TMDB by title (with optional year) and fetch its logo
   Future<String?> getLogoByTitle(String title, {String? year}) async {
     try {

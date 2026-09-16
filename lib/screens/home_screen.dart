@@ -693,6 +693,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           final logoUrl = content['logo_url'] as String?;
 
           final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+          // Desktop: use the TMDB-enriched backdrop (high quality; falls back to
+          // the AniList backdrop only when TMDB has none). Mobile: portrait poster.
+          // (Restored from commit b65a017 — the AniList "clean_backdrop" was
+          // taking priority over the higher-quality TMDB backdrop.)
           final backdropPath = isDesktop ? (rawBackdropPath ?? posterPath) : posterPath;
 
           final isInWatchlist = tmdbId != 0

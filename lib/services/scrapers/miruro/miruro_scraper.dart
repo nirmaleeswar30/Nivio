@@ -85,6 +85,8 @@ class MiruroScraperService {
     }
   }
 
+  final Map<String, Future<dynamic>> _episodesCache = {};
+
   Future<StreamResult?> fetchStreamUrl({
     required String tmdbId, // Actually Anilist ID is passed as tmdbId in anime
     required int season,
@@ -96,8 +98,14 @@ class MiruroScraperService {
       final anilistId = int.tryParse(tmdbId);
       if (anilistId == null) return null;
 
-      // 1. Fetch episodes
-      final episodesData = await _pipeRequest('episodes', {'anilistId': anilistId, 'version': '0.2.0'});
+      // 1. Fetch episodes (deduplicated across parallel scrapers)
+      final cacheKey = '$anilistId';
+      if (!_episodesCache.containsKey(cacheKey)) {
+        _episodesCache[cacheKey] = _pipeRequest('episodes', {'anilistId': anilistId, 'version': '0.2.0'});
+        Future.delayed(const Duration(seconds: 10), () { _episodesCache.remove(cacheKey); });
+      }
+      final episodesData = await _episodesCache[cacheKey];
+      
       final providers = episodesData['providers'] as Map<String, dynamic>?;
       if (providers == null) return null;
 

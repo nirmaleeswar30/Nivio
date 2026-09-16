@@ -11,6 +11,8 @@ import 'package:nivio/widgets/watch_party_chat_overlay.dart';
 import 'package:nivio/widgets/watch_party_reactions_overlay.dart';
 import 'package:nivio/widgets/watch_party_participants_sheet.dart';
 import 'gesture_layer.dart';
+import 'package:nivio/widgets/torrent_stats_overlay.dart';
+import 'package:nivio/providers/service_providers.dart';
 
 class CustomPlayerControls extends ConsumerStatefulWidget {
   final Player controller;
@@ -446,6 +448,13 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                               widget.onServerChange?.call();
                             },
                           ),
+                          if (widget.providerName == 'Nivio Torrents')
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8.0),
+                              child: TorrentStatsOverlay(
+                                service: ref.read(torrentStreamServiceProvider),
+                              ),
+                            ),
                           IconButton(
                             icon: const Icon(Icons.settings, color: Colors.white, size: 28),
                             onPressed: () {

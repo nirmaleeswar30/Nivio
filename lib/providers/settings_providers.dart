@@ -362,6 +362,34 @@ class PreferredAnimeSourceNotifier extends StateNotifier<String> {
   }
 }
 
+// Enable Torrents Provider
+final enableTorrentsProvider =
+    StateNotifierProvider<EnableTorrentsNotifier, bool>((ref) {
+  return EnableTorrentsNotifier();
+});
+
+class EnableTorrentsNotifier extends StateNotifier<bool> {
+  EnableTorrentsNotifier() : super(true) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('enable_torrents') ?? true;
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('enable_torrents', state);
+  }
+
+  Future<void> setEnabled(bool enabled) async {
+    state = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('enable_torrents', enabled);
+  }
+}
 // Episode Check Enabled Provider
 final episodeCheckEnabledProvider =
     StateNotifierProvider<EpisodeCheckEnabledNotifier, bool>((ref) {

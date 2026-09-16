@@ -75,8 +75,11 @@ class AnimexScraperService {
     }
   }
 
+  final Map<String, Future<String?>> _slugCache = {};
+  final Map<String, Future<http.Response>> _serversCache = {};
+
   Future<StreamResult?> fetchStreamUrl({
-    required String tmdbId, // Actually Anilist ID
+    required String tmdbId, // Actually Anilist ID is passed as tmdbId in anime
     required int season,
     required int episode,
     required String preferredAudio, // 'english' or 'japanese'
@@ -86,8 +89,14 @@ class AnimexScraperService {
       final anilistId = int.tryParse(tmdbId);
       if (anilistId == null) return null;
 
-      // 1. Get the slug
-      final slug = await _getSlug(anilistId.toString());
+      // 1. Get the slug (deduplicated)
+      final slugKey = '$anilistId';
+      if (!_slugCache.containsKey(slugKey)) {
+        _slugCache[slugKey] = _getSlug(anilistId.toString());
+        Future.delayed(const Duration(minutes: 5), () { _slugCache.remove(slugKey); });
+      }
+      final slug = await _slugCache[slugKey];
+      
       if (slug == null) {
         appDebugLog('Animex: Could not find slug for Anilist ID $anilistId');
         return null;
@@ -95,15 +104,21 @@ class AnimexScraperService {
 
       final type = preferredAudio.toLowerCase().contains('english') || preferredAudio.toLowerCase() == 'dub' ? 'dub' : 'sub';
 
-      // 2. Get the servers
-      final serversRes = await client.get(Uri.parse('$_apiUrl/servers?id=$slug&epNum=$episode'), headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
-        'Origin': _baseUrl,
-        'Referer': '$_baseUrl/',
-        'Accept': '*/*',
-      });
+      // 2. Get the servers (deduplicated)
+      final serversKey = '$slug:$episode';
+      if (!_serversCache.containsKey(serversKey)) {
+        _serversCache[serversKey] = client.get(Uri.parse('$_apiUrl/servers?id=$slug&epNum=$episode'), headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+          'Origin': _baseUrl,
+          'Referer': '$_baseUrl/',
+          'Accept': '*/*',
+        });
+        Future.delayed(const Duration(seconds: 15), () { _serversCache.remove(serversKey); });
+      }
+      
+      final serversRes = await _serversCache[serversKey];
 
-      if (serversRes.statusCode != 200) return null;
+      if (serversRes == null || serversRes.statusCode != 200) return null;
 
       final serversData = jsonDecode(serversRes.body);
       final providersList = (type == 'dub' ? serversData['dubProviders'] : serversData['subProviders']) as List<dynamic>?;
@@ -157,11 +172,17 @@ class AnimexScraperService {
         }
       );
 
-      if (sourcesRes.statusCode != 200) return null;
+      if (sourcesRes.statusCode != 200) {
+        appDebugLog('Animex: /sources returned status ${sourcesRes.statusCode} for $targetProviderId');
+        return null;
+      }
 
       final sourcesData = jsonDecode(sourcesRes.body);
       final sourcesList = sourcesData['sources'] as List<dynamic>?;
-      if (sourcesList == null || sourcesList.isEmpty) return null;
+      if (sourcesList == null || sourcesList.isEmpty) {
+        appDebugLog('Animex: /sources returned empty list for $targetProviderId. Body: ${sourcesRes.body}');
+        return null;
+      }
 
       // Prefer m3u8 if available, but keep DASH since player now supports it
       final List<StreamSource> mappedSources = [];

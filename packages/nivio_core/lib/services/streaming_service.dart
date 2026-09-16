@@ -1,4 +1,5 @@
-import 'package:nivio/services/scrapers/xon/xon_scraper.dart';
+import 'package:flutter/material.dart';
+import 'package:nivio/widgets/torrent_picker_sheet.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/core/debug_log.dart';
@@ -8,9 +9,12 @@ import 'package:nivio/services/scrapers/newtv/newtv_scraper.dart';
 import 'package:nivio/services/scrapers/streamflix/streamflix_scraper.dart';
 import 'package:nivio/services/scrapers/moviebox/moviebox_scraper.dart';
 import 'package:nivio/services/scrapers/castletv/castletv_scraper.dart';
+import 'package:nivio/services/scrapers/vidrock/vidrock_scraper.dart';
 import 'package:nivio/services/tmdb_service.dart';
 import 'package:nivio/services/scrapers/miruro/miruro_scraper.dart';
 import 'package:nivio/services/scrapers/animex/animex_scraper.dart';
+import 'package:nivio/services/torrent/torrent_stream_service.dart';
+import 'package:nivio/services/torrent/torrent_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/providers/settings_providers.dart';
 
@@ -20,10 +24,11 @@ class StreamingService {
   final NetMirrorScraperService netMirrorScraper;
   final MiruroScraperService miruroScraper;
   final AnimexScraperService animexScraper;
-  final XonScraperService xonScraper;
   final StreamFlixScraperService streamFlixScraper;
   final MovieBoxScraperService movieBoxScraper;
   final CastleTvScraperService castleTvScraper;
+  final VidRockScraperService vidRockScraper;
+  final TorrentStreamService torrentStreamService;
   final Ref ref;
 
   StreamingService({
@@ -32,10 +37,11 @@ class StreamingService {
     required this.netMirrorScraper,
     required this.miruroScraper,
     required this.animexScraper,
-    required this.xonScraper,
     required this.streamFlixScraper,
     required this.movieBoxScraper,
     required this.castleTvScraper,
+    required this.vidRockScraper,
+    required this.torrentStreamService,
     required this.ref,
   });
 
@@ -44,6 +50,7 @@ class StreamingService {
     'StreamFlix',
     'MovieBox',
     'CastleTV',
+    'VidRock',
     'VidUp (FAST)',
     'VidLink',
     'VidCore (ACTIVE)',
@@ -54,7 +61,6 @@ class StreamingService {
 
   List<String> _dynamicAnimexServers = ['Animex (Auto)'];
   List<String> _dynamicMiruroServers = ['Miruro (Auto)'];
-  List<String> _dynamicXonServers = ['Xon (Default)'];
 
   Future<void> prepareProviders({
     required SearchResult media,
@@ -66,6 +72,7 @@ class StreamingService {
 
     final tmdbId = media.id.toString();
     
+    appDebugLog('🔧 [FLOW] prepareProviders START (tmdbId=$tmdbId, S${season}E$episode, audio=$subDubPreference)');
     // Fetch dynamically in parallel
     final results = await Future.wait([
       miruroScraper.fetchAvailableServers(tmdbId: tmdbId),
@@ -74,18 +81,14 @@ class StreamingService {
         episode: episode,
         preferredAudio: subDubPreference == 'dub' ? 'english' : 'japanese',
       ),
-      xonScraper.fetchAvailableServers(
-        tmdbId: tmdbId,
-        title: media.title ?? media.name ?? '',
-        season: season,
-        episode: episode,
-        isTv: media.mediaType == 'tv' || isAnimeMedia(media),
-      ),
     ]);
+    appDebugLog('🔧 [FLOW] prepareProviders Future.wait DONE');
 
     final miruroResult = results[0];
     final animexResult = results[1];
-    final xonResult = results[2];
+
+    appDebugLog('🔧 [FLOW] Miruro servers: $miruroResult');
+    appDebugLog('🔧 [FLOW] Animex servers: $animexResult');
 
     if (miruroResult.isNotEmpty) {
       const preferredMiruroOrder = ['zoro', 'gogo', 'pahe', 'marin'];
@@ -119,9 +122,7 @@ class StreamingService {
       });
       _dynamicAnimexServers = animexResult.map((id) => 'Animex ($id)').toList();
     }
-    if (xonResult.isNotEmpty) {
-      _dynamicXonServers = xonResult.map((id) => 'Xon ($id)').toList();
-    }
+    appDebugLog('🔧 [FLOW] prepareProviders END — total providers: ${_animeProviders.length}');
   }
 
   // Dynamic getter for anime providers based on user preference
@@ -130,7 +131,6 @@ class StreamingService {
     
     final miruroServers = _dynamicMiruroServers; 
     final animexServers = _dynamicAnimexServers;
-    final xonServers = _dynamicXonServers;
     final animetsuServers = [
       'Animetsu (Auto)',
       'Animetsu (Koto)',
@@ -142,12 +142,17 @@ class StreamingService {
       'Animetsu (Mega)',
     ];
 
+    // P2P torrent streaming (Hayase-style) is offered first for anime — it
+    // yields the highest-quality releases when peers are available.
+    final torrentEnabled = ref.read(enableTorrentsProvider);
+    final torrent = torrentEnabled ? ['Nivio Torrents'] : <String>[];
+
     if (pref == 'Miruro') {
-      return [...miruroServers, ...xonServers, ...animexServers, ...animetsuServers];
+      return [...torrent, ...miruroServers, ...animexServers, ...animetsuServers];
     } else if (pref == 'Animex') {
-      return [...animexServers, ...xonServers, ...miruroServers, ...animetsuServers];
+      return [...torrent, ...animexServers, ...miruroServers, ...animetsuServers];
     } else { // Animetsu
-      return [...animetsuServers, ...xonServers, ...miruroServers, ...animexServers];
+      return [...torrent, ...animetsuServers, ...miruroServers, ...animexServers];
     }
   }
 
@@ -157,12 +162,14 @@ class StreamingService {
     required SearchResult media,
     int season = 1,
     int episode = 1,
+    int? absoluteEpisode,
     String? preferredQuality,
     int providerIndex = 0,
     bool autoSkipIntro = true,
     String subDubPreference = 'sub',
     String? preferredAudio,
     void Function(String)? onStatusUpdate,
+    BuildContext? context,
   }) async {
     try {
       appDebugLog(
@@ -178,7 +185,57 @@ class StreamingService {
       }
 
       final providerName = providersList[providerIndex];
-      
+
+      // Handle Nivio Torrents (embedded rqbit P2P streaming, anime-first)
+      if (providerName == 'Nivio Torrents') {
+        final resMatch =
+            preferredQuality == null ? null : RegExp(r'\d{3,4}').firstMatch(preferredQuality);
+        final resolution = resMatch?.group(0) ?? '1080';
+
+        TorrentStreamHandle? handle;
+        if (context != null) {
+          // Interactive mode
+          final selection = await TorrentPickerSheet.show(
+            context,
+            media: media,
+            initialEpisode: episode,
+            initialSeason: season,
+            initialAbsoluteEpisode: absoluteEpisode,
+            initialResolution: resolution,
+            torrentStreamService: torrentStreamService,
+            onStatusUpdate: onStatusUpdate,
+          );
+          if (selection != null) {
+            handle = await torrentStreamService.startTorrent(
+              selection.$1,
+              selection.$2,
+              selection.$2.episode,
+              onStatusUpdate,
+            );
+          } else {
+            // User cancelled
+            return null;
+          }
+        } else {
+          // Silent / background mode
+          handle = await torrentStreamService.resolveStream(
+            media: media,
+            episode: episode,
+            season: season,
+            resolution: resolution,
+            onStatus: onStatusUpdate,
+          );
+        }
+
+        if (handle == null) return null;
+        return StreamResult(
+          url: handle.url,
+          quality: handle.resolution != null ? '${handle.resolution}p' : 'Auto',
+          provider: 'Nivio Torrents',
+          headers: const {},
+        );
+      }
+
       // Handle Miruro
       if (providerName.startsWith('Miruro (')) {
         String server = providerName.substring('Miruro ('.length);
@@ -209,28 +266,10 @@ class StreamingService {
           episode: episode,
           preferredAudio: preferredAudio ?? (subDubPreference == 'dub' ? 'english' : 'japanese'),
           providerName: server,
-        );
+        ).timeout(const Duration(seconds: 6), onTimeout: () => null);
         return streamResult;
       }
 
-      // Handle Xon
-      if (providerName.startsWith('Xon (')) {
-        String server = providerName.substring('Xon ('.length);
-        if (server.endsWith(')')) server = server.substring(0, server.length - 1);
-        
-        if (server == 'Default') server = 'Default';
-
-        final streamResult = await xonScraper.fetchStreamUrl(
-          tmdbId: media.id.toString(),
-          title: media.title ?? media.name ?? '',
-          season: season,
-          episode: episode,
-          isTv: media.mediaType == 'tv' || isAnimeMedia(media),
-          server: server,
-          preferredAudio: preferredAudio ?? (subDubPreference == 'dub' ? 'English' : 'Japanese'),
-        );
-        return streamResult;
-      }
 
       // Handle Animetsu
       if (providerName.startsWith('Animetsu')) {
@@ -266,7 +305,7 @@ class StreamingService {
           episode: episode,
           preferredAudio: preferredAudio ?? (subDubPreference == 'dub' ? 'english' : 'japanese'),
           server: server,
-        );
+        ).timeout(const Duration(seconds: 6), onTimeout: () => null);
         return streamResult;
       }
 
@@ -289,7 +328,7 @@ class StreamingService {
           season: season, 
           episode: episode, 
           preferredAudio: audio
-        );
+        ).timeout(const Duration(seconds: 6), onTimeout: () => null);
       }
 
       // Handle StreamFlix
@@ -306,7 +345,7 @@ class StreamingService {
           season: season,
           episode: episode,
           preferredAudio: preferredAudio,
-        );
+        ).timeout(const Duration(seconds: 6), onTimeout: () => null);
       }
 
       // Handle MovieBox
@@ -327,7 +366,7 @@ class StreamingService {
           season: season,
           episode: episode,
           preferredAudio: preferredAudio,
-        );
+        ).timeout(const Duration(seconds: 6), onTimeout: () => null);
       }
 
       // Handle CastleTV
@@ -344,7 +383,24 @@ class StreamingService {
           season: season,
           episode: episode,
           preferredAudio: preferredAudio,
-        );
+        ).timeout(const Duration(seconds: 6), onTimeout: () => null);
+      }
+
+      // Handle VidRock (direct HLS/MP4 via AES-GCM decrypted sources)
+      if (providerName == 'VidRock') {
+        final tmdbId = media.id.toString();
+        final title = media.title ?? media.name ?? '';
+        final type = isAnimeMedia(media) ? 'tv' : media.mediaType;
+        final year = media.releaseDate?.split('-').firstOrNull ?? media.firstAirDate?.split('-').firstOrNull;
+        return await vidRockScraper.fetchStreamUrl(
+          tmdbId: tmdbId,
+          title: title,
+          mediaType: type,
+          year: year,
+          season: season,
+          episode: episode,
+          preferredAudio: preferredAudio,
+        ).timeout(const Duration(seconds: 6), onTimeout: () => null);
       }
 
       // Handle standard 7reels providers
@@ -433,16 +489,17 @@ class StreamingService {
 
   bool isDirectStream(int providerIndex, {required bool isAnime}) {
     final providerName = getProviderName(providerIndex, isAnime: isAnime);
-    if (['Nivio', 'StreamFlix', 'MovieBox', 'CastleTV'].contains(providerName)) return true;
-    if (providerName.startsWith('Animetsu') || providerName.startsWith('Miruro') || providerName.startsWith('Animex') || providerName.startsWith('Xon')) return true;
+    if (providerName == 'Nivio Torrents') return true; // localhost HLS-like stream
+    if (['Nivio', 'StreamFlix', 'MovieBox', 'CastleTV', 'VidRock'].contains(providerName)) return true;
+    if (providerName.startsWith('Animetsu') || providerName.startsWith('Miruro') || providerName.startsWith('Animex')) return true;
     return false; // All other providers use WebView fallback
   }
 
   bool isDownloadable(int providerIndex, {required bool isAnime}) {
     final providerName = getProviderName(providerIndex, isAnime: isAnime);
     // These providers yield raw direct streams which our custom downloader can parse and concatenate
-    if (['Nivio', 'StreamFlix', 'MovieBox', 'CastleTV'].contains(providerName)) return true;
-    if (providerName.startsWith('Animetsu') || providerName.startsWith('Miruro') || providerName.startsWith('Animex') || providerName.startsWith('Xon')) return true;
+    if (['Nivio', 'StreamFlix', 'MovieBox', 'CastleTV', 'VidRock'].contains(providerName)) return true;
+    if (providerName.startsWith('Animetsu') || providerName.startsWith('Miruro') || providerName.startsWith('Animex')) return true;
     
     // Iframe providers cannot be natively downloaded because we don't have the raw stream URL
     return false;

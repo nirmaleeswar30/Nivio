@@ -123,7 +123,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   
   Widget _buildProfileWithSettings(BuildContext context, User user) {
     final isDesktop = MediaQuery.sizeOf(context).width > 800;
-    if (isDesktop && _query.isEmpty) {
+    if (isDesktop) {
       return _buildDesktopLayout(context, user);
     }
     return _buildMobileLayout(context, user);
@@ -377,6 +377,16 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                             title: 'Preferred Anime Source',
                             subtitle: ref.watch(preferredAnimeSourceProvider),
                             onTap: _showPreferredAnimeSourceDialog,
+                          ),
+                        if (_matches('enable torrents p2p streaming'))
+                          _buildSwitchTile(
+                            icon: Icons.cloud_download_rounded,
+                            title: 'Enable Torrent Streaming',
+                            subtitle: 'Allows high quality P2P playback for anime (Nivio Torrents)',
+                            value: ref.watch(enableTorrentsProvider),
+                            onChanged: (value) {
+                              ref.read(enableTorrentsProvider.notifier).setEnabled(value);
+                            },
                           ),
                         if (_matches('anime language audio sub dub subbed dubbed')) ...[
                           _buildActionTile(
@@ -940,6 +950,39 @@ Widget _buildMobileLayout(BuildContext context, User user) {
         ),
       );
     }
+    if (_matches('customize home layout order arrange shelves')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.dashboard_customize_rounded,
+          title: 'Customize Home Layout',
+          subtitle: 'Rearrange the order of shelves on the home screen',
+          onTap: () => _showHomeLayoutDialog(context),
+        ),
+      );
+    }
+    if (_matches('preferred anime source server provider')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.source_rounded,
+          title: 'Preferred Anime Source',
+          subtitle: ref.watch(preferredAnimeSourceProvider),
+          onTap: _showPreferredAnimeSourceDialog,
+        ),
+      );
+    }
+    if (_matches('enable torrents p2p streaming')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.cloud_download_rounded,
+          title: 'Enable Torrent Streaming',
+          subtitle: 'Allows high quality P2P playback for anime (Nivio Torrents)',
+          value: ref.watch(enableTorrentsProvider),
+          onChanged: (value) {
+            ref.read(enableTorrentsProvider.notifier).setEnabled(value);
+          },
+        ),
+      );
+    }
     if (_matches('anime language audio sub dub subbed dubbed')) {
       results.add(
         _buildActionTile(
@@ -1499,7 +1542,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
 
   Future<void> _showPreferredAnimeSourceDialog() async {
     final currentSource = ref.read(preferredAnimeSourceProvider);
-    final sources = ['Miruro', 'Animex', 'Animetsu', 'Xon'];
+    final sources = ['Miruro', 'Animex', 'Animetsu'];
     
     await showModalBottomSheet<void>(
       context: context,
@@ -2817,6 +2860,11 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           ),
           _buildProfileHeader(user),
           const Divider(color: Colors.white12, height: 1),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: _buildSearchField(),
+          ),
+          const Divider(color: Colors.white12, height: 1),
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.symmetric(vertical: 12),
@@ -2866,28 +2914,55 @@ Widget _buildMobileLayout(BuildContext context, User user) {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            _categories[_selectedCategoryIndex],
-            style: const TextStyle(
-              color: NivioTheme.netflixWhite,
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
+          if (_query.isNotEmpty) ...[
+            const Text(
+              'Search Results',
+              style: TextStyle(
+                color: NivioTheme.netflixWhite,
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
-          const SizedBox(height: 24),
-          Expanded(
-            child: PageTransitionSwitcher(
-              duration: const Duration(milliseconds: 300),
-              transitionBuilder: (child, animation, secondaryAnimation) {
-                return FadeThroughTransition(
-                  animation: animation,
-                  secondaryAnimation: secondaryAnimation,
-                  child: child,
-                );
-              },
-              child: _buildDesktopCategoryContent(user, _selectedCategoryIndex),
+            const SizedBox(height: 24),
+            Expanded(
+              child: SingleChildScrollView(
+                child: _buildSearchResultsCard(
+                  user: user,
+                  languagePrefs: ref.watch(languagePreferencesProvider),
+                  playbackSpeed: ref.watch(playbackSpeedProvider),
+                  videoQuality: ref.watch(videoQualityProvider),
+                  preferredAudio: ref.watch(preferredAudioLanguageProvider),
+                  preferredSubtitle: ref.watch(preferredSubtitleLanguageProvider),
+                  episodeCheckEnabled: ref.watch(episodeCheckEnabledProvider),
+                  videoDebanding: ref.watch(videoDebandingProvider),
+                  appAccentKey: ref.watch(appAccentColorProvider),
+                ),
+              ),
             ),
-          ),
+          ] else ...[
+            Text(
+              _categories[_selectedCategoryIndex],
+              style: const TextStyle(
+                color: NivioTheme.netflixWhite,
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Expanded(
+              child: PageTransitionSwitcher(
+                duration: const Duration(milliseconds: 300),
+                transitionBuilder: (child, animation, secondaryAnimation) {
+                  return FadeThroughTransition(
+                    animation: animation,
+                    secondaryAnimation: secondaryAnimation,
+                    child: child,
+                  );
+                },
+                child: _buildDesktopCategoryContent(user, _selectedCategoryIndex),
+              ),
+            ),
+          ]
         ],
       ),
     );
@@ -3085,6 +3160,15 @@ Widget _buildMobileLayout(BuildContext context, User user) {
               title: 'Preferred Anime Source',
               subtitle: ref.watch(preferredAnimeSourceProvider),
               onTap: _showPreferredAnimeSourceDialog,
+            ),
+            _buildSwitchTile(
+              icon: Icons.cloud_download_rounded,
+              title: 'Enable Torrent Streaming',
+              subtitle: 'Allows high quality P2P playback for anime (Nivio Torrents)',
+              value: ref.watch(enableTorrentsProvider),
+              onChanged: (value) {
+                ref.read(enableTorrentsProvider.notifier).setEnabled(value);
+              },
             ),
             _buildActionTile(
               icon: Icons.record_voice_over_rounded,

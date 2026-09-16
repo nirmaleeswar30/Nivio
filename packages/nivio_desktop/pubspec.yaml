@@ -13,6 +13,10 @@ dependencies:
   nivio:
     path: ../nivio_core
 
+  # Embedded rqbit torrent streaming engine (P2P anime)
+  rqbit_ffi:
+    path: ../rqbit_ffi
+
   # Desktop-specific dependencies
   rhttp: ^0.18.0
   window_manager: ^0.3.8

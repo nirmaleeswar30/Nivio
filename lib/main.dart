@@ -40,7 +40,7 @@ import 'package:nivio/screens/profile_screen.dart';
 import 'package:nivio/screens/provider_content_screen.dart';
 import 'package:nivio/screens/main_shell_screen.dart';
 import 'package:nivio/screens/watch_party_screen.dart';
-import 'package:nivio/screens/iptv_screen.dart';
+import 'package:nivio/screens/tv_sports_screen.dart';
 import 'package:nivio/services/watch_party/watch_party_models.dart';
 import 'package:nivio/services/watch_party/watch_party_supabase_config.dart';
 import 'package:nivio/services/download_service.dart';
@@ -318,7 +318,7 @@ final appRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/iptv',
-              builder: (context, state) => const IptvScreen(),
+              builder: (context, state) => const TvSportsScreen(),
             ),
           ],
         ),
@@ -416,6 +416,7 @@ final appRouter = GoRouter(
         final localPath = state.uri.queryParameters['localPath'];
         final directStreamUrl = state.uri.queryParameters['directStreamUrl'];
         final directStreamTitle = state.uri.queryParameters['directStreamTitle'];
+        final directStreamReferer = state.uri.queryParameters['directStreamReferer'];
         final isLive = state.uri.queryParameters['isLive'] == 'true';
         return PlayerScreen(
           mediaId: int.parse(id),
@@ -428,6 +429,7 @@ final appRouter = GoRouter(
           localPath: localPath,
           directStreamUrl: directStreamUrl,
           directStreamTitle: directStreamTitle,
+          directStreamReferer: directStreamReferer,
           isLive: isLive,
         );
       },

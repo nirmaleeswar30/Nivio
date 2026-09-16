@@ -143,12 +143,15 @@ final featuredContentProvider = FutureProvider<List<Map<String, dynamic>>>((ref)
         if (tmdbInfo?['backdrop_path'] != null) 'backdrop_path': tmdbInfo!['backdrop_path'],
         if (tmdbInfo?['poster_path'] != null) 'poster_path': tmdbInfo!['poster_path'],
         if (tmdbInfo?['tmdb_id'] != null) 'tmdb_id': int.tryParse(tmdbInfo!['tmdb_id']!),
+        // AniList banner/cover art carries no title text.
+        'clean_backdrop': item['backdrop_path'],
       };
     } else {
-      final logoUrl = await tmdbService.getMediaLogo(id, mediaType);
+      final images = await tmdbService.getMediaLogoAndBackdrop(id, mediaType);
       return {
         ...item,
-        'logo_url': logoUrl,
+        'logo_url': images['logo_url'],
+        'clean_backdrop': images['clean_backdrop'],
       };
     }
   }));

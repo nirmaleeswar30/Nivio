@@ -1,4 +1,3 @@
-import 'package:nivio/services/scrapers/xon/xon_scraper.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/services/tmdb_service.dart';
 import 'package:nivio/services/scrapers/animetsu/animetsu_scraper.dart';
@@ -12,6 +11,8 @@ import 'package:nivio/services/anilist_service.dart';
 import 'package:nivio/services/scrapers/streamflix/streamflix_scraper.dart';
 import 'package:nivio/services/scrapers/moviebox/moviebox_scraper.dart';
 import 'package:nivio/services/scrapers/castletv/castletv_scraper.dart';
+import 'package:nivio/services/scrapers/vidrock/vidrock_scraper.dart';
+import 'package:nivio/services/torrent/torrent_stream_service.dart';
 
 // Cache service provider
 final cacheServiceProvider = Provider((ref) {
@@ -41,21 +42,23 @@ final animexScraperProvider = Provider<AnimexScraperService>((ref) {
   return AnimexScraperService();
 });
 
-final xonScraperProvider = Provider<XonScraperService>((ref) {
-  return XonScraperService();
-});
-
 final streamingServiceProvider = Provider<StreamingService>((ref) => StreamingService(
   tmdbService: ref.read(tmdbServiceProvider),
   animetsuScraper: ref.read(animetsuScraperProvider),
   netMirrorScraper: ref.read(netMirrorScraperProvider),
   miruroScraper: ref.read(miruroScraperProvider),
   animexScraper: ref.read(animexScraperProvider),
-  xonScraper: ref.read(xonScraperProvider),
   streamFlixScraper: ref.read(streamFlixScraperProvider),
   movieBoxScraper: ref.read(movieBoxScraperProvider),
   castleTvScraper: ref.read(castleTvScraperProvider),
+  vidRockScraper: ref.read(vidRockScraperProvider),
+  torrentStreamService: ref.read(torrentStreamServiceProvider),
   ref: ref,
 ));
+
+// Embedded rqbit torrent streaming (P2P anime, Hayase-style). Single instance
+// so the engine and active torrent are shared across the app.
+final torrentStreamServiceProvider =
+    Provider<TorrentStreamService>((ref) => TorrentStreamService());
 
 final watchHistoryServiceProvider = Provider((ref) => WatchHistoryService());

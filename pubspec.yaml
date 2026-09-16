@@ -54,6 +54,10 @@ dependencies:
   media_kit: ^1.1.10
   media_kit_video: ^1.2.4
   media_kit_libs_video: ^1.0.7
+
+  # Embedded rqbit BitTorrent streaming engine (P2P anime, Hayase-style)
+  rqbit_ffi:
+    path: packages/rqbit_ffi
   shorebird_code_push: ^2.0.5
 
   supabase_flutter: ^2.8.0
@@ -71,7 +75,7 @@ dependencies:
   simple_pip_mode: ^1.1.0
   share_plus: ^13.2.0
   cronet_http: ^1.9.0
-  file_picker: ^12.0.0-beta.7
+  file_picker: 12.0.0-beta.7  # pinned: app code targets this API (pickFiles -> FilePickerResult)
   silky_scroll: ^2.6.4
   animations: ^2.2.0
   image: any

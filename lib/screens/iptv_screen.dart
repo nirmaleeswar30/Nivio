@@ -10,7 +10,10 @@ import '../services/iptv_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class IptvScreen extends ConsumerStatefulWidget {
-  const IptvScreen({super.key});
+  /// When embedded inside the TV/Sports tab, skip the outer Scaffold and the
+  /// top safe-area padding (the host provides both).
+  final bool embedded;
+  const IptvScreen({super.key, this.embedded = false});
 
   @override
   ConsumerState<IptvScreen> createState() => _IptvScreenState();
@@ -243,37 +246,41 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
   Widget build(BuildContext context) {
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
 
-    return Scaffold(
-      backgroundColor: NivioTheme.netflixBlack,
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF151922), NivioTheme.netflixBlack],
-          ),
-        ),
-        child: SafeArea(
-          child: _isLoading 
-              ? const Center(child: CircularProgressIndicator())
-              : _channels.isEmpty 
-                  ? Center(
-                      child: SingleChildScrollView(
-                        padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 24, 24, 24, 24),
-                        child: Container(
-                          constraints: const BoxConstraints(maxWidth: 500),
-                          child: _buildEmptyState(),
-                        ),
-                      ),
-                    )
-                  : Center(
-                      child: Container(
-                        constraints: const BoxConstraints(maxWidth: 850),
-                        child: _buildPopulatedState(isDesktop),
-                      ),
-                    ),
+    final body = Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF151922), NivioTheme.netflixBlack],
         ),
       ),
+      child: SafeArea(
+        top: !widget.embedded,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _channels.isEmpty
+                ? Center(
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 24, 24, 24, 24),
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 500),
+                        child: _buildEmptyState(),
+                      ),
+                    ),
+                  )
+                : Center(
+                    child: Container(
+                      constraints: const BoxConstraints(maxWidth: 850),
+                      child: _buildPopulatedState(isDesktop),
+                    ),
+                  ),
+      ),
+    );
+
+    if (widget.embedded) return body;
+    return Scaffold(
+      backgroundColor: NivioTheme.netflixBlack,
+      body: body,
     );
   }
 
@@ -392,23 +399,51 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
           ],
         ),
         const SizedBox(height: 24),
-        OutlinedButton.icon(
-          onPressed: () {
-            _urlController.text = 'https://iptv-org.github.io/iptv/index.m3u';
-            _fetchPlaylist(_urlController.text);
-          },
-          icon: const PhosphorIcon(PhosphorIconsRegular.globe, size: 20),
-          label: const Text('Load Free Public Channels (iptv-org)'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.white,
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Free channel catalogs',
+            style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.3),
           ),
         ),
+        const SizedBox(height: 10),
+        ..._curatedSources.map((s) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _quickAddButton(s),
+            )),
       ],
+    );
+  }
+
+  // Curated free, direct-m3u8 catalogs users can load in one tap.
+  static const List<Map<String, String>> _curatedSources = [
+    {'label': 'Pluto TV (US)', 'name': 'Pluto TV', 'url': 'https://i.mjh.nz/PlutoTV/us.m3u8'},
+    {'label': 'Samsung TV Plus (US)', 'name': 'Samsung TV Plus', 'url': 'https://i.mjh.nz/SamsungTVPlus/us.m3u8'},
+    {'label': 'Plex Live TV', 'name': 'Plex', 'url': 'https://i.mjh.nz/Plex/all.m3u8'},
+    {'label': 'All Free Channels (iptv-org)', 'name': 'iptv-org', 'url': 'https://iptv-org.github.io/iptv/index.m3u'},
+  ];
+
+  Widget _quickAddButton(Map<String, String> source) {
+    return OutlinedButton.icon(
+      onPressed: () {
+        _urlController.text = source['url']!;
+        _fetchPlaylist(source['url']!, name: source['name'] ?? 'Channels');
+      },
+      icon: const PhosphorIcon(PhosphorIconsRegular.globe, size: 20),
+      label: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(source['label']!),
+      ),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.white,
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+        minimumSize: const Size(double.infinity, 52),
+        alignment: Alignment.centerLeft,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
     );
   }
 

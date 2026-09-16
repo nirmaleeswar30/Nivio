@@ -43,6 +43,7 @@ import 'package:nivio/services/theintrodb_service.dart';
 import 'package:nivio/services/skip_times_models.dart';
 import 'package:nivio/providers/player_active_provider.dart';
 import 'package:nivio/providers/mini_player_provider.dart';
+import 'package:nivio/services/torrent/torrent_stream_service.dart';
 import 'dart:math' as math;
 
 class PlayerScreen extends ConsumerStatefulWidget {
@@ -57,6 +58,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final String? directStreamUrl;
   final String? directStreamTitle;
   final bool isLive;
+  // Optional Referer for gated direct streams (e.g. live sports CDNs).
+  final String? directStreamReferer;
 
   const PlayerScreen({
     super.key,
@@ -71,6 +74,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.directStreamUrl,
     this.directStreamTitle,
     this.isLive = false,
+    this.directStreamReferer,
   });
 
   @override
@@ -82,6 +86,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   WatchHistoryService? _cachedHistoryService;
   SearchResult? _cachedMedia;
   StateController<bool>? _cachedPlayerActiveNotifier;
+  TorrentStreamService? _cachedTorrentService;
 
   Future<void> _loadSubtitleDelay() async {
     final prefs = await SharedPreferences.getInstance();
@@ -153,6 +158,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Timer? _nextEpisodeTimer;
   int? _nextEpisodeCountdown;
   final Map<int, StreamResult> _prefetchedStreams = {};
+  Map<int, Future<StreamResult?>>? _runningFetchers;
   bool _isPrefetching = false;
   bool _isDirectStream = false;
   List<SkipTime> _skipTimes = [];
@@ -246,6 +252,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _cachedHistoryService = ref.read(watchHistoryServiceProvider);
     _cachedMedia = ref.read(selectedMediaProvider);
     _cachedPlayerActiveNotifier = ref.read(isPlayerActiveProvider.notifier);
+    _cachedTorrentService = ref.read(torrentStreamServiceProvider);
     final cachedActiveNotifier = _cachedPlayerActiveNotifier;
 
     // Signal to the rest of the app that the player is active
@@ -548,15 +555,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       
       if (media != null) {
         setState(() => _currentProvider = 'Preparing servers...');
+        appDebugLog('⏳ [FLOW] _initializePlayer: calling prepareProviders...');
         await streamingService.prepareProviders(
           media: media,
           season: widget.season,
           episode: _currentEpisode,
           subDubPreference: subDubPref,
         );
+        appDebugLog('✅ [FLOW] _initializePlayer: prepareProviders done, _maxProviders=$_maxProviders');
         
         if (_maxProviders > 0 && _currentProviderIndex >= _maxProviders) {
           _currentProviderIndex = 0;
+          _runningFetchers = null;
         }
       }
 
@@ -612,10 +622,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         result = StreamResult(
           url: widget.directStreamUrl!,
           quality: 'Live',
-          provider: 'IPTV',
+          provider: widget.directStreamReferer != null ? 'Sports' : 'IPTV',
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': '*/*',
+            if (widget.directStreamReferer != null && widget.directStreamReferer!.isNotEmpty)
+              'Referer': widget.directStreamReferer!,
           },
           isM3U8: isHls,
         );
@@ -646,20 +658,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         String? targetAudio = _selectedAudioOverride ?? _currentHistory?.preferredAudioTrack ?? ref.read(preferredAudioLanguageProvider);
         if (targetAudio == 'Original') targetAudio = null;
 
-        result = await streamingService.fetchStreamUrl(
-          media: media!,
-          season: widget.season,
-          episode: _currentEpisode,
-          preferredQuality: preferredQuality,
-          providerIndex: _currentProviderIndex,
-          subDubPreference: subDubPref,
-          preferredAudio: targetAudio,
-          onStatusUpdate: (msg) {
-            if (mounted) {
-              setState(() => _loadingMessage = msg);
-            }
-          },
-        );
+        if (_runningFetchers == null) {
+          appDebugLog('🚀 [FLOW] Launching fetchers starting from provider index $_currentProviderIndex');
+          _runningFetchers = {};
+          // Fire all remaining providers in parallel to eliminate sequential fallback latency!
+          for (int i = _currentProviderIndex; i < _maxProviders; i++) {
+            appDebugLog('🚀 [FLOW] Launching fetcher for provider index $i');
+            _runningFetchers![i] = streamingService.fetchStreamUrl(
+              media: media!,
+              season: widget.season,
+              episode: _currentEpisode,
+              preferredQuality: preferredQuality,
+              providerIndex: i,
+              subDubPreference: subDubPref,
+              preferredAudio: targetAudio,
+              context: context,
+              onStatusUpdate: (msg) {
+                if (mounted && _currentProviderIndex == i) {
+                  setState(() => _loadingMessage = msg);
+                }
+              },
+            );
+          }
+        }
+
+        appDebugLog('⏳ [FLOW] Awaiting _runningFetchers for _currentProviderIndex = $_currentProviderIndex');
+        result = await _runningFetchers![_currentProviderIndex];
+        appDebugLog('✅ [FLOW] _runningFetchers[$_currentProviderIndex] returned: ${result != null ? result.provider : 'null'}');
       }
 
       final res = result;
@@ -706,49 +731,100 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               isAnime: _isAnimeMedia(media),
             );
 
-      // Pre-verify the stream URL if it's a direct stream to instantly fallback without player errors
-      if (_isDirectStream && result.url.startsWith('http')) {
-        try {
-          if (mounted) setState(() => _loadingMessage = 'Verifying stream connection...');
-          
-          final request = http.Request('GET', Uri.parse(result.url));
-          // Use the SAME headers (incl. browser User-Agent/Origin) that media_kit
-          // will use for playback. Sending the raw scraper headers here meant the
-          // Dart default User-Agent ("Dart/x (dart:io)") leaked through, which some
-          // CDNs (e.g. NetMirror/net27's hakunaymatata CDN) reject with HTTP 428,
-          // causing a false "dead stream" fallback even though playback would work.
-          request.headers.addAll(_buildPlaybackHeaders(result.headers));
-          request.headers['Range'] = 'bytes=0-100'; // Use range request to avoid buffering entire video
-          final client = http.Client();
-          final streamedResponse = await client.send(request).timeout(const Duration(seconds: 8));
-          final status = streamedResponse.statusCode;
-          client.close(); // Abort immediately to prevent downloading the video file
+      // Pre-verify the stream URL if it's a direct stream to instantly fallback without player errors.
+      // Providers can expose several sources (e.g. VidRock's Nova/Luna/Orion servers). Verify each
+      // in turn and promote the first reachable one BEFORE giving up on the whole provider — a single
+      // dead server should not send us to the next (often embed) provider while good ones remain.
+      //
+      // Torrent streams ("Nivio Torrents") are exempt: the localhost rqbit URL is
+      // never "dead", but its stream endpoint blocks until the first pieces are
+      // fetched from peers — a short HTTP probe would time out and wrongly skip
+      // the provider. media_kit/mpv buffers the stream natively instead.
+      final isTorrentStream = result.provider == 'Nivio Torrents';
+      if (_isDirectStream && result.url.startsWith('http') && !isTorrentStream) {
+        if (mounted) setState(() => _loadingMessage = 'Verifying stream connection...');
 
-          if (status >= 400) {
-            appDebugLog('❌ Stream pre-verification failed with status: $status');
-            if (_currentProviderIndex < _maxProviders - 1) {
-              _currentProviderIndex++;
-              setState(() => _error = 'Stream returned $status, trying next...');
-              await Future.delayed(const Duration(milliseconds: 500));
-              _initializePlayer(isRetry: true);
-              return;
-            } else {
-              throw Exception('Stream link is dead (HTTP $status)');
+        // Use the SAME headers (incl. browser User-Agent/Origin) that media_kit will use for
+        // playback. Sending the raw scraper headers here meant the Dart default User-Agent
+        // ("Dart/x (dart:io)") leaked through, which some CDNs (e.g. NetMirror/net27's
+        // hakunaymatata CDN) reject with HTTP 428, causing a false "dead stream" fallback.
+        final headers = _buildPlaybackHeaders(result.headers);
+
+        // Candidate sources: primary first, then any distinct alternates.
+        final candidates = <StreamSource>[
+          StreamSource(url: result.url, quality: result.quality, isM3U8: result.isM3U8),
+        ];
+        final seen = <String>{result.url};
+        for (final s in result.sources) {
+          if (s.url.startsWith('http') && seen.add(s.url)) candidates.add(s);
+        }
+
+        StreamSource? working;
+        int? lastStatus;
+        
+        // Fire all candidate verifications simultaneously to prevent 10-15s sequential timeout delays!
+        appDebugLog('⏳ [FLOW] Starting parallel stream verification for ${candidates.length} candidates from ${result.provider}');
+        final checkFutures = candidates.map((cand) async {
+          try {
+            appDebugLog('🔍 [FLOW] Verifying candidate: ${cand.quality} (${cand.url})');
+            final request = http.Request('GET', Uri.parse(cand.url));
+            request.headers.addAll(headers);
+            request.headers['Range'] = 'bytes=0-100'; // range request avoids buffering the whole video
+            final client = http.Client();
+            
+            final streamedResponse = await client.send(request).timeout(const Duration(milliseconds: 2500));
+            final status = streamedResponse.statusCode;
+            client.close(); // Abort immediately to prevent downloading the video file
+            
+            if (status < 400) {
+              appDebugLog('✅ Stream pre-verification passed (${cand.quality}) with status: $status');
+              return {'cand': cand, 'status': status};
             }
-          } else {
-             appDebugLog('✅ Stream pre-verification passed with status: $status');
+            appDebugLog('⚠️ Source "${cand.quality}" returned $status');
+            return {'status': status};
+          } catch (e) {
+            appDebugLog('⚠️ Source "${cand.quality}" error: $e');
+            return null;
           }
-        } catch (e) {
-          appDebugLog('❌ Stream pre-verification error: $e');
+        }).toList();
+
+        final resultsList = await Future.wait(checkFutures);
+        
+        // Find the first working one, strictly respecting original order (primary first, then alternates)
+        for (int i = 0; i < candidates.length; i++) {
+          final res = resultsList[i];
+          if (res != null) {
+            if (res['status'] != null) lastStatus = res['status'] as int;
+            if (res['cand'] != null) {
+              working = res['cand'] as StreamSource;
+              break;
+            }
+          }
+        }
+
+        if (working == null) {
+          appDebugLog('❌ All ${candidates.length} source(s) failed for ${result.provider}');
           if (_currentProviderIndex < _maxProviders - 1) {
             _currentProviderIndex++;
-            setState(() => _error = 'Stream unreachable, trying next provider...');
-            await Future.delayed(const Duration(milliseconds: 300));
+            setState(() => _error = lastStatus != null
+                ? 'Stream returned $lastStatus, trying next...'
+                : 'Stream unreachable, trying next provider...');
+            await Future.delayed(const Duration(milliseconds: 400));
             _initializePlayer(isRetry: true);
             return;
           } else {
-            throw Exception('Stream verification failed: $e');
+            throw Exception('Stream link is dead${lastStatus != null ? ' (HTTP $lastStatus)' : ''}');
           }
+        }
+
+        // Promote the reachable source as primary if it wasn't already.
+        if (working.url != result.url) {
+          appDebugLog('🔁 Promoting reachable source "${working.quality}" as primary');
+          result = result.copyWith(
+            url: working.url,
+            quality: working.quality,
+            isM3U8: working.isM3U8,
+          );
         }
       }
       
@@ -767,6 +843,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _updateWatchPartyHostSyncTimer();
         _startProgressTracking();
         _maybeAutoEnterFullscreenOnce();
+        appDebugLog('✅ [FLOW] WebView player loaded!');
         return;
       }
 
@@ -829,6 +906,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         targetUrl = 'file://$targetUrl';
       }
 
+      appDebugLog('✅ [FLOW] Direct player loaded! Starting playback...');
+      // Start playback
       await _player.open(
         Media(
           targetUrl,
@@ -2007,6 +2086,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _error = null;
       _retryCount = 0;
       _streamResult = null;
+      _runningFetchers = null;
       _nativePosition = Duration.zero;
       _nativeDuration = Duration.zero;
       _skipTimes = [];
@@ -2069,6 +2149,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _error = null;
       _retryCount = 0;
       _streamResult = null;
+      _runningFetchers = null;
     });
 
     ref.read(watchHistoryServiceProvider).saveTrackPreferences(widget.mediaId, providerIndex: providerIndex);
@@ -2653,9 +2734,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } else if (providerName.startsWith('Animex (')) {
       providerName = providerName.substring('Animex ('.length);
       if (providerName.endsWith(')')) providerName = providerName.substring(0, providerName.length - 1);
-    } else if (providerName.startsWith('Xon (')) {
-      providerName = providerName.substring('Xon ('.length);
-      if (providerName.endsWith(')')) providerName = providerName.substring(0, providerName.length - 1);
     }
     
     return Padding(
@@ -2693,7 +2771,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (name.startsWith('Animetsu')) groupName = 'Animetsu';
         else if (name.startsWith('Miruro')) groupName = 'Miruro';
         else if (name.startsWith('Animex')) groupName = 'Animex';
-        else if (name.startsWith('Xon')) groupName = 'Xon';
         
         groups.putIfAbsent(groupName, () => []).add(i);
       }
@@ -2848,6 +2925,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       debugPrint('🔴 [DISPOSE] Step 2: ✅ done');
     } catch (e, st) {
       debugPrint('🔴 [DISPOSE] Step 2: ❌ FAILED — $e\n$st');
+    }
+
+    // Release the active torrent unless playback continues in the mini-player.
+    if (!_transferredToMiniPlayer) {
+      try {
+        unawaited(_cachedTorrentService?.stopActive() ?? Future.value());
+      } catch (_) {}
     }
 
     if (Platform.isAndroid) {
@@ -4076,11 +4160,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           child: SizedBox.expand(
             child: Stack(
               children: [
-                _useNativePlayer 
+                _useNativePlayer
                     ? _buildNativePlayer(isPipMode: isPipMode)
-                    : (!_isDirectStream && _streamResult != null) 
-                        ? _buildWebViewPlayer() 
+                    : (!_isDirectStream && _streamResult != null)
+                        ? _buildWebViewPlayer()
                         : _buildVideoPlayer(isPipMode: isPipMode),
+
                 // Skip Intro button
                 if (_isInIntroSegment && !isPipMode)
                   Positioned(
@@ -4785,6 +4870,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     _retryCount = 0;
                     _currentProviderIndex = 0;
                     _streamResult = null;
+                    _runningFetchers = null;
                   });
                   _initializePlayer();
                 },

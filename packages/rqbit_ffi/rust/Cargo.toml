@@ -1,0 +1,28 @@
+[package]
+name = "rqbit_ffi"
+version = "0.1.0"
+edition = "2021"
+description = "Thin C-ABI wrapper around librqbit that boots its HTTP API on localhost, for use from Dart FFI in Nivio."
+license = "Apache-2.0"
+
+[lib]
+name = "rqbit_ffi"
+# cdylib -> the shared library Dart FFI loads (.dll/.so).
+# rlib   -> lets the example bin (and unit tests) call the wrapper directly.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Use rustls (rust-tls) instead of the default native-tls so Android/Linux
+# cross-compiles don't need OpenSSL. http-api pulls axum + the streaming server.
+librqbit = { version = "9.0.1", default-features = false, features = ["http-api", "tracing-subscriber-utils", "rust-tls"] }
+librqbit-dualstack-sockets = { version = "0.7", features = ["axum"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+tokio-util = "0.7"
+anyhow = "1"
+
+[profile.release]
+# Optimized but with reasonable build times (LTO + single codegen-unit are
+# dropped: they roughly triple compile time for marginal size/perf gains on a
+# bundled engine). strip keeps the shared libs small.
+opt-level = 2
+strip = true

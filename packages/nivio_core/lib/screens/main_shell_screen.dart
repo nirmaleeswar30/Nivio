@@ -215,7 +215,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
                   index: 2,
                   icon: PhosphorIconsRegular.television,
                   activeIcon: PhosphorIconsFill.television,
-                  label: 'Live TV',
+                  label: 'TV/Sports',
                   isActive: widget.navigationShell.currentIndex == 2 &&
                       !location.startsWith('/search') &&
                       !location.startsWith('/profile'),

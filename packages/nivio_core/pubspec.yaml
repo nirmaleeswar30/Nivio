@@ -40,6 +40,10 @@ dependencies:
   ffmpeg_kit_flutter_new: ^4.2.1
   wakelock_plus: ^1.2.8
 
+  # Embedded rqbit BitTorrent streaming engine (P2P anime, Hayase-style)
+  rqbit_ffi:
+    path: ../rqbit_ffi
+
   # UI, Images & Animations
   cached_network_image: ^3.4.1
   go_router: ^17.3.0
@@ -51,6 +55,7 @@ dependencies:
 
   # Utilities
   intl: ^0.20.2
+  pointycastle: ^4.0.0  # AES-GCM for VidRock source decryption
   freezed_annotation: ^2.4.4
   url_launcher: ^6.3.1
   package_info_plus: ^10.2.0
@@ -58,7 +63,7 @@ dependencies:
   flutter_dotenv: ^6.0.0
   permission_handler: ^12.0.3
   flutter_cache_manager: any
-  file_picker: ^12.0.0-beta.7
+  file_picker: 12.0.0-beta.7  # pinned: app code targets this API
   share_plus: ^13.2.0
   shorebird_code_push: ^2.0.5
   window_manager: ^0.3.9
