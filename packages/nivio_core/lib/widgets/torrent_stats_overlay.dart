@@ -58,7 +58,7 @@ class _TorrentStatsOverlayState extends State<TorrentStatsOverlay> {
     final isBuffering = s.state != 'live' || (peers == 0 && !s.finished);
 
     return Material(
-      color: Colors.white24,
+      color: Colors.transparent,
       borderRadius: BorderRadius.circular(4),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -67,25 +67,25 @@ class _TorrentStatsOverlayState extends State<TorrentStatsOverlay> {
           children: [
             Icon(
               isBuffering ? Icons.hourglass_top_rounded : Icons.bolt_rounded,
-              size: 14,
+              size: 18,
               color: isBuffering ? Colors.amberAccent : Colors.tealAccent,
             ),
             const SizedBox(width: 6),
             Text(
               '${speed.toStringAsFixed(1)} MB/s',
-              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+              style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
             ),
             _dot(),
-            Icon(Icons.people_alt_rounded, size: 14, color: Colors.white),
+            Icon(Icons.people_alt_rounded, size: 18, color: Colors.white),
             const SizedBox(width: 4),
             Text(
               connecting > 0 ? '$peers (+$connecting)' : '$peers',
-              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+              style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
             ),
             _dot(),
             Text(
               '${pct.toStringAsFixed(0)}%',
-              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+              style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
             ),
           ],
         ),

@@ -14,7 +14,6 @@ import 'package:nivio/services/tmdb_service.dart';
 import 'package:nivio/services/scrapers/miruro/miruro_scraper.dart';
 import 'package:nivio/services/scrapers/animex/animex_scraper.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
-import 'package:nivio/services/torrent/torrent_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/providers/settings_providers.dart';
 

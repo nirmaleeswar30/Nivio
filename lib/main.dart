@@ -46,6 +46,7 @@ import 'package:nivio/services/watch_party/watch_party_supabase_config.dart';
 import 'package:nivio/services/download_service.dart';
 import 'package:nivio/services/hls_proxy_service.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:nivio/widgets/title_bar_overlay.dart';
 
 import 'package:flutter_inappwebview_linux/flutter_inappwebview_linux.dart';
 import 'package:window_manager/window_manager.dart';
@@ -474,6 +475,7 @@ class _NivioAppState extends ConsumerState<NivioApp> {
             children: [
               child ?? const SizedBox.shrink(),
               const MiniPlayerOverlay(),
+              const TitleBarOverlay(),
             ],
           ),
         );

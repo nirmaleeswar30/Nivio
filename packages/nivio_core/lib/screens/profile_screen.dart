@@ -19,6 +19,7 @@ import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
 import 'package:nivio/providers/changelog_provider.dart';
 import 'package:nivio/providers/home_layout_provider.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/github_release_update_service.dart';
 import 'package:nivio/services/api_status_service.dart';
@@ -42,6 +43,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     'Profile & Activity',
     'Playback',
     'Subtitle Appearance',
+    'Torrents',
     'Downloads',
     'Content Feed',
     'Episode Alerts',
@@ -328,6 +330,55 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
                   child: _buildSectionCard(
+                    title: 'Torrents',
+                    child: Column(
+                      children: [
+                        if (_matches('enable torrents p2p streaming'))
+                          _buildSwitchTile(
+                            icon: Icons.cloud_download_rounded,
+                            title: 'Enable Torrent Streaming',
+                            subtitle: 'Allows high quality P2P playback for anime (Nivio Torrents)',
+                            value: ref.watch(enableTorrentsProvider),
+                            onChanged: (value) {
+                              ref.read(enableTorrentsProvider.notifier).setEnabled(value);
+                            },
+                          ),
+                        if (_matches('torrent download location directory path folder'))
+                          _buildActionTile(
+                            icon: Icons.folder_rounded,
+                            title: 'Download Directory',
+                            subtitle: ref.watch(torrentDownloadLocationProvider) ?? 'Default Temporary Directory',
+                            onTap: _pickTorrentDownloadLocation,
+                          ),
+                        if (_matches('torrent auto select file index automatic'))
+                          _buildSwitchTile(
+                            icon: Icons.auto_mode_rounded,
+                            title: 'Auto-Select Episode File',
+                            subtitle: 'Automatically select correct file inside batch torrents',
+                            value: ref.watch(torrentAutoSelectProvider),
+                            onChanged: (val) {
+                              ref.read(torrentAutoSelectProvider.notifier).setEnabled(val);
+                            },
+                          ),
+                        if (_matches('torrent persist files keep disk remove'))
+                          _buildSwitchTile(
+                            icon: Icons.save_rounded,
+                            title: 'Persist Torrent Files',
+                            subtitle: 'Keep files on disk after stopping playback',
+                            value: ref.watch(torrentPersistFilesProvider),
+                            onChanged: (val) {
+                              ref.read(torrentPersistFilesProvider.notifier).setEnabled(val);
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                  child: _buildSectionCard(
                     title: 'Downloads',
                     child: Column(
                       children: [
@@ -378,16 +429,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                             subtitle: ref.watch(preferredAnimeSourceProvider),
                             onTap: _showPreferredAnimeSourceDialog,
                           ),
-                        if (_matches('enable torrents p2p streaming'))
-                          _buildSwitchTile(
-                            icon: Icons.cloud_download_rounded,
-                            title: 'Enable Torrent Streaming',
-                            subtitle: 'Allows high quality P2P playback for anime (Nivio Torrents)',
-                            value: ref.watch(enableTorrentsProvider),
-                            onChanged: (value) {
-                              ref.read(enableTorrentsProvider.notifier).setEnabled(value);
-                            },
-                          ),
+
                         if (_matches('anime language audio sub dub subbed dubbed')) ...[
                           _buildActionTile(
                             icon: Icons.record_voice_over_rounded,
@@ -1831,6 +1873,15 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     );
   }
 
+  Future<void> _pickTorrentDownloadLocation() async {
+    final String? directoryPath = await FilePicker.getDirectoryPath(
+      dialogTitle: 'Select Torrent Download Directory',
+    );
+    if (directoryPath != null) {
+      ref.read(torrentDownloadLocationProvider.notifier).setLocation(directoryPath);
+    }
+  }
+
   Future<void> _showClearHistoryDialog() async {
     final shouldClear = await showDialog<bool>(
       context: context,
@@ -3123,7 +3174,45 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
           ],
         );
-      case 3: // Downloads
+      case 3: // Torrents
+        return Column(
+          children: [
+            _buildSwitchTile(
+              icon: Icons.cloud_download_rounded,
+              title: 'Enable Torrent Streaming',
+              subtitle: 'Allows high quality P2P playback for anime (Nivio Torrents)',
+              value: ref.watch(enableTorrentsProvider),
+              onChanged: (value) {
+                ref.read(enableTorrentsProvider.notifier).setEnabled(value);
+              },
+            ),
+            _buildActionTile(
+              icon: Icons.folder_rounded,
+              title: 'Download Directory',
+              subtitle: ref.watch(torrentDownloadLocationProvider) ?? 'Default Temporary Directory',
+              onTap: _pickTorrentDownloadLocation,
+            ),
+            _buildSwitchTile(
+              icon: Icons.auto_mode_rounded,
+              title: 'Auto-Select Episode File',
+              subtitle: 'Automatically select correct file inside batch torrents',
+              value: ref.watch(torrentAutoSelectProvider),
+              onChanged: (val) {
+                ref.read(torrentAutoSelectProvider.notifier).setEnabled(val);
+              },
+            ),
+            _buildSwitchTile(
+              icon: Icons.save_rounded,
+              title: 'Persist Torrent Files',
+              subtitle: 'Keep files on disk after stopping playback',
+              value: ref.watch(torrentPersistFilesProvider),
+              onChanged: (val) {
+                ref.read(torrentPersistFilesProvider.notifier).setEnabled(val);
+              },
+            ),
+          ],
+        );
+      case 4: // Downloads
         return Column(
           children: [
             _buildActionTile(
@@ -3146,7 +3235,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
           ],
         );
-      case 4: // Content Feed
+      case 5: // Content Feed
         return Column(
           children: [
             _buildActionTile(
@@ -3161,15 +3250,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
               subtitle: ref.watch(preferredAnimeSourceProvider),
               onTap: _showPreferredAnimeSourceDialog,
             ),
-            _buildSwitchTile(
-              icon: Icons.cloud_download_rounded,
-              title: 'Enable Torrent Streaming',
-              subtitle: 'Allows high quality P2P playback for anime (Nivio Torrents)',
-              value: ref.watch(enableTorrentsProvider),
-              onChanged: (value) {
-                ref.read(enableTorrentsProvider.notifier).setEnabled(value);
-              },
-            ),
+
             _buildActionTile(
               icon: Icons.record_voice_over_rounded,
               title: 'Preferred Anime Audio',
@@ -3220,7 +3301,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
           ],
         );
-      case 5: // Episode Alerts
+      case 6: // Episode Alerts
         return Column(
           children: [
             _buildSwitchTile(
@@ -3244,7 +3325,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
           ],
         );
-      case 6: // App & Updates
+      case 7: // App & Updates
         return Column(
           children: [
             _buildActionTile(
@@ -3304,7 +3385,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
           ],
         );
-      case 7: // Data & Account
+      case 8: // Data & Account
         return Column(
           children: [
             _buildActionTile(
@@ -3483,3 +3564,16 @@ class _HomeLayoutBottomSheetState extends ConsumerState<_HomeLayoutBottomSheet> 
   }
 
 }
+
+
+
+
+
+
+
+
+
+
+
+
+

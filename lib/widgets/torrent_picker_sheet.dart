@@ -130,8 +130,12 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
       });
       
       if (results.isNotEmpty) {
-        _countdown = 5;
-        _startAutoPlay();
+        final prefs = await SharedPreferences.getInstance();
+        final autoSelect = prefs.getBool('torrent_auto_select') ?? true;
+        if (autoSelect) {
+          _countdown = 5;
+          _startAutoPlay();
+        }
       }
     } catch (e) {
       if (!mounted) return;
@@ -188,6 +192,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         anilistId: widget.media.id,
         absoluteEpisode: widget.initialAbsoluteEpisode,
         resolution: _resolution,
+        isManual: true,
       );
 
       final results = await widget.torrentStreamService.searchTorrents(
@@ -276,15 +281,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
     super.dispose();
   }
 
-  String _formatSize(int bytes) {
-    if (bytes <= 0) return 'Unknown Size';
-    final kb = bytes / 1024;
-    final mb = kb / 1024;
-    final gb = mb / 1024;
-    if (gb >= 1) return '${gb.toStringAsFixed(1)} GB';
-    if (mb >= 1) return '${mb.toStringAsFixed(1)} MB';
-    return '${kb.toStringAsFixed(1)} KB';
-  }
+
 
   bool _isTrusted(TorrentResult r) {
     if (r.isBest) return true;
@@ -610,93 +607,53 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         final isBest = index == 0;
         final isTrusted = _isTrusted(r);
         
-        return InkWell(
+        return _HoverTorrentCard(
+          r: r,
+          isBest: isBest,
+          isTrusted: isTrusted,
+          isCancelled: _isCancelled,
           onTap: () {
             _cancelAutoPlay();
             _playResult(r);
           },
-          hoverColor: Colors.white.withOpacity(0.05),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: Colors.white.withOpacity(0.05)),
-              ),
-              color: isBest && !_isCancelled 
-                  ? Colors.white.withOpacity(0.03)
-                  : null,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        r.title,
-                        style: TextStyle(
-                          fontSize: 14.5,
-                          height: 1.4,
-                          fontWeight: isBest ? FontWeight.bold : FontWeight.normal,
-                          color: isBest ? Colors.white : Colors.white.withOpacity(0.8),
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (isBest)
-                      Container(
-                        margin: const EdgeInsets.only(left: 12),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF38Bdf8).withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: const Color(0xFF38Bdf8).withOpacity(0.3)),
-                        ),
-                        child: const Text(
-                          'BEST MATCH',
-                          style: TextStyle(
-                            color: Color(0xFF38Bdf8),
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    if (isTrusted) ...[
-                      const Icon(Icons.verified_rounded, color: Color(0xFF38Bdf8), size: 16),
-                      const SizedBox(width: 4),
-                      const Text(
-                        'Verified',
-                        style: TextStyle(color: Color(0xFF38Bdf8), fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(width: 12),
-                    ],
-                    _buildTag(r.source.toUpperCase(), const Color(0xFFC084FC)),
-                    const SizedBox(width: 8),
-                    if (r.parsed.resolution != null) ...[
-                      _buildTag('${r.parsed.resolution}p', const Color(0xFF60A5FA)),
-                      const SizedBox(width: 8),
-                    ],
-                    _buildTag(_formatSize(r.sizeBytes), Colors.grey),
-                    const Spacer(),
-                    _buildStatTag(Icons.arrow_upward_rounded, r.seeders.toString(), const Color(0xFF4ADE80)),
-                    const SizedBox(width: 8),
-                    _buildStatTag(Icons.arrow_downward_rounded, r.leechers.toString(), const Color(0xFFF87171)),
-                  ],
-                ),
-              ],
-            ),
-          ),
         );
       },
     );
+  }
+
+}
+
+class _HoverTorrentCard extends StatefulWidget {
+  final TorrentResult r;
+  final bool isBest;
+  final bool isTrusted;
+  final bool isCancelled;
+  final VoidCallback onTap;
+
+  const _HoverTorrentCard({
+    Key? key,
+    required this.r,
+    required this.isBest,
+    required this.isTrusted,
+    required this.isCancelled,
+    required this.onTap,
+  }) : super(key: key);
+
+  @override
+  State<_HoverTorrentCard> createState() => _HoverTorrentCardState();
+}
+
+class _HoverTorrentCardState extends State<_HoverTorrentCard> {
+  bool _isHovered = false;
+
+  String _formatSize(int bytes) {
+    if (bytes <= 0) return '0 B';
+    final kb = bytes / 1024;
+    final mb = kb / 1024;
+    final gb = mb / 1024;
+    if (gb >= 1) return '${gb.toStringAsFixed(2)} GB';
+    if (mb >= 1) return '${mb.toStringAsFixed(1)} MB';
+    return '${kb.toStringAsFixed(1)} KB';
   }
 
   Widget _buildTag(String text, Color color) {
@@ -718,7 +675,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
       ),
     );
   }
-  
+
   Widget _buildStatTag(IconData icon, String text, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -739,6 +696,104 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final r = widget.r;
+    final isBest = widget.isBest;
+    final isTrusted = widget.isTrusted;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: Colors.white.withOpacity(0.05)),
+            ),
+            color: _isHovered 
+                ? Colors.white.withOpacity(0.05)
+                : (isBest && !widget.isCancelled 
+                    ? Colors.white.withOpacity(0.03) 
+                    : Colors.transparent),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      r.title,
+                      style: TextStyle(
+                        fontSize: 14.5,
+                        height: 1.4,
+                        fontWeight: isBest ? FontWeight.bold : FontWeight.normal,
+                        color: isBest ? Colors.white : Colors.white.withOpacity(0.8),
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (isBest)
+                    Container(
+                      margin: const EdgeInsets.only(left: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF38Bdf8).withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: const Color(0xFF38Bdf8).withOpacity(0.3)),
+                      ),
+                      child: const Text(
+                        'BEST MATCH',
+                        style: TextStyle(
+                          color: Color(0xFF38Bdf8),
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  if (isTrusted) ...[
+                    const Icon(Icons.verified_rounded, color: Color(0xFF38Bdf8), size: 16),
+                    const SizedBox(width: 4),
+                    const Text(
+                      'Verified',
+                      style: TextStyle(color: Color(0xFF38Bdf8), fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+                  _buildTag(r.source.toUpperCase(), const Color(0xFFC084FC)),
+                  const SizedBox(width: 8),
+                  if (r.parsed.resolution != null) ...[
+                    _buildTag('${r.parsed.resolution}p', const Color(0xFF60A5FA)),
+                    const SizedBox(width: 8),
+                  ],
+                  _buildTag(_formatSize(r.sizeBytes), Colors.grey),
+                  const Spacer(),
+                  _buildStatTag(Icons.arrow_upward_rounded, r.seeders.toString(), const Color(0xFF4ADE80)),
+                  const SizedBox(width: 8),
+                  _buildStatTag(Icons.arrow_downward_rounded, r.leechers.toString(), const Color(0xFFF87171)),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

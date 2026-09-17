@@ -107,6 +107,11 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
       );
     }
 
+    try {
+      final torrentService = ref.read(torrentStreamServiceProvider);
+      torrentService.stopActive();
+    } catch (_) {}
+
     state = const MiniPlayerState();
     Future.microtask(() {
       player?.dispose();

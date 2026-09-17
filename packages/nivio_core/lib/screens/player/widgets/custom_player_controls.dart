@@ -55,7 +55,9 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
   Timer? _hideControlsTimer;
   double? _dragValue;
   StreamSubscription<bool>? _playingSubscription;
+  StreamSubscription<bool>? _bufferingSubscription;
   bool _isWindowFullScreen = false;
+  bool _isBuffering = false;
 
   void _toggleWindowFullScreen() async {
     _startHideTimer();
@@ -72,6 +74,7 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
   void initState() {
     super.initState();
     _isPlaying = widget.controller.state.playing;
+    _isBuffering = widget.controller.state.buffering;
     _playingSubscription = widget.controller.stream.playing.listen((isPlaying) {
       if (mounted) {
         setState(() {
@@ -86,6 +89,13 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
         } else {
           _startHideTimer();
         }
+      }
+    });
+    _bufferingSubscription = widget.controller.stream.buffering.listen((isBuffering) {
+      if (mounted) {
+        setState(() {
+          _isBuffering = isBuffering;
+        });
       }
     });
     if (!Platform.isAndroid && !Platform.isIOS) {
@@ -103,6 +113,7 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
   @override
   void dispose() {
     _playingSubscription?.cancel();
+    _bufferingSubscription?.cancel();
     _hideControlsTimer?.cancel();
     super.dispose();
   }
@@ -110,7 +121,8 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
   void _startHideTimer() {
     _hideControlsTimer?.cancel();
     _hideControlsTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted && _isPlaying) {
+      final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+      if (mounted && (_isPlaying || isDesktop)) {
         setState(() {
           _showControls = false;
           _showChatOnly = false;
@@ -346,6 +358,31 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                 },
               ),
 
+            // Torrent Stats Overlay (Always visible during buffering, or when controls are shown)
+            if (widget.providerName == 'Nivio Torrents' && (_isBuffering || _showControls))
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: IgnorePointer(
+                  ignoring: true, // Don't block taps!
+                  child: SafeArea(
+                    bottom: false,
+                    minimum: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: Container(
+                        height: 48,
+                        alignment: Alignment.center,
+                        child: TorrentStatsOverlay(
+                          service: ref.read(torrentStreamServiceProvider),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
           // 3. UI Controls Layer (Toggleable)
           if (_showControls && !_isLocked)
             Stack(
@@ -397,7 +434,7 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                                             style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
                                           ),
                                         ),
-                                      if (widget.providerName != null)
+                                      if (widget.providerName != null && widget.providerName != 'Nivio Torrents')
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                           decoration: BoxDecoration(
@@ -448,13 +485,7 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                               widget.onServerChange?.call();
                             },
                           ),
-                          if (widget.providerName == 'Nivio Torrents')
-                            Padding(
-                              padding: const EdgeInsets.only(right: 8.0),
-                              child: TorrentStatsOverlay(
-                                service: ref.read(torrentStreamServiceProvider),
-                              ),
-                            ),
+
                           IconButton(
                             icon: const Icon(Icons.settings, color: Colors.white, size: 28),
                             onPressed: () {
@@ -612,6 +643,7 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     if (isDesktop) {
       return MouseRegion(
+        cursor: _showControls ? SystemMouseCursors.basic : SystemMouseCursors.none,
         onHover: (_) => _onMouseMoved(),
         child: content,
       );

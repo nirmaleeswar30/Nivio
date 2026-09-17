@@ -2,14 +2,14 @@ import 'dart:async';
 
 import 'package:rqbit_ffi/rqbit_ffi.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../core/debug_log.dart';
 import '../../models/search_result.dart';
 import 'anime_query_builder.dart';
 import 'ranking.dart';
 import 'resolver.dart';
-import 'sources/animetosho_source.dart';
 import 'sources/nyaa_source.dart';
-import 'sources/seadex_source.dart';
 import 'sources/torrent_source.dart';
 import 'torrent_models.dart';
 
@@ -125,9 +125,13 @@ class TorrentStreamService {
     _log('best="${best.title}" src=${best.source} seeders=${best.seeders} '
         'res=${best.parsed.resolution} type=${best.type} link=${best.link.substring(0, best.link.length.clamp(0, 60))}…');
 
+    final prefs = await SharedPreferences.getInstance();
+    final downloadDir = prefs.getString('torrent_download_location');
+    final persistFiles = prefs.getBool('torrent_persist_files') ?? false;
+
     onStatus?.call('Starting: ${best.title}');
     _log('starting rqbit engine…');
-    final client = await RqbitEngine.instance.ensureStarted();
+    final client = await RqbitEngine.instance.ensureStarted(downloadDir: downloadDir);
     _log('engine ready at ${RqbitEngine.instance.baseUrl}; adding torrent…');
     _client = client;
 
@@ -138,10 +142,16 @@ class TorrentStreamService {
     final id = add.id ?? 0;
     _log('torrent added id=$id; waiting for metadata/files…');
 
-    // Stop any previously-playing torrent (keep files for resume).
+    // Stop any previously-playing torrent.
     final prev = _activeTorrentId;
     if (prev != null && prev != id) {
-      client.forget(prev).catchError((_) {});
+      try {
+        if (persistFiles) {
+          await client.forget(prev);
+        } else {
+          await client.delete(prev);
+        }
+      } catch (_) {}
     }
     _activeTorrentId = id;
 

@@ -83,6 +83,7 @@ dependencies:
   app_links: any
   flutter_inappwebview_linux: any
   pointycastle: ^4.0.0
+  crypto: any
 dev_dependencies:
   flutter_test:
     sdk: flutter

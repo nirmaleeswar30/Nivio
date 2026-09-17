@@ -1216,6 +1216,48 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subscriptions.add(
       _player.stream.completed.listen((completed) {
         if (!mounted || !completed) return;
+
+        final pos = _player.state.position;
+        final dur = _player.state.duration;
+        
+        // Ignore premature EOF from network dropouts (especially on torrent streams 
+        // where mpv times out if pieces aren't downloaded fast enough).
+        if (dur.inSeconds > 60 && pos.inSeconds < dur.inSeconds - 15) {
+          appDebugLog('⚠️ Ignoring premature EOF (network timeout). Position (${pos.inSeconds}s) < Duration (${dur.inSeconds}s). Retrying stream...');
+          
+          _resumePosition = pos;
+          
+          Future.microtask(() async {
+            if (mounted) {
+              setState(() {
+                _isLoading = true;
+              });
+              
+              if (_streamResult != null) {
+                await _player.open(
+                  Media(
+                    _streamResult!.url,
+                    httpHeaders: _streamResult!.headers,
+                  ),
+                  play: true,
+                );
+                await _player.seek(pos);
+              } else {
+                // Fallback if _streamResult is somehow null
+                _disposePlayer();
+                _initializePlayer(isRetry: true);
+              }
+              
+              if (mounted) {
+                setState(() {
+                  _isLoading = false;
+                });
+              }
+            }
+          });
+          return;
+        }
+
         _markAsCompleted();
         if (_hasNextEpisode()) {
           _showNextEpisodePopup();
@@ -1838,14 +1880,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     // --- Next Episode (trigger 15s before the actual end of the video) ---
-    if (!_showNextEpisodeButton && !_nextEpisodeDismissed && _hasNextEpisode()) {
+    if (!_showNextEpisodeButton && !_nextEpisodeDismissed && _hasNextEpisode() && duration.inSeconds > 60) {
       final remaining = duration.inSeconds - position.inSeconds;
       if (remaining <= 15) {
         _showNextEpisodePopup();
       }
     }
 
-    if (position >= duration - const Duration(seconds: 10) && duration.inSeconds > 0) {
+    if (duration.inSeconds > 60 && position >= duration - const Duration(seconds: 10)) {
       _markAsCompleted();
     }
   }
@@ -1878,6 +1920,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_isPrefetching) return;
     if (!_hasNextEpisode()) return;
     
+    // Disable prefetching for P2P streams to save bandwidth and prevent replacing the active torrent.
+    if (_currentProvider == 'Nivio Torrents') return;
+
     final nextEp = _currentEpisode + 1;
     if (_prefetchedStreams.containsKey(nextEp)) return;
 
@@ -5129,6 +5174,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             controller: _player,
             title: title,
             subtitle: subtitle,
+            providerName: _currentProvider,
             isLive: widget.isLive,
             onBack: _handleBackNavigation,
             onServerChange: () {

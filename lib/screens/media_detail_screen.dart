@@ -29,6 +29,8 @@ import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
+import 'package:nivio/providers/settings_providers.dart';
+import 'package:nivio/widgets/torrent_picker_sheet.dart';
 import 'package:nivio/models/watch_history.dart';
 import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
@@ -1693,6 +1695,43 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     );
 
     if (langChoice == null) return; // User cancelled
+
+    if (langChoice.isTorrent) {
+      final torrentService = ref.read(torrentStreamServiceProvider);
+      final settingsResolution = ref.read(torrentQualityProvider);
+      
+      final torrentResult = await TorrentPickerSheet.show(
+        context,
+        media: media,
+        initialEpisode: 1,
+        initialSeason: singleSeason ?? 1,
+        initialAbsoluteEpisode: null,
+        initialResolution: settingsResolution,
+        torrentStreamService: torrentService,
+      );
+
+      if (torrentResult != null) {
+        final torrentUrl = 'torrent|||${torrentResult.$1.link}';
+        
+        // If it's a batch download, should we just queue one download item for the whole season?
+        // Or queue individual items? The user chose a specific torrent which might be a batch or single episode.
+        // For simplicity right now, if the user picks a torrent here, we just add ONE download item for the season.
+        // It will download the entire torrent. 
+        await DownloadService.queueDownload(
+          mediaId: media.id,
+          title: '${media.title ?? media.name ?? 'Series'}|||Season Batch',
+          mediaType: media.mediaType,
+          season: singleSeason ?? 1,
+          episode: 1, // Store as episode 1 but it's a batch
+          posterPath: media.posterPath,
+          streamUrl: torrentUrl,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Torrent Batch queued!')));
+        }
+      }
+      return;
+    }
 
     final preferredQuality = langChoice.selectedSource?.quality;
     String? subDubPreference = langChoice.selectedSource != null

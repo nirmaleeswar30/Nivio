@@ -57,6 +57,7 @@ class AnimeQuery {
     this.absoluteEpisode,
     this.resolution = '1080',
     this.exclusions = const [],
+    this.isManual = false,
   });
 
   /// Candidate titles (romaji / english / native / synonyms), most-preferred
@@ -74,8 +75,11 @@ class AnimeQuery {
   /// Preferred vertical resolution as a string: '2160' | '1080' | '720' | ...
   final String resolution;
 
-  /// Keywords to exclude (unwanted codecs/sources/etc).
+  /// Keywords to strictly reject (e.g., 'dub' if sub is strongly preferred).
   final List<String> exclusions;
+
+  /// True if this query was manually entered by the user.
+  final bool isManual;
 
   int? get preferredResolution => int.tryParse(resolution);
   String get primaryTitle => titles.isEmpty ? '' : titles.first;

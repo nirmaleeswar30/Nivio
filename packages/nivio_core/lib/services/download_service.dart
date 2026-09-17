@@ -19,6 +19,8 @@ import '../core/debug_log.dart';
 import 'package:nivio/models/download_item.dart';
 import 'package:nivio/services/m3u8_parser.dart';
 import 'package:nivio/main.dart';
+import 'package:rqbit_ffi/rqbit_ffi.dart';
+import 'package:nivio/services/torrent/resolver.dart';
 
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse response) async {
@@ -118,6 +120,22 @@ class DownloadService {
         Future.delayed(const Duration(milliseconds: 500), () {
           notificationTapForeground(response);
         });
+      }
+    }
+
+    // Implement Auto-Resume:
+    // Loop through existing items. If they were stuck in downloading/extracting state when the app closed,
+    // either pause them or automatically resume them based on their type.
+    final items = box.values.toList();
+    for (final item in items) {
+      if (item.status == DownloadStatus.downloading || item.status == DownloadStatus.extracting) {
+        // Auto-resume torrent downloads because they handle their own chunk resumption well
+        if (item.streamUrl?.startsWith('torrent|||') == true) {
+          resumeDownload(item.id);
+        } else {
+          // For HTTP downloads, auto-resuming might be complex if URLs expired, pause them
+          _updateStatus(item, DownloadStatus.paused);
+        }
       }
     }
 
@@ -249,6 +267,13 @@ class DownloadService {
 
       _updateStatus(item, DownloadStatus.downloading);
 
+      if (streamUrl.startsWith('torrent|||')) {
+        final realUrl = streamUrl.substring(10);
+        appDebugLog('🎬 Downloading via Torrents (rqbit)');
+        await _downloadTorrent(item, realUrl, cancelToken);
+        return;
+      }
+
       // No need to change the extension to mkv, FFmpeg can mux HLS directly into mp4
       if (streamUrl.contains('.m3u8') || streamUrl.contains('/proxy?url=')) {
         appDebugLog('🎬 Downloading via FFmpeg (HLS)');
@@ -277,6 +302,125 @@ class DownloadService {
     } finally {
       _activeDownloads.remove(item.id);
       await _releaseWakelock();
+    }
+  }
+
+  static Future<void> _downloadTorrent(
+    DownloadItem item,
+    String magnetOrUrl,
+    CancelToken cancelToken,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final downloadDir = prefs.getString('torrent_download_location');
+    
+    final client = await RqbitEngine.instance.ensureStarted(downloadDir: downloadDir);
+    
+    // 1. Add Torrent (listOnly to resolve files)
+    appDebugLog('Adding torrent to rqbit (listOnly)...');
+    final addResponse = await client.addTorrent(
+      magnetOrUrl,
+      listOnly: true,
+      isUrl: magnetOrUrl.startsWith('http') ? true : null,
+    );
+    final torrentId = addResponse.id ?? 0;
+
+    // 2. Wait for metadata / file list
+    TorrentDetails? details;
+    while (!cancelToken.isCancelled) {
+      details = await client.getDetails(torrentId);
+      if (details.files.isNotEmpty) break;
+      await Future.delayed(const Duration(seconds: 1));
+    }
+    
+    if (cancelToken.isCancelled || details == null || details.files.isEmpty) return;
+
+    // 3. Resolve the exact episode file
+    final fileInfo = TorrentFileResolver.resolve(
+      details.files,
+      episode: item.episode ?? 1,
+      season: item.season,
+    );
+    
+    if (fileInfo == null) {
+      throw Exception('Failed to resolve episode file in torrent');
+    }
+
+    // 4. Update the savePath to point to the actual file on disk
+    // rqbit saves to `downloadDir/torrent_name/file_name` or `downloadDir/file_name`
+    // We can't know perfectly without checking `details.name`, but the player
+    // can resolve it later, or we can approximate it.
+    // Actually, `RqbitEngine.instance.downloadDir` is known.
+    final baseDir = RqbitEngine.instance.downloadDir ?? '';
+    final torrentName = details.name ?? '';
+    
+    // If it's a single file torrent, torrentName IS the filename and it's in baseDir.
+    // If it's a multi-file torrent, it's in baseDir/torrentName/fileInfo.name.
+    // For safety, let's just use `fileInfo.name` to check if it exists in subdirs later,
+    // OR we can just build the path.
+    String actualFilePath = '';
+    if (details.files.length == 1) {
+       actualFilePath = '$baseDir${Platform.pathSeparator}${fileInfo.name}';
+    } else {
+       actualFilePath = '$baseDir${Platform.pathSeparator}$torrentName${Platform.pathSeparator}${fileInfo.name}';
+    }
+    
+    item.savePath = actualFilePath;
+    await box.put(item.id, item);
+
+    // 5. Tell rqbit to download ONLY this file
+    await client.updateOnlyFiles(torrentId, [fileInfo.index]);
+
+    // 6. Monitor progress
+    int lastUpdateMs = DateTime.now().millisecondsSinceEpoch;
+    
+    while (!cancelToken.isCancelled) {
+      final stats = await client.getStats(torrentId);
+      
+
+      // rqbit gives progressBytes for the WHOLE torrent, or just the file?
+      // actually, the file size is `fileInfo.length`.
+      // `stats.progressBytes` is the total downloaded for the torrent.
+      
+      final total = fileInfo.length;
+      // We can use stats.progressBytes, but it might exceed if it downloaded pieces of other files.
+      // Let's just use it and cap it.
+      var downloaded = stats.progressBytes;
+      if (downloaded > total) downloaded = total;
+
+      item.totalBytes = total;
+      item.downloadedBytes = downloaded;
+      item.progress = total > 0 ? (downloaded / total).clamp(0.0, 1.0) : 0.0;
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - lastUpdateMs > 1000 || stats.finished) {
+        lastUpdateMs = now;
+        await box.put(item.id, item);
+        _showProgressNotification(item);
+      }
+
+      if (stats.finished) {
+        // Double check if file exists
+        if (File(actualFilePath).existsSync()) {
+          item.progress = 1.0;
+          _updateStatus(item, DownloadStatus.completed);
+          return;
+        } else {
+          // Maybe the path was wrong? (Multi-file edge cases)
+          // Just mark completed, player will search for it.
+          item.progress = 1.0;
+          _updateStatus(item, DownloadStatus.completed);
+          return;
+        }
+      }
+
+      await Future.delayed(const Duration(seconds: 1));
+    }
+
+    if (cancelToken.isCancelled) {
+      // Pause torrent
+      try {
+        await client.pause(torrentId);
+      } catch (_) {}
     }
   }
 

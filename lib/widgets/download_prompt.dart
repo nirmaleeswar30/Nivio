@@ -8,6 +8,7 @@ import '../providers/settings_providers.dart';
 import '../providers/service_providers.dart';
 import '../models/search_result.dart';
 import '../core/theme.dart';
+import 'package:nivio/widgets/torrent_picker_sheet.dart';
 
 class DownloadPrompt {
   static Future<void> showAndQueue({
@@ -32,9 +33,37 @@ class DownloadPrompt {
       episode: episode,
       providerIndex: providerIndex,
       isAnime: mediaType == 'anime',
+      showTorrentOption: true,
     );
     if (selection == null) return;
     
+    if (selection.isTorrent && media != null) {
+      final torrentService = ref.read(torrentStreamServiceProvider);
+      final settingsResolution = ref.read(torrentQualityProvider);
+      
+      final torrentResult = await TorrentPickerSheet.show(
+        context,
+        media: media,
+        initialEpisode: episode ?? 1,
+        initialSeason: season ?? 1,
+        initialAbsoluteEpisode: null,
+        initialResolution: settingsResolution,
+        torrentStreamService: torrentService,
+      );
+
+      if (torrentResult != null) {
+        final torrentUrl = 'torrent|||${torrentResult.$1.link}';
+        await _queue(
+          mediaId, title, mediaType, season, episode, posterPath, 
+          torrentUrl, null, null, null, null
+        );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Torrent download queued!')));
+        }
+      }
+      return;
+    }
+
     var urlToDownload = selection.selectedSource?.url ?? selection.updatedResult?.url ?? streamResult.url;
     var finalResult = selection.updatedResult ?? streamResult;
     var currentProviderIndex = selection.finalProviderIndex ?? providerIndex;
@@ -136,7 +165,7 @@ class DownloadPrompt {
 
   /// Shows a download settings dialog and returns the selected audio/subtitle languages and resolved source.
   /// Returns null if the user cancels.
-  static Future<({String? audioLang, String? subtitleLang, StreamSource? selectedSource, int? finalProviderIndex, StreamResult? updatedResult})?> pickLanguages({
+  static Future<({String? audioLang, String? subtitleLang, StreamSource? selectedSource, int? finalProviderIndex, StreamResult? updatedResult, bool isTorrent})?> pickLanguages({
     required BuildContext context,
     required WidgetRef ref,
     required StreamResult streamResult,
@@ -145,6 +174,7 @@ class DownloadPrompt {
     int? episode,
     int? providerIndex,
     bool isAnime = false,
+    bool showTorrentOption = false,
   }) async {
     int? currentProviderIndex = providerIndex;
     StreamResult currentResult = streamResult;
@@ -173,7 +203,7 @@ class DownloadPrompt {
 
     if (!context.mounted) return null;
 
-    ({String? audioLang, String? subtitleLang, StreamSource? selectedSource, int? finalProviderIndex, StreamResult? updatedResult})? finalResultSelection;
+    ({String? audioLang, String? subtitleLang, StreamSource? selectedSource, int? finalProviderIndex, StreamResult? updatedResult, bool isTorrent})? finalResultSelection;
 
     await showModalBottomSheet(
       context: context,
@@ -495,12 +525,42 @@ class DownloadPrompt {
                               selectedSource: finalSource,
                               finalProviderIndex: currentProviderIndex,
                               updatedResult: currentResult,
+                              isTorrent: false,
                             );
                             Navigator.pop(ctx);
+
                           },
                           child: const Text('Start Download', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                         ),
                       ),
+
+                      if (showTorrentOption) ...[
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF38Bdf8),
+                              side: const BorderSide(color: Color(0xFF38Bdf8)),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            icon: const Icon(Icons.cloud_download_rounded, size: 20),
+                            label: const Text('Use Torrent (P2P)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            onPressed: isLoading ? null : () {
+                              finalResultSelection = (
+                                audioLang: null,
+                                subtitleLang: null,
+                                selectedSource: null,
+                                finalProviderIndex: null,
+                                updatedResult: null,
+                                isTorrent: true,
+                              );
+                              Navigator.pop(ctx);
+                            },
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

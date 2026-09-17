@@ -15,6 +15,8 @@ class TorrentRanking {
     final exclusions = query.exclusions.map((e) => e.toLowerCase()).toList();
 
     final filtered = candidates.where((c) {
+      if (query.isManual) return true; // Keep everything for manual search
+      
       // Drop OP/ED/PV specials.
       if (c.parsed.isSpecial) return false;
       // Drop excluded keywords.
