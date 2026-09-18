@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'dart:isolate';
 import 'dart:ui';
@@ -459,9 +460,13 @@ class _NivioAppState extends ConsumerState<NivioApp> {
 
   @override
   Widget build(BuildContext context) {
-    final accentKey = ref.watch(appAccentColorProvider);
-    final accentColor = appAccentColorFromKey(accentKey);
-    final appTheme = NivioTheme.buildDarkTheme(accentColor: accentColor);
+    final themeKey = ref.watch(appThemeProvider);
+    final uiScale = ref.watch(uiScaleProvider);
+    final platformBrightness = MediaQuery.platformBrightnessOf(context);
+    final appTheme = NivioTheme.buildTheme(
+      themeKey,
+      systemBrightness: platformBrightness,
+    );
 
     return MaterialApp.router(
       scrollBehavior: DesktopScrollBehavior(),
@@ -470,7 +475,7 @@ class _NivioAppState extends ConsumerState<NivioApp> {
       darkTheme: appTheme,
       routerConfig: appRouter,
       builder: (context, child) {
-        return _GitHubReleasePromptGate(
+        final content = _GitHubReleasePromptGate(
           child: Stack(
             children: [
               child ?? const SizedBox.shrink(),
@@ -479,8 +484,249 @@ class _NivioAppState extends ConsumerState<NivioApp> {
             ],
           ),
         );
+
+        Widget scaledContent;
+        if (uiScale == 1.0) {
+          scaledContent = content;
+        } else {
+          scaledContent = LayoutBuilder(
+            builder: (context, constraints) {
+              final origSize = constraints.biggest;
+              if (origSize.isEmpty || origSize.isInfinite) {
+                return content;
+              }
+              final scaledW = origSize.width / uiScale;
+              final scaledH = origSize.height / uiScale;
+              return MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  size: Size(scaledW, scaledH),
+                ),
+                child: SizedBox(
+                  width: origSize.width,
+                  height: origSize.height,
+                  child: FittedBox(
+                    fit: BoxFit.fill,
+                    alignment: Alignment.topLeft,
+                    child: SizedBox(
+                      width: scaledW,
+                      height: scaledH,
+                      child: content,
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        }
+
+        return Stack(
+          children: [
+            ClipRect(child: scaledContent),
+            const _UiScaleConfirmationOverlay(),
+          ],
+        );
       },
       debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+class _UiScaleConfirmationOverlay extends ConsumerWidget {
+  const _UiScaleConfirmationOverlay();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final confirmation = ref.watch(uiScaleConfirmationProvider);
+    if (!confirmation.isVisible) {
+      return const SizedBox.shrink();
+    }
+
+    final accentColor = NivioTheme.accentColorOf(context);
+    final percent = (confirmation.proposedScale * 100).round();
+    final prevPercent = (confirmation.previousScale * 100).round();
+
+    return Material(
+      type: MaterialType.transparency,
+      child: Stack(
+        children: [
+          // Semi-transparent backdrop barrier
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                // Tapping outside reverts for safety
+                ref.read(uiScaleConfirmationProvider.notifier).revert();
+              },
+              child: Container(
+                color: Colors.black54,
+              ),
+            ),
+          ),
+          // Centered unscaled confirmation dialog
+          Center(
+            child: Container(
+              width: min(440.0, MediaQuery.sizeOf(context).width - 32),
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.all(22),
+              decoration: BoxDecoration(
+                color: NivioTheme.surfaceColorOf(context),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.1),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.6),
+                    blurRadius: 32,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: accentColor.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.aspect_ratio_rounded,
+                          color: accentColor,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'Keep display settings?',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      // Countdown timer badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: accentColor.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: accentColor.withOpacity(0.4),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.timer_outlined,
+                              size: 14,
+                              color: accentColor,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${confirmation.secondsRemaining}s',
+                              style: TextStyle(
+                                color: accentColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Do you want to keep this UI scale ($percent%)? It will automatically revert to $prevPercent% in ${confirmation.secondsRemaining} second${confirmation.secondsRemaining == 1 ? '' : 's'} if not confirmed.',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13.5,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // Progress bar showing 5s countdown
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: confirmation.secondsRemaining / 5.0,
+                      backgroundColor: Colors.white.withOpacity(0.08),
+                      valueColor: AlwaysStoppedAnimation<Color>(accentColor),
+                      minHeight: 4,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // Action buttons
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: BorderSide(
+                            color: Colors.white.withOpacity(0.2),
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 11,
+                          ),
+                        ),
+                        onPressed: () {
+                          ref
+                              .read(uiScaleConfirmationProvider.notifier)
+                              .revert();
+                        },
+                        child: const Text('Revert'),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: accentColor,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 11,
+                          ),
+                        ),
+                        onPressed: () {
+                          ref
+                              .read(uiScaleConfirmationProvider.notifier)
+                              .confirm();
+                        },
+                        child: const Text(
+                          'Keep Changes',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

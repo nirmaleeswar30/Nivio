@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'dart:math';
 import 'package:animations/animations.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -16,6 +18,7 @@ import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
+import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
 import 'package:nivio/providers/changelog_provider.dart';
 import 'package:nivio/providers/home_layout_provider.dart';
@@ -37,6 +40,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
   int _selectedCategoryIndex = 0;
+  double? _tempUiScale;
 
   static const List<String> _categories = [
     'Profile & Activity',
@@ -150,20 +154,21 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     final subtitleBackground = ref.watch(subtitleBackgroundProvider);
     final subtitleOutline = ref.watch(subtitleOutlineProvider);
 
-    final appAccentKey = ref.watch(appAccentColorProvider);
+    final appThemeKey = ref.watch(appThemeProvider);
+    final uiScale = ref.watch(uiScaleProvider);
 
     return Scaffold(
-      backgroundColor: NivioTheme.netflixBlack,
+      backgroundColor: NivioTheme.backgroundColorOf(context),
       body: Container(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF151922), NivioTheme.netflixBlack],
-          ),
+          gradient: NivioTheme.backgroundGradientOf(context),
         ),
         child: SafeArea(
-          child: CustomScrollView(
+          child: AppCustomScrollView(
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+            cacheExtent: 600,
             slivers: [
               SliverToBoxAdapter(
                 child: Padding(
@@ -222,7 +227,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                       preferredSubtitle: preferredSubtitle,
                       episodeCheckEnabled: episodeCheckEnabled,
                       videoDebanding: videoDebanding,
-                      appAccentKey: appAccentKey,
+                      appThemeKey: appThemeKey,
+                      uiScale: uiScale,
                     ),
                   ),
                 ),
@@ -642,13 +648,15 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                     title: 'App & Updates',
                     child: Column(
                       children: [
-                        if (_matches('theme color accent main app'))
+                        if (_matches('app theme color scheme dark blackout monokai catppuccin dracula amber lavender system'))
                           _buildActionTile(
                             icon: Icons.palette_outlined,
-                            title: 'Theme Color',
-                            subtitle: appAccentLabelFromKey(appAccentKey),
-                            onTap: _showThemeColorDialog,
+                            title: 'App Theme',
+                            subtitle: NivioTheme.getTheme(appThemeKey).label,
+                            onTap: _showThemeDialog,
                           ),
+                        if (_matches('ui scale zoom display interface size'))
+                          _buildUiScaleTile(uiScale),
                         if (_matches('update app version release github'))
                           FutureBuilder<String>(
                             future: _getAppVersionLabel(),
@@ -976,33 +984,35 @@ Widget _buildMobileLayout(BuildContext context, User user) {
       // Actually the parent already filters this out using _matches(), so we're good.
     }
     
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text(
-            title.toUpperCase(),
-            style: const TextStyle(
-              color: Colors.grey,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.0,
+    return RepaintBoundary(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              title.toUpperCase(),
+              style: const TextStyle(
+                color: Colors.grey,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.0,
+              ),
             ),
           ),
-        ),
-        Material(
-          color: Colors.white.withValues(alpha: 0.04),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+          Material(
+            color: Colors.white.withValues(alpha: 0.04),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: child,
+            ),
           ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: child,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1014,7 +1024,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     required String preferredSubtitle,
     required bool episodeCheckEnabled,
     required bool videoDebanding,
-    required String appAccentKey,
+    required String appThemeKey,
+    required double uiScale,
   }) {
     final results = <Widget>[];
 
@@ -1343,15 +1354,18 @@ Widget _buildMobileLayout(BuildContext context, User user) {
         ),
       );
     }
-    if (_matches('theme color accent main app')) {
+    if (_matches('app theme color scheme dark blackout monokai catppuccin dracula amber lavender system')) {
       results.add(
         _buildActionTile(
           icon: Icons.palette_outlined,
-          title: 'Theme Color',
-          subtitle: appAccentLabelFromKey(appAccentKey),
-          onTap: _showThemeColorDialog,
+          title: 'App Theme',
+          subtitle: NivioTheme.getTheme(appThemeKey).label,
+          onTap: _showThemeDialog,
         ),
       );
+    }
+    if (_matches('ui scale zoom display interface size')) {
+      results.add(_buildUiScaleTile(uiScale));
     }
     if (_matches('update app version release github')) {
       results.add(
@@ -1446,32 +1460,12 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     required VoidCallback onTap,
     Color? titleColor,
   }) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: Icon(
-        icon,
-        color: titleColor ?? NivioTheme.netflixWhite,
-        size: 22,
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: titleColor ?? NivioTheme.netflixWhite,
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: NivioTheme.netflixGrey, fontSize: 12),
-      ),
-      trailing: Icon(
-        Icons.chevron_right_rounded,
-        color: NivioTheme.netflixGrey,
-      ),
+    return _SettingActionTile(
+      icon: icon,
+      title: title,
+      subtitle: subtitle,
       onTap: onTap,
+      titleColor: titleColor,
     );
   }
 
@@ -1482,25 +1476,11 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
-    final accentColor = Theme.of(context).colorScheme.primary;
-
-    return SwitchListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      secondary: Icon(icon, color: NivioTheme.netflixWhite, size: 22),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: NivioTheme.netflixWhite,
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(color: NivioTheme.netflixGrey, fontSize: 12),
-      ),
+    return _SettingSwitchTile(
+      icon: icon,
+      title: title,
+      subtitle: subtitle,
       value: value,
-      activeThumbColor: accentColor,
       onChanged: onChanged,
     );
   }
@@ -1699,73 +1679,6 @@ Widget _buildMobileLayout(BuildContext context, User user) {
       default:
         return 'Auto (Best Available)';
     }
-  }
-
-
-
-  Future<void> _showCustomHexDialog() async {
-    final current = ref.read(appAccentColorProvider);
-    String currentHex = current.startsWith('#') ? current.substring(1) : '';
-    final TextEditingController hexController =
-        TextEditingController(text: currentHex);
-
-    await showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: NivioTheme.netflixDarkGrey,
-          title: const Text(
-            'Custom Hex Color',
-            style: TextStyle(color: Colors.white),
-          ),
-          content: TextField(
-            controller: hexController,
-            style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(
-              prefixText: '#',
-              prefixStyle: TextStyle(color: Colors.white70),
-              hintText: 'RRGGBB',
-              hintStyle: TextStyle(color: Colors.white38),
-              enabledBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: Colors.white24),
-              ),
-              focusedBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: NivioTheme.netflixWhite),
-              ),
-            ),
-            maxLength: 6,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text(
-                'Cancel',
-                style: TextStyle(color: Colors.white70),
-              ),
-            ),
-            TextButton(
-              onPressed: () async {
-                final hex = hexController.text.trim().toUpperCase();
-                if (hex.length == 6) {
-                  // Basic validation
-                  final RegExp hexRegex = RegExp(r'^[0-9A-F]{6}$');
-                  if (hexRegex.hasMatch(hex)) {
-                    await ref
-                        .read(appAccentColorProvider.notifier)
-                        .setAccentColor('#$hex');
-                    if (context.mounted) Navigator.pop(context);
-                  }
-                }
-              },
-              child: const Text(
-                'Save',
-                style: TextStyle(color: NivioTheme.netflixWhite),
-              ),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   void _showHomeLayoutDialog(BuildContext context) {
@@ -2080,99 +1993,637 @@ Widget _buildMobileLayout(BuildContext context, User user) {
 
 
 
-  Future<void> _showThemeColorDialog() async {
-    final current = ref.read(appAccentColorProvider);
+  Future<void> _showThemeDialog() async {
+    final isDesktop = (!Platform.isAndroid && !Platform.isIOS && MediaQuery.sizeOf(context).width > 600) ||
+        MediaQuery.sizeOf(context).width > 800;
 
-    await showModalBottomSheet<void>(
+    if (isDesktop) {
+      await _showThemeDesktopDialog();
+    } else {
+      await _showThemeMobileSheet();
+    }
+  }
+
+  Future<void> _showThemeDesktopDialog() async {
+    final current = ref.read(appThemeProvider);
+
+    await showDialog<void>(
       context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              const ListTile(
-                title: Text(
-                  'Theme Color',
-                  style: TextStyle(
-                    color: NivioTheme.netflixWhite,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+      builder: (dialogContext) {
+        final screenSize = MediaQuery.sizeOf(dialogContext);
+        final double dialogWidth = min(740.0, screenSize.width - 48);
+        final double dialogHeight = min(580.0, screenSize.height - 48);
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(24),
+          child: Container(
+            width: dialogWidth,
+            height: dialogHeight,
+            decoration: BoxDecoration(
+              color: NivioTheme.surfaceColorOf(dialogContext),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.09),
+                width: 1,
               ),
-              ...appAccentOptions.map((option) {
-                final isSelected = option.key == current;
-                return ListTile(
-                  leading: Container(
-                    width: 20,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: option.color,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: isSelected
-                            ? NivioTheme.netflixWhite
-                            : Colors.white24,
-                        width: isSelected ? 2 : 1,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.55),
+                  blurRadius: 36,
+                  offset: const Offset(0, 16),
+                ),
+              ],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 16, 16),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(9),
+                        decoration: BoxDecoration(
+                          color: NivioTheme.accentColorOf(dialogContext).withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.palette_rounded,
+                          color: NivioTheme.accentColorOf(dialogContext),
+                          size: 22,
+                        ),
                       ),
-                    ),
-                  ),
-                  title: Text(
-                    option.label,
-                    style: TextStyle(color: NivioTheme.netflixWhite),
-                  ),
-                  trailing: isSelected
-                      ? Icon(
-                          Icons.check_circle_rounded,
-                          color: NivioTheme.accentColorOf(context),
-                        )
-                      : null,
-                  onTap: () async {
-                    await ref
-                        .read(appAccentColorProvider.notifier)
-                        .setAccentColor(option.key);
-                    if (sheetContext.mounted) {
-                      Navigator.pop(sheetContext);
-                    }
-                  },
-                );
-              }),
-              ListTile(
-                leading: Container(
-                  width: 20,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    color: current.startsWith('#')
-                        ? appAccentColorFromKey(current)
-                        : Colors.grey[800],
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: current.startsWith('#')
-                          ? NivioTheme.netflixWhite
-                          : Colors.white24,
-                      width: current.startsWith('#') ? 2 : 1,
-                    ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'App Theme',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            const Text(
+                              'Select a complete color scheme for the interface',
+                              style: TextStyle(
+                                color: Colors.white60,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Close',
+                        splashRadius: 20,
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white70,
+                          size: 22,
+                        ),
+                        onPressed: () => Navigator.pop(dialogContext),
+                      ),
+                    ],
                   ),
                 ),
-                title: const Text(
-                  'Custom Hex...',
-                  style: TextStyle(color: NivioTheme.netflixWhite),
+                const Divider(height: 1, color: Colors.white10),
+                Expanded(
+                  child: AppSingleChildScrollView(
+                    padding: const EdgeInsets.all(22),
+                    child: _buildDesktopThemesLayout(dialogContext, current),
+                  ),
                 ),
-                trailing: current.startsWith('#')
-                    ? Icon(
-                        Icons.check_circle_rounded,
-                        color: NivioTheme.accentColorOf(context),
-                      )
-                    : null,
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _showCustomHexDialog();
-                },
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildDesktopThemesLayout(BuildContext dialogContext, String currentThemeKey) {
+    final themes = NivioTheme.availableThemes;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth;
+        final int columns;
+        if (availableWidth >= 600) {
+          columns = 4;
+        } else if (availableWidth >= 440) {
+          columns = 3;
+        } else {
+          columns = 2;
+        }
+
+        const double spacing = 14.0;
+        final double cardWidth = (availableWidth - ((columns - 1) * spacing)) / columns;
+        final double cardHeight = cardWidth;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          alignment: WrapAlignment.center,
+          children: themes.map((theme) {
+            final isSelected = theme.key == currentThemeKey;
+            return SizedBox(
+              width: cardWidth,
+              height: cardHeight,
+              child: _DesktopThemeCard(
+                theme: theme,
+                isSelected: isSelected,
+                onTap: () async {
+                  await ref.read(appThemeProvider.notifier).setTheme(theme.key);
+                  if (dialogContext.mounted) Navigator.pop(dialogContext);
+                },
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Future<void> _showThemeMobileSheet() async {
+    final current = ref.read(appThemeProvider);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      enableDrag: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.82,
+          minChildSize: 0.35,
+          maxChildSize: 0.95,
+          snap: true,
+          snapSizes: const [0.82],
+          shouldCloseOnMinExtent: true,
+          expand: false,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: BoxDecoration(
+                color: NivioTheme.surfaceColorOf(context),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                border: Border(
+                  top: BorderSide(
+                    color: Colors.white.withOpacity(0.12),
+                    width: 1,
+                  ),
+                ),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: CustomScrollView(
+                controller: scrollController,
+                physics: const ClampingScrollPhysics(),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Drag Handle
+                        Center(
+                          child: Container(
+                            width: 44,
+                            height: 5,
+                            margin: const EdgeInsets.only(top: 12, bottom: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.28),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                        ),
+                        // Title & Close Button
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'App Theme',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Close',
+                                splashRadius: 20,
+                                icon: const Icon(
+                                  Icons.close_rounded,
+                                  color: Colors.white70,
+                                  size: 22,
+                                ),
+                                onPressed: () => Navigator.pop(sheetContext),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(20, 2, 20, 14),
+                          child: Text(
+                            'Select a complete color scheme for the interface',
+                            style: TextStyle(color: Colors.white54, fontSize: 13),
+                          ),
+                        ),
+                        const Divider(height: 1, color: Colors.white10),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 36),
+                    sliver: SliverGrid(
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: 1.0,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final theme = NivioTheme.availableThemes[index];
+                          final isSelected = theme.key == current;
+                          return _DesktopThemeCard(
+                            theme: theme,
+                            isSelected: isSelected,
+                            onTap: () async {
+                              await ref
+                                  .read(appThemeProvider.notifier)
+                                  .setTheme(theme.key);
+                              if (sheetContext.mounted) {
+                                Navigator.pop(sheetContext);
+                              }
+                            },
+                          );
+                        },
+                        childCount: NivioTheme.availableThemes.length,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildScaleBadge({
+    required bool isDefault,
+    required int percent,
+    required Color accentColor,
+  }) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 46),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: isDefault
+            ? Colors.white.withOpacity(0.06)
+            : accentColor.withOpacity(0.18),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isDefault
+              ? Colors.white.withOpacity(0.12)
+              : accentColor.withOpacity(0.5),
+          width: 1,
+        ),
+      ),
+      child: Center(
+        child: Text(
+          '$percent%',
+          style: TextStyle(
+            color: isDefault ? Colors.white70 : accentColor,
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScaleResetButton({
+    required bool isDefault,
+    required Color accentColor,
+    bool compact = false,
+  }) {
+    if (isDefault) return const SizedBox.shrink();
+
+    return Tooltip(
+      message: 'Reset to default (100%)',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () {
+          setState(() {
+            _tempUiScale = null;
+          });
+          ref
+              .read(uiScaleConfirmationProvider.notifier)
+              .requestScaleChange(1.0);
+        },
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 7 : 9,
+            vertical: 4,
+          ),
+          decoration: BoxDecoration(
+            color: accentColor.withOpacity(0.14),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: accentColor.withOpacity(0.4),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.restart_alt_rounded,
+                size: 14,
+                color: accentColor,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'Reset',
+                style: TextStyle(
+                  color: accentColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScaleMinusButton(double effectiveScale) {
+    return IconButton(
+      tooltip: 'Zoom out (-5%)',
+      splashRadius: 14,
+      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+      padding: EdgeInsets.zero,
+      icon: const Icon(Icons.remove_rounded, size: 16, color: Colors.white70),
+      onPressed: effectiveScale <= UiScaleNotifier.minScale + 0.01
+          ? null
+          : () {
+              final next = ((effectiveScale - 0.05) * 100).round() / 100;
+              ref
+                  .read(uiScaleConfirmationProvider.notifier)
+                  .requestScaleChange(next.clamp(
+                      UiScaleNotifier.minScale, UiScaleNotifier.maxScale));
+            },
+    );
+  }
+
+  Widget _buildScalePlusButton(double effectiveScale) {
+    return IconButton(
+      tooltip: 'Zoom in (+5%)',
+      splashRadius: 14,
+      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+      padding: EdgeInsets.zero,
+      icon: const Icon(Icons.add_rounded, size: 16, color: Colors.white70),
+      onPressed: effectiveScale >= UiScaleNotifier.maxScale - 0.01
+          ? null
+          : () {
+              final next = ((effectiveScale + 0.05) * 100).round() / 100;
+              ref
+                  .read(uiScaleConfirmationProvider.notifier)
+                  .requestScaleChange(next.clamp(
+                      UiScaleNotifier.minScale, UiScaleNotifier.maxScale));
+            },
+    );
+  }
+
+  Widget _buildScaleSliderWidget(double effectiveScale, Color accentColor) {
+    return SliderTheme(
+      data: SliderTheme.of(context).copyWith(
+        trackHeight: 4.0,
+        thumbShape: const RoundSliderThumbShape(
+          enabledThumbRadius: 6.5,
+          elevation: 2,
+          pressedElevation: 4,
+        ),
+        overlayShape: const RoundSliderOverlayShape(
+          overlayRadius: 12.0,
+        ),
+        tickMarkShape: SliderTickMarkShape.noTickMark,
+        showValueIndicator: ShowValueIndicator.never,
+        activeTrackColor: accentColor,
+        inactiveTrackColor: Colors.white.withOpacity(0.12),
+        thumbColor: accentColor,
+        overlayColor: accentColor.withOpacity(0.15),
+        trackShape: const RoundedRectSliderTrackShape(),
+      ),
+      child: Slider(
+        value: effectiveScale.clamp(
+          UiScaleNotifier.minScale,
+          UiScaleNotifier.maxScale,
+        ),
+        min: UiScaleNotifier.minScale,
+        max: UiScaleNotifier.maxScale,
+        divisions: 12,
+        onChanged: (val) {
+          final rounded = (val * 100).round() / 100;
+          setState(() {
+            _tempUiScale = rounded;
+          });
+        },
+        onChangeEnd: (val) {
+          final rounded = (val * 100).round() / 100;
+          setState(() {
+            _tempUiScale = null;
+          });
+          ref
+              .read(uiScaleConfirmationProvider.notifier)
+              .requestScaleChange(rounded);
+        },
+      ),
+    );
+  }
+
+  Widget _buildUiScaleTile(double currentUiScale) {
+    final effectiveScale = _tempUiScale ?? currentUiScale;
+    final percent = (effectiveScale * 100).round();
+    final accentColor = NivioTheme.accentColorOf(context);
+    final isDefault = (percent == 100);
+    final isDesktop = (!Platform.isAndroid && !Platform.isIOS && MediaQuery.sizeOf(context).width > 600) ||
+        MediaQuery.sizeOf(context).width > 800;
+
+    // Mobile layout: slider capsule placed directly below the description for maximum width & ease of touch
+    if (!isDesktop) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: Icon(
+                Icons.aspect_ratio_rounded,
+                color: NivioTheme.netflixWhite,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'UI Scale',
+                          style: TextStyle(
+                            color: NivioTheme.netflixWhite,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      _buildScaleBadge(
+                        isDefault: isDefault,
+                        percent: percent,
+                        accentColor: accentColor,
+                      ),
+                      if (!isDefault) ...[
+                        const SizedBox(width: 8),
+                        _buildScaleResetButton(
+                          isDefault: isDefault,
+                          accentColor: accentColor,
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Adjust interface zoom level',
+                    style: TextStyle(
+                      color: NivioTheme.netflixGrey,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  // Sleek framed capsule controller below description
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.04),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.08),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        _buildScaleMinusButton(effectiveScale),
+                        Expanded(
+                          child: _buildScaleSliderWidget(
+                              effectiveScale, accentColor),
+                        ),
+                        _buildScalePlusButton(effectiveScale),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Desktop layout: sleek inline row on the right
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.aspect_ratio_rounded,
+            color: NivioTheme.netflixWhite,
+            size: 22,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'UI Scale',
+                  style: TextStyle(
+                    color: NivioTheme.netflixWhite,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Adjust interface zoom level',
+                  style: TextStyle(
+                    color: NivioTheme.netflixGrey,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Sleek framed capsule controller on the right
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.04),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.08),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildScaleMinusButton(effectiveScale),
+                SizedBox(
+                  width: 145,
+                  child: _buildScaleSliderWidget(effectiveScale, accentColor),
+                ),
+                _buildScalePlusButton(effectiveScale),
+                const SizedBox(width: 2),
+                _buildScaleBadge(
+                  isDefault: isDefault,
+                  percent: percent,
+                  accentColor: accentColor,
+                ),
+                if (!isDefault) ...[
+                  const SizedBox(width: 4),
+                  _buildScaleResetButton(
+                    isDefault: isDefault,
+                    accentColor: accentColor,
+                    compact: true,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -3205,14 +3656,10 @@ Widget _buildMobileLayout(BuildContext context, User user) {
 
   Widget _buildDesktopLayout(BuildContext context, User user) {
     return Scaffold(
-      backgroundColor: NivioTheme.netflixBlack,
+      backgroundColor: NivioTheme.backgroundColorOf(context),
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF151922), NivioTheme.netflixBlack],
-          ),
+        decoration: BoxDecoration(
+          gradient: NivioTheme.backgroundGradientOf(context),
         ),
         child: SafeArea(
           child: Row(
@@ -3258,39 +3705,15 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           ),
           const Divider(color: Colors.white12, height: 1),
           Expanded(
-            child: ListView.builder(
+            child: AppListView.builder(
               padding: const EdgeInsets.symmetric(vertical: 12),
               itemCount: _categories.length,
               itemBuilder: (context, index) {
                 final isSelected = _selectedCategoryIndex == index;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  child: InkWell(
-                    onTap: () => setState(() => _selectedCategoryIndex = index),
-                    borderRadius: BorderRadius.circular(8),
-                    hoverColor: Colors.white.withOpacity(0.05),
-                    splashColor: Colors.transparent,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: isSelected ? NivioTheme.accentColorOf(context).withOpacity(0.15) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(8),
-                        border: isSelected 
-                            ? Border.all(color: NivioTheme.accentColorOf(context).withOpacity(0.5)) 
-                            : Border.all(color: Colors.transparent),
-                      ),
-                      child: AnimatedDefaultTextStyle(
-                        duration: const Duration(milliseconds: 200),
-                        style: TextStyle(
-                          color: isSelected ? NivioTheme.netflixWhite : Colors.white60,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                          fontSize: 15,
-                        ),
-                        child: Text(_categories[index]),
-                      ),
-                    ),
-                  ),
+                return _SidebarCategoryTile(
+                  label: _categories[index],
+                  isSelected: isSelected,
+                  onTap: () => setState(() => _selectedCategoryIndex = index),
                 );
               },
             ),
@@ -3317,7 +3740,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
             const SizedBox(height: 24),
             Expanded(
-              child: SingleChildScrollView(
+              child: AppSingleChildScrollView(
                 child: _buildSearchResultsCard(
                   user: user,
                   languagePrefs: ref.watch(languagePreferencesProvider),
@@ -3326,7 +3749,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                   preferredSubtitle: ref.watch(preferredSubtitleLanguageProvider),
                   episodeCheckEnabled: ref.watch(episodeCheckEnabledProvider),
                   videoDebanding: ref.watch(videoDebandingProvider),
-                  appAccentKey: ref.watch(appAccentColorProvider),
+                  appThemeKey: ref.watch(appThemeProvider),
+                  uiScale: ref.watch(uiScaleProvider),
                 ),
               ),
             ),
@@ -3347,6 +3771,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                   return FadeThroughTransition(
                     animation: animation,
                     secondaryAnimation: secondaryAnimation,
+                    fillColor: Colors.transparent,
                     child: child,
                   );
                 },
@@ -3378,13 +3803,15 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     final subtitleFontSize = ref.watch(subtitleFontSizeProvider);
     final subtitleBackground = ref.watch(subtitleBackgroundProvider);
     final subtitleOutline = ref.watch(subtitleOutlineProvider);
-    final appAccentKey = ref.watch(appAccentColorProvider);
+    final appThemeKey = ref.watch(appThemeProvider);
+    final uiScale = ref.watch(uiScaleProvider);
 
-    return SingleChildScrollView(
+    return AppSingleChildScrollView(
       key: ValueKey(index),
       child: Material(
         color: Colors.white.withOpacity(0.03),
         borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
@@ -3411,7 +3838,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           subtitleFontSize: subtitleFontSize,
           subtitleBackground: subtitleBackground,
           subtitleOutline: subtitleOutline,
-          appAccentKey: appAccentKey,
+          appThemeKey: appThemeKey,
+          uiScale: uiScale,
         ),
       ),
       ),
@@ -3438,7 +3866,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     required double subtitleFontSize,
     required String subtitleBackground,
     required String subtitleOutline,
-    required String appAccentKey,
+    required String appThemeKey,
+    required double uiScale,
   }) {
     switch (index) {
       case 0: // Profile & Activity
@@ -3746,10 +4175,11 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           children: [
             _buildActionTile(
               icon: Icons.palette_outlined,
-              title: 'Theme Color',
-              subtitle: appAccentLabelFromKey(appAccentKey),
-              onTap: _showThemeColorDialog,
+              title: 'App Theme',
+              subtitle: NivioTheme.getTheme(appThemeKey).label,
+              onTap: _showThemeDialog,
             ),
+            _buildUiScaleTile(uiScale),
             FutureBuilder<String>(
               future: _getAppVersionLabel(),
               builder: (context, snapshot) {
@@ -3981,15 +4411,611 @@ class _HomeLayoutBottomSheetState extends ConsumerState<_HomeLayoutBottomSheet> 
 
 }
 
+class _SidebarCategoryTile extends StatefulWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
 
+  const _SidebarCategoryTile({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
 
+  @override
+  State<_SidebarCategoryTile> createState() => _SidebarCategoryTileState();
+}
 
+class _SidebarCategoryTileState extends State<_SidebarCategoryTile> {
+  bool _isHovered = false;
 
+  @override
+  Widget build(BuildContext context) {
+    final accentColor = NivioTheme.accentColorOf(context);
 
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            transform: Matrix4.translationValues(
+              (widget.isSelected || !_isHovered) ? 0.0 : 4.0,
+              0.0,
+              0.0,
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+            decoration: BoxDecoration(
+              color: widget.isSelected
+                  ? accentColor.withOpacity(0.18)
+                  : (_isHovered
+                      ? Colors.white.withOpacity(0.06)
+                      : Colors.transparent),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: widget.isSelected
+                    ? accentColor.withOpacity(0.55)
+                    : (_isHovered
+                        ? Colors.white.withOpacity(0.12)
+                        : Colors.transparent),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  width: widget.isSelected ? 3.5 : (_isHovered ? 3.0 : 0.0),
+                  height: widget.isSelected ? 18.0 : (_isHovered ? 12.0 : 0.0),
+                  margin: EdgeInsets.only(
+                    right: (widget.isSelected || _isHovered) ? 10.0 : 0.0,
+                  ),
+                  decoration: BoxDecoration(
+                    color: widget.isSelected
+                        ? accentColor
+                        : accentColor.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(2),
+                    boxShadow: (widget.isSelected || _isHovered)
+                        ? [
+                            BoxShadow(
+                              color: accentColor.withOpacity(0.4),
+                              blurRadius: 6,
+                            ),
+                          ]
+                        : null,
+                  ),
+                ),
+                Expanded(
+                  child: AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 180),
+                    style: TextStyle(
+                      color: widget.isSelected
+                          ? NivioTheme.netflixWhite
+                          : (_isHovered ? Colors.white : Colors.white60),
+                      fontWeight: widget.isSelected
+                          ? FontWeight.bold
+                          : (_isHovered ? FontWeight.w600 : FontWeight.normal),
+                      fontSize: 14.5,
+                    ),
+                    child: Text(widget.label),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
+class _SettingActionTile extends StatefulWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final Color? titleColor;
 
+  const _SettingActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.titleColor,
+  });
 
+  @override
+  State<_SettingActionTile> createState() => _SettingActionTileState();
+}
 
+class _SettingActionTileState extends State<_SettingActionTile> {
+  bool _isHovered = false;
 
+  @override
+  Widget build(BuildContext context) {
+    final accentColor = NivioTheme.accentColorOf(context);
 
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        decoration: BoxDecoration(
+          color: _isHovered
+              ? Colors.white.withOpacity(0.045)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: _isHovered
+                ? Colors.white.withOpacity(0.08)
+                : Colors.transparent,
+            width: 1,
+          ),
+        ),
+        child: ListTile(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          leading: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: _isHovered
+                  ? accentColor.withOpacity(0.15)
+                  : Colors.white.withOpacity(0.04),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              widget.icon,
+              color: widget.titleColor ??
+                  (_isHovered ? accentColor : NivioTheme.netflixWhite),
+              size: 20,
+            ),
+          ),
+          title: Text(
+            widget.title,
+            style: TextStyle(
+              color: widget.titleColor ?? NivioTheme.netflixWhite,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          subtitle: Text(
+            widget.subtitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: _isHovered ? Colors.white70 : NivioTheme.netflixGrey,
+              fontSize: 12,
+            ),
+          ),
+          trailing: AnimatedSlide(
+            offset: Offset(_isHovered ? 0.25 : 0.0, 0),
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            child: Icon(
+              Icons.chevron_right_rounded,
+              color: _isHovered ? accentColor : NivioTheme.netflixGrey,
+              size: 22,
+            ),
+          ),
+          onTap: widget.onTap,
+        ),
+      ),
+    );
+  }
+}
 
+class _SettingSwitchTile extends StatefulWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _SettingSwitchTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  State<_SettingSwitchTile> createState() => _SettingSwitchTileState();
+}
+
+class _SettingSwitchTileState extends State<_SettingSwitchTile> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final accentColor = Theme.of(context).colorScheme.primary;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        decoration: BoxDecoration(
+          color: _isHovered
+              ? Colors.white.withOpacity(0.045)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: _isHovered
+                ? Colors.white.withOpacity(0.08)
+                : Colors.transparent,
+            width: 1,
+          ),
+        ),
+        child: SwitchListTile(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          secondary: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: _isHovered
+                  ? accentColor.withOpacity(0.15)
+                  : Colors.white.withOpacity(0.04),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              widget.icon,
+              color: _isHovered ? accentColor : NivioTheme.netflixWhite,
+              size: 20,
+            ),
+          ),
+          title: Text(
+            widget.title,
+            style: const TextStyle(
+              color: NivioTheme.netflixWhite,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          subtitle: Text(
+            widget.subtitle,
+            style: TextStyle(
+              color: _isHovered ? Colors.white70 : NivioTheme.netflixGrey,
+              fontSize: 12,
+            ),
+          ),
+          value: widget.value,
+          activeThumbColor: accentColor,
+          onChanged: widget.onChanged,
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopThemeCard extends StatefulWidget {
+  final NivioAppTheme theme;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _DesktopThemeCard({
+    required this.theme,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  State<_DesktopThemeCard> createState() => _DesktopThemeCardState();
+}
+
+class _DesktopThemeCardState extends State<_DesktopThemeCard> {
+  bool _isHovered = false;
+
+  Widget _buildSwatchDot(
+    Color color, {
+    required double size,
+    bool hasGlow = false,
+    Color? borderColor,
+  }) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: borderColor ?? Colors.white.withOpacity(0.25),
+          width: 1,
+        ),
+        boxShadow: hasGlow
+            ? [
+                BoxShadow(
+                  color: color.withOpacity(0.55),
+                  blurRadius: 5,
+                  spreadRadius: 0.5,
+                ),
+              ]
+            : null,
+      ),
+    );
+  }
+
+  Widget _buildSystemPreview(NivioAppTheme theme, bool isSelected) {
+    return Stack(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                color: const Color(0xFF0D0F14),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.dark_mode_rounded,
+                  size: 18,
+                  color: Colors.white70,
+                ),
+              ),
+            ),
+            Container(width: 1, color: Colors.white24),
+            Expanded(
+              child: Container(
+                color: const Color(0xFFF1F5F9),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.light_mode_rounded,
+                  size: 18,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+            ),
+          ],
+        ),
+        Center(
+          child: Container(
+            padding: const EdgeInsets.all(5),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.75),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white38, width: 1),
+            ),
+            child: const Icon(
+              Icons.brightness_auto_rounded,
+              size: 15,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildColorThemePreview(NivioAppTheme theme, bool isSelected) {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: Alignment.topRight,
+                radius: 1.2,
+                colors: [
+                  theme.primary.withOpacity(0.22),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: theme.primary,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Container(
+                    width: 20,
+                    height: 3.5,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.25),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 1.5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.primary.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                    child: Text(
+                      theme.key.toUpperCase(),
+                      style: TextStyle(
+                        color: theme.primary,
+                        fontSize: 7.5,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 7,
+                  vertical: 4.5,
+                ),
+                decoration: BoxDecoration(
+                  color: theme.surface.withOpacity(0.92),
+                  borderRadius: BorderRadius.circular(7),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.1),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildSwatchDot(theme.primary, size: 11, hasGlow: true),
+                    _buildSwatchDot(theme.secondary, size: 9),
+                    _buildSwatchDot(
+                      theme.surfaceContainer,
+                      size: 8,
+                      borderColor: Colors.white30,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPreview(NivioAppTheme theme, bool isSelected) {
+    final isSystem = theme.key == 'system';
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        gradient: theme.gradientColors.length >= 2
+            ? LinearGradient(
+                colors: theme.gradientColors,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
+            : null,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isSelected
+              ? theme.primary.withOpacity(0.55)
+              : Colors.white.withOpacity(0.1),
+          width: 1,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: isSystem
+          ? _buildSystemPreview(theme, isSelected)
+          : _buildColorThemePreview(theme, isSelected),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+    final isSelected = widget.isSelected;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          transform: Matrix4.translationValues(0, _isHovered ? -3.0 : 0.0, 0),
+          padding: const EdgeInsets.all(9),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? theme.primary.withOpacity(0.14)
+                : (_isHovered
+                    ? Colors.white.withOpacity(0.06)
+                    : Colors.white.withOpacity(0.03)),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isSelected
+                  ? theme.primary
+                  : (_isHovered
+                      ? theme.primary.withOpacity(0.55)
+                      : Colors.white.withOpacity(0.08)),
+              width: isSelected ? 2 : 1,
+            ),
+            boxShadow: (isSelected || _isHovered)
+                ? [
+                    BoxShadow(
+                      color:
+                          theme.primary.withOpacity(isSelected ? 0.22 : 0.15),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildPreview(theme, isSelected),
+              ),
+              const SizedBox(height: 7),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      theme.label,
+                      style: TextStyle(
+                        color: isSelected ? theme.primary : Colors.white,
+                        fontWeight:
+                            isSelected ? FontWeight.bold : FontWeight.w600,
+                        fontSize: 12.5,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (isSelected) ...[
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.check_circle_rounded,
+                      color: theme.primary,
+                      size: 15,
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                theme.description,
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 9.5,
+                  height: 1.15,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

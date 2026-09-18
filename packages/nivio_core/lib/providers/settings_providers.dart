@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -57,7 +58,219 @@ Color appAccentColorFromKey(String key) {
   return appAccentOptions.first.color;
 }
 
-// App Accent Color Provider
+// App Theme Provider (full color schemes: System, Blackout, Monokai, Catppuccin, Dracula, Amber, Lavender)
+final appThemeProvider =
+    StateNotifierProvider<AppThemeNotifier, String>((ref) {
+  return AppThemeNotifier();
+});
+
+class AppThemeNotifier extends StateNotifier<String> {
+  AppThemeNotifier() : super('system') {
+    _loadTheme();
+  }
+
+  Future<void> _loadTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedTheme = prefs.getString('app_theme');
+    if (savedTheme != null) {
+      state = _normalizeTheme(savedTheme);
+      return;
+    }
+    // Migrate legacy accent color if present
+    final oldAccent = prefs.getString('app_accent_color');
+    if (oldAccent != null) {
+      state = _mapOldAccentToTheme(oldAccent);
+      await prefs.setString('app_theme', state);
+      return;
+    }
+    state = 'system';
+  }
+
+  Future<void> setTheme(String key) async {
+    final normalized = _normalizeTheme(key);
+    state = normalized;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('app_theme', normalized);
+  }
+
+  String _normalizeTheme(String key) {
+    for (final theme in NivioTheme.availableThemes) {
+      if (theme.key == key) return key;
+    }
+    return 'system';
+  }
+
+  String _mapOldAccentToTheme(String oldAccent) {
+    switch (oldAccent.toLowerCase()) {
+      case 'purple':
+        return 'dracula';
+      case 'green':
+        return 'monokai';
+      case 'yellow':
+      case 'orange':
+        return 'amber';
+      case 'pink':
+      case 'teal':
+      case 'blue':
+        return 'catppuccin';
+      default:
+        return 'system';
+    }
+  }
+}
+
+// UI Scale Provider (Zoom level slider)
+final uiScaleProvider =
+    StateNotifierProvider<UiScaleNotifier, double>((ref) {
+  return UiScaleNotifier();
+});
+
+class UiScaleNotifier extends StateNotifier<double> {
+  static const double defaultScale = 1.0;
+  static const double minScale = 0.75;
+  static const double maxScale = 1.35;
+
+  UiScaleNotifier() : super(defaultScale) {
+    _loadScale();
+  }
+
+  Future<void> _loadScale() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedScale = prefs.getDouble('ui_scale') ?? defaultScale;
+    state = savedScale.clamp(minScale, maxScale);
+  }
+
+  void setPreviewScale(double scale) {
+    final clamped = scale.clamp(minScale, maxScale);
+    final rounded = (clamped * 100).round() / 100;
+    state = rounded;
+  }
+
+  Future<void> setScale(double scale) async {
+    final clamped = scale.clamp(minScale, maxScale);
+    final rounded = (clamped * 100).round() / 100;
+    state = rounded;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('ui_scale', rounded);
+  }
+
+  Future<void> resetToDefault() async {
+    state = defaultScale;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('ui_scale', defaultScale);
+  }
+}
+
+// UI Scale Confirmation State & Provider
+class UiScaleConfirmationData {
+  final bool isVisible;
+  final int secondsRemaining;
+  final double previousScale;
+  final double proposedScale;
+
+  const UiScaleConfirmationData({
+    this.isVisible = false,
+    this.secondsRemaining = 5,
+    this.previousScale = 1.0,
+    this.proposedScale = 1.0,
+  });
+
+  UiScaleConfirmationData copyWith({
+    bool? isVisible,
+    int? secondsRemaining,
+    double? previousScale,
+    double? proposedScale,
+  }) {
+    return UiScaleConfirmationData(
+      isVisible: isVisible ?? this.isVisible,
+      secondsRemaining: secondsRemaining ?? this.secondsRemaining,
+      previousScale: previousScale ?? this.previousScale,
+      proposedScale: proposedScale ?? this.proposedScale,
+    );
+  }
+}
+
+final uiScaleConfirmationProvider =
+    StateNotifierProvider<UiScaleConfirmationNotifier, UiScaleConfirmationData>((ref) {
+  return UiScaleConfirmationNotifier(ref);
+});
+
+class UiScaleConfirmationNotifier extends StateNotifier<UiScaleConfirmationData> {
+  final Ref _ref;
+  Timer? _timer;
+
+  UiScaleConfirmationNotifier(this._ref) : super(const UiScaleConfirmationData());
+
+  void requestScaleChange(double proposedScale) {
+    final currentScale = _ref.read(uiScaleProvider);
+    final clampedProposed = proposedScale.clamp(
+      UiScaleNotifier.minScale,
+      UiScaleNotifier.maxScale,
+    );
+    final roundedProposed = (clampedProposed * 100).round() / 100;
+
+    // If already at proposed scale and not currently confirming, no-op
+    if (!state.isVisible && (currentScale - roundedProposed).abs() < 0.001) {
+      return;
+    }
+
+    final prev = state.isVisible ? state.previousScale : currentScale;
+
+    // If proposed is same as the original previous scale, just revert directly
+    if ((prev - roundedProposed).abs() < 0.001) {
+      revert();
+      return;
+    }
+
+    // Apply preview scale immediately so app visually zooms
+    _ref.read(uiScaleProvider.notifier).setPreviewScale(roundedProposed);
+
+    // Cancel any running timer
+    _timer?.cancel();
+
+    // Start 5-second countdown
+    state = UiScaleConfirmationData(
+      isVisible: true,
+      secondsRemaining: 5,
+      previousScale: prev,
+      proposedScale: roundedProposed,
+    );
+
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (state.secondsRemaining > 1) {
+        state = state.copyWith(secondsRemaining: state.secondsRemaining - 1);
+      } else {
+        // 5 seconds elapsed! Automatically revert!
+        _timer?.cancel();
+        revert();
+      }
+    });
+  }
+
+  void confirm() {
+    _timer?.cancel();
+    if (state.isVisible) {
+      _ref.read(uiScaleProvider.notifier).setScale(state.proposedScale);
+    }
+    state = const UiScaleConfirmationData(isVisible: false);
+  }
+
+  void revert() {
+    _timer?.cancel();
+    if (state.isVisible) {
+      _ref.read(uiScaleProvider.notifier).setScale(state.previousScale);
+    }
+    state = const UiScaleConfirmationData(isVisible: false);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+}
+
+// App Accent Color Provider (legacy compatibility)
 final appAccentColorProvider =
     StateNotifierProvider<AppAccentColorNotifier, String>((ref) {
       return AppAccentColorNotifier();
