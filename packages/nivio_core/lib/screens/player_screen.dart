@@ -710,11 +710,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         result = res.copyWith(url: bestMatch.url, quality: bestMatch.quality);
       }
 
+      if (!mounted) return;
       if (result == null) {
         if (_currentProviderIndex < _maxProviders - 1) {
           _currentProviderIndex++;
           setState(() => _error = 'Provider unavailable, trying next...');
           await Future.delayed(const Duration(milliseconds: 500));
+          if (!mounted) return;
           _initializePlayer(isRetry: true);
           return;
         }
@@ -802,6 +804,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           }
         }
 
+        if (!mounted) return;
         if (working == null) {
           appDebugLog('❌ All ${candidates.length} source(s) failed for ${result.provider}');
           if (_currentProviderIndex < _maxProviders - 1) {
@@ -810,6 +813,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ? 'Stream returned $lastStatus, trying next...'
                 : 'Stream unreachable, trying next provider...');
             await Future.delayed(const Duration(milliseconds: 400));
+            if (!mounted) return;
             _initializePlayer(isRetry: true);
             return;
           } else {

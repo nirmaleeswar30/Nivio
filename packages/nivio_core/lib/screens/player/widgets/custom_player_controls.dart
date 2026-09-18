@@ -417,7 +417,7 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
-                                if (widget.subtitle != null || widget.providerName != null)
+                                if (widget.subtitle != null)
                                   Wrap(
                                     spacing: 6,
                                     runSpacing: 4,
@@ -653,3 +653,4 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
     );
   }
 }
+

@@ -91,6 +91,13 @@ pub extern "C" fn rqbit_start(port: u16, output_dir: *const c_char) -> i32 {
                 let sopts = SessionOptions {
                     persistence: None,
                     cancellation_token: Some(cancel_thread.clone()),
+                    dht: Some(librqbit::DhtSessionConfig {
+                        persistence: Some(librqbit::dht::DhtPersistenceConfig {
+                            config_filename: Some(PathBuf::from(&dir).join("dht.json")),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 };
                 let session = match Session::new_with_opts(PathBuf::from(dir), sopts).await {
