@@ -126,12 +126,11 @@ class TorrentStreamService {
         'res=${best.parsed.resolution} type=${best.type} link=${best.link.substring(0, best.link.length.clamp(0, 60))}…');
 
     final prefs = await SharedPreferences.getInstance();
-    final downloadDir = prefs.getString('torrent_download_location');
     final persistFiles = prefs.getBool('torrent_persist_files') ?? false;
 
     onStatus?.call('Starting: ${best.title}');
     _log('starting rqbit engine…');
-    final client = await RqbitEngine.instance.ensureStarted(downloadDir: downloadDir);
+    final client = await RqbitEngine.instance.ensureStarted();
     _log('engine ready at ${RqbitEngine.instance.baseUrl}; adding torrent…');
     _client = client;
 
@@ -220,7 +219,9 @@ class TorrentStreamService {
     }
   }
 
-  /// Stops the active torrent. [deleteFiles] also reclaims disk.
+  /// Stops the active torrent and halts network/seeding activity.
+  /// Keeps downloaded chunks in cache so re-opening the same video resumes instantly.
+  /// Old video cache is automatically deleted when a different video is played.
   Future<void> stopActive({bool deleteFiles = false}) async {
     final id = _activeTorrentId;
     final client = _client;

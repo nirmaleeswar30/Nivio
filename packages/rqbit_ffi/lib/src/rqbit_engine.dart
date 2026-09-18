@@ -42,7 +42,14 @@ class RqbitEngine {
     await Directory(dir).create(recursive: true);
 
     final chosenPort = port ?? await _freePort();
-    final rc = RqbitBindings.instance().start(chosenPort, dir);
+    var rc = RqbitBindings.instance().start(chosenPort, dir);
+    if (rc == -13) {
+      // An orphaned native engine is already running (e.g., from a session
+      // prior to a Flutter hot restart or previous stream). Stop it cleanly
+      // and restart fresh on the chosen port.
+      RqbitBindings.instance().stop();
+      rc = RqbitBindings.instance().start(chosenPort, dir);
+    }
     if (rc != 0) {
       final err = RqbitBindings.instance().lastError() ?? 'unknown error';
       throw StateError('rqbit_start failed (code $rc): $err');

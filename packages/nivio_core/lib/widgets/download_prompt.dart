@@ -155,6 +155,16 @@ class DownloadPrompt {
   /// Shows a language picker dialog and returns the selected audio/subtitle languages.
   /// Returns null if the user cancels. Used by batch/seasonal downloads to ask once
   /// and apply the same language selection to all episodes.
+  static String _cleanQualityLabel(String quality) {
+    var q = quality;
+    q = q.replaceAll(RegExp(r'\(?\b(subsplease|erai-?raws|judas|ember)\b\)?', caseSensitive: false), '').trim();
+    q = q.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (q.isEmpty || q.toLowerCase() == 'default') {
+      return 'Auto';
+    }
+    return q;
+  }
+
   static int _qualityScore(String quality) {
     final q = quality.toLowerCase().trim();
     if (q == 'auto') return -1;
@@ -417,14 +427,15 @@ class DownloadPrompt {
                                     dropdownColor: NivioTheme.netflixDarkGrey,
                                     icon: const Icon(Icons.arrow_drop_down, color: NivioTheme.netflixWhite),
                                     items: currentResult.sources.map((source) {
-                                      final hasMixedAudio = currentResult.sources.any((s) => s.isDub) && currentResult.sources.any((s) => !s.isDub);
-                                      final label = (isAnimeMedia && hasMixedAudio)
-                                          ? "${source.quality} ${source.isDub ? '(Dub)' : '(Sub)'}"
-                                          : source.quality;
-                                      return DropdownMenuItem(
-                                        value: source,
-                                        child: Text(label, style: const TextStyle(color: NivioTheme.netflixWhite)),
-                                      );
+                                       final hasMixedAudio = currentResult.sources.any((s) => s.isDub) && currentResult.sources.any((s) => !s.isDub);
+                                       final cleanQuality = _cleanQualityLabel(source.quality);
+                                       final label = (isAnimeMedia && hasMixedAudio)
+                                           ? "$cleanQuality ${source.isDub ? '(Dub)' : '(Sub)'}"
+                                           : cleanQuality;
+                                       return DropdownMenuItem(
+                                         value: source,
+                                         child: Text(label, style: const TextStyle(color: NivioTheme.netflixWhite)),
+                                       );
                                     }).toList(),
                                     onChanged: (val) => setState(() => selectedSource = val),
                                   ),

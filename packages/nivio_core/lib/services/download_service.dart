@@ -310,26 +310,37 @@ class DownloadService {
     String magnetOrUrl,
     CancelToken cancelToken,
   ) async {
-    final prefs = await SharedPreferences.getInstance();
-    final downloadDir = prefs.getString('torrent_download_location');
+    final downloadDir = await getDownloadDirectory();
+    if (downloadDir == null) {
+      _updateStatus(item, DownloadStatus.failed);
+      return;
+    }
     
-    final client = await RqbitEngine.instance.ensureStarted(downloadDir: downloadDir);
+    final client = await RqbitEngine.instance.ensureStarted();
     
-    // 1. Add Torrent (listOnly to resolve files)
-    appDebugLog('Adding torrent to rqbit (listOnly)...');
+    // 1. Add Torrent to rqbit session
+    appDebugLog('Adding torrent to rqbit...');
     final addResponse = await client.addTorrent(
       magnetOrUrl,
-      listOnly: true,
       isUrl: magnetOrUrl.startsWith('http') ? true : null,
+      outputFolder: downloadDir,
     );
-    final torrentId = addResponse.id ?? 0;
+    final torrentId = addResponse.id;
+    if (torrentId == null) {
+      throw StateError('Failed to add torrent to rqbit: no ID returned');
+    }
 
     // 2. Wait for metadata / file list
-    TorrentDetails? details;
-    while (!cancelToken.isCancelled) {
-      details = await client.getDetails(torrentId);
-      if (details.files.isNotEmpty) break;
+    TorrentDetails? details = addResponse.details;
+    int attempts = 0;
+    while (!cancelToken.isCancelled && (details == null || details.files.isEmpty)) {
+      if (attempts++ > 60) {
+        throw Exception('Timed out waiting for torrent metadata');
+      }
       await Future.delayed(const Duration(seconds: 1));
+      try {
+        details = await client.getDetails(torrentId);
+      } catch (_) {}
     }
     
     if (cancelToken.isCancelled || details == null || details.files.isEmpty) return;
@@ -347,16 +358,11 @@ class DownloadService {
 
     // 4. Update the savePath to point to the actual file on disk
     // rqbit saves to `downloadDir/torrent_name/file_name` or `downloadDir/file_name`
-    // We can't know perfectly without checking `details.name`, but the player
-    // can resolve it later, or we can approximate it.
-    // Actually, `RqbitEngine.instance.downloadDir` is known.
-    final baseDir = RqbitEngine.instance.downloadDir ?? '';
+    final baseDir = downloadDir;
     final torrentName = details.name ?? '';
     
     // If it's a single file torrent, torrentName IS the filename and it's in baseDir.
     // If it's a multi-file torrent, it's in baseDir/torrentName/fileInfo.name.
-    // For safety, let's just use `fileInfo.name` to check if it exists in subdirs later,
-    // OR we can just build the path.
     String actualFilePath = '';
     if (details.files.length == 1) {
        actualFilePath = '$baseDir${Platform.pathSeparator}${fileInfo.name}';
@@ -368,13 +374,41 @@ class DownloadService {
     await box.put(item.id, item);
 
     // 5. Tell rqbit to download ONLY this file
-    await client.updateOnlyFiles(torrentId, [fileInfo.index]);
+    // Wait for the torrent to transition out of 'initializing' state before updating file selection.
+    for (int i = 0; i < 30 && !cancelToken.isCancelled; i++) {
+      try {
+        final stats = await client.getStats(torrentId);
+        if (stats.state != 'initializing') break;
+      } catch (_) {}
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+
+    if (details.files.length > 1) {
+      for (int retry = 0; retry < 10 && !cancelToken.isCancelled; retry++) {
+        try {
+          await client.updateOnlyFiles(torrentId, [fileInfo.index]);
+          break;
+        } catch (e) {
+          if (retry < 9) {
+            await Future.delayed(const Duration(milliseconds: 500));
+            continue;
+          }
+          appDebugLog('Warning: updateOnlyFiles failed after retries: $e');
+        }
+      }
+    }
 
     // 6. Monitor progress
     int lastUpdateMs = DateTime.now().millisecondsSinceEpoch;
     
     while (!cancelToken.isCancelled) {
-      final stats = await client.getStats(torrentId);
+      TorrentStats stats;
+      try {
+        stats = await client.getStats(torrentId);
+      } catch (_) {
+        await Future.delayed(const Duration(seconds: 1));
+        continue;
+      }
       
 
       // rqbit gives progressBytes for the WHOLE torrent, or just the file?
@@ -405,8 +439,15 @@ class DownloadService {
           _updateStatus(item, DownloadStatus.completed);
           return;
         } else {
-          // Maybe the path was wrong? (Multi-file edge cases)
-          // Just mark completed, player will search for it.
+          // If the exact path differed, search baseDir for the file
+          try {
+            final dir = Directory(baseDir);
+            final match = dir.listSync(recursive: true).whereType<File>().firstWhere(
+              (f) => f.path.endsWith(fileInfo.name) || f.path.split(Platform.pathSeparator).last == fileInfo.name,
+              orElse: () => File(actualFilePath),
+            );
+            item.savePath = match.path;
+          } catch (_) {}
           item.progress = 1.0;
           _updateStatus(item, DownloadStatus.completed);
           return;

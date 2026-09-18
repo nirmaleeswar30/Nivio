@@ -1,9 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:rqbit_ffi/rqbit_ffi.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/episode_check_service.dart';
 import '../core/theme.dart';
@@ -588,42 +584,4 @@ class TorrentPersistFilesNotifier extends StateNotifier<bool> {
   }
 }
 
-// Torrent Download Location Provider
-final torrentDownloadLocationProvider =
-    StateNotifierProvider<TorrentDownloadLocationNotifier, String?>((ref) {
-  return TorrentDownloadLocationNotifier();
-});
-
-class TorrentDownloadLocationNotifier extends StateNotifier<String?> {
-  TorrentDownloadLocationNotifier() : super(null) {
-    _loadPreference();
-  }
-
-  Future<void> _loadPreference() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString('torrent_download_location');
-    if (saved != null) {
-      state = saved;
-    } else {
-      // Calculate and set the default path for display purposes
-      try {
-        final base = await getApplicationCacheDirectory();
-        state = '${base.path}${Platform.pathSeparator}nivio_torrents';
-      } catch (_) {
-        final base = await getTemporaryDirectory();
-        state = '${base.path}${Platform.pathSeparator}nivio_torrents';
-      }
-    }
-  }
-
-  Future<void> setLocation(String value) async {
-    if (state == value) return;
-    state = value;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('torrent_download_location', value);
-    if (RqbitEngine.instance.isRunning) {
-      await RqbitEngine.instance.stop();
-    }
-  }
-}
 

@@ -29,6 +29,7 @@ class RqbitClient {
     bool? isUrl,
     List<int>? onlyFiles,
     bool listOnly = false,
+    String? outputFolder,
   }) async {
     final query = <String, String>{'overwrite': '$overwrite'};
     if (isUrl != null) query['is_url'] = '$isUrl';
@@ -36,6 +37,9 @@ class RqbitClient {
       query['only_files'] = onlyFiles.join(',');
     }
     if (listOnly) query['list_only'] = 'true';
+    if (outputFolder != null && outputFolder.isNotEmpty) {
+      query['output_folder'] = outputFolder;
+    }
 
     final resp = await _http.post(
       _u('/torrents', query),

@@ -203,9 +203,21 @@ class MiruroScraperService {
             extension: streamExtension,
           );
 
-          String qualityLabel = s['quality']?.toString() ?? 'Auto';
-          if (s['fansub'] != null) qualityLabel += ' (${s['fansub']})';
-          else if (s['server'] != null) qualityLabel += ' (${s['server']})';
+          String rawQuality = s['quality']?.toString().trim() ?? '';
+          final resMatch = RegExp(r'(\d{3,4}p?)', caseSensitive: false).firstMatch(rawQuality);
+          String qualityLabel;
+          if (resMatch != null) {
+            String q = resMatch.group(1)!;
+            if (!q.toLowerCase().endsWith('p')) q += 'p';
+            qualityLabel = q;
+          } else if (rawQuality.isNotEmpty && 
+                     rawQuality.toLowerCase() != 'default' &&
+                     rawQuality.toLowerCase() != 'backup' &&
+                     !rawQuality.toLowerCase().contains('subsplease')) {
+            qualityLabel = rawQuality;
+          } else {
+            qualityLabel = 'Auto';
+          }
 
           sources.add(StreamSource(
             url: proxiedUrl,

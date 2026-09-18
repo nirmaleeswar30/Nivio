@@ -19,7 +19,6 @@ import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
 import 'package:nivio/providers/changelog_provider.dart';
 import 'package:nivio/providers/home_layout_provider.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/github_release_update_service.dart';
 import 'package:nivio/services/api_status_service.dart';
@@ -343,13 +342,6 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                               ref.read(enableTorrentsProvider.notifier).setEnabled(value);
                             },
                           ),
-                        if (_matches('torrent download location directory path folder'))
-                          _buildActionTile(
-                            icon: Icons.folder_rounded,
-                            title: 'Download Directory',
-                            subtitle: ref.watch(torrentDownloadLocationProvider) ?? 'Default Temporary Directory',
-                            onTap: _pickTorrentDownloadLocation,
-                          ),
                         if (_matches('torrent auto select file index automatic'))
                           _buildSwitchTile(
                             icon: Icons.auto_mode_rounded,
@@ -370,6 +362,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                               ref.read(torrentPersistFilesProvider.notifier).setEnabled(val);
                             },
                           ),
+                        _buildTorrentIndexingNote(),
                       ],
                     ),
                   ),
@@ -1337,6 +1330,41 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     );
   }
 
+  Widget _buildTorrentIndexingNote() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.08),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline_rounded,
+            size: 18,
+            color: Colors.white.withValues(alpha: 0.6),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              "Note: Torrent indexing doesn't work best with old releases as of now.",
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.7),
+                fontSize: 12,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildWatchlistPreview(List<dynamic> watchlist) {
     if (watchlist.isEmpty) {
       return const Padding(
@@ -1873,14 +1901,6 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     );
   }
 
-  Future<void> _pickTorrentDownloadLocation() async {
-    final String? directoryPath = await FilePicker.getDirectoryPath(
-      dialogTitle: 'Select Torrent Download Directory',
-    );
-    if (directoryPath != null) {
-      ref.read(torrentDownloadLocationProvider.notifier).setLocation(directoryPath);
-    }
-  }
 
   Future<void> _showClearHistoryDialog() async {
     final shouldClear = await showDialog<bool>(
@@ -3186,12 +3206,6 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                 ref.read(enableTorrentsProvider.notifier).setEnabled(value);
               },
             ),
-            _buildActionTile(
-              icon: Icons.folder_rounded,
-              title: 'Download Directory',
-              subtitle: ref.watch(torrentDownloadLocationProvider) ?? 'Default Temporary Directory',
-              onTap: _pickTorrentDownloadLocation,
-            ),
             _buildSwitchTile(
               icon: Icons.auto_mode_rounded,
               title: 'Auto-Select Episode File',
@@ -3210,6 +3224,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                 ref.read(torrentPersistFilesProvider.notifier).setEnabled(val);
               },
             ),
+            _buildTorrentIndexingNote(),
           ],
         );
       case 4: // Downloads
