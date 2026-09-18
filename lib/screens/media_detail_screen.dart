@@ -513,55 +513,36 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                   height: heroHeight,
                   child: Stack(
                     fit: StackFit.expand,
-                    clipBehavior: Clip.none,
                     children: [
-                      RepaintBoundary(
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            if (backdropUrl.isNotEmpty)
-                              CachedNetworkImage(
-                                imageUrl: backdropUrl,
-                                fit: BoxFit.cover,
-                                fadeInDuration: Duration.zero,
-                                fadeOutDuration: Duration.zero,
-                                errorWidget: (_, __, ___) => Container(color: colors.darkMuted),
-                              )
-                            else
-                              Container(color: colors.darkMuted),
-                            // Edge darkening (replaces expensive RadialGradient vignette)
-                            const DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.centerLeft,
-                                  end: Alignment.centerRight,
-                                  colors: [
-                                    Color(0xB3000000), // 0.7 opacity black
-                                    Colors.transparent,
-                                    Colors.transparent,
-                                    Color(0xB3000000),
-                                  ],
-                                  stops: [0.0, 0.20, 0.80, 1.0],
-                                ),
-                              ),
+                      if (backdropUrl.isNotEmpty)
+                        CachedNetworkImage(
+                          imageUrl: backdropUrl,
+                          fit: BoxFit.cover,
+                          fadeInDuration: Duration.zero,
+                          fadeOutDuration: Duration.zero,
+                          errorWidget: (_, __, ___) => Container(color: colors.darkMuted),
+                        )
+                      else
+                        Container(color: colors.darkMuted),
+                      // Bottom fade to darkMuted (matching HomeScreen banner)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        height: heroHeight * 0.50,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.transparent,
+                                colors.darkMuted.withOpacity(0.8),
+                                colors.darkMuted,
+                              ],
+                              stops: const [0.0, 0.7, 1.0],
                             ),
-                            // Bottom fade to darkMuted
-                            DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Colors.transparent,
-                                    Colors.black.withValues(alpha: 0.3),
-                                    colors.darkMuted.withOpacity(0.5),
-                                    colors.darkMuted,
-                                  ],
-                                  stops: const [0.0, 0.55, 0.88, 1.0],
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     if (!isDesktop)
@@ -625,8 +606,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                         left: 72,
                         right: 48,
                         bottom: 24,
-                        child: RepaintBoundary(
-                          child: Row(
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             if (posterUrl.isNotEmpty)
@@ -878,7 +858,6 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                             ),
                           ],
                         ),
-                        ),
                       ),
                   ],
                 ),
@@ -887,37 +866,10 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
             ),
             // ════════════════ Sliver 2: Details Content ════════════════
             SliverToBoxAdapter(
-              child: RepaintBoundary(
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    // ── Gradient bloom that extends from above ──
-                    Positioned(
-                      top: -220,
-                      left: 0,
-                      right: 0,
-                      height: 220,
-                      child: IgnorePointer(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                colors.dominant.withValues(alpha: 0.20),
-                                colors.dominant.withValues(alpha: 0.07),
-                                Colors.transparent,
-                              ],
-                              stops: const [0.0, 0.40, 1.0],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Container(
-                      width: double.infinity,
-                      padding: EdgeInsets.fromLTRB(isDesktop ? 72 : 16, 16, 16, 24),
-                      child: Column(
+              child: Container(
+                width: double.infinity,
+                padding: EdgeInsets.fromLTRB(isDesktop ? 72 : 16, 16, 16, 24),
+                child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (!isDesktop) ...[
@@ -1177,10 +1129,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                         ],
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
+                  ),
           ],
         ),
             if (isDesktop)
