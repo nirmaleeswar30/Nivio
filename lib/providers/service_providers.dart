@@ -14,6 +14,7 @@ import 'package:nivio/services/scrapers/castletv/castletv_scraper.dart';
 import 'package:nivio/services/scrapers/vidrock/vidrock_scraper.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
 import 'package:nivio/services/anime_filler_service.dart';
+import 'package:nivio/services/dns_over_https_service.dart';
 import 'package:nivio/models/search_result.dart';
 
 // Cache service provider
@@ -81,3 +82,8 @@ final animeFillerDataProvider =
         malId: media.malId,
       );
 });
+
+final dnsOverHttpsServiceProvider = Provider<DnsOverHttpsService>((ref) {
+  return DnsOverHttpsService();
+});
+

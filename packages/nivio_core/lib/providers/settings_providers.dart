@@ -730,4 +730,60 @@ class AutoSkipFillerNotifier extends StateNotifier<bool> {
   }
 }
 
+// Use DNS over HTTPS Provider (defaults to false)
+final useDnsOverHttpsProvider =
+    StateNotifierProvider<UseDnsOverHttpsNotifier, bool>((ref) {
+  return UseDnsOverHttpsNotifier();
+});
+
+class UseDnsOverHttpsNotifier extends StateNotifier<bool> {
+  UseDnsOverHttpsNotifier() : super(false) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('use_dns_over_https') ?? false;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('use_dns_over_https', value);
+  }
+}
+
+// DNS over HTTPS URL Provider (defaults to https://cloudflare-dns.com/dns-query)
+final dnsOverHttpsUrlProvider =
+    StateNotifierProvider<DnsOverHttpsUrlNotifier, String>((ref) {
+  return DnsOverHttpsUrlNotifier();
+});
+
+class DnsOverHttpsUrlNotifier extends StateNotifier<String> {
+  static const String defaultDohUrl = 'https://cloudflare-dns.com/dns-query';
+
+  DnsOverHttpsUrlNotifier() : super(defaultDohUrl) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getString('dns_over_https_url') ?? defaultDohUrl;
+  }
+
+  Future<void> setUrl(String url) async {
+    final trimmed = url.trim();
+    final finalUrl = trimmed.isEmpty ? defaultDohUrl : trimmed;
+    state = finalUrl;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('dns_over_https_url', finalUrl);
+  }
+
+  Future<void> resetToDefault() async {
+    state = defaultDohUrl;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('dns_over_https_url', defaultDohUrl);
+  }
+}
+
 

@@ -44,6 +44,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     'Subtitle Appearance',
     'Torrents',
     'Downloads',
+    'Network',
     'Content Feed',
     'Episode Alerts',
     'App & Updates',
@@ -449,6 +450,38 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                             title: 'Parallel Download Connections',
                             subtitle: '${ref.watch(downloadConcurrencyProvider)}',
                             onTap: _showDownloadConcurrencyDialog,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                  child: _buildSectionCard(
+                    title: 'Network',
+                    child: Column(
+                      children: [
+                        if (_matches('use dns over https doh isp blocks domains bypass network'))
+                          _buildSwitchTile(
+                            icon: Icons.vpn_lock_rounded,
+                            title: 'Use DNS over HTTPS',
+                            subtitle:
+                                'This enables DNS over HTTPS, useful if your ISP blocks certain domains.',
+                            value: ref.watch(useDnsOverHttpsProvider),
+                            onChanged: (value) {
+                              ref
+                                  .read(useDnsOverHttpsProvider.notifier)
+                                  .setEnabled(value);
+                            },
+                          ),
+                        if (_matches('dns over https doh url server query provider cloudflare network'))
+                          _buildActionTile(
+                            icon: Icons.dns_rounded,
+                            title: 'DNS over HTTPS URL',
+                            subtitle: ref.watch(dnsOverHttpsUrlProvider),
+                            onTap: _showDnsUrlDialog,
                           ),
                       ],
                     ),
@@ -1187,6 +1220,30 @@ Widget _buildMobileLayout(BuildContext context, User user) {
         ),
       );
     }
+    if (_matches('use dns over https doh isp blocks domains bypass network')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.vpn_lock_rounded,
+          title: 'Use DNS over HTTPS',
+          subtitle:
+              'This enables DNS over HTTPS, useful if your ISP blocks certain domains.',
+          value: ref.watch(useDnsOverHttpsProvider),
+          onChanged: (value) {
+            ref.read(useDnsOverHttpsProvider.notifier).setEnabled(value);
+          },
+        ),
+      );
+    }
+    if (_matches('dns over https doh url server query provider cloudflare network')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.dns_rounded,
+          title: 'DNS over HTTPS URL',
+          subtitle: ref.watch(dnsOverHttpsUrlProvider),
+          onTap: _showDnsUrlDialog,
+        ),
+      );
+    }
     if (_matches('tamil language')) {
       results.add(
         _buildSwitchTile(
@@ -1844,6 +1901,130 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
           ],
         );
+      },
+    );
+  }
+
+  Future<void> _showDnsUrlDialog() async {
+    final currentUrl = ref.read(dnsOverHttpsUrlProvider);
+    final controller = TextEditingController(text: currentUrl);
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: NivioTheme.netflixDarkGrey,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'DNS over HTTPS URL',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'This is what URL to use for querying DNS over HTTPS',
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  keyboardType: TextInputType.url,
+                  autofocus: true,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: DnsOverHttpsUrlNotifier.defaultDohUrl,
+                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                    enabledBorder: const UnderlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white24),
+                    ),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: NivioTheme.accentColorOf(context)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Presets',
+                  style: TextStyle(
+                    color: Colors.white54,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildDohPresetChip(
+                      label: 'Cloudflare',
+                      url: 'https://cloudflare-dns.com/dns-query',
+                      controller: controller,
+                    ),
+                    _buildDohPresetChip(
+                      label: 'Google',
+                      url: 'https://dns.google/dns-query',
+                      controller: controller,
+                    ),
+                    _buildDohPresetChip(
+                      label: 'AdGuard',
+                      url: 'https://dns.adguard-dns.com/dns-query',
+                      controller: controller,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                ref.read(dnsOverHttpsUrlProvider.notifier).resetToDefault();
+                controller.text = DnsOverHttpsUrlNotifier.defaultDohUrl;
+              },
+              child: const Text('Reset', style: TextStyle(color: Colors.white54)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+            ),
+            TextButton(
+              onPressed: () {
+                final text = controller.text.trim();
+                if (text.isNotEmpty) {
+                  ref.read(dnsOverHttpsUrlProvider.notifier).setUrl(text);
+                }
+                Navigator.pop(dialogContext);
+              },
+              child: Text(
+                'Save',
+                style: TextStyle(
+                  color: NivioTheme.accentColorOf(context),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDohPresetChip({
+    required String label,
+    required String url,
+    required TextEditingController controller,
+  }) {
+    return ActionChip(
+      label: Text(label, style: const TextStyle(fontSize: 12, color: Colors.white)),
+      backgroundColor: Colors.white.withOpacity(0.08),
+      side: BorderSide(color: Colors.white.withOpacity(0.15)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      onPressed: () {
+        controller.text = url;
       },
     );
   }
@@ -3449,7 +3630,28 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
           ],
         );
-      case 5: // Content Feed
+      case 5: // Network
+        return Column(
+          children: [
+            _buildSwitchTile(
+              icon: Icons.vpn_lock_rounded,
+              title: 'Use DNS over HTTPS',
+              subtitle:
+                  'This enables DNS over HTTPS, useful if your ISP blocks certain domains.',
+              value: ref.watch(useDnsOverHttpsProvider),
+              onChanged: (value) {
+                ref.read(useDnsOverHttpsProvider.notifier).setEnabled(value);
+              },
+            ),
+            _buildActionTile(
+              icon: Icons.dns_rounded,
+              title: 'DNS over HTTPS URL',
+              subtitle: ref.watch(dnsOverHttpsUrlProvider),
+              onTap: _showDnsUrlDialog,
+            ),
+          ],
+        );
+      case 6: // Content Feed
         return Column(
           children: [
             _buildActionTile(
@@ -3515,7 +3717,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
           ],
         );
-      case 6: // Episode Alerts
+      case 7: // Episode Alerts
         return Column(
           children: [
             _buildSwitchTile(
@@ -3539,7 +3741,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
           ],
         );
-      case 7: // App & Updates
+      case 8: // App & Updates
         return Column(
           children: [
             _buildActionTile(
@@ -3599,7 +3801,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
           ],
         );
-      case 8: // Data & Account
+      case 9: // Data & Account
         return Column(
           children: [
             _buildActionTile(
