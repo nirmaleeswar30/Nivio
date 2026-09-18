@@ -13,6 +13,8 @@ import 'package:nivio/services/scrapers/moviebox/moviebox_scraper.dart';
 import 'package:nivio/services/scrapers/castletv/castletv_scraper.dart';
 import 'package:nivio/services/scrapers/vidrock/vidrock_scraper.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
+import 'package:nivio/services/anime_filler_service.dart';
+import 'package:nivio/models/search_result.dart';
 
 // Cache service provider
 final cacheServiceProvider = Provider((ref) {
@@ -62,3 +64,20 @@ final torrentStreamServiceProvider =
     Provider<TorrentStreamService>((ref) => TorrentStreamService());
 
 final watchHistoryServiceProvider = Provider((ref) => WatchHistoryService());
+
+final animeFillerServiceProvider = Provider<AnimeFillerService>((ref) {
+  final cache = ref.watch(cacheServiceProvider);
+  return AnimeFillerService(cache);
+});
+
+final animeFillerDataProvider =
+    FutureProvider.family<AnimeFillerData, SearchResult>((ref, media) async {
+  if (media.mediaType != 'anime') {
+    return const AnimeFillerData();
+  }
+  return ref.watch(animeFillerServiceProvider).getFillerData(
+        anilistId: media.id,
+        title: media.title ?? media.name ?? '',
+        malId: media.malId,
+      );
+});

@@ -134,7 +134,12 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     final watchlist = ref.watch(watchlistProvider);
     final historyAsync = ref.watch(watchHistoryProvider);
     final languagePrefs = ref.watch(languagePreferencesProvider);
-    final playbackSpeed = ref.watch(playbackSpeedProvider);
+    final autoPlayNextEpisode = ref.watch(autoPlayNextEpisodeProvider);
+    final pipOnLostVisibility = ref.watch(pipOnLostVisibilityProvider);
+    final pauseOnLostVisibility = ref.watch(pauseOnLostVisibilityProvider);
+    final seekDuration = ref.watch(seekDurationProvider);
+    final autoSkipIntroOutro = ref.watch(autoSkipIntroOutroProvider);
+    final autoSkipFiller = ref.watch(autoSkipFillerProvider);
     final videoQuality = ref.watch(videoQualityProvider);
     final preferredAudio = ref.watch(preferredAudioLanguageProvider);
     final preferredSubtitle = ref.watch(preferredSubtitleLanguageProvider);
@@ -211,7 +216,6 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                     child: _buildSearchResultsCard(
                       user: user,
                       languagePrefs: languagePrefs,
-                      playbackSpeed: playbackSpeed,
                       videoQuality: videoQuality,
                       preferredAudio: preferredAudio,
                       preferredSubtitle: preferredSubtitle,
@@ -249,12 +253,62 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                     title: 'Playback',
                     child: Column(
                       children: [
-                        if (_matches('playback speed'))
+                        if (_matches('auto play next episode automatically'))
+                          _buildSwitchTile(
+                            icon: Icons.skip_next_rounded,
+                            title: 'Auto Play Next Episode',
+                            subtitle: 'Automatically start the next episode when current finishes',
+                            value: autoPlayNextEpisode,
+                            onChanged: (value) {
+                              ref.read(autoPlayNextEpisodeProvider.notifier).setEnabled(value);
+                            },
+                          ),
+                        if (_matches('picture in picture pip lost visibility background'))
+                          _buildSwitchTile(
+                            icon: Icons.picture_in_picture_alt_rounded,
+                            title: 'PiP on Lost Visibility',
+                            subtitle: 'Switch to Picture-in-Picture when leaving the app',
+                            value: pipOnLostVisibility,
+                            onChanged: (value) {
+                              ref.read(pipOnLostVisibilityProvider.notifier).setEnabled(value);
+                            },
+                          ),
+                        if (_matches('pause on lost visibility background focus'))
+                          _buildSwitchTile(
+                            icon: Icons.pause_circle_outline_rounded,
+                            title: 'Pause on Lost Visibility',
+                            subtitle: 'Pause playback when app loses focus or goes to background',
+                            value: pauseOnLostVisibility,
+                            onChanged: (value) {
+                              ref.read(pauseOnLostVisibilityProvider.notifier).setEnabled(value);
+                            },
+                          ),
+                        if (_matches('seek duration skip jump forward rewind step'))
                           _buildActionTile(
-                            icon: Icons.speed_rounded,
-                            title: 'Default Playback Speed',
-                            subtitle: '${playbackSpeed}x',
-                            onTap: _showPlaybackSpeedDialog,
+                            icon: Icons.fast_forward_rounded,
+                            title: 'Seek Duration',
+                            subtitle: '${seekDuration}s',
+                            onTap: _showSeekDurationDialog,
+                          ),
+                        if (_matches('auto skip intro outro opening ending theme'))
+                          _buildSwitchTile(
+                            icon: Icons.fast_forward_rounded,
+                            title: 'Auto Skip Intro & Outro',
+                            subtitle: 'Automatically skip opening and ending themes',
+                            value: autoSkipIntroOutro,
+                            onChanged: (value) {
+                              ref.read(autoSkipIntroOutroProvider.notifier).setEnabled(value);
+                            },
+                          ),
+                        if (_matches('auto skip filler anime episode'))
+                          _buildSwitchTile(
+                            icon: Icons.auto_stories_rounded,
+                            title: 'Auto Skip Filler',
+                            subtitle: 'Automatically skip filler episodes during auto-play',
+                            value: autoSkipFiller,
+                            onChanged: (value) {
+                              ref.read(autoSkipFillerProvider.notifier).setEnabled(value);
+                            },
                           ),
                         if (_matches('video quality resolution'))
                           _buildActionTile(
@@ -922,7 +976,6 @@ Widget _buildMobileLayout(BuildContext context, User user) {
   Widget _buildSearchResultsCard({
     required User user,
     required LanguagePreferences languagePrefs,
-    required double playbackSpeed,
     required String videoQuality,
     required String preferredAudio,
     required String preferredSubtitle,
@@ -932,13 +985,78 @@ Widget _buildMobileLayout(BuildContext context, User user) {
   }) {
     final results = <Widget>[];
 
-    if (_matches('playback speed')) {
+    if (_matches('auto play next episode automatically')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.skip_next_rounded,
+          title: 'Auto Play Next Episode',
+          subtitle: 'Automatically start the next episode when current finishes',
+          value: ref.watch(autoPlayNextEpisodeProvider),
+          onChanged: (value) {
+            ref.read(autoPlayNextEpisodeProvider.notifier).setEnabled(value);
+          },
+        ),
+      );
+    }
+    if (_matches('picture in picture pip lost visibility background')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.picture_in_picture_alt_rounded,
+          title: 'PiP on Lost Visibility',
+          subtitle: 'Switch to Picture-in-Picture when leaving the app',
+          value: ref.watch(pipOnLostVisibilityProvider),
+          onChanged: (value) {
+            ref.read(pipOnLostVisibilityProvider.notifier).setEnabled(value);
+          },
+        ),
+      );
+    }
+    if (_matches('pause on lost visibility background focus')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.pause_circle_outline_rounded,
+          title: 'Pause on Lost Visibility',
+          subtitle: 'Pause playback when app loses focus or goes to background',
+          value: ref.watch(pauseOnLostVisibilityProvider),
+          onChanged: (value) {
+            ref.read(pauseOnLostVisibilityProvider.notifier).setEnabled(value);
+          },
+        ),
+      );
+    }
+    if (_matches('seek duration skip jump forward rewind step')) {
       results.add(
         _buildActionTile(
-          icon: Icons.speed_rounded,
-          title: 'Default Playback Speed',
-          subtitle: '${playbackSpeed}x',
-          onTap: _showPlaybackSpeedDialog,
+          icon: Icons.fast_forward_rounded,
+          title: 'Seek Duration',
+          subtitle: '${ref.watch(seekDurationProvider)}s',
+          onTap: _showSeekDurationDialog,
+        ),
+      );
+    }
+    if (_matches('auto skip intro outro opening ending theme')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.fast_forward_rounded,
+          title: 'Auto Skip Intro & Outro',
+          subtitle: 'Automatically skip opening and ending themes',
+          value: ref.watch(autoSkipIntroOutroProvider),
+          onChanged: (value) {
+            ref.read(autoSkipIntroOutroProvider.notifier).setEnabled(value);
+          },
+        ),
+      );
+    }
+    if (_matches('auto skip filler anime episode')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.auto_stories_rounded,
+          title: 'Auto Skip Filler',
+          subtitle: 'Automatically skip filler episodes during auto-play',
+          value: ref.watch(autoSkipFillerProvider),
+          onChanged: (value) {
+            ref.read(autoSkipFillerProvider.notifier).setEnabled(value);
+          },
         ),
       );
     }
@@ -1659,50 +1777,72 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     );
   }
 
-  Future<void> _showPlaybackSpeedDialog() async {
-    final speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
-    final currentSpeed = ref.read(playbackSpeedProvider);
+  Future<void> _showSeekDurationDialog() async {
+    final currentDuration = ref.read(seekDurationProvider);
+    final controller = TextEditingController(text: currentDuration.toString());
 
-    await showModalBottomSheet<void>(
+    await showDialog<void>(
       context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: ListView(
-            shrinkWrap: true,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: NivioTheme.netflixDarkGrey,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Seek Duration',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const ListTile(
-                title: Text(
-                  'Playback Speed',
-                  style: TextStyle(
-                    color: NivioTheme.netflixWhite,
-                    fontWeight: FontWeight.w700,
+              const Text(
+                'Enter seek step in seconds (e.g. 5, 10, 15, 30)',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  suffixText: 'sec',
+                  suffixStyle: const TextStyle(color: Colors.white70),
+                  hintText: '10',
+                  hintStyle: const TextStyle(color: Colors.white38),
+                  enabledBorder: const UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white24),
+                  ),
+                  focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: NivioTheme.accentColorOf(context)),
                   ),
                 ),
               ),
-              ...speeds.map((speed) {
-                final isSelected = speed == currentSpeed;
-                return ListTile(
-                  leading: Icon(
-                    isSelected
-                        ? Icons.check_circle_rounded
-                        : Icons.radio_button_unchecked_rounded,
-                    color: isSelected
-                        ? NivioTheme.accentColorOf(context)
-                        : NivioTheme.netflixGrey,
-                  ),
-                  title: Text(
-                    '${speed}x',
-                    style: TextStyle(color: NivioTheme.netflixWhite),
-                  ),
-                  onTap: () {
-                    ref.read(playbackSpeedProvider.notifier).setSpeed(speed);
-                    Navigator.pop(sheetContext);
-                  },
-                );
-              }),
             ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+            ),
+            TextButton(
+              onPressed: () {
+                final text = controller.text.trim();
+                final val = int.tryParse(text);
+                if (val != null && val > 0 && val <= 300) {
+                  ref.read(seekDurationProvider.notifier).setDuration(val);
+                }
+                Navigator.pop(dialogContext);
+              },
+              child: Text(
+                'Save',
+                style: TextStyle(
+                  color: NivioTheme.accentColorOf(context),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
         );
       },
     );
@@ -3000,7 +3140,6 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                 child: _buildSearchResultsCard(
                   user: user,
                   languagePrefs: ref.watch(languagePreferencesProvider),
-                  playbackSpeed: ref.watch(playbackSpeedProvider),
                   videoQuality: ref.watch(videoQualityProvider),
                   preferredAudio: ref.watch(preferredAudioLanguageProvider),
                   preferredSubtitle: ref.watch(preferredSubtitleLanguageProvider),
@@ -3044,7 +3183,12 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     final watchlist = ref.watch(watchlistProvider);
     final historyAsync = ref.watch(watchHistoryProvider);
     final languagePrefs = ref.watch(languagePreferencesProvider);
-    final playbackSpeed = ref.watch(playbackSpeedProvider);
+    final autoPlayNextEpisode = ref.watch(autoPlayNextEpisodeProvider);
+    final pipOnLostVisibility = ref.watch(pipOnLostVisibilityProvider);
+    final pauseOnLostVisibility = ref.watch(pauseOnLostVisibilityProvider);
+    final seekDuration = ref.watch(seekDurationProvider);
+    final autoSkipIntroOutro = ref.watch(autoSkipIntroOutroProvider);
+    final autoSkipFiller = ref.watch(autoSkipFillerProvider);
     final videoQuality = ref.watch(videoQualityProvider);
     final preferredAudio = ref.watch(preferredAudioLanguageProvider);
     final preferredSubtitle = ref.watch(preferredSubtitleLanguageProvider);
@@ -3072,7 +3216,12 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           watchlist: watchlist,
           historyAsync: historyAsync,
           languagePrefs: languagePrefs,
-          playbackSpeed: playbackSpeed,
+          autoPlayNextEpisode: autoPlayNextEpisode,
+          pipOnLostVisibility: pipOnLostVisibility,
+          pauseOnLostVisibility: pauseOnLostVisibility,
+          seekDuration: seekDuration,
+          autoSkipIntroOutro: autoSkipIntroOutro,
+          autoSkipFiller: autoSkipFiller,
           videoQuality: videoQuality,
           preferredAudio: preferredAudio,
           preferredSubtitle: preferredSubtitle,
@@ -3094,7 +3243,12 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     required List<dynamic> watchlist,
     required AsyncValue<List<dynamic>> historyAsync,
     required dynamic languagePrefs,
-    required double playbackSpeed,
+    required bool autoPlayNextEpisode,
+    required bool pipOnLostVisibility,
+    required bool pauseOnLostVisibility,
+    required int seekDuration,
+    required bool autoSkipIntroOutro,
+    required bool autoSkipFiller,
     required String videoQuality,
     required String preferredAudio,
     required String preferredSubtitle,
@@ -3136,11 +3290,56 @@ Widget _buildMobileLayout(BuildContext context, User user) {
       case 1: // Playback
         return Column(
           children: [
+            _buildSwitchTile(
+              icon: Icons.skip_next_rounded,
+              title: 'Auto Play Next Episode',
+              subtitle: 'Automatically start the next episode when current finishes',
+              value: autoPlayNextEpisode,
+              onChanged: (val) {
+                ref.read(autoPlayNextEpisodeProvider.notifier).setEnabled(val);
+              },
+            ),
+            _buildSwitchTile(
+              icon: Icons.picture_in_picture_alt_rounded,
+              title: 'PiP on Lost Visibility',
+              subtitle: 'Switch to Picture-in-Picture when leaving the app',
+              value: pipOnLostVisibility,
+              onChanged: (val) {
+                ref.read(pipOnLostVisibilityProvider.notifier).setEnabled(val);
+              },
+            ),
+            _buildSwitchTile(
+              icon: Icons.pause_circle_outline_rounded,
+              title: 'Pause on Lost Visibility',
+              subtitle: 'Pause playback when app loses focus or goes to background',
+              value: pauseOnLostVisibility,
+              onChanged: (val) {
+                ref.read(pauseOnLostVisibilityProvider.notifier).setEnabled(val);
+              },
+            ),
             _buildActionTile(
-              icon: Icons.speed_rounded,
-              title: 'Default Playback Speed',
-              subtitle: '${playbackSpeed}x',
-              onTap: _showPlaybackSpeedDialog,
+              icon: Icons.fast_forward_rounded,
+              title: 'Seek Duration',
+              subtitle: '${seekDuration}s',
+              onTap: _showSeekDurationDialog,
+            ),
+            _buildSwitchTile(
+              icon: Icons.fast_forward_rounded,
+              title: 'Auto Skip Intro & Outro',
+              subtitle: 'Automatically skip opening and ending themes',
+              value: autoSkipIntroOutro,
+              onChanged: (val) {
+                ref.read(autoSkipIntroOutroProvider.notifier).setEnabled(val);
+              },
+            ),
+            _buildSwitchTile(
+              icon: Icons.auto_stories_rounded,
+              title: 'Auto Skip Filler',
+              subtitle: 'Automatically skip filler episodes during auto-play',
+              value: autoSkipFiller,
+              onChanged: (val) {
+                ref.read(autoSkipFillerProvider.notifier).setEnabled(val);
+              },
             ),
             _buildActionTile(
               icon: Icons.high_quality_rounded,

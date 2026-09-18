@@ -44,6 +44,7 @@ import 'package:nivio/services/skip_times_models.dart';
 import 'package:nivio/providers/player_active_provider.dart';
 import 'package:nivio/providers/mini_player_provider.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
+import 'package:nivio/services/anime_filler_service.dart';
 import 'dart:math' as math;
 
 class PlayerScreen extends ConsumerStatefulWidget {
@@ -163,6 +164,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _isDirectStream = false;
   List<SkipTime> _skipTimes = [];
   bool _isFetchingSkipTimes = false;
+  AnimeFillerData _fillerData = const AnimeFillerData();
+  bool _isFetchingFillerData = false;
   bool _isInIntroSegment = false;
   bool _isInOutroSegment = false;
   int _currentEpisode = 0;
@@ -245,6 +248,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadSubtitleDelay();
     unawaited(WakelockPlus.enable());
     
@@ -306,15 +310,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 _player.pause();
               } else if (actionStr == 'next' || actionStr == 'forward') {
                 final pos = _player.state.position;
-                _player.seek(pos + const Duration(seconds: 10));
+                final dur = _player.state.duration;
+                final step = ref.read(seekDurationProvider);
+                final newPos = pos + Duration(seconds: step);
+                _player.seek(newPos > dur ? dur : newPos);
               } else if (actionStr == 'previous' || actionStr == 'rewind') {
                 final pos = _player.state.position;
-                _player.seek(pos - const Duration(seconds: 10));
+                final step = ref.read(seekDurationProvider);
+                final newPos = pos - Duration(seconds: step);
+                _player.seek(newPos < Duration.zero ? Duration.zero : newPos);
               }
             }
           });
+          final autoPip = ref.read(pipOnLostVisibilityProvider);
           await SimplePip().setPipActionsLayout(PipActionsLayout.mediaWithSeek10);
-          await SimplePip().setAutoPipMode(aspectRatio: const (16, 9), autoEnter: true);
+          await SimplePip().setAutoPipMode(aspectRatio: const (16, 9), autoEnter: autoPip);
           await SimplePip().setIsPlaying(true);
         }();
       } catch (_) {}
@@ -345,6 +355,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _focusNode.requestFocus();
       }
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (_isDisposing) return;
+    final pauseOnLost = ref.read(pauseOnLostVisibilityProvider);
+    if (pauseOnLost && !_isPipMode) {
+      if (state == AppLifecycleState.paused ||
+          state == AppLifecycleState.inactive ||
+          state == AppLifecycleState.hidden) {
+        if (_useNativePlayer) {
+          _kwikPlayerKey.currentState?.pause();
+        } else {
+          _player.pause();
+        }
+      }
+    }
   }
 
   Future<void> _trackInitialPlay() async {
@@ -411,17 +439,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       case LogicalKeyboardKey.arrowLeft:
       case LogicalKeyboardKey.keyJ:
         final pos = _player.state.position;
+        final step = ref.read(seekDurationProvider);
         _player.seek(
-          pos - const Duration(seconds: 10) < Duration.zero
+          pos - Duration(seconds: step) < Duration.zero
               ? Duration.zero
-              : pos - const Duration(seconds: 10),
+              : pos - Duration(seconds: step),
         );
         return KeyEventResult.handled;
       case LogicalKeyboardKey.arrowRight:
       case LogicalKeyboardKey.keyL:
         final pos = _player.state.position;
         final dur = _player.state.duration;
-        final newPos = pos + const Duration(seconds: 10);
+        final step = ref.read(seekDurationProvider);
+        final newPos = pos + Duration(seconds: step);
         _player.seek(newPos > dur ? dur : newPos);
         return KeyEventResult.handled;
       case LogicalKeyboardKey.keyM:
@@ -476,6 +506,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
     } finally {
       if (mounted) _isFetchingSkipTimes = false;
+    }
+  }
+
+  Future<void> _fetchFillerData(SearchResult media) async {
+    if (_isFetchingFillerData) return;
+    if (_fillerData.fillerEpisodes.isNotEmpty || _fillerData.mixedEpisodes.isNotEmpty) return;
+    _isFetchingFillerData = true;
+    try {
+      final fillerService = ref.read(animeFillerServiceProvider);
+      final data = await fillerService.getFillerData(
+        anilistId: media.id,
+        title: media.title ?? media.name ?? '',
+        malId: media.malId,
+      );
+      if (mounted) {
+        setState(() {
+          _fillerData = data;
+        });
+      }
+    } catch (e) {
+      appDebugLog('Error fetching filler data: $e');
+    } finally {
+      if (mounted) _isFetchingFillerData = false;
     }
   }
 
@@ -544,6 +597,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       
       if (media != null && !_isFetchingSkipTimes) {
         _fetchSkipTimes(media, _currentEpisode);
+      }
+
+      if (media != null && _isAnimeMedia(media)) {
+        _fetchFillerData(media);
       }
 
       final streamingService = ref.read(streamingServiceProvider);
@@ -1875,12 +1932,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final isInIntro = opSkip != null && position >= opSkip.startTime && position < opSkip.endTime;
     if (isInIntro != _isInIntroSegment) {
       setState(() { _isInIntroSegment = isInIntro; });
+      if (isInIntro && ref.read(autoSkipIntroOutroProvider)) {
+        _skipIntro();
+      }
     }
 
     final edSkip = _skipTimes.where((s) => s.type == 'ed' || s.type == 'mixed-ed').firstOrNull;
     final isInOutro = edSkip != null && position >= edSkip.startTime && position < edSkip.endTime;
     if (isInOutro != _isInOutroSegment) {
       setState(() { _isInOutroSegment = isInOutro; });
+      if (isInOutro && ref.read(autoSkipIntroOutroProvider)) {
+        _skipOutro();
+      }
     }
 
     // --- Next Episode (trigger 15s before the actual end of the video) ---
@@ -1992,6 +2055,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // —————————————————————————————————————————————————————————————————————————————————————————— Next episode popup ——————————————————————————————————————————————————————————————————————————————————————————
   void _showNextEpisodePopup() {
     if (!mounted || _showNextEpisodeButton || _nextEpisodeDismissed || _nextEpisodeCountdown != null) return;
+    final autoPlay = ref.read(autoPlayNextEpisodeProvider);
+    if (!autoPlay) {
+      setState(() {
+        _showNextEpisodeButton = true;
+        _nextEpisodeCountdown = null;
+      });
+      _nextEpNotifier.value = const _NextEpState(show: true, countdown: null);
+      _showOverlayEntry();
+      return;
+    }
     setState(() {
       _showNextEpisodeButton = true;
       _nextEpisodeCountdown = 15;
@@ -2057,10 +2130,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_prefetchedStreams.containsKey(_currentEpisode + 1)) return true;
     
     if (_currentSeasonData != null) {
+      final autoSkipFiller = ref.read(autoSkipFillerProvider);
+      if (autoSkipFiller && _isAnimeMedia(media) && _fillerData.fillerEpisodes.isNotEmpty) {
+        int next = _currentEpisode + 1;
+        while (_fillerData.isFiller(next) && next <= _currentSeasonData!.episodes.length) {
+          next++;
+        }
+        return next <= _currentSeasonData!.episodes.length;
+      }
       return _currentEpisode < _currentSeasonData!.episodes.length;
     }
-    
-
     
     return false;
   }
@@ -2113,7 +2192,42 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _playNextEpisode() {
-    _playEpisode(_currentEpisode + 1);
+    final autoSkipFiller = ref.read(autoSkipFillerProvider);
+    final media = ref.read(selectedMediaProvider);
+    int nextEpisode = _currentEpisode + 1;
+
+    if (autoSkipFiller && _isAnimeMedia(media) && _fillerData.fillerEpisodes.isNotEmpty) {
+      final maxEp = _currentSeasonData?.episodes.length ?? 99999;
+      int skippedCount = 0;
+      while (_fillerData.isFiller(nextEpisode) && nextEpisode <= maxEp) {
+        nextEpisode++;
+        skippedCount++;
+      }
+
+      if (skippedCount > 0 && mounted) {
+        if (nextEpisode > maxEp) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Reached end of season (no more non-filler episodes)'),
+              duration: const Duration(seconds: 3),
+              backgroundColor: NivioTheme.accentColorOf(context),
+            ),
+          );
+          return;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Skipped $skippedCount filler episode${skippedCount > 1 ? 's' : ''} -> Playing Episode $nextEpisode',
+            ),
+            duration: const Duration(seconds: 3),
+            backgroundColor: NivioTheme.accentColorOf(context),
+          ),
+        );
+      }
+    }
+
+    _playEpisode(nextEpisode);
   }
 
   void _playEpisode(int episodeNumber) {
@@ -2162,6 +2276,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         watchPartyCode: widget.watchPartyCode,
         watchPartyRole: widget.watchPartyRole,
         providerIndex: _currentProviderIndex,
+        fillerData: _fillerData,
         onEpisodeSelected: (episodeNum) {
           _playEpisode(episodeNum);
         },
@@ -3095,6 +3210,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } catch (e, st) {
       debugPrint('🔴 [DISPOSE] Step 13: ❌ FAILED — $e\n$st');
     }
+
+    try {
+      WidgetsBinding.instance.removeObserver(this);
+    } catch (_) {}
 
     debugPrint('🔴 [DISPOSE] Step 14: super.dispose()...');
     super.dispose();
@@ -4693,6 +4812,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         episode: _currentEpisode,
         season: widget.season,
         seasonData: _currentSeasonData,
+        fillerData: _fillerData,
+        autoSkipFiller: ref.read(autoSkipFillerProvider) && _isAnimeMedia(ref.read(selectedMediaProvider)),
         onPlay: () {
           _nextEpisodeTimer?.cancel();
           _playNextEpisode();
@@ -5218,6 +5339,7 @@ class _EpisodePickerSheet extends ConsumerStatefulWidget {
   final String? watchPartyCode;
   final WatchPartyRole? watchPartyRole;
   final int providerIndex;
+  final AnimeFillerData? fillerData;
   final void Function(int) onEpisodeSelected;
 
   const _EpisodePickerSheet({
@@ -5229,6 +5351,7 @@ class _EpisodePickerSheet extends ConsumerStatefulWidget {
     this.watchPartyCode,
     this.watchPartyRole,
     this.providerIndex = 0,
+    this.fillerData,
   });
 
   @override
@@ -5561,6 +5684,74 @@ class _EpisodePickerSheetState extends ConsumerState<_EpisodePickerSheet> {
                                                         ),
                                                       ),
                                                     ),
+                                                  if (widget.fillerData != null &&
+                                                      widget.fillerData!.isFiller(episode.episodeNumber))
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 5,
+                                                            vertical: 2,
+                                                          ),
+                                                      margin:
+                                                          const EdgeInsets.only(
+                                                            right: 6,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.amber
+                                                            .withValues(alpha: 0.2),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              3,
+                                                            ),
+                                                        border: Border.all(
+                                                          color: Colors.amber,
+                                                          width: 0.8,
+                                                        ),
+                                                      ),
+                                                      child: const Text(
+                                                        'FILLER',
+                                                        style: TextStyle(
+                                                          fontSize: 9,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color: Colors.amber,
+                                                        ),
+                                                      ),
+                                                    )
+                                                  else if (widget.fillerData != null &&
+                                                      widget.fillerData!.isMixed(episode.episodeNumber))
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 5,
+                                                            vertical: 2,
+                                                          ),
+                                                      margin:
+                                                          const EdgeInsets.only(
+                                                            right: 6,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.lightBlue
+                                                            .withValues(alpha: 0.2),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              3,
+                                                            ),
+                                                        border: Border.all(
+                                                          color: Colors.lightBlue,
+                                                          width: 0.8,
+                                                        ),
+                                                      ),
+                                                      child: const Text(
+                                                        'MIXED',
+                                                        style: TextStyle(
+                                                          fontSize: 9,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color: Colors.lightBlue,
+                                                        ),
+                                                      ),
+                                                    ),
                                                   Expanded(
                                                     child: Text(
                                                       'E${episode.episodeNumber} - ${episode.episodeName ?? 'Episode ${episode.episodeNumber}'}',
@@ -5750,6 +5941,8 @@ class _NextEpisodeOverlayWidget extends StatelessWidget {
   final int episode;
   final int season;
   final SeasonData? seasonData;
+  final AnimeFillerData? fillerData;
+  final bool autoSkipFiller;
   final VoidCallback onPlay;
   final VoidCallback onDismiss;
 
@@ -5758,6 +5951,8 @@ class _NextEpisodeOverlayWidget extends StatelessWidget {
     required this.episode,
     required this.season,
     required this.seasonData,
+    this.fillerData,
+    this.autoSkipFiller = false,
     required this.onPlay,
     required this.onDismiss,
   });
@@ -5769,7 +5964,14 @@ class _NextEpisodeOverlayWidget extends StatelessWidget {
       builder: (context, state, _) {
         if (!state.show) return const SizedBox.shrink();
 
-        final nextEpNum = episode + 1;
+        int nextEpNum = episode + 1;
+        if (autoSkipFiller && fillerData != null && fillerData!.fillerEpisodes.isNotEmpty) {
+          final maxEp = seasonData?.episodes.length ?? 99999;
+          while (fillerData!.isFiller(nextEpNum) && nextEpNum <= maxEp) {
+            nextEpNum++;
+          }
+        }
+
         EpisodeData? nextEpisode;
         if (seasonData != null) {
           nextEpisode = seasonData!.episodes
@@ -5859,8 +6061,8 @@ class _NextEpisodeOverlayWidget extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                           Text(
-                            'S$season E$nextEpNum',
-                            style: TextStyle(color: Colors.grey, fontSize: 12),
+                            'S$season E$nextEpNum${nextEpNum > episode + 1 ? ' (Skipping filler)' : ''}',
+                            style: const TextStyle(color: Colors.grey, fontSize: 12),
                           ),
                           const SizedBox(height: 10),
                           Row(

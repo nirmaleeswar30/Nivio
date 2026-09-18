@@ -13,6 +13,7 @@ import 'package:nivio/widgets/watch_party_participants_sheet.dart';
 import 'gesture_layer.dart';
 import 'package:nivio/widgets/torrent_stats_overlay.dart';
 import 'package:nivio/providers/service_providers.dart';
+import 'package:nivio/providers/settings_providers.dart';
 
 class CustomPlayerControls extends ConsumerStatefulWidget {
   final Player controller;
@@ -350,6 +351,7 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                 key: const ValueKey('player_gesture_layer'),
                 controller: widget.controller,
                 isLocked: _isLocked,
+                seekDuration: ref.watch(seekDurationProvider),
                 onSingleTap: _onSingleTap,
                 onLongPress: _toggleLock,
                 onPinchZoom: (zoomIn) {

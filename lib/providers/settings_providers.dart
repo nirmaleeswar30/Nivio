@@ -584,4 +584,150 @@ class TorrentPersistFilesNotifier extends StateNotifier<bool> {
   }
 }
 
+// Auto Play Next Episode Provider
+final autoPlayNextEpisodeProvider =
+    StateNotifierProvider<AutoPlayNextEpisodeNotifier, bool>((ref) {
+  return AutoPlayNextEpisodeNotifier();
+});
+
+class AutoPlayNextEpisodeNotifier extends StateNotifier<bool> {
+  AutoPlayNextEpisodeNotifier() : super(true) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('auto_play_next_episode') ?? true;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('auto_play_next_episode', value);
+  }
+}
+
+// PiP on Lost Visibility Provider (defaults to true)
+final pipOnLostVisibilityProvider =
+    StateNotifierProvider<PipOnLostVisibilityNotifier, bool>((ref) {
+  return PipOnLostVisibilityNotifier(ref);
+});
+
+class PipOnLostVisibilityNotifier extends StateNotifier<bool> {
+  final Ref _ref;
+  PipOnLostVisibilityNotifier(this._ref) : super(true) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('pip_on_lost_visibility') ?? true;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('pip_on_lost_visibility', value);
+    if (value) {
+      _ref.read(pauseOnLostVisibilityProvider.notifier).setEnabled(false);
+    }
+  }
+}
+
+// Pause on Lost Visibility Provider (defaults to false)
+final pauseOnLostVisibilityProvider =
+    StateNotifierProvider<PauseOnLostVisibilityNotifier, bool>((ref) {
+  return PauseOnLostVisibilityNotifier(ref);
+});
+
+class PauseOnLostVisibilityNotifier extends StateNotifier<bool> {
+  final Ref _ref;
+  PauseOnLostVisibilityNotifier(this._ref) : super(false) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('pause_on_lost_visibility') ?? false;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('pause_on_lost_visibility', value);
+    if (value) {
+      _ref.read(pipOnLostVisibilityProvider.notifier).setEnabled(false);
+    }
+  }
+}
+
+// Seek Duration Provider (defaults to 10 seconds)
+final seekDurationProvider =
+    StateNotifierProvider<SeekDurationNotifier, int>((ref) {
+  return SeekDurationNotifier();
+});
+
+class SeekDurationNotifier extends StateNotifier<int> {
+  SeekDurationNotifier() : super(10) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getInt('player_seek_duration') ?? 10;
+  }
+
+  Future<void> setDuration(int value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('player_seek_duration', value);
+  }
+}
+
+// Auto Skip Intro / Outro Provider (defaults to false)
+final autoSkipIntroOutroProvider =
+    StateNotifierProvider<AutoSkipIntroOutroNotifier, bool>((ref) {
+  return AutoSkipIntroOutroNotifier();
+});
+
+class AutoSkipIntroOutroNotifier extends StateNotifier<bool> {
+  AutoSkipIntroOutroNotifier() : super(false) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('auto_skip_intro_outro') ?? false;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('auto_skip_intro_outro', value);
+  }
+}
+
+// Auto Skip Filler Provider (defaults to false)
+final autoSkipFillerProvider =
+    StateNotifierProvider<AutoSkipFillerNotifier, bool>((ref) {
+  return AutoSkipFillerNotifier();
+});
+
+class AutoSkipFillerNotifier extends StateNotifier<bool> {
+  AutoSkipFillerNotifier() : super(false) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('auto_skip_filler') ?? false;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('auto_skip_filler', value);
+  }
+}
+
 

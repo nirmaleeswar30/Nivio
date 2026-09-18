@@ -11,6 +11,7 @@ class PlayerGestureLayer extends StatefulWidget {
   final VoidCallback? onLongPress;
   final void Function(bool zoomIn)? onPinchZoom;
   final bool isLocked;
+  final int seekDuration;
 
   const PlayerGestureLayer({
     super.key,
@@ -19,6 +20,7 @@ class PlayerGestureLayer extends StatefulWidget {
     this.onLongPress,
     this.onPinchZoom,
     this.isLocked = false,
+    this.seekDuration = 10,
   });
 
   @override
@@ -154,16 +156,17 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
   void _onDoubleTap(bool isRightSide) {
     if (widget.isLocked) return;
 
+    final step = widget.seekDuration;
     final currentPos = widget.controller.state.position;
     final newPos = isRightSide
-        ? currentPos + const Duration(seconds: 10)
-        : currentPos - const Duration(seconds: 10);
+        ? currentPos + Duration(seconds: step)
+        : currentPos - Duration(seconds: step);
 
     widget.controller.seek(newPos);
 
     setState(() {
       _isSeekingRight = isRightSide;
-      _seekText = isRightSide ? '+10s' : '-10s';
+      _seekText = isRightSide ? '+${step}s' : '-${step}s';
       _showSeekRipple = true;
     });
 

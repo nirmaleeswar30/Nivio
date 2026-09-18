@@ -21,6 +21,7 @@ import 'package:nivio/models/download_item.dart';
 import 'package:nivio/models/watch_history.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
+import 'package:nivio/services/anime_filler_service.dart';
 
 class EpisodeList extends ConsumerStatefulWidget {
   final SearchResult media;
@@ -102,6 +103,11 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
       (h) => h?.tmdbId == widget.media.id,
       orElse: () => null,
     );
+
+    final fillerData = widget.media.mediaType == 'anime'
+        ? (ref.watch(animeFillerDataProvider(widget.media)).valueOrNull ??
+            const AnimeFillerData())
+        : const AnimeFillerData();
 
     final seasonDataAsync = ref.watch(
       seasonDataProvider((
@@ -250,6 +256,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                               visibleEpisodes[i],
                               isEven: (i ~/ 2).isEven,
                               mediaHistory: mediaHistory,
+                              fillerData: fillerData,
                             ),
                           ),
                           const SizedBox(width: 16),
@@ -260,6 +267,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                                     visibleEpisodes[i + 1],
                                     isEven: (i ~/ 2).isEven,
                                     mediaHistory: mediaHistory,
+                                    fillerData: fillerData,
                                   )
                                 : const SizedBox.shrink(),
                           ),
@@ -274,6 +282,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                     entry.value,
                     isEven: entry.key.isEven,
                     mediaHistory: mediaHistory,
+                    fillerData: fillerData,
                   ),
                 ),
               if (_hasMore)
@@ -311,6 +320,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
     EpisodeData episode, {
     bool isEven = true,
     WatchHistory? mediaHistory,
+    AnimeFillerData fillerData = const AnimeFillerData(),
   }) {
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     final stillPath = episode.stillPath ?? widget.media.backdropPath ?? widget.media.posterPath;
@@ -391,13 +401,68 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          MarqueeText(
-                            text: '${episode.episodeNumber}. ${episode.episodeName ?? 'Episode ${episode.episodeNumber}'}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: NivioTheme.netflixWhite,
-                              fontWeight: FontWeight.w700,
-                            ),
+                          Row(
+                            children: [
+                              if (fillerData.isFiller(episode.episodeNumber))
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 2,
+                                  ),
+                                  margin: const EdgeInsets.only(right: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: Colors.amber,
+                                      width: 0.8,
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'FILLER',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.amber,
+                                    ),
+                                  ),
+                                )
+                              else if (fillerData.isMixed(episode.episodeNumber))
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 2,
+                                  ),
+                                  margin: const EdgeInsets.only(right: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.lightBlue.withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: Colors.lightBlue,
+                                      width: 0.8,
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'MIXED',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.lightBlue,
+                                    ),
+                                  ),
+                                ),
+                              Expanded(
+                                child: MarqueeText(
+                                  text:
+                                      '${episode.episodeNumber}. ${episode.episodeName ?? 'Episode ${episode.episodeNumber}'}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: NivioTheme.netflixWhite,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           if (relDate.isNotEmpty) ...[
                             const SizedBox(height: 3),
