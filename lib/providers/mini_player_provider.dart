@@ -1,8 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:nivio/providers/service_providers.dart';
+import 'package:nivio/services/discord_rpc_service.dart';
 
 /// Metadata about the media currently playing in the mini player.
 class MiniPlayerMediaInfo {
@@ -113,6 +115,9 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
     } catch (_) {}
 
     state = const MiniPlayerState();
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      DiscordRpcService.instance.setBrowsing();
+    }
     Future.microtask(() {
       player?.dispose();
     });

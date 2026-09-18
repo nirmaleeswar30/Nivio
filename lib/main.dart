@@ -46,6 +46,7 @@ import 'package:nivio/services/watch_party/watch_party_models.dart';
 import 'package:nivio/services/watch_party/watch_party_supabase_config.dart';
 import 'package:nivio/services/download_service.dart';
 import 'package:nivio/services/hls_proxy_service.dart';
+import 'package:nivio/services/discord_rpc_service.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:nivio/widgets/title_bar_overlay.dart';
 
@@ -454,6 +455,37 @@ class _NivioAppState extends ConsumerState<NivioApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         // ref.read(cloudflareBypassProvider).init();
+      }
+    });
+
+    // Initialize Discord Rich Presence on desktop platforms
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      _initDiscordRpc();
+    }
+  }
+
+  /// Starts Discord RPC if enabled, and listens for toggle changes.
+  void _initDiscordRpc() {
+    final clientId = dotenv.env['DISCORD_CLIENT_ID']?.trim() ?? '';
+    if (clientId.isEmpty) return;
+
+    // Check initial setting and connect if enabled
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final enabled = ref.read(discordRpcEnabledProvider);
+      if (enabled) {
+        await DiscordRpcService.instance.initialize(clientId);
+        DiscordRpcService.instance.setBrowsing();
+      }
+    });
+
+    // Listen for toggle changes at runtime
+    ref.listenManual(discordRpcEnabledProvider, (previous, next) async {
+      if (next) {
+        await DiscordRpcService.instance.initialize(clientId);
+        DiscordRpcService.instance.setBrowsing();
+      } else {
+        await DiscordRpcService.instance.dispose();
       }
     });
   }

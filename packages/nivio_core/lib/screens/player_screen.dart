@@ -45,6 +45,7 @@ import 'package:nivio/providers/player_active_provider.dart';
 import 'package:nivio/providers/mini_player_provider.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
 import 'package:nivio/services/anime_filler_service.dart';
+import 'package:nivio/services/discord_rpc_service.dart';
 import 'dart:math' as math;
 
 class PlayerScreen extends ConsumerStatefulWidget {
@@ -195,6 +196,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _transferredToMiniPlayer = false; // When true, dispose skips player.dispose()
   bool _isDisposing = false; // Track disposal state to prevent ref usage
   bool _videoDetached = false; // When true, Video widget is replaced with black box before mini player handoff
+  DateTime _lastDiscordSync = DateTime.fromMillisecondsSinceEpoch(0);
+  Duration _lastDiscordPos = Duration.zero;
   final ValueNotifier<bool> _fullscreenTopBarVisibleNotifier = ValueNotifier(
     false,
   );
@@ -1262,6 +1265,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         // appDebugLog('🎬 POSITION_DEBUG: Current player position = $position');
         _checkNextEpisode();
         unawaited(_broadcastWatchPartyPlayback(force: false));
+        _updateDiscordActivity();
       }),
     );
 
@@ -1270,6 +1274,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _player.stream.playing.listen((playing) {
         if (!mounted) return;
         unawaited(_broadcastWatchPartyPlayback(force: true));
+        _updateDiscordActivity(isPlaying: playing, force: true);
       }),
     );
 
@@ -1351,6 +1356,69 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (!mounted) return;
         // Can be used for UI indicators
       }),
+    );
+  }
+
+  void _updateDiscordActivity({bool? isPlaying, bool force = false}) {
+    if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) return;
+
+    final playing = isPlaying ?? _player.state.playing;
+    final media = ref.read(selectedMediaProvider);
+    final title = widget.directStreamTitle ??
+        media?.title ??
+        media?.name ??
+        'Video';
+
+    if (!playing) {
+      DiscordRpcService.instance.setPaused(title: title);
+      return;
+    }
+
+    final pos = _player.state.position;
+    final now = DateTime.now();
+
+    // Check if seek occurred (> 10s difference from expected time)
+    if (!force) {
+      final elapsedSinceLastSync = now.difference(_lastDiscordSync);
+      if (elapsedSinceLastSync.inSeconds < 5) return;
+      final expectedPos = _lastDiscordPos + elapsedSinceLastSync;
+      final diff = (pos - expectedPos).inSeconds.abs();
+      // If position is roughly what Discord is already displaying, don't spam IPC
+      if (diff < 10) return;
+    }
+
+    _lastDiscordSync = now;
+    _lastDiscordPos = pos;
+
+    String? details;
+    if (widget.directStreamTitle != null) {
+      details = widget.isLive ? 'Live Stream' : 'Streaming';
+    } else if (widget.mediaType == 'tv' ||
+        widget.mediaType == 'anime' ||
+        (media?.mediaType == 'tv')) {
+      details = 'Season ${widget.season} · Episode $_currentEpisode';
+    } else {
+      details = 'Movie';
+    }
+
+    String? posterUrl;
+    final posterPath = media?.posterPath ?? media?.backdropPath;
+    if (posterPath != null && posterPath.isNotEmpty) {
+      if (posterPath.startsWith('http')) {
+        posterUrl = posterPath;
+      } else {
+        final path = posterPath.startsWith('/') ? posterPath : '/$posterPath';
+        posterUrl = 'https://image.tmdb.org/t/p/w500$path';
+      }
+    }
+
+    final startedAt = now.subtract(pos);
+
+    DiscordRpcService.instance.setWatching(
+      title: title,
+      details: details,
+      posterUrl: posterUrl,
+      startedAt: startedAt,
     );
   }
 
@@ -3194,6 +3262,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final cachedNotifier = _cachedPlayerActiveNotifier;
       if (cachedNotifier != null) {
         Future.microtask(() => cachedNotifier.state = false);
+      }
+      if (!_transferredToMiniPlayer &&
+          (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+        DiscordRpcService.instance.setBrowsing();
       }
       debugPrint('🔴 [DISPOSE] Step 12: ✅ done');
     } catch (e, st) {

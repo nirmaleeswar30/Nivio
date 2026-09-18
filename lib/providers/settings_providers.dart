@@ -999,4 +999,27 @@ class DnsOverHttpsUrlNotifier extends StateNotifier<String> {
   }
 }
 
+// Discord Rich Presence Provider (desktop only, defaults to false)
+final discordRpcEnabledProvider =
+    StateNotifierProvider<DiscordRpcEnabledNotifier, bool>((ref) {
+  return DiscordRpcEnabledNotifier();
+});
+
+class DiscordRpcEnabledNotifier extends StateNotifier<bool> {
+  DiscordRpcEnabledNotifier() : super(false) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('discord_rpc_enabled') ?? false;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('discord_rpc_enabled', value);
+  }
+}
+
 

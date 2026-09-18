@@ -84,6 +84,7 @@ dependencies:
   flutter_inappwebview_linux: any
   pointycastle: ^4.0.0
   crypto: any
+  discord_rich_presence: ^1.1.1  # Discord Rich Presence (desktop only)
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -156,6 +156,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
 
     final appThemeKey = ref.watch(appThemeProvider);
     final uiScale = ref.watch(uiScaleProvider);
+    final discordRpcEnabled = ref.watch(discordRpcEnabledProvider);
 
     return Scaffold(
       backgroundColor: NivioTheme.backgroundColorOf(context),
@@ -657,6 +658,18 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                           ),
                         if (_matches('ui scale zoom display interface size'))
                           _buildUiScaleTile(uiScale),
+                        if ((Platform.isWindows || Platform.isLinux || Platform.isMacOS) &&
+                            _matches('discord rich presence rpc activity status'))
+                          _buildSwitchTile(
+                            icon: PhosphorIconsRegular.discordLogo,
+                            title: 'Discord Rich Presence',
+                            subtitle: discordRpcEnabled
+                                ? 'Displaying watch activity on Discord'
+                                : 'Disabled',
+                            value: discordRpcEnabled,
+                            onChanged: (value) =>
+                                ref.read(discordRpcEnabledProvider.notifier).setEnabled(value),
+                          ),
                         if (_matches('update app version release github'))
                           FutureBuilder<String>(
                             future: _getAppVersionLabel(),
@@ -1366,6 +1379,23 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     }
     if (_matches('ui scale zoom display interface size')) {
       results.add(_buildUiScaleTile(uiScale));
+    }
+    if ((Platform.isWindows || Platform.isLinux || Platform.isMacOS) &&
+        _matches('discord rich presence rpc activity status')) {
+      final discordRpcEnabled = ref.watch(discordRpcEnabledProvider);
+      results.add(
+        _buildSwitchTile(
+          icon: PhosphorIconsRegular.discordLogo,
+          title: 'Discord Rich Presence',
+          subtitle: discordRpcEnabled
+              ? 'Displaying watch activity on Discord'
+              : 'Disabled',
+          value: discordRpcEnabled,
+          onChanged: (value) {
+            ref.read(discordRpcEnabledProvider.notifier).setEnabled(value);
+          },
+        ),
+      );
     }
     if (_matches('update app version release github')) {
       results.add(
@@ -3805,6 +3835,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     final subtitleOutline = ref.watch(subtitleOutlineProvider);
     final appThemeKey = ref.watch(appThemeProvider);
     final uiScale = ref.watch(uiScaleProvider);
+    final discordRpcEnabled = ref.watch(discordRpcEnabledProvider);
 
     return AppSingleChildScrollView(
       key: ValueKey(index),
@@ -3840,6 +3871,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           subtitleOutline: subtitleOutline,
           appThemeKey: appThemeKey,
           uiScale: uiScale,
+          discordRpcEnabled: discordRpcEnabled,
         ),
       ),
       ),
@@ -3868,6 +3900,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     required String subtitleOutline,
     required String appThemeKey,
     required double uiScale,
+    required bool discordRpcEnabled,
   }) {
     switch (index) {
       case 0: // Profile & Activity
@@ -4180,6 +4213,17 @@ Widget _buildMobileLayout(BuildContext context, User user) {
               onTap: _showThemeDialog,
             ),
             _buildUiScaleTile(uiScale),
+            if (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
+              _buildSwitchTile(
+                icon: PhosphorIconsRegular.discordLogo,
+                title: 'Discord Rich Presence',
+                subtitle: discordRpcEnabled
+                    ? 'Displaying watch activity on Discord'
+                    : 'Disabled',
+                value: discordRpcEnabled,
+                onChanged: (value) =>
+                    ref.read(discordRpcEnabledProvider.notifier).setEnabled(value),
+              ),
             FutureBuilder<String>(
               future: _getAppVersionLabel(),
               builder: (context, snapshot) {

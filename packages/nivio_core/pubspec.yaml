@@ -72,6 +72,7 @@ dependencies:
   device_screen_brightness: ^0.2.1
   flutter_volume_controller: ^2.0.1
   simple_pip_mode: ^1.1.0
+  discord_rich_presence: ^1.1.1
 
 dev_dependencies:
   flutter_test:
