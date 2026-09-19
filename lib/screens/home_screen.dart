@@ -352,6 +352,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 final seenIds = <int>{};
                 final watchlistItems = watchlist
                     .where((item) => seenIds.add(item.id))
+                    .take(20)
                     .map(
                       (WatchlistItem item) => {
                         'id': item.id,
@@ -366,7 +367,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     )
                     .toList(growable: false);
 
-                return ContentRow(title: 'Your List', items: watchlistItems);
+                return ContentRow(
+                  title: 'Your List',
+                  items: watchlistItems,
+                  onSeeAll: () => context.go('/library?tab=watchlist'),
+                );
               },
             ),
           ),

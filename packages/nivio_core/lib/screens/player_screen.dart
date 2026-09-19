@@ -46,6 +46,11 @@ import 'package:nivio/providers/mini_player_provider.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
 import 'package:nivio/services/anime_filler_service.dart';
 import 'package:nivio/services/discord_rpc_service.dart';
+import 'package:nivio/services/anime_tracking_coordinator.dart';
+import 'package:nivio/providers/anime_tracking_provider.dart';
+import 'package:nivio/models/anime_tracking_models.dart';
+import 'package:nivio/models/watchlist_item.dart';
+import 'package:nivio/widgets/anime_brand_logos.dart';
 import 'dart:math' as math;
 
 class PlayerScreen extends ConsumerStatefulWidget {
@@ -89,6 +94,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   SearchResult? _cachedMedia;
   StateController<bool>? _cachedPlayerActiveNotifier;
   TorrentStreamService? _cachedTorrentService;
+  int? _resolvedMalId;
+  int? _lastTrackingSyncedEpisode;
 
   Future<void> _loadSubtitleDelay() async {
     final prefs = await SharedPreferences.getInstance();
@@ -208,6 +215,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _NextEpState(show: false, countdown: null),
   );
   OverlayEntry? _nextEpOverlayEntry;
+  OverlayEntry? _trackingPromptOverlayEntry;
+  bool _trackingPromptDismissed = false;
   
   int _subtitleDelayMs = 0;
 
@@ -406,6 +415,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         totalDuration: const Duration(minutes: 120),
       );
     }
+
+    // If already in Plan to Watch, automatically promote to Watching on start
+    if (_isAnimeMedia(media)) {
+      final watchlistService = ref.read(watchlistServiceProvider);
+      final watchItem = watchlistService.getItem(widget.mediaId);
+      if (watchItem != null && watchItem.watchStatus == WatchStatus.planning) {
+        watchlistService.updateWatchStatus(
+          widget.mediaId,
+          WatchStatus.watching,
+          currentEpisode: _currentEpisode,
+        );
+        ref.read(watchlistRefreshProvider.notifier).refresh();
+        unawaited(
+          AnimeTrackingCoordinator.instance.syncWatchStatus(
+            anilistId: media.id,
+            malId: media.malId ?? _resolvedMalId,
+            status: WatchStatus.watching,
+            episode: _currentEpisode,
+          ),
+        );
+      }
+
+      unawaited(_checkAndPromptTrackingIfNeeded());
+    }
   }
 
   // ────────────────── Keyboard shortcuts ──────────────────
@@ -498,6 +531,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           }
         }
         
+        _resolvedMalId = malId;
         if (malId != null) {
           final times = await AniSkipService.getSkipTimes(malId, episode);
           if (mounted) setState(() { _skipTimes = times; });
@@ -3127,12 +3161,78 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       lastPosition: position,
       totalDuration: duration,
     );
+
+    // Sync anime watch progress to AniList, MAL, and Watchlist if enabled
+    if (_isAnimeMedia(media)) {
+      final progressRatio = duration.inSeconds > 0
+          ? (position.inSeconds / duration.inSeconds)
+          : 0.0;
+
+      if (progressRatio >= 0.80 &&
+          _lastTrackingSyncedEpisode != _currentEpisode) {
+        _lastTrackingSyncedEpisode = _currentEpisode;
+        final isCompleted = _currentSeasonData?.episodes.length != null &&
+            _currentEpisode >= _currentSeasonData!.episodes.length &&
+            progressRatio >= 0.90;
+        final anilistId = media.id;
+        final malId = media.malId ?? _resolvedMalId;
+        final targetStatus = isCompleted ? WatchStatus.completed : WatchStatus.watching;
+
+        final watchlistService = ref.read(watchlistServiceProvider);
+        final watchItem = watchlistService.getItem(widget.mediaId);
+
+        bool autoSyncEnabled = true;
+        try {
+          autoSyncEnabled = ref.read(animeAutoSyncProgressProvider);
+        } catch (_) {}
+
+        if (watchItem != null) {
+          watchlistService.updateWatchStatus(
+            widget.mediaId,
+            targetStatus,
+            currentEpisode: _currentEpisode,
+            totalEpisodes: _currentSeasonData?.episodes.length,
+          );
+          ref.read(watchlistRefreshProvider.notifier).refresh();
+        } else if (autoSyncEnabled) {
+          final newWatchItem = WatchlistItem(
+            id: widget.mediaId,
+            title: media.title ?? media.name ?? 'Unknown',
+            posterPath: media.posterPath ?? media.backdropPath,
+            mediaType: media.mediaType,
+            addedAt: DateTime.now(),
+            voteAverage: media.voteAverage,
+            releaseDate: media.releaseDate ?? media.firstAirDate,
+            overview: media.overview,
+            watchStatus: targetStatus,
+            currentEpisode: _currentEpisode,
+            totalEpisodes: _currentSeasonData?.episodes.length,
+            anilistId: anilistId,
+            malId: malId,
+          );
+          watchlistService.addToWatchlist(newWatchItem, status: targetStatus);
+          ref.read(watchlistRefreshProvider.notifier).refresh();
+        }
+
+        if (autoSyncEnabled) {
+          unawaited(
+            AnimeTrackingCoordinator.instance.syncWatchProgress(
+              anilistId: anilistId,
+              malId: malId,
+              episode: _currentEpisode,
+              isCompleted: isCompleted,
+            ),
+          );
+        }
+      }
+    }
   }
 
   void _disposePlayer() {
     _saveProgress(); // Ensure we save one last time on exit
     _progressTimer?.cancel();
     _removeFullscreenTopBarOverlayEntry();
+    _removeTrackingPromptOverlay();
     _player.stop();
   }
 
@@ -3203,6 +3303,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     try {
       debugPrint('🔴 [DISPOSE] Step 6: _removeFullscreenTopBarOverlayEntry()...');
       _removeFullscreenTopBarOverlayEntry();
+      _removeTrackingPromptOverlay();
       debugPrint('🔴 [DISPOSE] Step 6: ✅ done');
     } catch (e, st) {
       debugPrint('🔴 [DISPOSE] Step 6: ❌ FAILED — $e\n$st');
@@ -4911,6 +5012,96 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _nextEpOverlayEntry = null;
   }
 
+  void _removeTrackingPromptOverlay() {
+    try {
+      _trackingPromptOverlayEntry?.remove();
+    } catch (e) {
+      debugPrint('🔴 [DISPOSE] _removeTrackingPromptOverlay failed: $e');
+    }
+    _trackingPromptOverlayEntry = null;
+  }
+
+  Future<void> _checkAndPromptTrackingIfNeeded() async {
+    if (_trackingPromptDismissed) return;
+    if (!mounted) return;
+
+    final media = ref.read(selectedMediaProvider);
+    if (!_isAnimeMedia(media) || media == null) return;
+
+    // Check if user set untracked behavior to 'prompt'
+    final behavior = ref.read(untrackedAnimeBehaviorProvider);
+    if (behavior != UntrackedAnimeBehavior.prompt) return;
+
+    // Check if any tracking account is connected
+    if (!AnimeTrackingCoordinator.instance.hasAnyAccountConnected) return;
+
+    // Check if already in user's Nivio watchlist
+    final watchlistService = ref.read(watchlistServiceProvider);
+    final isAlreadyTracked = watchlistService.isInWatchlist(widget.mediaId);
+    if (isAlreadyTracked) return;
+
+    _showTrackingPromptOverlay(media);
+  }
+
+  void _showTrackingPromptOverlay(SearchResult media) {
+    if (!mounted || _trackingPromptDismissed || _trackingPromptOverlayEntry != null) return;
+
+    _trackingPromptOverlayEntry = OverlayEntry(
+      builder: (ctx) => _AnimeTrackingPromptOverlay(
+        mediaTitle: media.title ?? media.name ?? 'Anime',
+        currentEpisode: _currentEpisode,
+        onTrack: () async {
+          _removeTrackingPromptOverlay();
+          _trackingPromptDismissed = true;
+
+          final watchlistService = ref.read(watchlistServiceProvider);
+          final watchItem = WatchlistItem(
+            id: widget.mediaId,
+            title: media.title ?? media.name ?? 'Unknown',
+            posterPath: media.posterPath ?? media.backdropPath,
+            mediaType: 'anime',
+            addedAt: DateTime.now(),
+            voteAverage: media.voteAverage,
+            releaseDate: media.releaseDate ?? media.firstAirDate,
+            overview: media.overview,
+            watchStatus: WatchStatus.watching,
+            currentEpisode: _currentEpisode,
+            anilistId: media.id,
+            malId: media.malId ?? _resolvedMalId,
+          );
+
+          await watchlistService.addToWatchlist(watchItem, status: WatchStatus.watching);
+          ref.read(watchlistRefreshProvider.notifier).refresh();
+
+          unawaited(
+            AnimeTrackingCoordinator.instance.syncWatchStatus(
+              anilistId: media.id,
+              malId: media.malId ?? _resolvedMalId,
+              status: WatchStatus.watching,
+              episode: _currentEpisode,
+            ),
+          );
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Added "${media.title ?? media.name}" to Watching!'),
+                backgroundColor: NivioTheme.accentColorOf(context),
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        },
+        onDismiss: () {
+          _removeTrackingPromptOverlay();
+          _trackingPromptDismissed = true;
+        },
+      ),
+    );
+
+    Overlay.of(context, rootOverlay: true).insert(_trackingPromptOverlayEntry!);
+  }
+
   // ── Loading state ───────────────────────────────────────────────
   Widget _buildLoadingState() {
     final media = ref.read(selectedMediaProvider);
@@ -6315,3 +6506,182 @@ class _SkipIntroButtonState extends State<SkipIntroButton> {
     );
   }
 }
+
+class _AnimeTrackingPromptOverlay extends StatefulWidget {
+  final String mediaTitle;
+  final int currentEpisode;
+  final VoidCallback onTrack;
+  final VoidCallback onDismiss;
+
+  const _AnimeTrackingPromptOverlay({
+    required this.mediaTitle,
+    required this.currentEpisode,
+    required this.onTrack,
+    required this.onDismiss,
+  });
+
+  @override
+  State<_AnimeTrackingPromptOverlay> createState() => _AnimeTrackingPromptOverlayState();
+}
+
+class _AnimeTrackingPromptOverlayState extends State<_AnimeTrackingPromptOverlay>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animController;
+  late Animation<double> _fadeAnim;
+  late Animation<Offset> _slideAnim;
+  Timer? _autoDismissTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+    );
+    _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeOut);
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, -0.4),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic));
+
+    _animController.forward();
+
+    // Auto dismiss after 10 seconds if untouched
+    _autoDismissTimer = Timer(const Duration(seconds: 10), () {
+      if (mounted) {
+        _dismissWithAnimation();
+      }
+    });
+  }
+
+  void _dismissWithAnimation() {
+    _autoDismissTimer?.cancel();
+    _animController.reverse().then((_) {
+      if (mounted) {
+        widget.onDismiss();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoDismissTimer?.cancel();
+    _animController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = NivioTheme.accentColorOf(context);
+    return SafeArea(
+      child: Align(
+        alignment: Alignment.topRight,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 24.0, right: 24.0),
+          child: FadeTransition(
+            opacity: _fadeAnim,
+            child: SlideTransition(
+              position: _slideAnim,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  constraints: const BoxConstraints(maxWidth: 400),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xF2181824),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white.withOpacity(0.12), width: 1),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black54,
+                        blurRadius: 18,
+                        offset: Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: accent.withOpacity(0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            AniListLogo(size: 14),
+                            SizedBox(width: 4),
+                            MalLogo(size: 14),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Track Anime?',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Track "${widget.mediaTitle}" (Ep ${widget.currentEpisode}) as Watching?',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.7),
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton(
+                        onPressed: () {
+                          _autoDismissTimer?.cancel();
+                          widget.onTrack();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: accent,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: const Text(
+                          'Track',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        onPressed: _dismissWithAnimation,
+                        icon: Icon(Icons.close_rounded, size: 18, color: Colors.white.withOpacity(0.6)),
+                        constraints: const BoxConstraints(),
+                        padding: const EdgeInsets.all(4),
+                        splashRadius: 16,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+

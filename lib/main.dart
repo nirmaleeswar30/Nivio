@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'dart:isolate';
@@ -24,6 +25,7 @@ import 'package:nivio/models/new_episode.dart';
 import 'package:nivio/models/download_item.dart';
 import 'package:nivio/services/cache_service.dart';
 import 'package:nivio/services/watchlist_service.dart';
+import 'package:nivio/services/auth_service.dart';
 import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/github_release_update_service.dart';
 import 'package:nivio/services/shorebird_update_service.dart';
@@ -47,14 +49,86 @@ import 'package:nivio/services/watch_party/watch_party_supabase_config.dart';
 import 'package:nivio/services/download_service.dart';
 import 'package:nivio/services/hls_proxy_service.dart';
 import 'package:nivio/services/discord_rpc_service.dart';
+import 'package:nivio/services/anilist_auth_service.dart';
+import 'package:nivio/services/mal_auth_service.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:nivio/widgets/title_bar_overlay.dart';
 
 import 'package:flutter_inappwebview_linux/flutter_inappwebview_linux.dart';
 import 'package:window_manager/window_manager.dart';
 
-void main() async {
+const int _desktopIpcPort = 45328;
+
+Future<bool> _handleDesktopSingleInstance(List<String> args) async {
+  if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) {
+    return false;
+  }
+
   try {
+    final server = await ServerSocket.bind(
+      InternetAddress.loopbackIPv4,
+      _desktopIpcPort,
+      shared: false,
+    );
+
+    // Primary instance: listen for forwarded links
+    server.listen((Socket client) {
+      utf8.decoder.bind(client).listen((data) {
+        final link = data.trim();
+        if (link.isNotEmpty) {
+          debugPrint('🔗 Received link from secondary instance: $link');
+          final uri = Uri.tryParse(link);
+          if (uri != null) {
+            _handleDeepLink(uri);
+            if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+              windowManager.show();
+              windowManager.focus();
+            }
+          }
+        }
+      });
+    });
+
+    return false;
+  } catch (_) {
+    // Secondary instance: forward link and exit immediately without initializing Hive
+    debugPrint('ℹ️ Another Nivio instance is already running. Forwarding link...');
+    try {
+      final client = await Socket.connect(
+        InternetAddress.loopbackIPv4,
+        _desktopIpcPort,
+        timeout: const Duration(seconds: 2),
+      );
+
+      String linkToSend = '';
+      for (final arg in args) {
+        if (arg.startsWith('nivio://') || arg.contains('auth/')) {
+          linkToSend = arg;
+          break;
+        }
+      }
+      if (linkToSend.isEmpty && args.isNotEmpty) {
+        linkToSend = args.first;
+      }
+
+      if (linkToSend.isNotEmpty) {
+        client.write(linkToSend);
+        await client.flush();
+      }
+      await client.close();
+    } catch (e) {
+      debugPrint('Error sending link to primary instance: $e');
+    }
+    exit(0);
+  }
+}
+
+void main([List<String> args = const []]) async {
+  try {
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      final handled = await _handleDesktopSingleInstance(args);
+      if (handled) return;
+    }
     WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
     if (Platform.isLinux) {
       LinuxInAppWebViewPlatform.registerWith();
@@ -141,6 +215,10 @@ void main() async {
   // Initialize episode check service (background notifications)
   await EpisodeCheckService.init();
 
+  // Initialize anime tracking auth services (AniList & MAL)
+  await AniListAuthService.instance.init();
+  await MalAuthService.instance.init();
+
   final receivePort = ReceivePort();
   IsolateNameServer.removePortNameMapping('download_cancel_port');
   IsolateNameServer.registerPortWithName(receivePort.sendPort, 'download_cancel_port');
@@ -190,11 +268,12 @@ void main() async {
 
 Future<void> _initHive() async {
   await Hive.initFlutter();
-  Hive.registerAdapter(CacheEntryAdapter());
-  Hive.registerAdapter(WatchlistItemAdapter());
-  Hive.registerAdapter(NewEpisodeAdapter());
-  Hive.registerAdapter(DownloadStatusAdapter());
-  Hive.registerAdapter(DownloadItemAdapter());
+  if (!Hive.isAdapterRegistered(0)) Hive.registerAdapter(CacheEntryAdapter());
+  if (!Hive.isAdapterRegistered(7)) Hive.registerAdapter(WatchStatusAdapter());
+  if (!Hive.isAdapterRegistered(5)) Hive.registerAdapter(WatchlistItemAdapter());
+  if (!Hive.isAdapterRegistered(3)) Hive.registerAdapter(NewEpisodeAdapter());
+  if (!Hive.isAdapterRegistered(4)) Hive.registerAdapter(DownloadStatusAdapter());
+  if (!Hive.isAdapterRegistered(6)) Hive.registerAdapter(DownloadItemAdapter());
 
   await Future.wait([
     Hive.openBox<CacheEntry>('cache'),
@@ -207,8 +286,45 @@ Future<void> _initHive() async {
   await WatchlistService.init();
 }
 
+Future<void> _registerWindowsCustomProtocol() async {
+  if (!Platform.isWindows) return;
+  try {
+    final exePath = Platform.resolvedExecutable;
+    await Process.run('reg', [
+      'add',
+      r'HKCU\Software\Classes\nivio',
+      '/ve',
+      '/d',
+      'URL:nivio Protocol',
+      '/f',
+    ]);
+    await Process.run('reg', [
+      'add',
+      r'HKCU\Software\Classes\nivio',
+      '/v',
+      'URL Protocol',
+      '/d',
+      '',
+      '/f',
+    ]);
+    await Process.run('reg', [
+      'add',
+      r'HKCU\Software\Classes\nivio\shell\open\command',
+      '/ve',
+      '/d',
+      '"$exePath" "%1"',
+      '/f',
+    ]);
+  } catch (e) {
+    debugPrint('Error registering Windows protocol: $e');
+  }
+}
+
 /// Handle incoming deep links (nivio://open/...) on all platforms.
 void _initDeepLinks() {
+  if (Platform.isWindows) {
+    _registerWindowsCustomProtocol();
+  }
   try {
     final appLinks = AppLinks();
 
@@ -227,12 +343,69 @@ void _initDeepLinks() {
 }
 
 void _handleDeepLink(Uri uri) {
+  debugPrint('🔗 Deep link received: $uri');
+
+  // Handle OAuth authentication callbacks:
+  // - AniList: nivio://auth/anilist#access_token=... OR nivio://auth/anilist?code=...
+  // - MAL:     nivio://auth/mal?code=...
+  final fullPath = '${uri.host}${uri.path}'.toLowerCase();
+  if (fullPath.contains('auth/anilist') ||
+      (uri.host == 'auth' && uri.path.contains('anilist'))) {
+    String? token;
+    if (uri.fragment.isNotEmpty) {
+      final fragmentParams = Uri.splitQueryString(uri.fragment);
+      token = fragmentParams['access_token'];
+    }
+    token ??= uri.queryParameters['access_token'];
+    final code = uri.queryParameters['code'];
+
+    if (token != null && token.isNotEmpty) {
+      debugPrint('🔗 Deep link: Authenticating AniList via token');
+      unawaited(
+        AniListAuthService.instance.authenticateWithToken(token).then((ok) {
+          if (ok) {
+            WatchlistService(AuthService())
+                .importFromAnimeTracking(pushOfflineChanges: true);
+          }
+        }),
+      );
+    } else if (code != null && code.isNotEmpty) {
+      debugPrint('🔗 Deep link: Exchanging AniList auth code');
+      unawaited(
+        AniListAuthService.instance.exchangeCodeForToken(code).then((ok) {
+          if (ok) {
+            WatchlistService(AuthService())
+                .importFromAnimeTracking(pushOfflineChanges: true);
+          }
+        }),
+      );
+    }
+    return;
+  }
+
+  if (fullPath.contains('auth/mal') ||
+      (uri.host == 'auth' && uri.path.contains('mal'))) {
+    final code = uri.queryParameters['code'];
+    if (code != null && code.isNotEmpty) {
+      debugPrint('🔗 Deep link: Exchanging MAL auth code');
+      unawaited(
+        MalAuthService.instance.exchangeCodeForToken(code).then((ok) {
+          if (ok) {
+            WatchlistService(AuthService())
+                .importFromAnimeTracking(pushOfflineChanges: true);
+          }
+        }),
+      );
+    }
+    return;
+  }
+
   // URI format: nivio://open/media/123?type=movie
   // GoRouter path:       /media/123?type=movie
   final path = uri.path; // e.g. "/media/123"
   final query = uri.query.isNotEmpty ? '?${uri.query}' : '';
   final routePath = '$path$query';
-  debugPrint('🔗 Deep link received: $uri → routing to $routePath');
+  debugPrint('🔗 Deep link routing to: $routePath');
   appRouter.go(routePath);
 }
 
@@ -501,6 +674,7 @@ class _NivioAppState extends ConsumerState<NivioApp> {
     );
 
     return MaterialApp.router(
+      showPerformanceOverlay: true,
       scrollBehavior: DesktopScrollBehavior(),
       title: 'Nivio',
       theme: appTheme,

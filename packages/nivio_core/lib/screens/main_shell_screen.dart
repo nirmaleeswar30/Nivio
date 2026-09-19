@@ -13,6 +13,8 @@ import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:animations/animations.dart';
 import 'package:nivio/services/schedule_api_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:nivio/services/anime_tracking_coordinator.dart';
 import '../main.dart';
 class MainShellScreen extends ConsumerStatefulWidget {
   final StatefulNavigationShell navigationShell;
@@ -36,6 +38,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
       _checkForUpdatesOnStartup();
       _syncWatchlistFromCloud();
       _prefetchSchedule();
+      _syncAnimeTrackingOnStartup();
     });
   }
 
@@ -49,6 +52,24 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
       final watchlistService = ref.read(watchlistServiceProvider);
       await watchlistService.downloadFromCloud();
     } catch (_) {}
+  }
+
+  Future<void> _syncAnimeTrackingOnStartup() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final autoSyncEnabled = prefs.getBool('anime_auto_sync_watchlist') ?? true;
+      if (!autoSyncEnabled) return;
+      if (!AnimeTrackingCoordinator.instance.hasAnyAccountConnected) return;
+
+      final watchlistService = ref.read(watchlistServiceProvider);
+      final count =
+          await watchlistService.importFromAnimeTracking(pushOfflineChanges: true);
+      if (count > 0 && mounted) {
+        ref.read(watchlistRefreshProvider.notifier).refresh();
+      }
+    } catch (e) {
+      debugPrint('[AnimeSyncStartup] Background sync failed: $e');
+    }
   }
 
   Future<void> _checkForUpdatesOnStartup() async {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'package:animations/animations.dart';
@@ -28,6 +29,10 @@ import 'package:nivio/services/api_status_service.dart';
 import 'package:nivio/services/shorebird_update_service.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+import 'package:nivio/widgets/anime_brand_logos.dart';
+import 'package:nivio/models/anime_tracking_models.dart';
+import 'package:nivio/providers/anime_tracking_provider.dart';
+import 'package:nivio/services/anime_tracking_coordinator.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -41,6 +46,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   String _query = '';
   int _selectedCategoryIndex = 0;
   double? _tempUiScale;
+  bool _isSyncingAnime = false;
 
   static const List<String> _categories = [
     'Profile & Activity',
@@ -51,6 +57,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     'Network',
     'Content Feed',
     'Episode Alerts',
+    'Anime Tracking',
     'App & Updates',
     'Data & Account',
   ];
@@ -642,6 +649,16 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                   ),
                 ),
               ),
+              if (_matches('anime tracking anilist mal myanimelist sync'))
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                    child: _buildSectionCard(
+                      title: 'Anime Tracking',
+                      child: _buildAnimeTrackingContent(),
+                    ),
+                  ),
+                ),
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
@@ -1396,6 +1413,9 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           },
         ),
       );
+    }
+    if (_matches('anime tracking anilist mal myanimelist sync watchlist')) {
+      results.add(_buildAnimeTrackingContent());
     }
     if (_matches('update app version release github')) {
       results.add(
@@ -4203,7 +4223,9 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
           ],
         );
-      case 8: // App & Updates
+      case 8: // Anime Tracking
+        return _buildAnimeTrackingContent();
+      case 9: // App & Updates
         return Column(
           children: [
             _buildActionTile(
@@ -4275,7 +4297,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
           ],
         );
-      case 9: // Data & Account
+      case 10: // Data & Account
         return Column(
           children: [
             _buildActionTile(
@@ -4304,7 +4326,535 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     }
   }
 
+  Widget _buildAnimeTrackingContent() {
+    final aniListUser = ref.watch(aniListAuthProvider);
+    final malUser = ref.watch(malAuthProvider);
+    final autoSyncProgress = ref.watch(animeAutoSyncProgressProvider);
+    final autoSyncWatchlist = ref.watch(animeAutoSyncWatchlistProvider);
+    final untrackedBehavior = ref.watch(untrackedAnimeBehaviorProvider);
 
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildAnimeTrackingAccountTile(
+          title: 'AniList',
+          subtitle: 'Sync watch progress & Planning list',
+          provider: TrackingProvider.anilist,
+          user: aniListUser,
+          brandColor: const Color(0xFF02A9FF),
+          onConnect: () async {
+            final launched =
+                await ref.read(aniListAuthProvider.notifier).launchAuth();
+            if (!launched && mounted) {
+              _showAniListManualTokenDialog();
+            }
+          },
+          onManualEntry: _showAniListManualTokenDialog,
+          onDisconnect: () => ref.read(aniListAuthProvider.notifier).logout(),
+          manualButtonLabel: 'Enter AniList Code / Token Manually',
+        ),
+        const SizedBox(height: 8),
+        _buildAnimeTrackingAccountTile(
+          title: 'MyAnimeList',
+          subtitle: 'Sync watch progress & Plan to Watch',
+          provider: TrackingProvider.mal,
+          user: malUser,
+          brandColor: const Color(0xFF2E51A2),
+          onConnect: () async {
+            final launched =
+                await ref.read(malAuthProvider.notifier).launchAuth();
+            if (!launched && mounted) {
+              _showMalManualCodeDialog();
+            }
+          },
+          onManualEntry: _showMalManualCodeDialog,
+          onDisconnect: () => ref.read(malAuthProvider.notifier).logout(),
+          manualButtonLabel: 'Enter MAL Code Manually',
+        ),
+        const SizedBox(height: 16),
+        const Divider(color: Colors.white12),
+        const SizedBox(height: 8),
+        _buildSwitchTile(
+          icon: Icons.sync_alt_rounded,
+          title: 'Auto-Sync Watch Progress',
+          subtitle:
+              'Automatically sync episode progress to AniList & MAL when watching anime (>80%)',
+          value: autoSyncProgress,
+          onChanged: (val) {
+            ref.read(animeAutoSyncProgressProvider.notifier).setEnabled(val);
+          },
+        ),
+        _buildActionTile(
+          icon: untrackedBehavior == UntrackedAnimeBehavior.prompt
+              ? Icons.notifications_active_rounded
+              : Icons.sync_rounded,
+          title: 'Untracked Anime Behavior',
+          subtitle: untrackedBehavior == UntrackedAnimeBehavior.prompt
+              ? 'Prompt to Track (Anime Slayer style)'
+              : 'Auto-Sync silently (>80% progress)',
+          onTap: () => _showUntrackedBehaviorDialog(untrackedBehavior),
+        ),
+        _buildSwitchTile(
+          icon: Icons.playlist_add_check_rounded,
+          title: 'Auto-Sync Watchlist',
+          subtitle:
+              'Automatically add or remove anime from your AniList & MAL planning lists',
+          value: autoSyncWatchlist,
+          onChanged: (val) {
+            ref.read(animeAutoSyncWatchlistProvider.notifier).setEnabled(val);
+          },
+        ),
+        _buildActionTile(
+          icon: _isSyncingAnime ? Icons.sync_rounded : Icons.cloud_sync_rounded,
+          title: 'Sync Library Now',
+          subtitle: 'Last synced: ${_formatLastAnimeSyncTime()}',
+          onTap: _syncAnimeWatchlistNow,
+        ),
+      ],
+    );
+  }
+
+  void _showUntrackedBehaviorDialog(UntrackedAnimeBehavior current) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: NivioTheme.netflixDarkGrey,
+        title: const Text(
+          'Untracked Anime Behavior',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            RadioListTile<UntrackedAnimeBehavior>(
+              value: UntrackedAnimeBehavior.autoSync,
+              groupValue: current,
+              title: const Text('Auto-Sync Silently',
+                  style: TextStyle(color: Colors.white)),
+              subtitle: const Text(
+                'Automatically add to Watching when an episode is >80% watched.',
+                style: TextStyle(color: Colors.white60, fontSize: 12),
+              ),
+              activeColor: NivioTheme.accentColorOf(ctx),
+              onChanged: (val) {
+                if (val != null) {
+                  ref
+                      .read(untrackedAnimeBehaviorProvider.notifier)
+                      .setBehavior(val);
+                  Navigator.of(ctx).pop();
+                }
+              },
+            ),
+            RadioListTile<UntrackedAnimeBehavior>(
+              value: UntrackedAnimeBehavior.prompt,
+              groupValue: current,
+              title: const Text('Prompt to Track (Anime Slayer style)',
+                  style: TextStyle(color: Colors.white)),
+              subtitle: const Text(
+                'Show a discrete banner asking if you want to add the anime to Watching.',
+                style: TextStyle(color: Colors.white60, fontSize: 12),
+              ),
+              activeColor: NivioTheme.accentColorOf(ctx),
+              onChanged: (val) {
+                if (val != null) {
+                  ref
+                      .read(untrackedAnimeBehaviorProvider.notifier)
+                      .setBehavior(val);
+                  Navigator.of(ctx).pop();
+                }
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnimeTrackingAccountTile({
+    required String title,
+    required String subtitle,
+    required TrackingProvider provider,
+    required TrackingUser? user,
+    required VoidCallback onConnect,
+    required VoidCallback onManualEntry,
+    required VoidCallback onDisconnect,
+    required String manualButtonLabel,
+    Color brandColor = Colors.blueAccent,
+  }) {
+    final isConnected = user != null;
+
+    final Widget logoWidget = provider == TrackingProvider.anilist
+        ? const AniListLogo(size: 38)
+        : const MalLogo(size: 38);
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isConnected
+              ? brandColor.withOpacity(0.35)
+              : Colors.white.withOpacity(0.08),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (isConnected &&
+                  user.avatarUrl != null &&
+                  user.avatarUrl!.isNotEmpty)
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    CircleAvatar(
+                      radius: 19,
+                      backgroundImage:
+                          CachedNetworkImageProvider(user.avatarUrl!),
+                      backgroundColor: Colors.white10,
+                    ),
+                    Positioned(
+                      right: -3,
+                      bottom: -3,
+                      child: provider == TrackingProvider.anilist
+                          ? const AniListLogo(size: 16)
+                          : const MalLogo(size: 16),
+                    ),
+                  ],
+                )
+              else
+                logoWidget,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (isConnected) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.greenAccent.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'Connected',
+                              style: TextStyle(
+                                color: Colors.greenAccent,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      isConnected ? '@${user.username}' : subtitle,
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 12,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (isConnected)
+                TextButton(
+                  onPressed: onDisconnect,
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.redAccent,
+                  ),
+                  child: const Text('Disconnect'),
+                )
+              else
+                ElevatedButton(
+                  onPressed: onConnect,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: brandColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Connect'),
+                ),
+            ],
+          ),
+          if (!isConnected) ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: onManualEntry,
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: Colors.white54,
+                ),
+                child: Text(
+                  manualButtonLabel,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _showAniListManualTokenDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1F1F1F),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Enter AniList Code or URL',
+            style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'If the browser did not redirect automatically into Nivio, authorize on AniList and copy the authorization code (or full redirect URL) from your browser address bar and paste it below:',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: controller,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Paste code, redirect URL, or token...',
+                hintStyle: const TextStyle(color: Colors.white38),
+                filled: true,
+                fillColor: Colors.white10,
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              ref.read(aniListAuthProvider.notifier).launchAuth();
+            },
+            child: const Text('Open Browser',
+                style: TextStyle(color: Color(0xFF02A9FF))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel',
+                style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final input = controller.text.trim();
+              if (input.isNotEmpty) {
+                Navigator.pop(ctx);
+                final success = await ref
+                    .read(aniListAuthProvider.notifier)
+                    .loginWithInput(input);
+                if (success) {
+                  unawaited(
+                    ref
+                        .read(watchlistServiceProvider)
+                        .importFromAnimeTracking(pushOfflineChanges: true)
+                        .then((_) {
+                      if (mounted) {
+                        ref.read(watchlistRefreshProvider.notifier).refresh();
+                      }
+                    }),
+                  );
+                }
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(success
+                          ? 'AniList connected! Importing your anime library...'
+                          : 'Failed to connect AniList. Check the code or token.'),
+                      backgroundColor:
+                          success ? Colors.green : Colors.redAccent,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Connect'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showMalManualCodeDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1F1F1F),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Enter MyAnimeList Code',
+            style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'If the browser did not redirect automatically into Nivio, authorize on MAL and copy the authorization code (or full redirect URL) from your browser address bar (after ?code=...) and paste it below:',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: controller,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Paste code or redirect URL here...',
+                hintStyle: const TextStyle(color: Colors.white38),
+                filled: true,
+                fillColor: Colors.white10,
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              ref.read(malAuthProvider.notifier).launchAuth();
+            },
+            child: const Text('Open Browser',
+                style: TextStyle(color: Color(0xFF2E51A2))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel',
+                style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final code = controller.text.trim();
+              if (code.isNotEmpty) {
+                Navigator.pop(ctx);
+                final success = await ref
+                    .read(malAuthProvider.notifier)
+                    .loginWithCode(code);
+                if (success) {
+                  unawaited(
+                    ref
+                        .read(watchlistServiceProvider)
+                        .importFromAnimeTracking(pushOfflineChanges: true)
+                        .then((_) {
+                      if (mounted) {
+                        ref.read(watchlistRefreshProvider.notifier).refresh();
+                      }
+                    }),
+                  );
+                }
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(success
+                          ? 'MyAnimeList connected! Importing your anime library...'
+                          : 'Failed to connect MyAnimeList. Check the code.'),
+                      backgroundColor:
+                          success ? Colors.green : Colors.redAccent,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Connect'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _syncAnimeWatchlistNow() async {
+    if (!AnimeTrackingCoordinator.instance.hasAnyAccountConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please connect AniList or MyAnimeList first.'),
+          backgroundColor: Colors.orangeAccent,
+        ),
+      );
+      return;
+    }
+
+    if (_isSyncingAnime) return;
+    setState(() => _isSyncingAnime = true);
+
+    try {
+      final watchlistService = ref.read(watchlistServiceProvider);
+      final count =
+          await watchlistService.importFromAnimeTracking(pushOfflineChanges: true);
+      ref.read(watchlistRefreshProvider.notifier).refresh();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Successfully synced and updated $count anime entries in your Watchlist!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error syncing anime: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncingAnime = false);
+      }
+    }
+  }
+
+  String _formatLastAnimeSyncTime() {
+    final lastSync = AnimeTrackingCoordinator.instance.lastSyncedAt;
+    if (lastSync == null) return 'Never';
+    final diff = DateTime.now().difference(lastSync);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return DateFormat('MMM d, h:mm a').format(lastSync);
+  }
 }
 
 
@@ -4605,55 +5155,58 @@ class _SettingActionTileState extends State<_SettingActionTile> {
             width: 1,
           ),
         ),
-        child: ListTile(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-          leading: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.all(7),
-            decoration: BoxDecoration(
-              color: _isHovered
-                  ? accentColor.withOpacity(0.15)
-                  : Colors.white.withOpacity(0.04),
-              borderRadius: BorderRadius.circular(8),
+        child: Material(
+          color: Colors.transparent,
+          child: ListTile(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+            leading: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: _isHovered
+                    ? accentColor.withOpacity(0.15)
+                    : Colors.white.withOpacity(0.04),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                widget.icon,
+                color: widget.titleColor ??
+                    (_isHovered ? accentColor : NivioTheme.netflixWhite),
+                size: 20,
+              ),
             ),
-            child: Icon(
-              widget.icon,
-              color: widget.titleColor ??
-                  (_isHovered ? accentColor : NivioTheme.netflixWhite),
-              size: 20,
+            title: Text(
+              widget.title,
+              style: TextStyle(
+                color: widget.titleColor ?? NivioTheme.netflixWhite,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
             ),
+            subtitle: Text(
+              widget.subtitle,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: _isHovered ? Colors.white70 : NivioTheme.netflixGrey,
+                fontSize: 12,
+              ),
+            ),
+            trailing: AnimatedSlide(
+              offset: Offset(_isHovered ? 0.25 : 0.0, 0),
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              child: Icon(
+                Icons.chevron_right_rounded,
+                color: _isHovered ? accentColor : NivioTheme.netflixGrey,
+                size: 22,
+              ),
+            ),
+            onTap: widget.onTap,
           ),
-          title: Text(
-            widget.title,
-            style: TextStyle(
-              color: widget.titleColor ?? NivioTheme.netflixWhite,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          subtitle: Text(
-            widget.subtitle,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: _isHovered ? Colors.white70 : NivioTheme.netflixGrey,
-              fontSize: 12,
-            ),
-          ),
-          trailing: AnimatedSlide(
-            offset: Offset(_isHovered ? 0.25 : 0.0, 0),
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            child: Icon(
-              Icons.chevron_right_rounded,
-              color: _isHovered ? accentColor : NivioTheme.netflixGrey,
-              size: 22,
-            ),
-          ),
-          onTap: widget.onTap,
         ),
       ),
     );

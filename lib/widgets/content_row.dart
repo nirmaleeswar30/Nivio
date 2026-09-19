@@ -15,12 +15,16 @@ class ContentRow extends StatelessWidget {
   final String title;
   final List<dynamic> items;
   final double? leftPadding;
+  final VoidCallback? onSeeAll;
+  final String? seeAllLabel;
 
   const ContentRow({
     super.key,
     required this.title,
     required this.items,
     this.leftPadding,
+    this.onSeeAll,
+    this.seeAllLabel,
   });
 
   @override
@@ -35,14 +39,53 @@ class ContentRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: EdgeInsets.only(left: leftPadding ?? (isDesktop ? 68 : 16), right: 16),
-            child: Text(
-              title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+            padding: EdgeInsets.only(
+              left: leftPadding ?? (isDesktop ? 68 : 16),
+              right: 16,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                if (onSeeAll != null)
+                  InkWell(
+                    onTap: onSeeAll,
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            seeAllLabel ?? 'See All',
+                            style: TextStyle(
+                              color: NivioTheme.accentColorOf(context),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            size: 11,
+                            color: NivioTheme.accentColorOf(context),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
           const SizedBox(height: 12),
