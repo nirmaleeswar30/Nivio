@@ -5,7 +5,6 @@ import 'package:hive/hive.dart';
 import '../models/watchlist_item.dart';
 import 'auth_service.dart';
 import 'package:nivio/services/anime_tracking_coordinator.dart';
-import 'package:nivio/models/anime_tracking_models.dart';
 import 'package:nivio/core/debug_log.dart';
 
 /// Service for managing user's watchlist with status categories and cloud sync.
@@ -304,41 +303,20 @@ class WatchlistService {
     final lastSync = coordinator.lastSyncedAt;
     int processedCount = 0;
 
-    // --- PHASE 1: Push offline changes made in Nivio to AniList / MAL ---
-    if (pushOfflineChanges) {
-      try {
-        final allLocalAnime =
-            _box.values.where((item) => item.mediaType == 'anime').toList();
-        for (final item in allLocalAnime) {
-          final itemTime = item.updatedAt ?? item.addedAt;
-          // If the item was added or updated after the last known sync, push to remote
-          if (lastSync == null || itemTime.isAfter(lastSync)) {
-            try {
-              await coordinator.syncWatchStatus(
-                anilistId: item.anilistId ?? (item.id > 0 ? item.id : null),
-                malId: item.malId,
-                status: item.watchStatus,
-                episode: item.currentEpisode ?? 1,
-              );
-              appDebugLog(
-                  '📤 Pushed local offline anime change to tracking: ${item.title} -> ${item.watchStatus.label}');
-            } catch (e) {
-              appDebugLog('⚠️ Failed to push local change for ${item.title}: $e');
-            }
-          }
-        }
-      } catch (e) {
-        appDebugLog('⚠️ Error checking local offline changes: $e');
-      }
-    }
+    // Resolved changes are collected here and flushed once at the very end, so
+    // AniList gets a single batched request instead of one write per show
+    // (which is what was previously exhausting the rate limit).
+    final pushes = <TrackingPush>[];
+    // Local items already reconciled against a remote entry, so PHASE 3 can tell
+    // which local-only items still need to be created on the remote.
+    final matchedLocalIds = <int>{};
 
-    // --- PHASE 2: Pull remote library from AniList & MAL and merge into local ---
+    // --- PHASE 1: Pull remote library FIRST so we can diff before pushing ---
     try {
       final remoteItems = await coordinator.fetchAllSyncedItems();
-      if (remoteItems.isEmpty) return processedCount;
-
       final localItems = _box.values.toList();
 
+      // --- PHASE 2: Merge remote → local, collecting only real diffs to push ---
       for (final synced in remoteItems) {
         // Find existing matching local item
         WatchlistItem? existing;
@@ -359,28 +337,36 @@ class WatchlistService {
         final targetStatus = synced.status.toWatchStatus();
 
         if (existing != null) {
+          matchedLocalIds.add(existing.id);
           final localEp = existing.currentEpisode ?? 0;
           final remoteEp = synced.episodesWatched;
 
           // Highest progress wins: never downgrade watched episode progress
           final resolvedEpisode = math.max(localEp, remoteEp);
 
-          // Status resolution: if completed on either, stay completed;
-          // if ahead in episodes, keep watching
+          // Status resolution: if completed on either, stay completed.
+          // Only auto-upgrade Planning → Watching when it's a genuine conflict,
+          // i.e. the remote is a stale "Planning" but the local side already
+          // shows Watching with progress. If the user deliberately set Planning
+          // locally (local == Planning too), respect it — never force it back.
           WatchStatus resolvedStatus = targetStatus;
           if (existing.watchStatus == WatchStatus.completed ||
               targetStatus == WatchStatus.completed) {
             resolvedStatus = WatchStatus.completed;
           } else if (resolvedEpisode > 0 &&
-              targetStatus == WatchStatus.planning) {
+              targetStatus == WatchStatus.planning &&
+              existing.watchStatus != WatchStatus.planning) {
             resolvedStatus = WatchStatus.watching;
           }
 
-          // If local was ahead of AniList/MAL (e.g. local ep 12 vs remote ep 2),
-          // push local forward progress to AniList & MAL!
-          if (localEp > remoteEp) {
-            unawaited(
-              coordinator.syncWatchStatus(
+          // Only queue a push when the remote is actually out of date — i.e. the
+          // resolved episode/status differs from what AniList/MAL already has.
+          // This is what stops the app from re-writing every show on each open.
+          final remoteNeedsUpdate =
+              resolvedEpisode != remoteEp || resolvedStatus != targetStatus;
+          if (pushOfflineChanges && remoteNeedsUpdate) {
+            pushes.add(
+              TrackingPush(
                 anilistId: existing.anilistId ??
                     synced.anilistId ??
                     (existing.id > 0 ? existing.id : null),
@@ -390,27 +376,51 @@ class WatchlistService {
               ),
             );
             appDebugLog(
-                '📤 Local ahead (Ep $localEp > Ep $remoteEp): Pushed update to AniList/MAL for ${existing.title}');
+                '📥 Queued remote update for ${existing.title} (Ep $remoteEp → $resolvedEpisode, ${resolvedStatus.label})');
           }
 
-          final updated = existing.copyWith(
-            watchStatus: resolvedStatus,
-            currentEpisode: resolvedEpisode > 0 ? resolvedEpisode : null,
-            totalEpisodes: synced.totalEpisodes ?? existing.totalEpisodes,
-            anilistId: synced.anilistId ?? existing.anilistId,
-            malId: synced.malId ?? existing.malId,
-            posterPath:
-                (existing.posterPath == null || existing.posterPath!.isEmpty)
-                    ? synced.posterUrl
-                    : existing.posterPath,
-            voteAverage: synced.score ?? existing.voteAverage,
-            updatedAt: DateTime.now(),
-          );
-          await _box.put(existing.id, updated);
-          if (_authService.isSignedIn) {
-            unawaited(_syncToCloud(updated));
+          // Compute the merged values with the same `?? keep-existing` semantics
+          // copyWith uses, so we can tell whether anything actually changed.
+          final mergedTotal = synced.totalEpisodes ?? existing.totalEpisodes;
+          final mergedAnilist = synced.anilistId ?? existing.anilistId;
+          final mergedMal = synced.malId ?? existing.malId;
+          final mergedPoster =
+              (existing.posterPath == null || existing.posterPath!.isEmpty)
+                  ? (synced.posterUrl ?? existing.posterPath)
+                  : existing.posterPath;
+          final mergedVote = synced.score ?? existing.voteAverage;
+          final mergedEpisode =
+              resolvedEpisode > 0 ? resolvedEpisode : existing.currentEpisode;
+
+          // Only touch local storage (and therefore cloud + updatedAt ordering)
+          // when a field genuinely changed. This stops every synced anime from
+          // being rewritten — and jumping ahead of manually-added items — on
+          // each app open when nothing actually differs.
+          final localNeedsUpdate = existing.watchStatus != resolvedStatus ||
+              existing.currentEpisode != mergedEpisode ||
+              existing.totalEpisodes != mergedTotal ||
+              existing.anilistId != mergedAnilist ||
+              existing.malId != mergedMal ||
+              existing.posterPath != mergedPoster ||
+              existing.voteAverage != mergedVote;
+
+          if (localNeedsUpdate) {
+            final updated = existing.copyWith(
+              watchStatus: resolvedStatus,
+              currentEpisode: mergedEpisode,
+              totalEpisodes: mergedTotal,
+              anilistId: mergedAnilist,
+              malId: mergedMal,
+              posterPath: mergedPoster,
+              voteAverage: mergedVote,
+              updatedAt: DateTime.now(),
+            );
+            await _box.put(existing.id, updated);
+            if (_authService.isSignedIn) {
+              unawaited(_syncToCloud(updated));
+            }
+            processedCount++;
           }
-          processedCount++;
         } else {
           // New item from remote - create new WatchlistItem
           final itemId = synced.anilistId ??
@@ -439,6 +449,34 @@ class WatchlistService {
           }
           processedCount++;
         }
+      }
+
+      // --- PHASE 3: Queue local-only anime the remote doesn't have yet ---
+      // These weren't matched to any remote entry above, so push them (once,
+      // and only if they're new/changed since the last sync) to create them.
+      if (pushOfflineChanges) {
+        for (final loc in localItems) {
+          if (loc.mediaType != 'anime') continue;
+          if (matchedLocalIds.contains(loc.id)) continue;
+          final itemTime = loc.updatedAt ?? loc.addedAt;
+          if (lastSync == null || itemTime.isAfter(lastSync)) {
+            pushes.add(
+              TrackingPush(
+                anilistId: loc.anilistId ?? (loc.id > 0 ? loc.id : null),
+                malId: loc.malId,
+                status: loc.watchStatus,
+                episode: loc.currentEpisode ?? 1,
+              ),
+            );
+          }
+        }
+      }
+
+      // --- PHASE 4: Flush every collected change in as few requests as
+      // possible (AniList batched into ~1 request per 40 items; MAL one-by-one).
+      if (pushes.isNotEmpty) {
+        await coordinator.pushBatch(pushes);
+        appDebugLog('📤 Pushed ${pushes.length} change(s) to tracking (batched).');
       }
 
       // Update sync timestamp

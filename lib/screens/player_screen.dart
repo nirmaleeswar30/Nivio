@@ -252,7 +252,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   int get _maxProviders {
-    final media = ref.read(selectedMediaProvider);
+    final media = ref.read(selectedMediaProvider) ?? _cachedMedia;
     final streamingService = ref.read(streamingServiceProvider);
     return streamingService.totalProvidersFor(isAnime: _isAnimeMedia(media));
   }
@@ -766,7 +766,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               providerIndex: i,
               subDubPreference: subDubPref,
               preferredAudio: targetAudio,
-              context: context,
+              context: (i == _currentProviderIndex ? context : null),
               onStatusUpdate: (msg) {
                 if (mounted && _currentProviderIndex == i) {
                   setState(() => _loadingMessage = msg);
@@ -3002,20 +3002,60 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (providerName.endsWith(')')) providerName = providerName.substring(0, providerName.length - 1);
     }
     
+    final isTorrent = providerName == 'Nivio Torrents';
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
       child: ListTile(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        tileColor: isCurrent ? Theme.of(context).primaryColor.withOpacity(0.15) : null,
+        tileColor: isCurrent 
+            ? Theme.of(context).primaryColor.withOpacity(0.15) 
+            : (isTorrent ? Colors.white.withOpacity(0.04) : null),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-        title: Text(
-          providerName,
-          style: TextStyle(
-            color: isCurrent ? Theme.of(context).primaryColor : Colors.white,
-            fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-            fontSize: 16,
-          ),
+        leading: isTorrent
+            ? Icon(
+                Icons.cloud_download_rounded,
+                color: isCurrent ? Theme.of(context).primaryColor : Colors.greenAccent,
+                size: 22,
+              )
+            : null,
+        title: Row(
+          children: [
+            Text(
+              providerName,
+              style: TextStyle(
+                color: isCurrent ? Theme.of(context).primaryColor : Colors.white,
+                fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                fontSize: 16,
+              ),
+            ),
+            if (isTorrent) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.greenAccent.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.greenAccent.withOpacity(0.4), width: 0.8),
+                ),
+                child: const Text(
+                  'P2P',
+                  style: TextStyle(
+                    color: Colors.greenAccent,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
+        subtitle: isTorrent
+            ? Text(
+                'High quality BitTorrent stream',
+                style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
+              )
+            : null,
         trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
         onTap: () {
           Navigator.of(context).pop();
@@ -3044,6 +3084,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       for (final entry in groups.entries) {
         final groupName = entry.key;
         final indices = entry.value;
+
+        if (groupName == 'Nivio Torrents') {
+          for (final i in indices) {
+            widgets.add(_buildSingleProviderTile(i, media));
+          }
+          continue;
+        }
 
         bool containsCurrent = indices.contains(_currentProviderIndex);
         widgets.add(
@@ -3601,7 +3648,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // ——————————————————————————————————————————————————————————————————————————————————————————
   void _showServerOverlayPanel() {
-    final media = ref.read(selectedMediaProvider);
+    final media = ref.read(selectedMediaProvider) ?? _cachedMedia;
     showGeneralDialog(
       context: context,
       barrierDismissible: true,

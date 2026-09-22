@@ -436,18 +436,32 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                                             style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
                                           ),
                                         ),
-                                      if (widget.providerName != null && widget.providerName != 'Nivio Torrents')
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white24,
-                                            borderRadius: BorderRadius.circular(4),
-                                          ),
-                                          child: Text(
-                                            widget.providerName!.toUpperCase(),
-                                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
-                                          ),
-                                        ),
+                                       if (widget.providerName != null && widget.providerName!.isNotEmpty)
+                                         Container(
+                                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                           decoration: BoxDecoration(
+                                             color: widget.providerName == 'Nivio Torrents'
+                                                 ? Theme.of(context).primaryColor.withOpacity(0.35)
+                                                 : Colors.white24,
+                                             border: widget.providerName == 'Nivio Torrents'
+                                                 ? Border.all(color: Theme.of(context).primaryColor, width: 1)
+                                                 : null,
+                                             borderRadius: BorderRadius.circular(4),
+                                           ),
+                                           child: Row(
+                                             mainAxisSize: MainAxisSize.min,
+                                             children: [
+                                               if (widget.providerName == 'Nivio Torrents') ...[
+                                                 const Icon(Icons.cloud_download_rounded, size: 10, color: Colors.white),
+                                                 const SizedBox(width: 4),
+                                               ],
+                                               Text(
+                                                 widget.providerName!.toUpperCase(),
+                                                 style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                                               ),
+                                             ],
+                                           ),
+                                         ),
                                     ],
                                   ),
                               ],

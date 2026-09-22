@@ -119,6 +119,52 @@ class AnimeTrackingCoordinator {
     }
   }
 
+  /// Pushes a set of resolved changes to the connected services in as few
+  /// requests as possible. AniList updates are sent as a single batched
+  /// (aliased) GraphQL request via [AniListAuthService.updateWatchProgressBatch];
+  /// MAL has no batch endpoint, so those are sent one at a time.
+  Future<void> pushBatch(List<TrackingPush> pushes) async {
+    if (!hasAnyAccountConnected || pushes.isEmpty) return;
+
+    if (_aniList.isAuthenticated) {
+      final aniUpdates = <AniListProgressUpdate>[];
+      for (final p in pushes) {
+        if (p.anilistId != null && p.anilistId! > 0) {
+          aniUpdates.add(
+            AniListProgressUpdate(
+              anilistId: p.anilistId!,
+              episode: p.episode,
+              status: AnimeWatchStatus.fromWatchStatus(p.status),
+            ),
+          );
+        }
+      }
+      if (aniUpdates.isNotEmpty) {
+        try {
+          await _aniList.updateWatchProgressBatch(aniUpdates);
+        } catch (e) {
+          appDebugLog('[AnimeTrackingCoordinator] AniList batch push error: $e');
+        }
+      }
+    }
+
+    if (_mal.isAuthenticated) {
+      for (final p in pushes) {
+        if (p.malId != null && p.malId! > 0) {
+          try {
+            await _mal.updateWatchProgress(
+              malId: p.malId!,
+              episode: p.episode,
+              status: AnimeWatchStatus.fromWatchStatus(p.status),
+            );
+          } catch (e) {
+            appDebugLog('[AnimeTrackingCoordinator] MAL push error: $e');
+          }
+        }
+      }
+    }
+  }
+
   /// Sync watchlist addition to connected services as Plan to Watch.
   Future<void> syncWatchlistAddition({
     int? anilistId,
@@ -226,5 +272,21 @@ class AnimeTrackingCoordinator {
       await prefs.setString('anime_tracking_last_synced_at', dt.toIso8601String());
     } catch (_) {}
   }
+}
+
+/// A single resolved change to push to tracking services, collected during a
+/// sync pass and flushed together via [AnimeTrackingCoordinator.pushBatch].
+class TrackingPush {
+  final int? anilistId;
+  final int? malId;
+  final WatchStatus status;
+  final int episode;
+
+  const TrackingPush({
+    this.anilistId,
+    this.malId,
+    required this.status,
+    required this.episode,
+  });
 }
 

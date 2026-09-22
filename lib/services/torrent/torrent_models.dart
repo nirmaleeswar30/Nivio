@@ -15,6 +15,7 @@ class TorrentResult {
     this.date,
     this.accuracy = 'medium',
     this.type,
+    this.fileIndex,
   }) : parsed = Anitomy.parse(title);
 
   /// Release title (what gets parsed for resolution/group/episode).
@@ -30,13 +31,16 @@ class TorrentResult {
   final int sizeBytes;
   final DateTime? date;
 
+  /// Optional specific file index inside the torrent (e.g. from Stremio fileIdx).
+  final int? fileIndex;
+
   /// 'high' | 'medium' | 'low' — how confidently this matches the query.
   final String accuracy;
 
   /// 'batch' | 'best' | 'alt' | null.
   final String? type;
 
-  /// Which source produced this ('nyaa', 'animetosho', 'seadex').
+  /// Which source produced this ('nyaa', 'animetosho', 'seadex', 'torrentio').
   final String source;
 
   final AnitomyResult parsed;

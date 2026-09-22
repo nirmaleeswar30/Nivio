@@ -69,7 +69,7 @@ class Anitomy {
   static final _groupBracketRx = RegExp(r'^\s*[\[(]([^\])]+)[\])]');
   static final _groupTrailingRx = RegExp(r'-\s*([A-Za-z0-9]+)\s*$');
   static final _resolutionRx =
-      RegExp(r'(?:(\d{3,4})\s*[pP])|(?:\b(?:4k|4K|2160|1440|1080|720|540|480)\b)');
+      RegExp(r'(?:(\d{3,4})\s*[pP])|(?:\b(?:4k|4K|uhd|UHD|2160|1440|1080|720|540|480)\b)');
   static final _seasonRx = RegExp(
       r'(?:\bS(?:eason)?\s*0*(\d{1,2})\b)|(?:\b0*(\d{1,2})(?:st|nd|rd|th)\s+Season\b)',
       caseSensitive: false);
@@ -157,7 +157,7 @@ class Anitomy {
     final m = _resolutionRx.firstMatch(s);
     if (m == null) return null;
     final matched = m.group(0)!.toLowerCase();
-    if (matched.contains('4k')) return 2160;
+    if (matched.contains('4k') || matched.contains('uhd')) return 2160;
     final digits = RegExp(r'\d{3,4}').firstMatch(matched)?.group(0);
     return digits == null ? null : int.tryParse(digits);
   }

@@ -1043,6 +1043,35 @@ class TmdbService {
     }
   }
 
+  /// Get IMDb ID for a movie or TV show by TMDB ID.
+  Future<String?> getImdbId({
+    required int tmdbId,
+    required bool isMovie,
+  }) async {
+    final cacheKey = 'imdb_id_${isMovie ? "movie" : "tv"}_$tmdbId';
+    final cached = await _cache.getRaw(cacheKey);
+    if (cached != null && cached['imdb_id'] != null) {
+      return cached['imdb_id'] as String;
+    }
+
+    try {
+      final endpoint = isMovie ? '/3/movie/$tmdbId' : '/3/tv/$tmdbId/external_ids';
+      final response = await _dio.get(endpoint);
+      final data = Map<String, dynamic>.from(response.data as Map);
+      final rawImdb = isMovie
+          ? (data['imdb_id'] ?? data['external_ids']?['imdb_id'])
+          : (data['imdb_id'] ?? data['external_ids']?['imdb_id']);
+      final imdbId = rawImdb?.toString().trim();
+      if (imdbId != null && imdbId.isNotEmpty) {
+        await _cache.set(cacheKey, {'imdb_id': imdbId}, ttl: CacheService.longCache);
+        return imdbId;
+      }
+    } catch (e) {
+      debugPrint('Failed to get IMDb ID for TMDB $tmdbId: $e');
+    }
+    return null;
+  }
+
   /// Get movie details with videos (for trailer)
   Future<Map<String, dynamic>> getMovieDetailsWithVideos(int movieId) async {
     final cacheKey = 'movie_details_full_$movieId';

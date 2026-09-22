@@ -343,7 +343,7 @@ class MalAuthService {
       final response = await _dio.get(
         '$_apiBaseUrl/users/@me/animelist',
         queryParameters: {
-          'fields': 'list_status,num_episodes,main_picture',
+          'fields': 'list_status,num_episodes,main_picture,mean',
           'limit': 500,
         },
         options: Options(
@@ -371,7 +371,12 @@ class MalAuthService {
             status: AnimeWatchStatus.fromMal(
               listStatus['status'] as String? ?? 'plan_to_watch',
             ),
-            score: (listStatus['score'] as num?)?.toDouble(),
+            // Use the community mean rating (already 0–10), NOT the user's
+            // personal list score (0 when they haven't rated the entry).
+            score: () {
+              final mean = (node['mean'] as num?)?.toDouble();
+              return (mean != null && mean > 0) ? mean : null;
+            }(),
           ),
         );
       }

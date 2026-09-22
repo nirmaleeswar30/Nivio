@@ -405,10 +405,30 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                           _buildSwitchTile(
                             icon: Icons.cloud_download_rounded,
                             title: 'Enable Torrent Streaming',
-                            subtitle: 'Allows high quality P2P playback for anime (Nivio Torrents)',
+                            subtitle: 'Allows high quality P2P playback for anime, movies & shows (Nivio Torrents)',
                             value: ref.watch(enableTorrentsProvider),
                             onChanged: (value) {
                               ref.read(enableTorrentsProvider.notifier).setEnabled(value);
+                            },
+                          ),
+                        if (_matches('nyaa anime torrent source'))
+                          _buildSwitchTile(
+                            icon: Icons.movie_filter_rounded,
+                            title: 'Nyaa (Anime)',
+                            subtitle: 'P2P anime releases from Nyaa',
+                            value: ref.watch(torrentNyaaEnabledProvider),
+                            onChanged: (val) {
+                              ref.read(torrentNyaaEnabledProvider.notifier).setEnabled(val);
+                            },
+                          ),
+                        if (_matches('torrentio movies shows torrent source'))
+                          _buildSwitchTile(
+                            icon: Icons.movie_outlined,
+                            title: 'Torrentio (Movies & Shows)',
+                            subtitle: 'Scrapes YTS, EZTV, 1337x, ThePirateBay, etc.',
+                            value: ref.watch(torrentTorrentioEnabledProvider),
+                            onChanged: (val) {
+                              ref.read(torrentTorrentioEnabledProvider.notifier).setEnabled(val);
                             },
                           ),
                         if (_matches('torrent auto select file index automatic'))
@@ -1202,10 +1222,36 @@ Widget _buildMobileLayout(BuildContext context, User user) {
         _buildSwitchTile(
           icon: Icons.cloud_download_rounded,
           title: 'Enable Torrent Streaming',
-          subtitle: 'Allows high quality P2P playback for anime (Nivio Torrents)',
+          subtitle: 'Allows high quality P2P playback for anime, movies & shows (Nivio Torrents)',
           value: ref.watch(enableTorrentsProvider),
           onChanged: (value) {
             ref.read(enableTorrentsProvider.notifier).setEnabled(value);
+          },
+        ),
+      );
+    }
+    if (_matches('nyaa anime torrent source')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.movie_filter_rounded,
+          title: 'Nyaa (Anime)',
+          subtitle: 'P2P anime releases from Nyaa',
+          value: ref.watch(torrentNyaaEnabledProvider),
+          onChanged: (val) {
+            ref.read(torrentNyaaEnabledProvider.notifier).setEnabled(val);
+          },
+        ),
+      );
+    }
+    if (_matches('torrentio movies shows torrent source')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.movie_outlined,
+          title: 'Torrentio (Movies & Shows)',
+          subtitle: 'Scrapes YTS, EZTV, 1337x, ThePirateBay, etc.',
+          value: ref.watch(torrentTorrentioEnabledProvider),
+          onChanged: (val) {
+            ref.read(torrentTorrentioEnabledProvider.notifier).setEnabled(val);
           },
         ),
       );
@@ -4062,10 +4108,28 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             _buildSwitchTile(
               icon: Icons.cloud_download_rounded,
               title: 'Enable Torrent Streaming',
-              subtitle: 'Allows high quality P2P playback for anime (Nivio Torrents)',
+              subtitle: 'Allows high quality P2P playback for anime, movies & shows (Nivio Torrents)',
               value: ref.watch(enableTorrentsProvider),
               onChanged: (value) {
                 ref.read(enableTorrentsProvider.notifier).setEnabled(value);
+              },
+            ),
+            _buildSwitchTile(
+              icon: Icons.movie_filter_rounded,
+              title: 'Nyaa (Anime)',
+              subtitle: 'P2P anime releases from Nyaa',
+              value: ref.watch(torrentNyaaEnabledProvider),
+              onChanged: (val) {
+                ref.read(torrentNyaaEnabledProvider.notifier).setEnabled(val);
+              },
+            ),
+            _buildSwitchTile(
+              icon: Icons.movie_outlined,
+              title: 'Torrentio (Movies & Shows)',
+              subtitle: 'Scrapes YTS, EZTV, 1337x, ThePirateBay, etc.',
+              value: ref.watch(torrentTorrentioEnabledProvider),
+              onChanged: (val) {
+                ref.read(torrentTorrentioEnabledProvider.notifier).setEnabled(val);
               },
             ),
             _buildSwitchTile(

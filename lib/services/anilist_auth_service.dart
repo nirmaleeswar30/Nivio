@@ -283,6 +283,61 @@ class AniListAuthService {
     }
   }
 
+  /// Batch-saves multiple list entries in a single GraphQL request using
+  /// aliased mutations, so N updates cost ~1 request instead of N. Large inputs
+  /// are chunked to stay under AniList's query-complexity cap, with a small
+  /// pause between chunks to respect the rate limit. Returns the number saved.
+  Future<int> updateWatchProgressBatch(
+      List<AniListProgressUpdate> updates) async {
+    if (!isAuthenticated || updates.isEmpty) return 0;
+
+    const chunkSize = 40;
+    int saved = 0;
+
+    for (var start = 0; start < updates.length; start += chunkSize) {
+      final end =
+          (start + chunkSize < updates.length) ? start + chunkSize : updates.length;
+      final chunk = updates.sublist(start, end);
+
+      final sb = StringBuffer('mutation {\n');
+      for (var i = 0; i < chunk.length; i++) {
+        final u = chunk[i];
+        // mediaId/progress are ints and status is a fixed enum token, so inlining
+        // is safe here and avoids declaring dozens of GraphQL variables.
+        sb.writeln(
+          '  m$i: SaveMediaListEntry(mediaId: ${u.anilistId}, progress: ${u.episode}, status: ${u.status.toAniListStatus()}) { id }',
+        );
+      }
+      sb.writeln('}');
+
+      try {
+        final response = await _dio.post(
+          _graphqlUrl,
+          options: Options(
+            headers: {'Authorization': 'Bearer $_accessToken'},
+          ),
+          data: {'query': sb.toString()},
+        );
+        final data = response.data['data'] as Map<String, dynamic>?;
+        if (data != null) {
+          for (var i = 0; i < chunk.length; i++) {
+            if (data['m$i'] != null) saved++;
+          }
+        }
+        appDebugLog(
+            '[AniListAuth] Batch synced ${chunk.length} entries (saved so far: $saved)');
+      } catch (e) {
+        appDebugLog('[AniListAuth] Batch update error: $e');
+      }
+
+      if (end < updates.length) {
+        await Future.delayed(const Duration(milliseconds: 1200));
+      }
+    }
+
+    return saved;
+  }
+
   /// Add anime to user's AniList Planning list (Watchlist).
   Future<bool> addToWatchlist(int anilistId) async {
     if (!isAuthenticated) return false;
@@ -402,6 +457,7 @@ class AniListAuthService {
                   large
                 }
                 episodes
+                averageScore
               }
             }
           }
@@ -450,7 +506,13 @@ class AniListAuthService {
               status: AnimeWatchStatus.fromAniList(
                 entry['status'] as String? ?? 'PLANNING',
               ),
-              score: (entry['score'] as num?)?.toDouble(),
+              // Use the community average rating (0–100) converted to the
+              // 0–10 scale used everywhere else, NOT the user's personal list
+              // score (which is 0 when they haven't rated the entry).
+              score: () {
+                final avg = (media['averageScore'] as num?)?.toDouble();
+                return (avg != null && avg > 0) ? avg / 10.0 : null;
+              }(),
             ),
           );
         }
@@ -477,4 +539,17 @@ class AniListAuthService {
       appDebugLog('[AniListAuth] Error clearing preferences: $e');
     }
   }
+}
+
+/// A single list-entry update for [AniListAuthService.updateWatchProgressBatch].
+class AniListProgressUpdate {
+  final int anilistId;
+  final int episode;
+  final AnimeWatchStatus status;
+
+  const AniListProgressUpdate({
+    required this.anilistId,
+    required this.episode,
+    this.status = AnimeWatchStatus.watching,
+  });
 }

@@ -797,6 +797,51 @@ class TorrentPersistFilesNotifier extends StateNotifier<bool> {
   }
 }
 
+// Torrent Source Toggles (Nyaa for anime; Torrentio for movies/shows)
+final torrentNyaaEnabledProvider =
+    StateNotifierProvider<TorrentNyaaEnabledNotifier, bool>((ref) {
+  return TorrentNyaaEnabledNotifier();
+});
+
+class TorrentNyaaEnabledNotifier extends StateNotifier<bool> {
+  TorrentNyaaEnabledNotifier() : super(true) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('torrent_source_nyaa') ?? true;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('torrent_source_nyaa', value);
+  }
+}
+
+final torrentTorrentioEnabledProvider =
+    StateNotifierProvider<TorrentTorrentioEnabledNotifier, bool>((ref) {
+  return TorrentTorrentioEnabledNotifier();
+});
+
+class TorrentTorrentioEnabledNotifier extends StateNotifier<bool> {
+  TorrentTorrentioEnabledNotifier() : super(true) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('torrent_source_torrentio') ?? true;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('torrent_source_torrentio', value);
+  }
+}
+
 // Auto Play Next Episode Provider
 final autoPlayNextEpisodeProvider =
     StateNotifierProvider<AutoPlayNextEpisodeNotifier, bool>((ref) {

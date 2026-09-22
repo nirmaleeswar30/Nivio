@@ -1,16 +1,19 @@
 import 'dart:async';
 
 import 'package:rqbit_ffi/rqbit_ffi.dart';
-
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/debug_log.dart';
 import '../../models/search_result.dart';
+import '../tmdb_service.dart';
 import 'anime_query_builder.dart';
+import 'media_ranking.dart';
+import 'media_torrent_models.dart';
 import 'ranking.dart';
 import 'resolver.dart';
 import 'sources/nyaa_source.dart';
 import 'sources/torrent_source.dart';
+import 'sources/torrentio_source.dart';
 import 'torrent_models.dart';
 
 /// The result of resolving a torrent stream: a localhost URL ready for the
@@ -37,20 +40,33 @@ class TorrentStreamHandle {
   Future<TorrentStats> stats() => client.getStats(torrentId);
 }
 
-/// Orchestrates the anime-torrent streaming pipeline (Hayase-style):
-/// build query → search sources → merge/rank → add to rqbit → resolve the
-/// episode file → return a seekable localhost stream URL for media_kit.
+/// Orchestrates the torrent streaming pipeline:
+/// - Anime: NyaaSource via AnimeQuery and TorrentRanking
+/// - Movies & Shows: TorrentioSource via MediaTorrentQuery and MediaRanking
+/// build query → search sources → merge/rank → add to rqbit → resolve file →
+/// return a seekable localhost stream URL for media_kit.
 class TorrentStreamService {
   TorrentStreamService({
+    List<TorrentSource>? animeSources,
     List<TorrentSource>? sources,
+    List<MediaTorrentSource>? mediaSources,
     AnimeQueryBuilder? queryBuilder,
-  })  : _sources = sources ??
-            [NyaaSource()], // AnimeToshoSource(), SeaDexSource() commented out as requested
-        _queryBuilder = queryBuilder ?? AnimeQueryBuilder();
+    TmdbService? tmdbService,
+  })  : _animeSources = animeSources ?? sources ?? [NyaaSource()],
+        _mediaSources = mediaSources ?? [TorrentioSource()],
+        _queryBuilder = queryBuilder ?? AnimeQueryBuilder(),
+        _tmdbService = tmdbService;
 
-  final List<TorrentSource> _sources;
+  final List<TorrentSource> _animeSources;
+  final List<MediaTorrentSource> _mediaSources;
   final AnimeQueryBuilder _queryBuilder;
+  final TmdbService? _tmdbService;
+
+  List<TorrentSource> get animeSources => _animeSources;
+  List<TorrentSource> get sources => _animeSources;
+  List<MediaTorrentSource> get mediaSources => _mediaSources;
   AnimeQueryBuilder get queryBuilder => _queryBuilder;
+  TmdbService? get tmdbService => _tmdbService;
 
   int? _activeTorrentId;
   RqbitClient? _client;
@@ -68,29 +84,73 @@ class TorrentStreamService {
     int? absoluteEpisode,
     void Function(String status)? onStatus,
   }) async {
-    final query = await _queryBuilder.build(
-      media,
-      episode,
-      season: season,
-      resolution: resolution,
-      exclusions: exclusions,
-      absoluteEpisode: absoluteEpisode,
-    );
+    final isAnime = media.mediaType == 'anime';
 
-    final results = await searchTorrents(query: query, onStatus: onStatus);
-    if (results.isEmpty) return null;
+    if (isAnime) {
+      final query = await _queryBuilder.build(
+        media,
+        episode,
+        season: season,
+        resolution: resolution,
+        exclusions: exclusions,
+        absoluteEpisode: absoluteEpisode,
+      );
 
-    final best = TorrentRanking.best(results, query);
-    if (best == null) {
-      _log('=> ${results.length} candidates but none passed ranking/episode filter');
-      onStatus?.call('No suitable release found');
-      return null;
+      final results = await searchTorrents(query: query, onStatus: onStatus);
+      if (results.isEmpty) return null;
+
+      final best = TorrentRanking.best(results, query);
+      if (best == null) {
+        _log('=> ${results.length} candidates but none passed ranking/episode filter');
+        onStatus?.call('No suitable release found');
+        return null;
+      }
+
+      return startTorrent(best, query, episode, onStatus);
+    } else {
+      // Movies and TV series
+      final isMovie = media.mediaType == 'movie';
+      onStatus?.call('Resolving IMDb ID…');
+
+      String? imdbId;
+      if (_tmdbService != null) {
+        imdbId = await _tmdbService.getImdbId(
+          tmdbId: media.id,
+          isMovie: isMovie,
+        );
+      }
+
+      if (imdbId == null || imdbId.isEmpty) {
+        _log('=> could not resolve IMDb ID for media TMDB ${media.id}');
+        onStatus?.call('IMDb ID not found for torrent lookup');
+        return null;
+      }
+
+      final query = MediaTorrentQuery(
+        imdbId: imdbId,
+        tmdbId: media.id,
+        title: media.title ?? media.name ?? '',
+        isMovie: isMovie,
+        season: isMovie ? null : season,
+        episode: isMovie ? null : episode,
+        resolution: resolution,
+      );
+
+      final results = await searchMediaTorrents(query: query, onStatus: onStatus);
+      if (results.isEmpty) return null;
+
+      final best = MediaRanking.best(results, query);
+      if (best == null) {
+        _log('=> ${results.length} media candidates but none passed ranking');
+        onStatus?.call('No suitable release found');
+        return null;
+      }
+
+      return startTorrent(best, query, episode, onStatus);
     }
-
-    return startTorrent(best, query, episode, onStatus);
   }
 
-  /// Searches and ranks torrents for a given query, returning all candidates.
+  /// Searches and ranks torrents for a given anime query, returning all candidates.
   Future<List<TorrentResult>> searchTorrents({
     required AnimeQuery query,
     void Function(String status)? onStatus,
@@ -99,9 +159,9 @@ class TorrentStreamService {
     _log('query anilistId=${query.anilistId} titles=${query.titles} episodeCount=${query.episodeCount}');
 
     final all = await _gather(query);
-    _log('gathered ${all.length} total results from sources');
+    _log('gathered ${all.length} total results from anime sources');
     if (all.isEmpty) {
-      _log('=> NO torrents found from any source; giving up (engine not started)');
+      _log('=> NO torrents found from any anime source; giving up (engine not started)');
       onStatus?.call('No torrents found');
       return [];
     }
@@ -115,10 +175,31 @@ class TorrentStreamService {
     return ranked;
   }
 
-  /// Starts downloading the [best] torrent and resolves the [episode] file to stream.
+  /// Searches and ranks torrents for movies and TV shows via Torrentio.
+  Future<List<TorrentResult>> searchMediaTorrents({
+    required MediaTorrentQuery query,
+    void Function(String status)? onStatus,
+  }) async {
+    onStatus?.call('Searching sources…');
+    _log('media query imdbId=${query.imdbId} title=${query.title} isMovie=${query.isMovie} S${query.season}E${query.episode}');
+
+    final all = await _gatherMedia(query);
+    _log('gathered ${all.length} total results from media sources');
+    if (all.isEmpty) {
+      _log('=> NO torrents found from any media source; giving up');
+      onStatus?.call('No torrents found');
+      return [];
+    }
+
+    final merged = _dedupe(_enrichSeeders(all));
+    final ranked = MediaRanking.rank(merged, query);
+    return ranked;
+  }
+
+  /// Starts downloading the [best] torrent and resolves the file to stream.
   Future<TorrentStreamHandle?> startTorrent(
     TorrentResult best,
-    AnimeQuery query,
+    dynamic query,
     int episode,
     void Function(String status)? onStatus,
   ) async {
@@ -168,14 +249,21 @@ class TorrentStreamService {
     }
     _log('metadata ready: ${details.files.length} file(s) in torrent');
 
-    final file = TorrentFileResolver.resolve(
+    TorrentFileInfo? file;
+    if (best.fileIndex != null) {
+      file = details.files.where((f) => f.index == best.fileIndex).firstOrNull;
+    }
+    file ??= TorrentFileResolver.resolve(
       details.files,
       episode: episode,
-      absoluteEpisode: query.absoluteEpisode,
+      absoluteEpisode: query is AnimeQuery ? query.absoluteEpisode : null,
+      season: query is MediaTorrentQuery
+          ? query.season
+          : (query is AnimeQuery ? query.season : null),
     );
     if (file == null) {
-      _log('=> resolver found no playable episode file');
-      onStatus?.call('No playable episode file in torrent');
+      _log('=> resolver found no playable file');
+      onStatus?.call('No playable file in torrent');
       return null;
     }
     _log('resolved file[${file.index}]="${file.name}" -> streaming');
@@ -235,13 +323,53 @@ class TorrentStreamService {
   }
 
   Future<List<TorrentResult>> _gather(AnimeQuery query) async {
-    final lists = await Future.wait(_sources.map((s) async {
+    final prefs = await SharedPreferences.getInstance();
+    final nyaaEnabled = prefs.getBool('torrent_source_nyaa') ?? true;
+
+    final activeSources = _animeSources.where((s) {
+      if (s is NyaaSource) return nyaaEnabled;
+      return true;
+    }).toList();
+
+    if (activeSources.isEmpty) {
+      _log('all anime torrent sources are disabled in settings');
+      return [];
+    }
+
+    final lists = await Future.wait(activeSources.map((s) async {
       try {
         final r = await s.search(query);
         _log('source ${s.name}: ${r.length} result(s)');
         return r;
       } catch (e) {
         _log('source ${s.name}: ERROR $e');
+        return <TorrentResult>[];
+      }
+    }));
+    return [for (final l in lists) ...l];
+  }
+
+  Future<List<TorrentResult>> _gatherMedia(MediaTorrentQuery query) async {
+    final prefs = await SharedPreferences.getInstance();
+    final torrentioEnabled = prefs.getBool('torrent_source_torrentio') ?? true;
+
+    final activeSources = _mediaSources.where((s) {
+      if (s is TorrentioSource) return torrentioEnabled;
+      return true;
+    }).toList();
+
+    if (activeSources.isEmpty) {
+      _log('all media torrent sources are disabled in settings');
+      return [];
+    }
+
+    final lists = await Future.wait(activeSources.map((s) async {
+      try {
+        final r = await s.searchMedia(query);
+        _log('media source ${s.name}: ${r.length} result(s)');
+        return r;
+      } catch (e) {
+        _log('media source ${s.name}: ERROR $e');
         return <TorrentResult>[];
       }
     }));

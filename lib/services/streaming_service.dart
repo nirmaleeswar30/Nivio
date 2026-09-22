@@ -14,6 +14,8 @@ import 'package:nivio/services/tmdb_service.dart';
 import 'package:nivio/services/scrapers/miruro/miruro_scraper.dart';
 import 'package:nivio/services/scrapers/animex/animex_scraper.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
+import 'package:nivio/services/torrent/torrent_models.dart';
+import 'package:nivio/services/torrent/media_torrent_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/providers/settings_providers.dart';
 
@@ -144,7 +146,8 @@ class StreamingService {
     // P2P torrent streaming (Hayase-style) is offered first for anime — it
     // yields the highest-quality releases when peers are available.
     final torrentEnabled = ref.read(enableTorrentsProvider);
-    final torrent = torrentEnabled ? ['Nivio Torrents'] : <String>[];
+    final nyaaEnabled = ref.read(torrentNyaaEnabledProvider);
+    final torrent = (torrentEnabled && nyaaEnabled) ? ['Nivio Torrents'] : <String>[];
 
     if (pref == 'Miruro') {
       return [...torrent, ...miruroServers, ...animexServers, ...animetsuServers];
@@ -155,7 +158,12 @@ class StreamingService {
     }
   }
 
-  List<String> get _allProviders => [..._premiumProviders, ..._standardProviders];
+  List<String> get _allProviders {
+    final torrentEnabled = ref.read(enableTorrentsProvider);
+    final torrentioEnabled = ref.read(torrentTorrentioEnabledProvider);
+    final torrent = (torrentEnabled && torrentioEnabled) ? ['Nivio Torrents'] : <String>[];
+    return [...torrent, ..._premiumProviders, ..._standardProviders];
+  }
 
   Future<StreamResult?> fetchStreamUrl({
     required SearchResult media,
@@ -185,7 +193,7 @@ class StreamingService {
 
       final providerName = providersList[providerIndex];
 
-      // Handle Nivio Torrents (embedded rqbit P2P streaming, anime-first)
+      // Handle Nivio Torrents (embedded rqbit P2P streaming)
       if (providerName == 'Nivio Torrents') {
         final resMatch =
             preferredQuality == null ? null : RegExp(r'\d{3,4}').firstMatch(preferredQuality);
@@ -205,10 +213,13 @@ class StreamingService {
             onStatusUpdate: onStatusUpdate,
           );
           if (selection != null) {
+            final ep = selection.$2 is AnimeQuery
+                ? (selection.$2 as AnimeQuery).episode
+                : (selection.$2 as MediaTorrentQuery).episode ?? 1;
             handle = await torrentStreamService.startTorrent(
               selection.$1,
               selection.$2,
-              selection.$2.episode,
+              ep,
               onStatusUpdate,
             );
           } else {
