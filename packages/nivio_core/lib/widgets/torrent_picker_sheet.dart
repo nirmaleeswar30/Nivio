@@ -278,16 +278,13 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
           onStatus: widget.onStatusUpdate,
         );
       } else {
+        // Manual movie/show search is a pure free-text query: send exactly what
+        // the user typed, with NO episode/season/resolution/IMDb modifications.
+        // PirateBay does the text search (Torrentio needs an IMDb id, so it
+        // simply returns nothing here). Results are shown raw (rank: false).
         final customQuery = MediaTorrentQuery(
           title: text,
-          imdbId: (_currentQuery is MediaTorrentQuery)
-              ? (_currentQuery as MediaTorrentQuery).imdbId
-              : null,
-          tmdbId: widget.media.id,
           isMovie: _isMovie,
-          season: _isMovie ? null : widget.initialSeason,
-          episode: _isMovie ? null : _episode,
-          resolution: _resolution,
           isManual: true,
           rawQuery: text,
         );
@@ -296,6 +293,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         results = await widget.torrentStreamService.searchMediaTorrents(
           query: customQuery,
           onStatus: widget.onStatusUpdate,
+          rank: false,
         );
       }
 

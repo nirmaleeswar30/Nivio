@@ -74,6 +74,15 @@ class DownloadItem extends HiveObject {
   @HiveField(17)
   String? subtitleUrl;
 
+  /// rqbit torrent id for an in-progress torrent download (session-scoped).
+  /// Used to stream the file while it downloads. Null for direct downloads.
+  @HiveField(18)
+  int? torrentId;
+
+  /// Index of the target file inside the torrent (for streaming while downloading).
+  @HiveField(19)
+  int? fileIndex;
+
   DownloadItem({
     required this.id,
     required this.mediaId,
@@ -93,5 +102,7 @@ class DownloadItem extends HiveObject {
     this.selectedAudioLanguage,
     this.selectedSubtitleLanguage,
     this.subtitleUrl,
+    this.torrentId,
+    this.fileIndex,
   });
 }

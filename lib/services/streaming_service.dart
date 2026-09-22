@@ -161,7 +161,9 @@ class StreamingService {
   List<String> get _allProviders {
     final torrentEnabled = ref.read(enableTorrentsProvider);
     final torrentioEnabled = ref.read(torrentTorrentioEnabledProvider);
-    final torrent = (torrentEnabled && torrentioEnabled) ? ['Nivio Torrents'] : <String>[];
+    final pirateBayEnabled = ref.read(torrentPirateBayEnabledProvider);
+    final hasSource = torrentioEnabled || pirateBayEnabled;
+    final torrent = (torrentEnabled && hasSource) ? ['Nivio Torrents'] : <String>[];
     return [...torrent, ..._premiumProviders, ..._standardProviders];
   }
 

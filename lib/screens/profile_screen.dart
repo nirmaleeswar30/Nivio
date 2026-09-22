@@ -416,7 +416,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                             icon: Icons.movie_filter_rounded,
                             title: 'Nyaa (Anime)',
                             subtitle: 'P2P anime releases from Nyaa',
-                            value: ref.watch(torrentNyaaEnabledProvider),
+                            value: ref.watch(torrentNyaaEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
                             onChanged: (val) {
                               ref.read(torrentNyaaEnabledProvider.notifier).setEnabled(val);
                             },
@@ -426,9 +426,19 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                             icon: Icons.movie_outlined,
                             title: 'Torrentio (Movies & Shows)',
                             subtitle: 'Scrapes YTS, EZTV, 1337x, ThePirateBay, etc.',
-                            value: ref.watch(torrentTorrentioEnabledProvider),
+                            value: ref.watch(torrentTorrentioEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
                             onChanged: (val) {
                               ref.read(torrentTorrentioEnabledProvider.notifier).setEnabled(val);
+                            },
+                          ),
+                        if (_matches('piratebay pirate bay text search torrent source'))
+                          _buildSwitchTile(
+                            icon: Icons.sailing_rounded,
+                            title: 'PirateBay (Movies & Shows)',
+                            subtitle: 'Free-text search; powers manual searches',
+                            value: ref.watch(torrentPirateBayEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
+                            onChanged: (val) {
+                              ref.read(torrentPirateBayEnabledProvider.notifier).setEnabled(val);
                             },
                           ),
                         if (_matches('torrent auto select file index automatic'))
@@ -436,7 +446,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                             icon: Icons.auto_mode_rounded,
                             title: 'Auto-Select Episode File',
                             subtitle: 'Automatically select correct file inside batch torrents',
-                            value: ref.watch(torrentAutoSelectProvider),
+                            value: ref.watch(torrentAutoSelectProvider), enabled: ref.watch(enableTorrentsProvider),
                             onChanged: (val) {
                               ref.read(torrentAutoSelectProvider.notifier).setEnabled(val);
                             },
@@ -446,7 +456,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                             icon: Icons.save_rounded,
                             title: 'Persist Torrent Files',
                             subtitle: 'Keep files on disk after stopping playback',
-                            value: ref.watch(torrentPersistFilesProvider),
+                            value: ref.watch(torrentPersistFilesProvider), enabled: ref.watch(enableTorrentsProvider),
                             onChanged: (val) {
                               ref.read(torrentPersistFilesProvider.notifier).setEnabled(val);
                             },
@@ -1236,7 +1246,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           icon: Icons.movie_filter_rounded,
           title: 'Nyaa (Anime)',
           subtitle: 'P2P anime releases from Nyaa',
-          value: ref.watch(torrentNyaaEnabledProvider),
+          value: ref.watch(torrentNyaaEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
           onChanged: (val) {
             ref.read(torrentNyaaEnabledProvider.notifier).setEnabled(val);
           },
@@ -1249,9 +1259,22 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           icon: Icons.movie_outlined,
           title: 'Torrentio (Movies & Shows)',
           subtitle: 'Scrapes YTS, EZTV, 1337x, ThePirateBay, etc.',
-          value: ref.watch(torrentTorrentioEnabledProvider),
+          value: ref.watch(torrentTorrentioEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
           onChanged: (val) {
             ref.read(torrentTorrentioEnabledProvider.notifier).setEnabled(val);
+          },
+        ),
+      );
+    }
+    if (_matches('piratebay pirate bay text search torrent source')) {
+      results.add(
+        _buildSwitchTile(
+          icon: Icons.sailing_rounded,
+          title: 'PirateBay (Movies & Shows)',
+          subtitle: 'Free-text search; powers manual searches',
+          value: ref.watch(torrentPirateBayEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
+          onChanged: (val) {
+            ref.read(torrentPirateBayEnabledProvider.notifier).setEnabled(val);
           },
         ),
       );
@@ -1571,6 +1594,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     required String subtitle,
     required bool value,
     required ValueChanged<bool> onChanged,
+    bool enabled = true,
   }) {
     return _SettingSwitchTile(
       icon: icon,
@@ -1578,6 +1602,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
       subtitle: subtitle,
       value: value,
       onChanged: onChanged,
+      enabled: enabled,
     );
   }
 
@@ -4118,7 +4143,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
               icon: Icons.movie_filter_rounded,
               title: 'Nyaa (Anime)',
               subtitle: 'P2P anime releases from Nyaa',
-              value: ref.watch(torrentNyaaEnabledProvider),
+              value: ref.watch(torrentNyaaEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
               onChanged: (val) {
                 ref.read(torrentNyaaEnabledProvider.notifier).setEnabled(val);
               },
@@ -4127,16 +4152,25 @@ Widget _buildMobileLayout(BuildContext context, User user) {
               icon: Icons.movie_outlined,
               title: 'Torrentio (Movies & Shows)',
               subtitle: 'Scrapes YTS, EZTV, 1337x, ThePirateBay, etc.',
-              value: ref.watch(torrentTorrentioEnabledProvider),
+              value: ref.watch(torrentTorrentioEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
               onChanged: (val) {
                 ref.read(torrentTorrentioEnabledProvider.notifier).setEnabled(val);
+              },
+            ),
+            _buildSwitchTile(
+              icon: Icons.sailing_rounded,
+              title: 'PirateBay (Movies & Shows)',
+              subtitle: 'Free-text search; powers manual searches',
+              value: ref.watch(torrentPirateBayEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
+              onChanged: (val) {
+                ref.read(torrentPirateBayEnabledProvider.notifier).setEnabled(val);
               },
             ),
             _buildSwitchTile(
               icon: Icons.auto_mode_rounded,
               title: 'Auto-Select Episode File',
               subtitle: 'Automatically select correct file inside batch torrents',
-              value: ref.watch(torrentAutoSelectProvider),
+              value: ref.watch(torrentAutoSelectProvider), enabled: ref.watch(enableTorrentsProvider),
               onChanged: (val) {
                 ref.read(torrentAutoSelectProvider.notifier).setEnabled(val);
               },
@@ -4145,7 +4179,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
               icon: Icons.save_rounded,
               title: 'Persist Torrent Files',
               subtitle: 'Keep files on disk after stopping playback',
-              value: ref.watch(torrentPersistFilesProvider),
+              value: ref.watch(torrentPersistFilesProvider), enabled: ref.watch(enableTorrentsProvider),
               onChanged: (val) {
                 ref.read(torrentPersistFilesProvider.notifier).setEnabled(val);
               },
@@ -5283,6 +5317,7 @@ class _SettingSwitchTile extends StatefulWidget {
   final String subtitle;
   final bool value;
   final ValueChanged<bool> onChanged;
+  final bool enabled;
 
   const _SettingSwitchTile({
     required this.icon,
@@ -5290,6 +5325,7 @@ class _SettingSwitchTile extends StatefulWidget {
     required this.subtitle,
     required this.value,
     required this.onChanged,
+    this.enabled = true,
   });
 
   @override
@@ -5302,9 +5338,12 @@ class _SettingSwitchTileState extends State<_SettingSwitchTile> {
   @override
   Widget build(BuildContext context) {
     final accentColor = Theme.of(context).colorScheme.primary;
+    final enabled = widget.enabled;
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
+    return Opacity(
+      opacity: enabled ? 1.0 : 0.4,
+      child: MouseRegion(
+      onEnter: (_) => enabled ? setState(() => _isHovered = true) : null,
       onExit: (_) => setState(() => _isHovered = false),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
@@ -5359,8 +5398,9 @@ class _SettingSwitchTileState extends State<_SettingSwitchTile> {
           ),
           value: widget.value,
           activeThumbColor: accentColor,
-          onChanged: widget.onChanged,
+          onChanged: enabled ? widget.onChanged : null,
         ),
+      ),
       ),
     );
   }

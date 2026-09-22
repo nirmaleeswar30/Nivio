@@ -12,6 +12,7 @@ import 'media_torrent_models.dart';
 import 'ranking.dart';
 import 'resolver.dart';
 import 'sources/nyaa_source.dart';
+import 'sources/piratebay_source.dart';
 import 'sources/torrent_source.dart';
 import 'sources/torrentio_source.dart';
 import 'torrent_models.dart';
@@ -53,7 +54,7 @@ class TorrentStreamService {
     AnimeQueryBuilder? queryBuilder,
     TmdbService? tmdbService,
   })  : _animeSources = animeSources ?? sources ?? [NyaaSource()],
-        _mediaSources = mediaSources ?? [TorrentioSource()],
+        _mediaSources = mediaSources ?? [TorrentioSource(), PirateBaySource()],
         _queryBuilder = queryBuilder ?? AnimeQueryBuilder(),
         _tmdbService = tmdbService;
 
@@ -176,9 +177,13 @@ class TorrentStreamService {
   }
 
   /// Searches and ranks torrents for movies and TV shows via Torrentio.
+  /// When [rank] is false (e.g. a manual free-text search), the results are
+  /// returned raw — deduped and sorted by seeders only, with no resolution/
+  /// quality weighting — so the user sees exactly what the source returned.
   Future<List<TorrentResult>> searchMediaTorrents({
     required MediaTorrentQuery query,
     void Function(String status)? onStatus,
+    bool rank = true,
   }) async {
     onStatus?.call('Searching sources…');
     _log('media query imdbId=${query.imdbId} title=${query.title} isMovie=${query.isMovie} S${query.season}E${query.episode}');
@@ -192,6 +197,11 @@ class TorrentStreamService {
     }
 
     final merged = _dedupe(_enrichSeeders(all));
+    if (!rank) {
+      // Raw manual search: no quality/resolution ranking, just most-seeded first.
+      final list = [...merged]..sort((a, b) => b.seeders.compareTo(a.seeders));
+      return list;
+    }
     final ranked = MediaRanking.rank(merged, query);
     return ranked;
   }
@@ -352,9 +362,11 @@ class TorrentStreamService {
   Future<List<TorrentResult>> _gatherMedia(MediaTorrentQuery query) async {
     final prefs = await SharedPreferences.getInstance();
     final torrentioEnabled = prefs.getBool('torrent_source_torrentio') ?? true;
+    final pirateBayEnabled = prefs.getBool('torrent_source_piratebay') ?? true;
 
     final activeSources = _mediaSources.where((s) {
       if (s is TorrentioSource) return torrentioEnabled;
+      if (s is PirateBaySource) return pirateBayEnabled;
       return true;
     }).toList();
 

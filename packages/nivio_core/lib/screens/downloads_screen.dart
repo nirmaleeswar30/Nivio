@@ -256,6 +256,16 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                   );
                 },
               ),
+            if (isDownloading && DownloadService.canStreamWhileDownloading(item))
+              IconButton(
+                tooltip: 'Play while downloading',
+                icon: const Icon(Icons.play_circle_outline, color: Colors.lightBlueAccent),
+                onPressed: () {
+                  context.push(
+                    '/player/${item.mediaId}?type=${item.mediaType}&season=${item.season ?? 1}&episode=${item.episode ?? 1}&downloadStreamId=${Uri.encodeComponent(item.id)}',
+                  );
+                },
+              ),
             if (isDownloading || item.status == DownloadStatus.pending)
               IconButton(
                 icon: const Icon(Icons.pause_circle_outline, color: Colors.white70),

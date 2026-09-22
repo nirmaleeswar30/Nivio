@@ -842,6 +842,28 @@ class TorrentTorrentioEnabledNotifier extends StateNotifier<bool> {
   }
 }
 
+final torrentPirateBayEnabledProvider =
+    StateNotifierProvider<TorrentPirateBayEnabledNotifier, bool>((ref) {
+  return TorrentPirateBayEnabledNotifier();
+});
+
+class TorrentPirateBayEnabledNotifier extends StateNotifier<bool> {
+  TorrentPirateBayEnabledNotifier() : super(true) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('torrent_source_piratebay') ?? true;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('torrent_source_piratebay', value);
+  }
+}
+
 // Auto Play Next Episode Provider
 final autoPlayNextEpisodeProvider =
     StateNotifierProvider<AutoPlayNextEpisodeNotifier, bool>((ref) {

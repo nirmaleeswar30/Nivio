@@ -62,6 +62,9 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final String? watchPartyCode;
   final WatchPartyRole? watchPartyRole;
   final String? localPath;
+  // When set, play a still-downloading item (torrent via rqbit, or the source
+  // URL for direct/HLS) so it can be watched while it downloads.
+  final String? downloadStreamId;
   final String? directStreamUrl;
   final String? directStreamTitle;
   final bool isLive;
@@ -78,6 +81,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.watchPartyCode,
     this.watchPartyRole,
     this.localPath,
+    this.downloadStreamId,
     this.directStreamUrl,
     this.directStreamTitle,
     this.isLive = false,
@@ -170,6 +174,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Map<int, Future<StreamResult?>>? _runningFetchers;
   bool _isPrefetching = false;
   bool _isDirectStream = false;
+  // True when playing a still-downloading item (torrent rqbit stream or a direct
+  // source URL) — always a direct/media_kit stream, never a WebView.
+  bool _isDownloadStream = false;
   List<SkipTime> _skipTimes = [];
   bool _isFetchingSkipTimes = false;
   AnimeFillerData _fillerData = const AnimeFillerData();
@@ -709,10 +716,42 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _localAudioLang = getLangName(downloadItem.selectedAudioLanguage);
       }
 
-      if (widget.directStreamUrl != null) {
+      // Play-while-downloading: resolve a stream that reuses the bytes already
+      // on disk — torrents via rqbit, direct files via the local range server,
+      // HLS via a growing local playlist. Never falls back to re-streaming the
+      // source; if it can't be resolved we surface an error instead.
+      if (widget.downloadStreamId != null) {
+        final dl = await DownloadService.resolveInProgressStream(
+          widget.downloadStreamId!,
+        );
+        if (dl != null) {
+          _isDownloadStream = true;
+          result = StreamResult(
+            url: dl.url,
+            quality: 'Downloading',
+            // 'Nivio Torrents' reuses the player's torrent-stream handling
+            // (no prefetch, tolerant of premature EOF while pieces arrive).
+            provider: dl.isTorrent ? 'Nivio Torrents' : 'Local Stream',
+            headers: dl.headers,
+            isM3U8: dl.isM3u8,
+          );
+        } else {
+          if (!mounted) return;
+          setState(() {
+            _isLoading = false;
+            _error =
+                "This download isn't ready to stream yet — give it a moment and try again.";
+          });
+          return;
+        }
+      }
+
+      if (result != null) {
+        // Already resolved above (play-while-downloading).
+      } else if (widget.directStreamUrl != null) {
         final lowerUrl = widget.directStreamUrl!.toLowerCase();
         final isHls = lowerUrl.contains('.m3u8') || lowerUrl.contains('.m3u') || widget.isLive;
-        
+
         result = StreamResult(
           url: widget.directStreamUrl!,
           quality: 'Live',
@@ -820,7 +859,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _streamResult = result;
       _currentProvider = result.provider;
       // A local downloaded file is always played directly (never via WebView).
-      _isDirectStream = (widget.directStreamUrl != null || (_effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty))
+      _isDirectStream = (widget.directStreamUrl != null || _isDownloadStream || (_effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty))
           ? true
           : ref.read(streamingServiceProvider).isDirectStream(
               _currentProviderIndex,
@@ -2091,6 +2130,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     
     // Disable prefetching for P2P streams to save bandwidth and prevent replacing the active torrent.
     if (_currentProvider == 'Nivio Torrents') return;
+    // Don't prefetch while streaming a still-downloading item.
+    if (_isDownloadStream) return;
 
     final nextEp = _currentEpisode + 1;
     if (_prefetchedStreams.containsKey(nextEp)) return;

@@ -18,6 +18,7 @@ import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import '../core/debug_log.dart';
 import 'package:nivio/models/download_item.dart';
 import 'package:nivio/services/m3u8_parser.dart';
+import 'package:nivio/services/local_stream_server.dart';
 import 'package:nivio/main.dart';
 import 'package:rqbit_ffi/rqbit_ffi.dart';
 import 'package:nivio/services/torrent/resolver.dart';
@@ -170,6 +171,87 @@ class DownloadService {
       return item;
     }
     return null;
+  }
+
+  /// Whether an in-progress download offers a "play while downloading" option.
+  /// All supported types reuse the on-disk bytes: torrents via rqbit, direct
+  /// files via the local range server, and HLS via a growing local playlist the
+  /// player decrypts/muxes itself. (Resolution can still fail transiently before
+  /// the file has a size or before HLS segment metadata is registered.)
+  static bool canStreamWhileDownloading(DownloadItem item) => true;
+
+  /// Resolves a playable stream for a download that is still in progress, so it
+  /// can be watched while it downloads — always reusing the bytes already on
+  /// disk, never re-fetching from the source.
+  /// - Torrents: streams from rqbit's localhost endpoint (pieces fetched on
+  ///   demand as you seek).
+  /// - Direct progressive files: served from disk by [LocalStreamServer].
+  /// Returns null when it can't be resolved (HLS, torrent engine down, etc.).
+  static Future<
+      ({
+        String url,
+        Map<String, String> headers,
+        bool isTorrent,
+        bool isM3u8
+      })?> resolveInProgressStream(String downloadId) async {
+    if (!Hive.isBoxOpen(_boxName)) return null;
+    DownloadItem? item;
+    for (final i in box.values) {
+      if (i.id == downloadId) {
+        item = i;
+        break;
+      }
+    }
+    if (item == null) return null;
+
+    // Torrent download → stream via rqbit while it downloads.
+    if (item.torrentId != null) {
+      try {
+        final client = await RqbitEngine.instance.ensureStarted();
+        // Bias piece-picking toward the selected file so playback starts fast.
+        try {
+          await client.updateOnlyFiles(item.torrentId!, [item.fileIndex ?? 0]);
+        } catch (_) {}
+        final url = client.streamUrl(item.torrentId!, item.fileIndex ?? 0);
+        return (
+          url: url,
+          headers: <String, String>{},
+          isTorrent: true,
+          isM3u8: false,
+        );
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final src = item.streamUrl ?? '';
+    if (src.isEmpty) return null;
+    final lower = src.toLowerCase();
+    final isHls = lower.contains('.m3u8') || lower.contains('/proxy?url=');
+
+    // HLS → serve a growing local playlist referencing the downloaded (clean,
+    // PNG-stripped) segments + local keys; the player decrypts and muxes it.
+    if (isHls) {
+      final hlsUrl = await LocalStreamServer.instance.hlsUrlFor(item.id);
+      if (hlsUrl == null) return null; // segments not registered yet
+      return (
+        url: hlsUrl,
+        headers: <String, String>{},
+        isTorrent: false,
+        isM3u8: true,
+      );
+    }
+
+    // Direct progressive download → serve the partially-downloaded bytes off
+    // disk via the local range server (no re-fetch from source).
+    final url = await LocalStreamServer.instance.urlFor(item.id);
+    if (url == null) return null;
+    return (
+      url: url,
+      headers: <String, String>{},
+      isTorrent: false,
+      isM3u8: false,
+    );
   }
 
   static Future<bool> requestPermissions() async {
@@ -371,6 +453,9 @@ class DownloadService {
     }
     
     item.savePath = actualFilePath;
+    // Remember the rqbit handle so the file can be streamed while it downloads.
+    item.torrentId = torrentId;
+    item.fileIndex = fileInfo.index;
     await box.put(item.id, item);
 
     // 5. Tell rqbit to download ONLY this file
@@ -518,6 +603,9 @@ class DownloadService {
 
       item.totalBytes = totalBytes;
       item.downloadedBytes = 0;
+      // Persist the size right away so play-while-downloading can range-serve
+      // immediately instead of waiting for the first throttled progress write.
+      await box.put(item.id, item);
 
       final chunkCount = concurrency;
       final chunkSize = (totalBytes / chunkCount).ceil();
@@ -855,6 +943,16 @@ class DownloadService {
         keyIdx++;
       }
 
+      // Expose the (clean, PNG-stripped) on-disk segments + keys so the file
+      // can be streamed as a growing local playlist while it downloads.
+      LocalStreamServer.instance.registerHls(
+        id: item.id,
+        tempDir: tempDir.path,
+        video: videoSegments,
+        audio: audioSegments,
+        localKeys: localKeys,
+      );
+
       // 2. Download all segments using a concurrent queue
       bool failed = false;
       final allTasks = <Future<void>>[];
@@ -939,6 +1037,7 @@ class DownloadService {
       await Future.wait(allTasks);
 
       if (cancelToken.isCancelled || failed) {
+        LocalStreamServer.instance.unregisterHls(item.id);
         // Do NOT delete tempDir here, keep it for resuming later!
         if (failed)
           throw Exception('Network error during parallel HLS download');
@@ -1054,6 +1153,8 @@ class DownloadService {
         }
       }
 
+      // Segments are about to be muxed/removed — stop serving them.
+      LocalStreamServer.instance.unregisterHls(item.id);
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
 
       if (success) {
@@ -1063,6 +1164,7 @@ class DownloadService {
         return false;
       }
     } catch (e) {
+      LocalStreamServer.instance.unregisterHls(item.id);
       appDebugLog('❌ HLS Parallel Error: $e');
       return false;
     }

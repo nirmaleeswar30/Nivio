@@ -35,13 +35,15 @@ class DownloadItemAdapter extends TypeAdapter<DownloadItem> {
       selectedAudioLanguage: fields[15] as String?,
       selectedSubtitleLanguage: fields[16] as String?,
       subtitleUrl: fields[17] as String?,
+      torrentId: fields[18] as int?,
+      fileIndex: fields[19] as int?,
     );
   }
 
   @override
   void write(BinaryWriter writer, DownloadItem obj) {
     writer
-      ..writeByte(18)
+      ..writeByte(20)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -77,7 +79,11 @@ class DownloadItemAdapter extends TypeAdapter<DownloadItem> {
       ..writeByte(16)
       ..write(obj.selectedSubtitleLanguage)
       ..writeByte(17)
-      ..write(obj.subtitleUrl);
+      ..write(obj.subtitleUrl)
+      ..writeByte(18)
+      ..write(obj.torrentId)
+      ..writeByte(19)
+      ..write(obj.fileIndex);
   }
 
   @override

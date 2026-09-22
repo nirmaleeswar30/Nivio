@@ -590,6 +590,7 @@ final appRouter = GoRouter(
           state.uri.queryParameters['partyRole'],
         );
         final localPath = state.uri.queryParameters['localPath'];
+        final downloadStreamId = state.uri.queryParameters['downloadStreamId'];
         final directStreamUrl = state.uri.queryParameters['directStreamUrl'];
         final directStreamTitle = state.uri.queryParameters['directStreamTitle'];
         final directStreamReferer = state.uri.queryParameters['directStreamReferer'];
@@ -603,6 +604,7 @@ final appRouter = GoRouter(
           watchPartyCode: partyCode,
           watchPartyRole: partyRole,
           localPath: localPath,
+          downloadStreamId: downloadStreamId,
           directStreamUrl: directStreamUrl,
           directStreamTitle: directStreamTitle,
           directStreamReferer: directStreamReferer,
