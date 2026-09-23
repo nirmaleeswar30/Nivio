@@ -167,6 +167,42 @@ class StreamingService {
     return [...torrent, ..._premiumProviders, ..._standardProviders];
   }
 
+  /// Shows the torrent picker, starts the chosen release, and remembers its
+  /// release group as the binge preference for the series. Returns null if the
+  /// user cancels.
+  Future<TorrentStreamHandle?> _pickTorrentInteractively(
+    SearchResult media,
+    int episode,
+    int season,
+    int? absoluteEpisode,
+    String resolution,
+    void Function(String)? onStatusUpdate,
+    BuildContext context,
+  ) async {
+    final selection = await TorrentPickerSheet.show(
+      context,
+      media: media,
+      initialEpisode: episode,
+      initialSeason: season,
+      initialAbsoluteEpisode: absoluteEpisode,
+      initialResolution: resolution,
+      torrentStreamService: torrentStreamService,
+      onStatusUpdate: onStatusUpdate,
+    );
+    if (selection == null) return null;
+    final ep = selection.$2 is AnimeQuery
+        ? (selection.$2 as AnimeQuery).episode
+        : (selection.$2 as MediaTorrentQuery).episode ?? 1;
+    final handle = await torrentStreamService.startTorrent(
+      selection.$1,
+      selection.$2,
+      ep,
+      onStatusUpdate,
+    );
+    await torrentStreamService.rememberReleaseGroup(media.id, selection.$1);
+    return handle;
+  }
+
   Future<StreamResult?> fetchStreamUrl({
     required SearchResult media,
     int season = 1,
@@ -179,6 +215,7 @@ class StreamingService {
     String? preferredAudio,
     void Function(String)? onStatusUpdate,
     BuildContext? context,
+    bool binge = false,
   }) async {
     try {
       appDebugLog(
@@ -202,32 +239,39 @@ class StreamingService {
         final resolution = resMatch?.group(0) ?? '1080';
 
         TorrentStreamHandle? handle;
-        if (context != null) {
-          // Interactive mode
-          final selection = await TorrentPickerSheet.show(
-            context,
-            media: media,
-            initialEpisode: episode,
-            initialSeason: season,
-            initialAbsoluteEpisode: absoluteEpisode,
-            initialResolution: resolution,
-            torrentStreamService: torrentStreamService,
-            onStatusUpdate: onStatusUpdate,
+        if (binge) {
+          // Binge mode: never show the picker. Use the prefetched next episode
+          // if it's ready, else the season-pack fast path (next episode already
+          // inside the streaming torrent), then a silent same-release-group
+          // resolve; fall back to the picker only if all fail and we have a context.
+          handle = torrentStreamService.consumePrefetch(episode);
+          handle ??= await torrentStreamService.nextEpisodeInActiveTorrent(
+            episode: episode,
+            season: season,
+            absoluteEpisode: absoluteEpisode,
           );
-          if (selection != null) {
-            final ep = selection.$2 is AnimeQuery
-                ? (selection.$2 as AnimeQuery).episode
-                : (selection.$2 as MediaTorrentQuery).episode ?? 1;
-            handle = await torrentStreamService.startTorrent(
-              selection.$1,
-              selection.$2,
-              ep,
-              onStatusUpdate,
+          if (handle == null) {
+            final group = await torrentStreamService.recallReleaseGroup(media.id);
+            handle = await torrentStreamService.resolveStream(
+              media: media,
+              episode: episode,
+              season: season,
+              resolution: resolution,
+              absoluteEpisode: absoluteEpisode,
+              preferredGroup: group,
+              onStatus: onStatusUpdate,
             );
-          } else {
-            // User cancelled
-            return null;
           }
+          if (handle == null && context != null) {
+            handle = await _pickTorrentInteractively(
+              media, episode, season, absoluteEpisode, resolution, onStatusUpdate, context,
+            );
+          }
+        } else if (context != null) {
+          handle = await _pickTorrentInteractively(
+            media, episode, season, absoluteEpisode, resolution, onStatusUpdate, context,
+          );
+          if (handle == null) return null; // user cancelled
         } else {
           // Silent / background mode
           handle = await torrentStreamService.resolveStream(
@@ -235,6 +279,7 @@ class StreamingService {
             episode: episode,
             season: season,
             resolution: resolution,
+            absoluteEpisode: absoluteEpisode,
             onStatus: onStatusUpdate,
           );
         }

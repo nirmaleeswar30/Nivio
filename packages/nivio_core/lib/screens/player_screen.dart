@@ -177,6 +177,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // True when playing a still-downloading item (torrent rqbit stream or a direct
   // source URL) — always a direct/media_kit stream, never a WebView.
   bool _isDownloadStream = false;
+  // Binge Mode (torrents only): per-player-session. When on, the next episode
+  // auto-advances without the picker, reusing the remembered release group.
+  bool _bingeMode = false;
+  String? _bingeGroup; // remembered release group, shown on the up-next card
   List<SkipTime> _skipTimes = [];
   bool _isFetchingSkipTimes = false;
   AnimeFillerData _fillerData = const AnimeFillerData();
@@ -805,6 +809,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               providerIndex: i,
               subDubPreference: subDubPref,
               preferredAudio: targetAudio,
+              binge: _bingeMode,
               context: (i == _currentProviderIndex ? context : null),
               onStatusUpdate: (msg) {
                 if (mounted && _currentProviderIndex == i) {
@@ -2198,7 +2203,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // —————————————————————————————————————————————————————————————————————————————————————————— Next episode popup ——————————————————————————————————————————————————————————————————————————————————————————
   void _showNextEpisodePopup() {
     if (!mounted || _showNextEpisodeButton || _nextEpisodeDismissed || _nextEpisodeCountdown != null) return;
-    final autoPlay = ref.read(autoPlayNextEpisodeProvider);
+    // Binge mode always counts down (continuous play), even if the global
+    // auto-play-next setting is off.
+    final autoPlay = ref.read(autoPlayNextEpisodeProvider) || _bingeMode;
     if (!autoPlay) {
       setState(() {
         _showNextEpisodeButton = true;
@@ -2212,8 +2219,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showNextEpisodeButton = true;
       _nextEpisodeCountdown = 15;
     });
-    _nextEpNotifier.value = _NextEpState(show: true, countdown: 15);
     _showOverlayEntry();
+    _beginNextEpisodeCountdown(15);
+  }
+
+  /// Starts (or restarts) the auto-advance countdown, and — in binge mode —
+  /// kicks off the medium prefetch so the next episode is ready by 0s.
+  void _beginNextEpisodeCountdown(int start) {
+    _nextEpisodeCountdown = start;
+    _nextEpNotifier.value = _NextEpState(show: true, countdown: start);
+    if (_bingeMode) _prefetchBingeNext();
     _nextEpisodeTimer?.cancel();
     _nextEpisodeTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
@@ -2230,6 +2245,54 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _playNextEpisode();
       }
     });
+  }
+
+  Future<void> _toggleBingeMode() async {
+    final enabling = !_bingeMode;
+    setState(() => _bingeMode = enabling);
+    if (enabling) {
+      // Load the remembered release group so the card can show it.
+      final group =
+          await _cachedTorrentService?.recallReleaseGroup(widget.mediaId);
+      if (mounted) setState(() => _bingeGroup = group);
+    }
+    // Rebuild the overlay so it reflects the new binge state immediately.
+    if (_showNextEpisodeButton) {
+      _removeOverlayEntry();
+      _showOverlayEntry();
+      // If the card was showing without a countdown, binge starts one now
+      // (which also triggers the prefetch); turning binge off stops it.
+      if (enabling && _nextEpisodeCountdown == null) {
+        _beginNextEpisodeCountdown(15);
+      } else if (!enabling) {
+        _nextEpisodeTimer?.cancel();
+        setState(() => _nextEpisodeCountdown = null);
+        _nextEpNotifier.value = const _NextEpState(show: true, countdown: null);
+      }
+    }
+  }
+
+  /// Medium prefetch: while the up-next card counts down, pre-add the next
+  /// episode's torrent to rqbit so the switch is near-instant. Torrents only.
+  void _prefetchBingeNext() {
+    if (!_bingeMode || _currentProvider != 'Nivio Torrents') return;
+    if (!_hasNextEpisode()) return;
+    final media = ref.read(selectedMediaProvider) ?? _cachedMedia;
+    if (media == null) return;
+    final nextEp = _currentEpisode + 1;
+    final resMatch = RegExp(r'\d{3,4}').firstMatch(_streamResult?.quality ?? '');
+    final resolution = resMatch?.group(0) ?? '1080';
+    unawaited(
+      _cachedTorrentService?.prefetchEpisode(
+        media: media,
+        episode: nextEp,
+        season: widget.season,
+        resolution: resolution,
+        absoluteEpisode: null,
+        preferredGroup: _bingeGroup,
+      ) ??
+          Future.value(),
+    );
   }
 
   Future<void> _markAsCompleted() async {
@@ -5075,6 +5138,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         seasonData: _currentSeasonData,
         fillerData: _fillerData,
         autoSkipFiller: ref.read(autoSkipFillerProvider) && _isAnimeMedia(ref.read(selectedMediaProvider)),
+        // Binge Mode: only offered while streaming a torrent.
+        isTorrent: _currentProvider == 'Nivio Torrents',
+        bingeMode: _bingeMode,
+        bingeGroup: _bingeGroup,
+        onToggleBinge: () => _toggleBingeMode(),
         onPlay: () {
           _nextEpisodeTimer?.cancel();
           _playNextEpisode();
@@ -6294,6 +6362,10 @@ class _NextEpisodeOverlayWidget extends StatelessWidget {
   final SeasonData? seasonData;
   final AnimeFillerData? fillerData;
   final bool autoSkipFiller;
+  final bool isTorrent;
+  final bool bingeMode;
+  final String? bingeGroup;
+  final VoidCallback onToggleBinge;
   final VoidCallback onPlay;
   final VoidCallback onDismiss;
 
@@ -6304,6 +6376,10 @@ class _NextEpisodeOverlayWidget extends StatelessWidget {
     required this.seasonData,
     this.fillerData,
     this.autoSkipFiller = false,
+    this.isTorrent = false,
+    this.bingeMode = false,
+    this.bingeGroup,
+    required this.onToggleBinge,
     required this.onPlay,
     required this.onDismiss,
   });
@@ -6391,14 +6467,66 @@ class _NextEpisodeOverlayWidget extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'UP NEXT',
-                            style: TextStyle(
-                              color: Colors.grey,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 1.2,
-                            ),
+                          Row(
+                            children: [
+                              Text(
+                                bingeMode ? 'BINGE · UP NEXT' : 'UP NEXT',
+                                style: TextStyle(
+                                  color: bingeMode
+                                      ? const Color(0xFF4ADE80)
+                                      : Colors.grey,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                              const Spacer(),
+                              if (isTorrent)
+                                GestureDetector(
+                                  onTap: onToggleBinge,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: bingeMode
+                                          ? const Color(0xFF4ADE80).withOpacity(0.18)
+                                          : Colors.white.withOpacity(0.08),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: bingeMode
+                                            ? const Color(0xFF4ADE80).withOpacity(0.5)
+                                            : Colors.white24,
+                                        width: 0.8,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          bingeMode
+                                              ? Icons.all_inclusive_rounded
+                                              : Icons.fast_forward_rounded,
+                                          size: 13,
+                                          color: bingeMode
+                                              ? const Color(0xFF4ADE80)
+                                              : Colors.white70,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          bingeMode ? 'Binge On' : 'Binge',
+                                          style: TextStyle(
+                                            color: bingeMode
+                                                ? const Color(0xFF4ADE80)
+                                                : Colors.white70,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                           const SizedBox(height: 4),
                           Text(
@@ -6412,7 +6540,9 @@ class _NextEpisodeOverlayWidget extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                           Text(
-                            'S$season E$nextEpNum${nextEpNum > episode + 1 ? ' (Skipping filler)' : ''}',
+                            bingeMode
+                                ? 'S$season E$nextEpNum · ${(bingeGroup != null && bingeGroup!.isNotEmpty) ? 'Same group ($bingeGroup)' : 'No picker — auto-playing'}'
+                                : 'S$season E$nextEpNum${nextEpNum > episode + 1 ? ' (Skipping filler)' : ''}',
                             style: const TextStyle(color: Colors.grey, fontSize: 12),
                           ),
                           const SizedBox(height: 10),

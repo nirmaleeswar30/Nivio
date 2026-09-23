@@ -633,10 +633,8 @@ class _NivioAppState extends ConsumerState<NivioApp> {
       }
     });
 
-    // Initialize Discord Rich Presence on desktop platforms
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      _initDiscordRpc();
-    }
+    // Initialize Discord Rich Presence (IPC on desktop, Gateway on mobile).
+    _initDiscordRpc();
   }
 
   /// Starts Discord RPC if enabled, and listens for toggle changes.

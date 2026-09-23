@@ -41,6 +41,26 @@ class TorrentStreamHandle {
   Future<TorrentStats> stats() => client.getStats(torrentId);
 }
 
+/// A next episode pre-added to rqbit for binge mode. [fromPack] means it's a
+/// file inside the already-active season-pack torrent (no new torrent added).
+class _PrefetchEntry {
+  final int episode;
+  final int torrentId;
+  final int fileIndex;
+  final String url;
+  final bool fromPack;
+  final int? resolution;
+
+  _PrefetchEntry({
+    required this.episode,
+    required this.torrentId,
+    required this.fileIndex,
+    required this.url,
+    required this.fromPack,
+    this.resolution,
+  });
+}
+
 /// Orchestrates the torrent streaming pipeline:
 /// - Anime: NyaaSource via AnimeQuery and TorrentRanking
 /// - Movies & Shows: TorrentioSource via MediaTorrentQuery and MediaRanking
@@ -72,6 +92,10 @@ class TorrentStreamService {
   int? _activeTorrentId;
   RqbitClient? _client;
 
+  // Binge prefetch: the next episode pre-added to rqbit (metadata + first
+  // pieces) so switching to it is near-instant.
+  _PrefetchEntry? _prefetch;
+
   void _log(String m) => appDebugLog('🌀 [TORRENT] $m');
 
   /// Finds and starts the best torrent for [media] episode [episode], returning
@@ -83,6 +107,7 @@ class TorrentStreamService {
     String resolution = '1080',
     List<String> exclusions = const [],
     int? absoluteEpisode,
+    String? preferredGroup,
     void Function(String status)? onStatus,
   }) async {
     final isAnime = media.mediaType == 'anime';
@@ -100,7 +125,10 @@ class TorrentStreamService {
       final results = await searchTorrents(query: query, onStatus: onStatus);
       if (results.isEmpty) return null;
 
-      final best = TorrentRanking.best(results, query);
+      // Binge mode: prefer the same release group the user picked before,
+      // falling back to the best-ranked release when it isn't available.
+      final best =
+          _pickByGroup(results, preferredGroup) ?? TorrentRanking.best(results, query);
       if (best == null) {
         _log('=> ${results.length} candidates but none passed ranking/episode filter');
         onStatus?.call('No suitable release found');
@@ -140,7 +168,8 @@ class TorrentStreamService {
       final results = await searchMediaTorrents(query: query, onStatus: onStatus);
       if (results.isEmpty) return null;
 
-      final best = MediaRanking.best(results, query);
+      final best =
+          _pickByGroup(results, preferredGroup) ?? MediaRanking.best(results, query);
       if (best == null) {
         _log('=> ${results.length} media candidates but none passed ranking');
         onStatus?.call('No suitable release found');
@@ -149,6 +178,235 @@ class TorrentStreamService {
 
       return startTorrent(best, query, episode, onStatus);
     }
+  }
+
+  /// Returns the highest-ranked candidate whose release group matches [group]
+  /// (case-insensitive), or null if none match. Candidates are already ranked
+  /// best-first, so the first match is the best same-group release.
+  TorrentResult? _pickByGroup(List<TorrentResult> ranked, String? group) {
+    if (group == null || group.trim().isEmpty) return null;
+    final g = group.trim().toLowerCase();
+    for (final r in ranked) {
+      final rg = r.parsed.releaseGroup?.trim().toLowerCase();
+      if (rg != null && rg.isNotEmpty && rg == g) return r;
+    }
+    return null;
+  }
+
+  /// Persists the release group of [chosen] as the binge preference for the
+  /// series [mediaId], so future episodes prefer the same group.
+  Future<void> rememberReleaseGroup(int mediaId, TorrentResult chosen) async {
+    final group = chosen.parsed.releaseGroup;
+    if (group == null || group.trim().isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('binge_group_$mediaId', group.trim());
+    } catch (_) {}
+  }
+
+  /// The remembered binge release group for series [mediaId], if any.
+  Future<String?> recallReleaseGroup(int mediaId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final g = prefs.getString('binge_group_$mediaId');
+      return (g != null && g.trim().isNotEmpty) ? g.trim() : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Season-pack fast path: if the currently-streaming torrent is a multi-file
+  /// pack that also contains [episode], returns a handle streaming that file
+  /// directly — no new search, no re-add. Returns null if it isn't in the pack.
+  Future<TorrentStreamHandle?> nextEpisodeInActiveTorrent({
+    required int episode,
+    int? season,
+    int? absoluteEpisode,
+  }) async {
+    final id = _activeTorrentId;
+    final client = _client;
+    if (id == null || client == null) return null;
+    try {
+      final details = await client.getDetails(id);
+      if (details.files.length <= 1) return null; // single-file, not a pack
+      final file = TorrentFileResolver.resolve(
+        details.files,
+        episode: episode,
+        season: season,
+        absoluteEpisode: absoluteEpisode,
+      );
+      if (file == null) return null;
+      try {
+        await client.updateOnlyFiles(id, [file.index]);
+      } catch (_) {}
+      _log('season-pack fast path: episode $episode -> file[${file.index}] "${file.name}"');
+      return TorrentStreamHandle(
+        url: client.streamUrl(id, file.index),
+        torrentId: id,
+        fileIndex: file.index,
+        fileName: file.name,
+        client: client,
+        title: file.name,
+        resolution: null,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Binge medium-prefetch: while the current episode is still playing, search
+  /// for [episode], pick the same-group (or best) release, and pre-add it to
+  /// rqbit so its metadata + first pieces are ready. Does NOT touch the active
+  /// stream — the swap only happens later in [consumePrefetch].
+  Future<void> prefetchEpisode({
+    required SearchResult media,
+    required int episode,
+    required int season,
+    String resolution = '1080',
+    int? absoluteEpisode,
+    String? preferredGroup,
+  }) async {
+    try {
+      if (_prefetch?.episode == episode) return; // already prefetched
+
+      // If the active torrent is a pack that already has this episode, we don't
+      // need to add anything — just note the file to switch to.
+      final pack = await nextEpisodeInActiveTorrent(
+        episode: episode,
+        season: season,
+        absoluteEpisode: absoluteEpisode,
+      );
+      if (pack != null) {
+        _prefetch = _PrefetchEntry(
+          episode: episode,
+          torrentId: pack.torrentId,
+          fileIndex: pack.fileIndex,
+          url: pack.url,
+          fromPack: true,
+          resolution: pack.resolution,
+        );
+        return;
+      }
+
+      final isAnime = media.mediaType == 'anime';
+      TorrentResult? best;
+      if (isAnime) {
+        final query = await _queryBuilder.build(
+          media,
+          episode,
+          season: season,
+          resolution: resolution,
+          absoluteEpisode: absoluteEpisode,
+        );
+        final results = await searchTorrents(query: query);
+        if (results.isEmpty) return;
+        best = _pickByGroup(results, preferredGroup) ?? TorrentRanking.best(results, query);
+      } else {
+        final isMovie = media.mediaType == 'movie';
+        final imdbId = _tmdbService != null
+            ? await _tmdbService.getImdbId(tmdbId: media.id, isMovie: isMovie)
+            : null;
+        if (imdbId == null || imdbId.isEmpty) return;
+        final query = MediaTorrentQuery(
+          imdbId: imdbId,
+          tmdbId: media.id,
+          title: media.title ?? media.name ?? '',
+          isMovie: isMovie,
+          season: isMovie ? null : season,
+          episode: isMovie ? null : episode,
+          resolution: resolution,
+        );
+        final results = await searchMediaTorrents(query: query);
+        if (results.isEmpty) return;
+        best = _pickByGroup(results, preferredGroup) ?? MediaRanking.best(results, query);
+      }
+      if (best == null) return;
+
+      final client = await RqbitEngine.instance.ensureStarted();
+      _client ??= client;
+      final add = await client.addTorrent(
+        best.link,
+        isUrl: best.link.startsWith('http') ? true : null,
+      );
+      final id = add.id;
+      if (id == null) return;
+
+      var details = await client.getDetails(id);
+      for (var i = 0; details.files.isEmpty && i < 30; i++) {
+        await Future.delayed(const Duration(seconds: 1));
+        details = await client.getDetails(id);
+      }
+      if (details.files.isEmpty) {
+        await _releaseTorrent(id);
+        return;
+      }
+
+      TorrentFileInfo? file = best.fileIndex != null
+          ? details.files.where((f) => f.index == best!.fileIndex).firstOrNull
+          : null;
+      file ??= TorrentFileResolver.resolve(
+        details.files,
+        episode: episode,
+        absoluteEpisode: absoluteEpisode,
+        season: season,
+      );
+      if (file == null) return;
+      try {
+        await client.updateOnlyFiles(id, [file.index]);
+      } catch (_) {}
+
+      _prefetch = _PrefetchEntry(
+        episode: episode,
+        torrentId: id,
+        fileIndex: file.index,
+        url: client.streamUrl(id, file.index),
+        fromPack: false,
+        resolution: best.parsed.resolution,
+      );
+      _log('prefetched episode $episode -> torrent $id file[${file.index}]');
+    } catch (e) {
+      _log('prefetch error: $e');
+    }
+  }
+
+  /// Returns the prefetched handle for [episode] (if any) and promotes it to the
+  /// active stream, releasing the previously-active torrent. Null if nothing was
+  /// prefetched for that episode.
+  TorrentStreamHandle? consumePrefetch(int episode) {
+    final p = _prefetch;
+    if (p == null || p.episode != episode) return null;
+    _prefetch = null;
+    final client = _client;
+    if (client == null) return null;
+
+    if (!p.fromPack) {
+      final old = _activeTorrentId;
+      _activeTorrentId = p.torrentId;
+      if (old != null && old != p.torrentId) {
+        unawaited(_releaseTorrent(old));
+      }
+    }
+    _log('consuming prefetch for episode $episode (torrent ${p.torrentId})');
+    return TorrentStreamHandle(
+      url: p.url,
+      torrentId: p.torrentId,
+      fileIndex: p.fileIndex,
+      fileName: '',
+      client: client,
+      title: '',
+      resolution: p.resolution,
+    );
+  }
+
+  /// Releases a torrent from rqbit, honouring the persist-files setting.
+  Future<void> _releaseTorrent(int id) async {
+    final client = _client;
+    if (client == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final persist = prefs.getBool('torrent_persist_files') ?? false;
+      persist ? await client.forget(id) : await client.delete(id);
+    } catch (_) {}
   }
 
   /// Searches and ranks torrents for a given anime query, returning all candidates.

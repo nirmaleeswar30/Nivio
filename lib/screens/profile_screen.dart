@@ -21,6 +21,7 @@ import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
+import 'package:nivio/services/discord_gateway_service.dart';
 import 'package:nivio/providers/changelog_provider.dart';
 import 'package:nivio/providers/home_layout_provider.dart';
 import 'package:nivio/services/episode_check_service.dart';
@@ -717,6 +718,9 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                             onChanged: (value) =>
                                 ref.read(discordRpcEnabledProvider.notifier).setEnabled(value),
                           ),
+                        if ((Platform.isAndroid || Platform.isIOS) &&
+                            _matches('discord rich presence rpc activity status'))
+                          _buildDiscordMobileTile(),
                         if (_matches('update app version release github'))
                           FutureBuilder<String>(
                             future: _getAppVersionLabel(),
@@ -1483,6 +1487,10 @@ Widget _buildMobileLayout(BuildContext context, User user) {
         ),
       );
     }
+    if ((Platform.isAndroid || Platform.isIOS) &&
+        _matches('discord rich presence rpc activity status')) {
+      results.add(_buildDiscordMobileTile());
+    }
     if (_matches('anime tracking anilist mal myanimelist sync watchlist')) {
       results.add(_buildAnimeTrackingContent());
     }
@@ -1603,6 +1611,75 @@ Widget _buildMobileLayout(BuildContext context, User user) {
       value: value,
       onChanged: onChanged,
       enabled: enabled,
+    );
+  }
+
+  /// Mobile Discord Rich Presence tile: connects through Discord OAuth2 (system
+  /// browser sign-in) and reflects live connection status.
+  Widget _buildDiscordMobileTile() {
+    return ValueListenableBuilder<DiscordGatewayState>(
+      valueListenable: DiscordGatewayService.instance.stateNotifier,
+      builder: (context, dstate, _) {
+        final enabled = ref.watch(discordRpcEnabledProvider);
+        final authorized = DiscordGatewayService.instance.isAuthorized;
+        String subtitle;
+        if (!enabled) {
+          subtitle = authorized ? 'Disabled' : 'Tap to sign in with Discord';
+        } else if (dstate.status == DiscordGatewayStatus.connected) {
+          subtitle = 'Connected as ${dstate.displayName}';
+        } else if (dstate.status == DiscordGatewayStatus.connecting) {
+          subtitle = 'Connecting…';
+        } else {
+          subtitle = dstate.errorMessage ?? 'Not connected';
+        }
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _SettingSwitchTile(
+              icon: PhosphorIconsRegular.discordLogo,
+              title: 'Discord Rich Presence',
+              subtitle: subtitle,
+              value: enabled,
+              onChanged: (val) async {
+                if (val) {
+                  if (DiscordGatewayService.instance.isAuthorized) {
+                    ref.read(discordRpcEnabledProvider.notifier).setEnabled(true);
+                  } else {
+                    final ok = await DiscordGatewayService.instance.authorize();
+                    if (ok) {
+                      ref.read(discordRpcEnabledProvider.notifier).setEnabled(true);
+                    }
+                  }
+                } else {
+                  ref.read(discordRpcEnabledProvider.notifier).setEnabled(false);
+                }
+              },
+            ),
+            if (authorized)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 16, bottom: 6),
+                  child: TextButton.icon(
+                    onPressed: () async {
+                      await DiscordGatewayService.instance.logout();
+                      ref.read(discordRpcEnabledProvider.notifier).setEnabled(false);
+                    },
+                    icon: const Icon(Icons.logout_rounded,
+                        size: 16, color: Colors.redAccent),
+                    label: const Text('Sign out of Discord',
+                        style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -4344,6 +4421,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                 onChanged: (value) =>
                     ref.read(discordRpcEnabledProvider.notifier).setEnabled(value),
               ),
+            if (Platform.isAndroid || Platform.isIOS) _buildDiscordMobileTile(),
             FutureBuilder<String>(
               future: _getAppVersionLabel(),
               builder: (context, snapshot) {

@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:discord_rich_presence/discord_rich_presence.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:nivio/services/discord_gateway_service.dart';
+
 /// Singleton service that manages Discord Rich Presence on desktop platforms.
 ///
 /// Connects to the local Discord client via IPC (named pipe on Windows,
@@ -30,9 +32,17 @@ class DiscordRpcService {
   /// Does nothing on mobile platforms or if [clientId] is empty.
   /// Silently swallows errors when Discord desktop is not running.
   Future<void> initialize(String clientId) async {
-    if (!_isDesktop) return;
     final trimmed = clientId.trim();
     if (trimmed.isEmpty) return;
+
+    // Mobile has no local Discord IPC socket — use the OAuth2 Gateway path.
+    // load() reads stored tokens and connects if the user is already authorized.
+    if (_isMobile) {
+      await DiscordGatewayService.instance.load(trimmed);
+      return;
+    }
+
+    if (!_isDesktop) return;
 
     _clientId = trimmed;
     _disposed = false;
@@ -51,6 +61,10 @@ class DiscordRpcService {
 
   /// Disconnect from Discord and clean up.
   Future<void> dispose() async {
+    if (_isMobile) {
+      DiscordGatewayService.instance.disconnect();
+      return;
+    }
     _disposed = true;
     if (!_connected || _client == null) return;
 
@@ -75,6 +89,15 @@ class DiscordRpcService {
     String? posterUrl,
     DateTime? startedAt,
   }) {
+    if (_isMobile) {
+      DiscordGatewayService.instance.setWatching(
+        title: title,
+        details: details,
+        posterUrl: posterUrl,
+        startedAt: startedAt,
+      );
+      return;
+    }
     if (!_canUpdate) return;
 
     try {
@@ -101,6 +124,10 @@ class DiscordRpcService {
 
   /// Set status to "Paused — [title]".
   void setPaused({String? title}) {
+    if (_isMobile) {
+      DiscordGatewayService.instance.setPaused(title: title);
+      return;
+    }
     if (!_canUpdate) return;
 
     try {
@@ -123,6 +150,10 @@ class DiscordRpcService {
 
   /// Set status to "Browsing Nivio" (idle/default state).
   void setBrowsing() {
+    if (_isMobile) {
+      DiscordGatewayService.instance.setBrowsing();
+      return;
+    }
     if (!_canUpdate) return;
 
     try {
@@ -145,6 +176,10 @@ class DiscordRpcService {
 
   /// Clear the Discord activity (disconnect and optionally reconnect).
   Future<void> clearActivity() async {
+    if (_isMobile) {
+      DiscordGatewayService.instance.clearActivity();
+      return;
+    }
     if (!_connected || _client == null) return;
 
     try {
@@ -170,6 +205,8 @@ class DiscordRpcService {
 
   bool get _isDesktop =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
+  bool get _isMobile => Platform.isAndroid || Platform.isIOS;
 
   bool get _canUpdate => _connected && _client != null && !_disposed;
 

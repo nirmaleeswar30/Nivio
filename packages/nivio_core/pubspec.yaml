@@ -73,6 +73,10 @@ dependencies:
   flutter_volume_controller: ^2.0.1
   simple_pip_mode: ^1.1.0
   discord_rich_presence: ^1.1.1
+  # Mobile Discord Rich Presence (OAuth2 over the Gateway)
+  flutter_secure_storage: ^11.2.0
+  app_links: any
+  crypto: any
 
 dev_dependencies:
   flutter_test:

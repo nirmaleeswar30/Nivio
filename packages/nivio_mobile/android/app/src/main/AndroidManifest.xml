@@ -57,6 +57,13 @@
                 <!-- Accepts URIs like: nivio://open/media/123 -->
                 <data android:scheme="nivio" android:host="open" />
             </intent-filter>
+            <!-- Discord OAuth2 redirect: niviodiscord://oauth2/callback -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="niviodiscord" android:host="oauth2" />
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
