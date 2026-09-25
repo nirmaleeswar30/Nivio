@@ -15,6 +15,7 @@ import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/widgets/content_row.dart';
+import 'package:nivio/widgets/skeleton.dart';
 import 'package:nivio/widgets/search_result_card.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -444,8 +445,8 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
       child: Scaffold(
         backgroundColor: const Color(0xFF0D0F14),
         body: _isLoading
-            ? Center(
-                child: CircularProgressIndicator(color: NivioTheme.accentColorOf(context)),
+            ? const PosterGridSkeleton(
+                padding: EdgeInsets.fromLTRB(16, 80, 16, 16),
               )
             : Stack(
                 children: [
@@ -896,8 +897,8 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
       child: Scaffold(
         backgroundColor: const Color(0xFF0D0F14),
         body: _isLoading
-            ? Center(
-                child: CircularProgressIndicator(color: NivioTheme.accentColorOf(context)),
+            ? const PosterGridSkeleton(
+                padding: EdgeInsets.fromLTRB(16, 80, 16, 16),
               )
             : Stack(
                 children: [

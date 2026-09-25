@@ -23,6 +23,11 @@ class AnimeTrackingCoordinator {
   // the whole library) without re-pushing what a service already has.
   final Set<int> _anilistPresentIds = {};
   final Set<int> _malPresentIds = {};
+  // Titles (lowercased) present on each service, so an item still counts as
+  // present when a service returns it under a different id than the one we
+  // pushed (AniList's idMal can mismatch MAL's canonical id for S2 entries).
+  final Set<String> _anilistPresentTitles = {};
+  final Set<String> _malPresentTitles = {};
 
   DateTime? get lastSyncedAt => _lastSyncedAt;
   bool get isSyncing => _isSyncing;
@@ -30,9 +35,12 @@ class AnimeTrackingCoordinator {
   bool get aniListConnected => _aniList.isAuthenticated;
   bool get malConnected => _mal.isAuthenticated;
 
-  bool anilistHas(int? anilistId) =>
-      anilistId != null && _anilistPresentIds.contains(anilistId);
-  bool malHas(int? malId) => malId != null && _malPresentIds.contains(malId);
+  bool anilistHas(int? anilistId, [String? title]) =>
+      (anilistId != null && _anilistPresentIds.contains(anilistId)) ||
+      (title != null && _anilistPresentTitles.contains(title.trim().toLowerCase()));
+  bool malHas(int? malId, [String? title]) =>
+      (malId != null && _malPresentIds.contains(malId)) ||
+      (title != null && _malPresentTitles.contains(title.trim().toLowerCase()));
 
   bool get hasAnyAccountConnected =>
       _aniList.isAuthenticated || _mal.isAuthenticated;
@@ -244,6 +252,8 @@ class AnimeTrackingCoordinator {
     _isSyncing = true;
     _anilistPresentIds.clear();
     _malPresentIds.clear();
+    _anilistPresentTitles.clear();
+    _malPresentTitles.clear();
 
     try {
       if (_aniList.isAuthenticated) {
@@ -251,6 +261,7 @@ class AnimeTrackingCoordinator {
         results.addAll(anilistItems);
         for (final it in anilistItems) {
           if (it.anilistId != null) _anilistPresentIds.add(it.anilistId!);
+          _anilistPresentTitles.add(it.title.trim().toLowerCase());
         }
       }
 
@@ -258,6 +269,7 @@ class AnimeTrackingCoordinator {
         final malItems = await _mal.fetchUserAnimeList();
         for (final it in malItems) {
           if (it.malId != null) _malPresentIds.add(it.malId!);
+          _malPresentTitles.add(it.title.trim().toLowerCase());
         }
         // Avoid duplicate items if both services have the same anime (match by malId or title)
         for (final malItem in malItems) {

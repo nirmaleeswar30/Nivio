@@ -396,6 +396,8 @@ class MalAuthService {
       await prefs.remove(_prefTokensKey);
       await prefs.remove(_prefUserKey);
       await prefs.remove(_prefVerifierKey);
+      // Allow a fresh backfill if MAL is reconnected later.
+      await prefs.remove('tracking_backfill_attempted');
       appDebugLog('[MalAuth] Disconnected MAL session');
     } catch (e) {
       appDebugLog('[MalAuth] Error clearing MAL preferences: $e');

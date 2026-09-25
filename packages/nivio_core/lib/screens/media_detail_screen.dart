@@ -12,6 +12,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:nivio/widgets/youtube_webview_player.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
+import 'package:nivio/widgets/skeleton.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:share_plus/share_plus.dart';
@@ -392,11 +393,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
             backgroundColor: NivioTheme.netflixBlack,
             elevation: 0,
           ),
-          body: Center(
-            child: CircularProgressIndicator(
-              color: NivioTheme.accentColorOf(context),
-            ),
-          ),
+          body: const MediaDetailSkeleton(),
         ),
       );
     }
@@ -444,7 +441,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     final media = _media;
     if (media == null) {
       return _withBackGuard(
-        const Scaffold(body: Center(child: CircularProgressIndicator())),
+        const Scaffold(body: MediaDetailSkeleton()),
       );
     }
 
@@ -2007,9 +2004,37 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           ],
         );
       },
-      loading: () => Center(
-        child: CircularProgressIndicator(
-          color: NivioTheme.accentColorOf(context),
+      loading: () => Skeletonizer(
+        child: Column(
+          children: List.generate(
+            4,
+            (_) => const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: Row(
+                children: [
+                  SkeletonBox(
+                    width: 150,
+                    height: 84,
+                    borderRadius: BorderRadius.all(Radius.circular(8)),
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SkeletonBox(width: double.infinity, height: 14),
+                        SizedBox(height: 8),
+                        SkeletonBox(width: double.infinity, height: 10),
+                        SizedBox(height: 6),
+                        SkeletonBox(width: 120, height: 10),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
       error: (err, stack) => Text(

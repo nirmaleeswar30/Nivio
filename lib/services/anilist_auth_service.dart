@@ -532,6 +532,8 @@ class AniListAuthService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_prefTokenKey);
       await prefs.remove(_prefUserKey);
+      // Allow a fresh backfill if AniList is reconnected later.
+      await prefs.remove('tracking_backfill_attempted');
       appDebugLog('[AniListAuth] Disconnected AniList session');
     } catch (e) {
       appDebugLog('[AniListAuth] Error clearing preferences: $e');

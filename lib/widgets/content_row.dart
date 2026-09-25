@@ -308,14 +308,10 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
               width: double.infinity,
               height: double.infinity,
               memCacheWidth: 360,
-              placeholder: (context, url) => Container(
-                color: const Color(0xFF2F2F2F),
-                child: const Center(
-                  child: CircularProgressIndicator(
-                    color: Color(0xFFE50914),
-                    strokeWidth: 2,
-                  ),
-                ),
+              // Static skeleton-gray placeholder (no per-image spinner/animation
+              // controller) so shelves stay light on GPU while posters load in.
+              placeholder: (context, url) => const DecoratedBox(
+                decoration: BoxDecoration(color: Color(0xFF23262E)),
               ),
               errorWidget: (context, url, error) => Container(
                 color: const Color(0xFF2F2F2F),

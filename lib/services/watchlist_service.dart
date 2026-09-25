@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive/hive.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/watchlist_item.dart';
 import 'auth_service.dart';
 import 'package:nivio/services/anime_tracking_coordinator.dart';
@@ -298,6 +299,16 @@ class WatchlistService {
     appDebugLog('🗑️ Watchlist cleared');
   }
 
+  /// Merge two episode-total values by taking the larger non-null one. AniList
+  /// and Simkl often report different totals for the same anime (season vs
+  /// franchise counts); without this they overwrite each other every launch.
+  /// Max is deterministic and converges (monotonic), ending the ping-pong.
+  int? _mergeTotalEpisodes(int? existing, int? remote) {
+    if (existing == null) return remote;
+    if (remote == null) return existing;
+    return existing > remote ? existing : remote;
+  }
+
   /// Get watchlist count
   int get count => _box.length;
 
@@ -394,7 +405,8 @@ class WatchlistService {
 
           // Compute the merged values with the same `?? keep-existing` semantics
           // copyWith uses, so we can tell whether anything actually changed.
-          final mergedTotal = synced.totalEpisodes ?? existing.totalEpisodes;
+          final mergedTotal =
+              _mergeTotalEpisodes(existing.totalEpisodes, synced.totalEpisodes);
           final mergedAnilist = synced.anilistId ?? existing.anilistId;
           final mergedMal = synced.malId ?? existing.malId;
           final mergedPoster =
@@ -500,30 +512,44 @@ class WatchlistService {
       // that already has the item isn't re-pushed. This converges: once a
       // service has an item, its presence set includes it next run.
       if (pushOfflineChanges) {
+        final prefs = await SharedPreferences.getInstance();
+        // Ids we've already tried to backfill, so an item a service can't
+        // accept (e.g. AniList's idMal for a brand-new sequel doesn't exist on
+        // MAL) isn't re-pushed every launch. Cleared when a service reconnects.
+        final attempted =
+            (prefs.getStringList('tracking_backfill_attempted') ?? <String>[])
+                .toSet();
         final backfill = <TrackingPush>[];
         for (final loc in _box.values) {
           if (loc.mediaType != 'anime') continue;
           final aId = loc.anilistId ?? (loc.id > 0 ? loc.id : null);
           final mId = loc.malId;
-          final missingAniList = coordinator.aniListConnected &&
+          final needAniList = coordinator.aniListConnected &&
               aId != null &&
-              !coordinator.anilistHas(aId);
-          final missingMal =
-              coordinator.malConnected && mId != null && !coordinator.malHas(mId);
-          if (missingAniList || missingMal) {
+              !coordinator.anilistHas(aId, loc.title) &&
+              !attempted.contains('anilist:$aId');
+          final needMal = coordinator.malConnected &&
+              mId != null &&
+              !coordinator.malHas(mId, loc.title) &&
+              !attempted.contains('mal:$mId');
+          if (needAniList || needMal) {
             backfill.add(
               TrackingPush(
-                anilistId: missingAniList ? aId : null,
-                malId: missingMal ? mId : null,
+                anilistId: needAniList ? aId : null,
+                malId: needMal ? mId : null,
                 status: loc.watchStatus,
                 episode: loc.currentEpisode ??
                     (loc.watchStatus == WatchStatus.completed ? 1 : 0),
               ),
             );
+            if (needAniList) attempted.add('anilist:$aId');
+            if (needMal) attempted.add('mal:$mId');
           }
         }
         if (backfill.isNotEmpty) {
           await coordinator.pushBatch(backfill);
+          await prefs.setStringList(
+              'tracking_backfill_attempted', attempted.toList());
           appDebugLog('📤 Backfilled ${backfill.length} anime to missing service(s).');
         }
       }
@@ -611,7 +637,8 @@ class WatchlistService {
             resolvedStatus = WatchStatus.watching;
           }
 
-          final mergedTotal = r.totalEpisodes ?? existing.totalEpisodes;
+          final mergedTotal =
+              _mergeTotalEpisodes(existing.totalEpisodes, r.totalEpisodes);
           final mergedMal = existing.malId ?? r.malId;
           final mergedAnilist = existing.anilistId ?? r.anilistId;
           final mergedPoster =

@@ -1240,6 +1240,50 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return false;
   }
 
+  // Common ISO 639-1/639-2 codes → readable names for track labels.
+  static const Map<String, String> _langNames = {
+    'en': 'English', 'eng': 'English',
+    'ja': 'Japanese', 'jpn': 'Japanese', 'jp': 'Japanese',
+    'hi': 'Hindi', 'hin': 'Hindi',
+    'ta': 'Tamil', 'tam': 'Tamil',
+    'te': 'Telugu', 'tel': 'Telugu',
+    'es': 'Spanish', 'spa': 'Spanish',
+    'fr': 'French', 'fre': 'French', 'fra': 'French',
+    'ko': 'Korean', 'kor': 'Korean',
+    'de': 'German', 'ger': 'German', 'deu': 'German',
+    'it': 'Italian', 'ita': 'Italian',
+    'ar': 'Arabic', 'ara': 'Arabic',
+    'pt': 'Portuguese', 'por': 'Portuguese',
+    'ru': 'Russian', 'rus': 'Russian',
+    'zh': 'Chinese', 'chi': 'Chinese', 'zho': 'Chinese',
+    'ml': 'Malayalam', 'mal': 'Malayalam',
+    'kn': 'Kannada', 'kan': 'Kannada',
+    'bn': 'Bengali', 'ben': 'Bengali',
+  };
+
+  /// Maps a language code to a readable name; null when unknown/undetermined.
+  String? _friendlyLang(String? code) {
+    if (code == null) return null;
+    final c = code.trim().toLowerCase();
+    if (c.isEmpty || c == 'und' || c == 'unknown' || c == 'unk') return null;
+    return _langNames[c] ?? code.trim();
+  }
+
+  /// Builds a track label that includes the language AND the embedded title
+  /// (codec/name), e.g. "English · DDP5.1 Atmos". Empty titles/languages are
+  /// treated as absent (mkv tracks often have an empty title), and a numbered
+  /// fallback keeps otherwise-identical tracks distinguishable.
+  String _trackLabel(String? title, String? language, int index, String kind) {
+    final lang = _friendlyLang(language);
+    final t = (title ?? '').trim();
+    if (lang != null && t.isNotEmpty && lang.toLowerCase() != t.toLowerCase()) {
+      return '$lang · $t';
+    }
+    if (t.isNotEmpty) return t;
+    if (lang != null) return lang;
+    return '$kind ${index + 1}';
+  }
+
   bool _hasAppliedGlobalTracks = false;
   int _lastAudioTrackCount = 0;
   int _lastSubtitleTrackCount = 0;
@@ -1277,31 +1321,52 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
     }
 
-    // Apply Subtitle Track
+    // Apply Subtitle Track.
+    // Selectable embedded subtitle tracks (excluding the synthetic auto/no).
+    final selectableSubs =
+        subtitleTracks.where((t) => t.id != 'auto' && t.id != 'no').toList();
+
     if (preferredSubtitle == 'Off') {
       _player.setSubtitleTrack(SubtitleTrack.no());
-    } else if (preferredSubtitle == 'Auto' || preferredSubtitle.isEmpty) {
-      _player.setSubtitleTrack(SubtitleTrack.auto());
     } else {
-      bool foundNative = false;
-      for (final track in subtitleTracks) {
-        final title = track.title ?? '';
-        final lang = track.language ?? '';
-        if (title == preferredSubtitle || lang == preferredSubtitle ||
-            _isLanguageMatch(title, preferredSubtitle) ||
-            _isLanguageMatch(lang, preferredSubtitle)) {
-          _player.setSubtitleTrack(track);
-          foundNative = true;
-          break;
-        }
-      }
-      if (!foundNative && _streamResult != null && _streamResult!.subtitles.isNotEmpty) {
-        for (final sub in _streamResult!.subtitles) {
-          if (sub.lang == preferredSubtitle || _isLanguageMatch(sub.lang, preferredSubtitle)) {
-            _player.setSubtitleTrack(SubtitleTrack.uri(sub.url, title: sub.lang));
+      SubtitleTrack? chosen;
+
+      // 1. Try to honour a specific preferred language (skipped for 'Auto').
+      if (preferredSubtitle.isNotEmpty && preferredSubtitle != 'Auto') {
+        for (final track in selectableSubs) {
+          final title = track.title ?? '';
+          final lang = track.language ?? '';
+          if (title == preferredSubtitle ||
+              lang == preferredSubtitle ||
+              _isLanguageMatch(title, preferredSubtitle) ||
+              _isLanguageMatch(lang, preferredSubtitle)) {
+            chosen = track;
             break;
           }
         }
+      }
+
+      // 2. Fallback: enable the FIRST embedded subtitle track. This is what
+      //    fixes anime torrents whose single sub track has a blank title and
+      //    no/undetermined language — previously nothing matched, so subtitles
+      //    silently stayed off. Subs-on-by-default matches how the app plays.
+      chosen ??= selectableSubs.isNotEmpty ? selectableSubs.first : null;
+
+      if (chosen != null) {
+        _player.setSubtitleTrack(chosen);
+      } else if (_streamResult != null && _streamResult!.subtitles.isNotEmpty) {
+        // 3. No embedded tracks: use an external subtitle (language match else first).
+        final ext = _streamResult!.subtitles;
+        final match = ext.firstWhere(
+          (s) =>
+              preferredSubtitle != 'Auto' &&
+              (s.lang == preferredSubtitle ||
+                  _isLanguageMatch(s.lang, preferredSubtitle)),
+          orElse: () => ext.first,
+        );
+        _player.setSubtitleTrack(SubtitleTrack.uri(match.url, title: match.lang));
+      } else {
+        _player.setSubtitleTrack(SubtitleTrack.auto());
       }
     }
 
@@ -4127,9 +4192,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                               trailing: Icon(Icons.check, color: Theme.of(context).primaryColor),
                                             ),
                                           ] else ...[
-                                            ...audioTracks.where((track) => track.id != 'auto' && track.id != 'no').map((track) {
+                                            ...audioTracks.where((track) => track.id != 'auto' && track.id != 'no').toList().asMap().entries.map((entry) {
+                                              final track = entry.value;
                                               final isCurrent = activeAudioId == track.id;
-                                              final label = track.title ?? track.language ?? 'Audio ${track.id}';
+                                              final label = _trackLabel(track.title, track.language, entry.key, 'Audio');
                                               return ListTile(
                                                 contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
                                                 title: Text(label, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
@@ -4201,9 +4267,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                                     );
                                                   }),
                                                 ],
-                                                ...subtitleTracks.where((sub) => sub.id != 'auto' && sub.id != 'no').map((sub) {
+                                                ...subtitleTracks.where((sub) => sub.id != 'auto' && sub.id != 'no').toList().asMap().entries.map((entry) {
+                                                  final sub = entry.value;
                                                   final isCurrent = activeSubtitleId == sub.id;
-                                                  final label = sub.title ?? sub.language ?? 'Subtitle ${sub.id}';
+                                                  final label = _trackLabel(sub.title, sub.language, entry.key, 'Subtitle');
                                                   if (_streamResult != null && _streamResult!.subtitles.any((s) => s.lang == label)) {
                                                     return const SizedBox.shrink();
                                                   }

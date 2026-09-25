@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/widgets/continue_watching_card.dart';
+import 'package:nivio/widgets/skeleton.dart';
 import 'package:nivio/core/theme.dart';
 
 class ContinueWatchingRow extends ConsumerWidget {
@@ -60,11 +61,32 @@ class ContinueWatchingRow extends ConsumerWidget {
           ),
         );
       },
-      loading: () => SizedBox(
-        height: 200,
-        child: Center(
-          child: CircularProgressIndicator(
-            color: NivioTheme.accentColorOf(context),
+      loading: () => Skeletonizer(
+        child: SizedBox(
+          height: 190,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            itemCount: 6,
+            itemBuilder: (_, __) => const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SkeletonBox(
+                    width: 220,
+                    height: 124,
+                    borderRadius: BorderRadius.all(Radius.circular(8)),
+                  ),
+                  SizedBox(height: 8),
+                  SkeletonBox(width: 150, height: 12),
+                  SizedBox(height: 6),
+                  SkeletonBox(width: 90, height: 10),
+                ],
+              ),
+            ),
           ),
         ),
       ),

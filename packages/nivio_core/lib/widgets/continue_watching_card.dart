@@ -203,11 +203,10 @@ class _ContinueWatchingCardState extends ConsumerState<ContinueWatchingCard>
                                     height: 124,
                                     alignment: Alignment.topCenter,
                                     fit: BoxFit.cover,
-                                    placeholder: (context, url) => Container(
-                                      color: NivioTheme.netflixDarkGrey,
-                                      child: const Center(
-                                        child: CircularProgressIndicator(),
-                                      ),
+                                    placeholder: (context, url) =>
+                                        const DecoratedBox(
+                                      decoration:
+                                          BoxDecoration(color: Color(0xFF23262E)),
                                     ),
                                     errorWidget: (context, url, error) => Container(
                                       color: NivioTheme.netflixDarkGrey,

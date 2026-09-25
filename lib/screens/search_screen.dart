@@ -8,6 +8,7 @@ import 'package:nivio/models/search_result.dart';
 import 'package:nivio/providers/search_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/widgets/search_result_card.dart';
+import 'package:nivio/widgets/skeleton.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -481,11 +482,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     child: query.isEmpty
                         ? _buildRecentSearches()
                         : _isInitialLoading
-                        ? Center(
-                            key: const ValueKey('loading'),
-                            child: CircularProgressIndicator(
-                              color: NivioTheme.accentColorOf(context),
-                            ),
+                        ? const PosterGridSkeleton(
+                            key: ValueKey('loading'),
+                            padding: EdgeInsets.all(16),
                           )
                         : _allResults.isEmpty
                         ? _buildNoResultsState(query)

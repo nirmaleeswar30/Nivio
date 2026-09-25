@@ -727,20 +727,11 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
     }
   }
 
-  Widget _thumbPlaceholder() => Container(
-    width: 100,
-    height: 75,
-    color: const Color(0x33262C3D),
-    child: Center(
-      child: SizedBox(
-        width: 16,
-        height: 16,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          color: NivioTheme.accentColorOf(context),
-        ),
-      ),
-    ),
+  // Static skeleton-gray thumbnail placeholder (no spinner) so episode lists
+  // stay light on GPU while thumbnails load in.
+  Widget _thumbPlaceholder() => const DecoratedBox(
+    decoration: BoxDecoration(color: Color(0xFF23262E)),
+    child: SizedBox(width: 140, height: 90),
   );
 
   Widget _thumbError() => Container(

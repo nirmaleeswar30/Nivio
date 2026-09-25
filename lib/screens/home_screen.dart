@@ -24,6 +24,7 @@ import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/api_status_service.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
 import 'package:nivio/widgets/content_row.dart';
+import 'package:nivio/widgets/skeleton.dart';
 import 'package:nivio/widgets/continue_watching_row.dart';
 import 'package:nivio/providers/player_active_provider.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -246,7 +247,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   child: SizedBox(
                     height: 80,
                     child: Image(
-                      image: AssetImage('assets/images/nivio-dark.png'),
+                      image: AssetImage('assets/images/nivio.png'),
                       fit: BoxFit.contain,
                     ),
                   ),
@@ -424,7 +425,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           final asyncItems = ref.watch(provider);
           return asyncItems.when(
             data: (items) => ContentRow(title: title, items: items),
-            loading: () => const SizedBox(height: 220),
+            loading: () => const ContentRowSkeleton(),
             error: (error, stackTrace) => const SizedBox.shrink(),
           );
         },
@@ -1046,13 +1047,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Widget _buildHeroBannerShimmer() {
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
-    return Container(
-      height: isDesktop ? MediaQuery.sizeOf(context).height * 0.8 : 600.0,
-      color: const Color(0xFF2F2F2F),
-      child: Center(
-        child: CircularProgressIndicator(
-          color: NivioTheme.accentColorOf(context),
-        ),
+    final height = isDesktop ? MediaQuery.sizeOf(context).height * 0.8 : 600.0;
+    // Low-cost skeleton block instead of a spinning indicator.
+    return Skeletonizer(
+      child: SkeletonBox(
+        width: double.infinity,
+        height: height,
+        borderRadius: BorderRadius.zero,
       ),
     );
   }

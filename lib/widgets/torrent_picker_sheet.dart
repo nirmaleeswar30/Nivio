@@ -6,6 +6,7 @@ import 'package:nivio/models/search_result.dart';
 import 'package:nivio/services/torrent/torrent_models.dart';
 import 'package:nivio/services/torrent/media_torrent_models.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
+import 'package:nivio/widgets/skeleton.dart';
 import 'package:nivio/services/streaming_service.dart';
 import 'package:nivio/widgets/marquee_text.dart';
 
@@ -745,16 +746,50 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
     }
 
     if (_filteredResults == null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(48.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(color: Color(0xFF38Bdf8)),
-              const SizedBox(height: 24),
-              Text('Searching sources...', style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 16)),
-            ],
+      final isMobile = Platform.isAndroid || Platform.isIOS;
+      return Skeletonizer(
+        child: ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: 7,
+          itemBuilder: (context, __) => Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: isMobile ? 16 : 24,
+              vertical: isMobile ? 12 : 16,
+            ),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Colors.white.withOpacity(0.05)),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                // Torrent title line
+                SkeletonBox(width: double.infinity, height: 15),
+                SizedBox(height: 10),
+                // Quality / size / seeders tag chips
+                Row(
+                  children: [
+                    SkeletonBox(
+                        width: 60,
+                        height: 20,
+                        borderRadius: BorderRadius.all(Radius.circular(4))),
+                    SizedBox(width: 8),
+                    SkeletonBox(
+                        width: 74,
+                        height: 20,
+                        borderRadius: BorderRadius.all(Radius.circular(4))),
+                    SizedBox(width: 8),
+                    SkeletonBox(
+                        width: 54,
+                        height: 20,
+                        borderRadius: BorderRadius.all(Radius.circular(4))),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       );

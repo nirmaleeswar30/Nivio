@@ -71,9 +71,10 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: "assets/images/nivio-dark.png"
+  # App icon uses the text-less Nivio "N" mark.
+  image_path: "assets/images/nivio.png"
   adaptive_icon_background: "#000000"
-  adaptive_icon_foreground: "assets/images/nivio-dark.png"
+  adaptive_icon_foreground: "assets/images/nivio.png"
   min_sdk_android: 21
 
 flutter_native_splash:
