@@ -1265,8 +1265,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String? _friendlyLang(String? code) {
     if (code == null) return null;
     final c = code.trim().toLowerCase();
-    if (c.isEmpty || c == 'und' || c == 'unknown' || c == 'unk') return null;
-    return _langNames[c] ?? code.trim();
+    if (c.isEmpty ||
+        c == 'und' ||
+        c == 'unknown' ||
+        c == 'unk' ||
+        c == 'auto' ||
+        c == 'default' ||
+        c == 'none') {
+      return null;
+    }
+    return _langNames[c] ?? (c.length <= 3 ? code.trim().toUpperCase() : code.trim());
   }
 
   /// Builds a track label that includes the language AND the embedded title
@@ -1275,13 +1283,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// fallback keeps otherwise-identical tracks distinguishable.
   String _trackLabel(String? title, String? language, int index, String kind) {
     final lang = _friendlyLang(language);
-    final t = (title ?? '').trim();
+    var t = (title ?? '').trim();
+    final tLower = t.toLowerCase();
+    if (tLower == 'sub.vtt' ||
+        tLower == 'sub.srt' ||
+        tLower == 'subtitle.vtt' ||
+        tLower == 'auto' ||
+        tLower == 'default') {
+      t = '';
+    }
     if (lang != null && t.isNotEmpty && lang.toLowerCase() != t.toLowerCase()) {
       return '$lang · $t';
     }
-    if (t.isNotEmpty) return t;
     if (lang != null) return lang;
-    return '$kind ${index + 1}';
+    if (t.isNotEmpty) return t;
+    return index == 0 ? 'Default $kind' : '$kind ${index + 1}';
   }
 
   bool _hasAppliedGlobalTracks = false;
@@ -1333,13 +1349,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       // 1. Try to honour a specific preferred language (skipped for 'Auto').
       if (preferredSubtitle.isNotEmpty && preferredSubtitle != 'Auto') {
-        for (final track in selectableSubs) {
-          final title = track.title ?? '';
-          final lang = track.language ?? '';
+        for (int i = 0; i < selectableSubs.length; i++) {
+          final track = selectableSubs[i];
+          final title = (track.title ?? '').trim();
+          final lang = (track.language ?? '').trim();
+          final label = _trackLabel(track.title, track.language, i, 'Subtitle');
           if (title == preferredSubtitle ||
               lang == preferredSubtitle ||
+              label == preferredSubtitle ||
               _isLanguageMatch(title, preferredSubtitle) ||
-              _isLanguageMatch(lang, preferredSubtitle)) {
+              _isLanguageMatch(lang, preferredSubtitle) ||
+              _isLanguageMatch(label, preferredSubtitle)) {
             chosen = track;
             break;
           }
@@ -1347,7 +1367,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
 
       // 2. Fallback: enable the FIRST embedded subtitle track. This is what
-      //    fixes anime torrents whose single sub track has a blank title and
+      //    fixes anime torrents/streams whose single sub track has a blank title and
       //    no/undetermined language — previously nothing matched, so subtitles
       //    silently stayed off. Subs-on-by-default matches how the app plays.
       chosen ??= selectableSubs.isNotEmpty ? selectableSubs.first : null;
@@ -1355,16 +1375,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (chosen != null) {
         _player.setSubtitleTrack(chosen);
       } else if (_streamResult != null && _streamResult!.subtitles.isNotEmpty) {
-        // 3. No embedded tracks: use an external subtitle (language match else first).
+        // 3. No embedded tracks: check if an external subtitle matches preferred,
+        //    else pick the first external subtitle.
         final ext = _streamResult!.subtitles;
         final match = ext.firstWhere(
           (s) =>
               preferredSubtitle != 'Auto' &&
+              s.lang.isNotEmpty &&
               (s.lang == preferredSubtitle ||
                   _isLanguageMatch(s.lang, preferredSubtitle)),
           orElse: () => ext.first,
         );
-        _player.setSubtitleTrack(SubtitleTrack.uri(match.url, title: match.lang));
+        final alreadyLoaded = selectableSubs.any((t) {
+          final tTitle = (t.title ?? '').trim().toLowerCase();
+          final tLang = (t.language ?? '').trim().toLowerCase();
+          final mLang = match.lang.trim().toLowerCase();
+          return (mLang.isNotEmpty && (tTitle == mLang || tLang == mLang)) ||
+                 (match.url.isNotEmpty && (tTitle.contains(match.url) || match.url.endsWith(tTitle)));
+        });
+        if (!alreadyLoaded) {
+          _player.setSubtitleTrack(SubtitleTrack.uri(match.url, title: match.lang.isNotEmpty ? match.lang : 'Default Subtitle'));
+        }
       } else {
         _player.setSubtitleTrack(SubtitleTrack.auto());
       }
@@ -4249,43 +4280,70 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                                   title: const Text('Load from URL (Internet)', style: TextStyle(color: Colors.white70)),
                                                   onTap: () => _loadSubtitleFromUrl(setDialogState),
                                                 ),
-                                                if (_streamResult != null && _streamResult!.subtitles.isNotEmpty) ...[
-                                                  ..._streamResult!.subtitles.map((sub) {
-                                                    final isCurrent = activeSubtitleId == sub.url || 
-                                                        (tempSubtitleTrackId == null && (currentSubtitleTrack.title?.toLowerCase() == sub.lang.toLowerCase() || 
-                                                        currentSubtitleTrack.id.contains(sub.url)));
-                                                    return ListTile(
-                                                      contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                      title: Text(sub.lang, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                                      trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                                      onTap: () async {
-                                                        tempSubtitleTrackId = sub.url;
-                                                        _player.setSubtitleTrack(SubtitleTrack.uri(sub.url, title: sub.lang));
-                                                        await _updateLocalHistoryPreference(subtitleTrack: sub.lang);
-                                                        setDialogState(() {});
-                                                      },
-                                                    );
-                                                  }),
-                                                ],
-                                                ...subtitleTracks.where((sub) => sub.id != 'auto' && sub.id != 'no').toList().asMap().entries.map((entry) {
-                                                  final sub = entry.value;
-                                                  final isCurrent = activeSubtitleId == sub.id;
-                                                  final label = _trackLabel(sub.title, sub.language, entry.key, 'Subtitle');
-                                                  if (_streamResult != null && _streamResult!.subtitles.any((s) => s.lang == label)) {
-                                                    return const SizedBox.shrink();
+                                                ...() {
+                                                  final rawSelectable = subtitleTracks.where((sub) => sub.id != 'auto' && sub.id != 'no').toList();
+                                                  final displayedNativeTracks = <SubtitleTrack>[];
+                                                  final seenTrackKeys = <String>{};
+                                                  for (final sub in rawSelectable) {
+                                                    final key = '${sub.title?.trim()}|${sub.language?.trim()}';
+                                                    if (seenTrackKeys.add(key)) {
+                                                      displayedNativeTracks.add(sub);
+                                                    }
                                                   }
-                                                  return ListTile(
-                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                    title: Text(label, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                                    trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                                    onTap: () async {
-                                                      tempSubtitleTrackId = sub.id;
-                                                      _player.setSubtitleTrack(sub);
-                                                      await _updateLocalHistoryPreference(subtitleTrack: label);
-                                                      setDialogState(() {});
-                                                    },
-                                                  );
-                                                }),
+
+                                                  final externalSubs = <StreamSubtitleTrack>[];
+                                                  if (_streamResult != null && _streamResult!.subtitles.isNotEmpty) {
+                                                    for (final s in _streamResult!.subtitles) {
+                                                      final sLang = s.lang.trim().toLowerCase();
+                                                      final alreadyLoaded = displayedNativeTracks.any((t) {
+                                                        final tTitle = (t.title ?? '').trim().toLowerCase();
+                                                        final tLang = (t.language ?? '').trim().toLowerCase();
+                                                        return (sLang.isNotEmpty && (tTitle == sLang || tLang == sLang)) ||
+                                                               (s.url.isNotEmpty && (tTitle.contains(s.url) || s.url.endsWith(tTitle)));
+                                                      });
+                                                      if (!alreadyLoaded) {
+                                                        externalSubs.add(s);
+                                                      }
+                                                    }
+                                                  }
+
+                                                  return [
+                                                    ...externalSubs.map((sub) {
+                                                      final isCurrent = activeSubtitleId == sub.url || 
+                                                          (tempSubtitleTrackId == null && (currentSubtitleTrack.title?.toLowerCase() == sub.lang.toLowerCase() || 
+                                                          currentSubtitleTrack.id.contains(sub.url)));
+                                                      return ListTile(
+                                                        contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                                        title: Text(sub.lang.isNotEmpty ? sub.lang : 'Default Subtitle', style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
+                                                        trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                                        onTap: () async {
+                                                          tempSubtitleTrackId = sub.url;
+                                                          _player.setSubtitleTrack(SubtitleTrack.uri(sub.url, title: sub.lang.isNotEmpty ? sub.lang : 'Default Subtitle'));
+                                                          await _updateLocalHistoryPreference(subtitleTrack: sub.lang);
+                                                          setDialogState(() {});
+                                                        },
+                                                      );
+                                                    }),
+                                                    ...displayedNativeTracks.asMap().entries.map((entry) {
+                                                      final sub = entry.value;
+                                                      final isCurrent = activeSubtitleId == sub.id ||
+                                                          (tempSubtitleTrackId == null && currentSubtitleTrack.id == sub.id) ||
+                                                          (rawSelectable.any((raw) => raw.id == activeSubtitleId && raw.title == sub.title && raw.language == sub.language));
+                                                      final label = _trackLabel(sub.title, sub.language, entry.key, 'Subtitle');
+                                                      return ListTile(
+                                                        contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                                        title: Text(label, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
+                                                        trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+                                                        onTap: () async {
+                                                          tempSubtitleTrackId = sub.id;
+                                                          _player.setSubtitleTrack(sub);
+                                                          await _updateLocalHistoryPreference(subtitleTrack: label);
+                                                          setDialogState(() {});
+                                                        },
+                                                      );
+                                                    }),
+                                                  ];
+                                                }(),
                                               ],
                                             ),
                                           ),

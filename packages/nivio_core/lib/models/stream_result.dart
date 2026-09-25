@@ -6,9 +6,13 @@ class StreamSubtitleTrack {
   StreamSubtitleTrack({required this.url, required this.lang});
 
   factory StreamSubtitleTrack.fromJson(Map<String, dynamic> json) {
+    final rawLang = (json['lang'] ?? json['language'] ?? json['label'] ?? '').toString().trim();
+    final lang = (rawLang.isEmpty || rawLang.toLowerCase() == 'auto' || rawLang.toLowerCase() == 'und' || rawLang.toLowerCase() == 'unknown')
+        ? 'Default Subtitle'
+        : rawLang;
     return StreamSubtitleTrack(
       url: json['url'] ?? '',
-      lang: json['lang'] ?? 'Unknown',
+      lang: lang,
     );
   }
 }

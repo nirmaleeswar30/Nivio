@@ -160,8 +160,11 @@ class AnimetsuScraperService {
                 final List<StreamSubtitleTrack> subtitles = [];
                 if (targetServerObj['subtitles'] is List) {
                   for (final sub in targetServerObj['subtitles']) {
-                    final u = sub['url']?.toString() ?? '';
-                    final l = sub['lang']?.toString() ?? 'Unknown';
+                    final u = sub['url']?.toString().trim() ?? '';
+                    var l = (sub['lang'] ?? sub['language'] ?? sub['label'] ?? sub['name'] ?? '').toString().trim();
+                    if (l.isEmpty || l.toLowerCase() == 'auto' || l.toLowerCase() == 'und' || l.toLowerCase() == 'unknown') {
+                      l = 'Default Subtitle';
+                    }
                     if (u.isNotEmpty) {
                       subtitles.add(StreamSubtitleTrack(url: u, lang: l));
                     }

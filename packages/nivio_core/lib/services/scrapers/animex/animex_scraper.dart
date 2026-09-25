@@ -219,9 +219,13 @@ class AnimexScraperService {
             if (kind == 'thumbnails' || url.contains('.m3u8') || url.contains('.m3u') || url.contains('.ass') || url.contains('.ssa')) {
               continue; // Skip unsupported subtitle formats and playlists
             }
+            final rawLang = (t['lang'] ?? t['language'] ?? t['label'] ?? t['name'] ?? '').toString().trim();
+            final lang = (rawLang.isEmpty || rawLang.toLowerCase() == 'auto' || rawLang.toLowerCase() == 'und' || rawLang.toLowerCase() == 'unknown')
+                ? 'Default Subtitle'
+                : rawLang;
             subtitles.add(StreamSubtitleTrack(
               url: url,
-              lang: t['lang'] ?? t['label'] ?? 'Unknown'
+              lang: lang,
             ));
           }
         }

@@ -244,9 +244,13 @@ class MiruroScraperService {
         for (final sub in rawSubs) {
           final url = sub['url'] ?? sub['file'];
           if (url != null && url.startsWith('http')) {
+            final rawLang = (sub['language'] ?? sub['lang'] ?? sub['label'] ?? sub['name'] ?? '').toString().trim();
+            final lang = (rawLang.isEmpty || rawLang.toLowerCase() == 'auto' || rawLang.toLowerCase() == 'und' || rawLang.toLowerCase() == 'unknown')
+                ? 'Default Subtitle'
+                : rawLang;
             subtitles.add(StreamSubtitleTrack(
               url: url,
-              lang: sub['language'] ?? sub['label'] ?? 'Unknown',
+              lang: lang,
             ));
           }
         }
