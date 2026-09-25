@@ -33,6 +33,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:nivio/widgets/anime_brand_logos.dart';
 import 'package:nivio/models/anime_tracking_models.dart';
 import 'package:nivio/providers/anime_tracking_provider.dart';
+import 'package:nivio/providers/simkl_provider.dart';
+import 'package:nivio/services/simkl_auth_service.dart';
 import 'package:nivio/services/anime_tracking_coordinator.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -58,7 +60,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     'Network',
     'Content Feed',
     'Episode Alerts',
-    'Anime Tracking',
+    'Tracking',
     'App & Updates',
     'Data & Account',
   ];
@@ -680,12 +682,12 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                   ),
                 ),
               ),
-              if (_matches('anime tracking anilist mal myanimelist sync'))
+              if (_matches('anime tracking anilist mal myanimelist simkl movies tv shows sync'))
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
                     child: _buildSectionCard(
-                      title: 'Anime Tracking',
+                      title: 'Tracking',
                       child: _buildAnimeTrackingContent(),
                     ),
                   ),
@@ -1491,7 +1493,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
         _matches('discord rich presence rpc activity status')) {
       results.add(_buildDiscordMobileTile());
     }
-    if (_matches('anime tracking anilist mal myanimelist sync watchlist')) {
+    if (_matches('anime tracking anilist mal myanimelist simkl movies tv shows sync watchlist')) {
       results.add(_buildAnimeTrackingContent());
     }
     if (_matches('update app version release github')) {
@@ -4547,6 +4549,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           onDisconnect: () => ref.read(malAuthProvider.notifier).logout(),
           manualButtonLabel: 'Enter MAL Code Manually',
         ),
+        const SizedBox(height: 8),
+        _buildSimklAccountTile(),
         const SizedBox(height: 16),
         const Divider(color: Colors.white12),
         const SizedBox(height: 8),
@@ -4807,6 +4811,212 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     );
   }
 
+  /// Simkl connect card — covers movies, TV *and* anime (unlike AniList/MAL).
+  Widget _buildSimklAccountTile() {
+    const brandColor = Color(0xFF0AA1DD);
+    final user = ref.watch(simklAuthProvider);
+    final isConnected = user != null;
+
+    Widget logo() => ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.asset(
+            'assets/images/simkl_logo.png',
+            width: 38,
+            height: 38,
+            fit: BoxFit.cover,
+            filterQuality: FilterQuality.medium,
+          ),
+        );
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isConnected
+              ? brandColor.withOpacity(0.35)
+              : Colors.white.withOpacity(0.08),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (isConnected &&
+                  user.avatarUrl != null &&
+                  user.avatarUrl!.isNotEmpty)
+                CircleAvatar(
+                  radius: 19,
+                  backgroundImage: CachedNetworkImageProvider(user.avatarUrl!),
+                  backgroundColor: Colors.white10,
+                )
+              else
+                logo(),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Text(
+                          'Simkl',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (isConnected) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.greenAccent.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'Connected',
+                              style: TextStyle(
+                                color: Colors.greenAccent,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      isConnected
+                          ? '@${user.username}'
+                          : 'Sync movies, TV & anime status to Simkl',
+                      style: const TextStyle(color: Colors.white60, fontSize: 12),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (isConnected)
+                TextButton(
+                  onPressed: () => ref.read(simklAuthProvider.notifier).logout(),
+                  style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                  child: const Text('Disconnect'),
+                )
+              else
+                ElevatedButton(
+                  onPressed: () async {
+                    final launched =
+                        await ref.read(simklAuthProvider.notifier).launchAuth();
+                    if (!launched && mounted) _showSimklManualCodeDialog();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: brandColor,
+                    foregroundColor: Colors.white,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Connect'),
+                ),
+            ],
+          ),
+          if (!isConnected) ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _showSimklManualCodeDialog,
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: Colors.white54,
+                ),
+                child: const Text(
+                  'Enter Simkl Code / URL Manually',
+                  style: TextStyle(
+                    fontSize: 12,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _showSimklManualCodeDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1F1F1F),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Enter Simkl Code or URL',
+            style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'If the browser did not redirect back into Nivio, authorize on Simkl and paste the authorization code (or full redirect URL) here:',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'code=... or nivio://auth/simkl?code=...',
+                hintStyle: const TextStyle(color: Colors.white38),
+                filled: true,
+                fillColor: Colors.white10,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final input = controller.text.trim();
+              Navigator.pop(ctx);
+              if (input.isEmpty) return;
+              final ok =
+                  await ref.read(simklAuthProvider.notifier).loginWithInput(input);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(ok
+                        ? 'Connected to Simkl'
+                        : 'Simkl authorization failed'),
+                  ),
+                );
+              }
+            },
+            child: const Text('Connect'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showAniListManualTokenDialog() {
     final controller = TextEditingController();
     showDialog(
@@ -4978,10 +5188,14 @@ Widget _buildMobileLayout(BuildContext context, User user) {
   }
 
   Future<void> _syncAnimeWatchlistNow() async {
-    if (!AnimeTrackingCoordinator.instance.hasAnyAccountConnected) {
+    final animeConnected =
+        AnimeTrackingCoordinator.instance.hasAnyAccountConnected;
+    final simklConnected = SimklAuthService.instance.isAuthenticated;
+
+    if (!animeConnected && !simklConnected) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please connect AniList or MyAnimeList first.'),
+          content: Text('Please connect AniList, MyAnimeList, or Simkl first.'),
           backgroundColor: Colors.orangeAccent,
         ),
       );
@@ -4993,15 +5207,30 @@ Widget _buildMobileLayout(BuildContext context, User user) {
 
     try {
       final watchlistService = ref.read(watchlistServiceProvider);
-      final count =
-          await watchlistService.importFromAnimeTracking(pushOfflineChanges: true);
-      ref.read(watchlistRefreshProvider.notifier).refresh();
+
+      // AniList/MAL: two-way anime sync (import + push offline changes).
+      int animeCount = 0;
+      if (animeConnected) {
+        animeCount = await watchlistService.importFromAnimeTracking(
+            pushOfflineChanges: true);
+        ref.read(watchlistRefreshProvider.notifier).refresh();
+      }
+
+      // Simkl: two-way library sync (movies, TV & anime).
+      int simklCount = 0;
+      if (simklConnected) {
+        simklCount =
+            await watchlistService.importFromSimkl(pushOfflineChanges: true);
+        ref.read(watchlistRefreshProvider.notifier).refresh();
+      }
 
       if (mounted) {
+        final parts = <String>[];
+        if (animeConnected) parts.add('$animeCount anime entries');
+        if (simklConnected) parts.add('$simklCount Simkl items');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-                'Successfully synced and updated $count anime entries in your Watchlist!'),
+            content: Text('Synced ${parts.join(' and ')}.'),
             backgroundColor: Colors.green,
           ),
         );
@@ -5010,7 +5239,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error syncing anime: $e'),
+            content: Text('Error syncing: $e'),
             backgroundColor: Colors.redAccent,
           ),
         );

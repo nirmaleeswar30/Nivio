@@ -32,7 +32,7 @@ dependencies:
 
   # Video Player
   youtube_player_flutter: ^10.0.1
-  flutter_inappwebview: ^6.1.5
+  flutter_inappwebview: 6.2.0-beta.3  # aligned with desktop (windows/linux) impls on platform_interface 1.4.0-beta
 
   # UI & Images
   cached_network_image: ^3.4.1

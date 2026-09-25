@@ -47,6 +47,7 @@ import 'package:nivio/services/torrent/torrent_stream_service.dart';
 import 'package:nivio/services/anime_filler_service.dart';
 import 'package:nivio/services/discord_rpc_service.dart';
 import 'package:nivio/services/anime_tracking_coordinator.dart';
+import 'package:nivio/services/simkl_auth_service.dart';
 import 'package:nivio/providers/anime_tracking_provider.dart';
 import 'package:nivio/models/anime_tracking_models.dart';
 import 'package:nivio/models/watchlist_item.dart';
@@ -1406,7 +1407,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (_hasNextEpisode()) {
           _showNextEpisodePopup();
         } else {
-          _promptWatchlistRemovalIfNeeded();
+          _markWatchlistCompletedIfNeeded();
         }
       }),
     );
@@ -2350,50 +2351,49 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return false;
   }
 
-  Future<void> _promptWatchlistRemovalIfNeeded() async {
+  /// When a title reaches its end, automatically move it to the Completed
+  /// bucket of the watchlist instead of asking whether to remove it. Nothing
+  /// is deleted — finished titles simply flow from Watching -> Completed and
+  /// stay in the library. Anime completion is also pushed to AniList/MAL.
+  Future<void> _markWatchlistCompletedIfNeeded() async {
     final media = ref.read(selectedMediaProvider);
     if (media == null) return;
-    
+
     final watchlistService = ref.read(watchlistServiceProvider);
     final items = watchlistService.getAllItems();
-    
+
     final mediaTitle = (media.title ?? media.name ?? '').toLowerCase();
-    final match = items.where((w) => 
-      w.id == widget.mediaId || 
+    final match = items.where((w) =>
+      w.id == widget.mediaId ||
       w.title.toLowerCase() == mediaTitle
     ).firstOrNull;
 
-    if (match != null) {
-      final shouldRemove = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: NivioTheme.netflixDarkGrey,
-          title: const Text('Finished Watching?', style: TextStyle(color: Colors.white)),
-          content: Text(
-            'You have reached the end of ${match.title}. Would you like to remove it from your watchlist?',
-            style: const TextStyle(color: Colors.white70),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Keep', style: TextStyle(color: Colors.white54)),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text('Remove', style: TextStyle(color: NivioTheme.accentColorOf(ctx))),
-            ),
-          ],
+    if (match == null) return;
+    if (match.watchStatus == WatchStatus.completed) return;
+
+    await watchlistService.updateWatchStatus(
+      match.id,
+      WatchStatus.completed,
+      currentEpisode: match.currentEpisode,
+      totalEpisodes: match.totalEpisodes,
+    );
+    ref.read(watchlistRefreshProvider.notifier).refresh();
+
+    if (match.mediaType == 'anime' || match.anilistId != null || match.malId != null) {
+      unawaited(
+        AnimeTrackingCoordinator.instance.syncWatchStatus(
+          anilistId: match.anilistId ?? (match.mediaType == 'anime' ? match.id : null),
+          malId: match.malId,
+          status: WatchStatus.completed,
+          episode: match.currentEpisode ?? 1,
         ),
       );
+    }
 
-      if (shouldRemove == true) {
-        await watchlistService.removeFromWatchlist(match.id);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Removed ${match.title} from watchlist')),
-          );
-        }
-      }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Marked ${match.title} as completed')),
+      );
     }
   }
 
@@ -3374,6 +3374,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               isCompleted: isCompleted,
             ),
           );
+          // Parity with AniList/MAL: also record the watched episode on Simkl
+          // so its watched-episode count tracks real progress (status alone,
+          // synced via the watchlist, would leave Simkl at 0/N).
+          if (SimklAuthService.instance.isAuthenticated) {
+            unawaited(
+              SimklAuthService.instance.markWatched(
+                mediaType: 'anime',
+                tmdbId: widget.mediaId,
+                malId: malId,
+                anilistId: anilistId,
+                season: widget.season,
+                episode: _currentEpisode,
+              ),
+            );
+          }
         }
       }
     }
@@ -3396,6 +3411,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!Platform.isAndroid && !Platform.isIOS) {
         debugPrint('🔴 [DISPOSE] Step 1: windowManager.setFullScreen(false)...');
         windowManager.setFullScreen(false);
+        // Windows restores the native caption after exiting fullscreen; keep it
+        // hidden so other screens don't show OS buttons + the custom title bar.
+        if (Platform.isWindows) {
+          windowManager.setTitleBarStyle(TitleBarStyle.hidden);
+        }
         debugPrint('🔴 [DISPOSE] Step 1: ✅ done');
       }
     } catch (e, st) {
@@ -3552,6 +3572,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       try {
         debugPrint('🟡 [BACK_NAV] Step 1: windowManager.setFullScreen(false)...');
         windowManager.setFullScreen(false);
+        // Keep the native caption hidden after exiting fullscreen (Windows).
+        if (Platform.isWindows) {
+          windowManager.setTitleBarStyle(TitleBarStyle.hidden);
+        }
         debugPrint('🟡 [BACK_NAV] Step 1: ✅ done');
       } catch (e, st) {
         debugPrint('🟡 [BACK_NAV] Step 1: ❌ FAILED — $e\n$st');
@@ -4474,16 +4498,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       });
                     }
                   },
-                  onEnterFullscreen: () {
+                  onEnterFullscreen: () async {
                     _setFullscreenTopBarVisibility(true);
                     if (!Platform.isAndroid && !Platform.isIOS) {
-                      windowManager.setFullScreen(true);
+                      await windowManager.setFullScreen(true);
+                      // Windows re-adds the native caption on fullscreen; keep it hidden.
+                      if (Platform.isWindows) {
+                        await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
+                      }
                     }
                   },
-                  onExitFullscreen: () {
+                  onExitFullscreen: () async {
                     _setFullscreenTopBarVisibility(false);
                     if (!Platform.isAndroid && !Platform.isIOS) {
-                      windowManager.setFullScreen(false);
+                      await windowManager.setFullScreen(false);
+                      if (Platform.isWindows) {
+                        await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
+                      }
                     }
                   },
                   onShowEpisodesRequested: () {

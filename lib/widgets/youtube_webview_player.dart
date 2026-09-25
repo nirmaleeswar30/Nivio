@@ -63,15 +63,23 @@ class YouTubeWebViewPlayerState extends State<YouTubeWebViewPlayer> {
 
   @override
   void dispose() {
-    if (_isReady && _controller != null) {
+    final controller = _controller;
+    _controller = null;
+    // Only poke the WebView on mobile, where the platform view tears down in an
+    // orderly way. On desktop (Windows/WebView2, Linux/WebKitGTK) the native
+    // view is destroyed as the route pops, and in RELEASE builds that teardown
+    // races ahead of this callback — calling evaluateJavascript() into a
+    // half-destroyed controller crashes the app (works in debug only because
+    // the slower teardown lets the call land first). Dropping the reference is
+    // enough on desktop: the platform view stops playback when it is destroyed.
+    if (_isReady && controller != null && (Platform.isAndroid || Platform.isIOS)) {
       try {
-        _controller!.evaluateJavascript(
+        controller.evaluateJavascript(
           source:
               'var mp = document.getElementById("movie_player"); if(mp && mp.stopVideo) mp.stopVideo(); else if(typeof player !== "undefined" && player && player.stopVideo) player.stopVideo(); else { var v = document.querySelector("video"); if(v) v.pause(); }',
         );
       } catch (_) {}
     }
-    _controller = null;
     super.dispose();
   }
 

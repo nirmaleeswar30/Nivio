@@ -38,6 +38,7 @@ coverage/
 research/
 android/
 test/
+installer/
 
 # Symbolication related
 app.*.symbols

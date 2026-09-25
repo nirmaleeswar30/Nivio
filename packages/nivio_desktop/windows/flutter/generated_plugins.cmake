@@ -7,6 +7,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   connectivity_plus
   ffmpeg_kit_flutter_new
   flutter_inappwebview_windows
+  flutter_secure_storage_windows
   flutter_volume_controller
   media_kit_libs_windows_video
   media_kit_video

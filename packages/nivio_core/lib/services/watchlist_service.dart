@@ -5,6 +5,7 @@ import 'package:hive/hive.dart';
 import '../models/watchlist_item.dart';
 import 'auth_service.dart';
 import 'package:nivio/services/anime_tracking_coordinator.dart';
+import 'package:nivio/services/simkl_auth_service.dart';
 import 'package:nivio/core/debug_log.dart';
 
 /// Service for managing user's watchlist with status categories and cloud sync.
@@ -81,6 +82,9 @@ class WatchlistService {
         );
       }
 
+      // Sync to Simkl (movies, TV & anime). No-op when Simkl isn't connected.
+      unawaited(SimklAuthService.instance.syncItem(finalItem));
+
       appDebugLog('✅ Added to watchlist successfully');
     } catch (e) {
       appDebugLog('❌ Error adding to watchlist: ');
@@ -130,6 +134,9 @@ class WatchlistService {
         );
       }
 
+      // Sync status change to Simkl (movies, TV & anime).
+      unawaited(SimklAuthService.instance.syncItem(updated));
+
       appDebugLog('✅ Updated watch status for  → ');
     } catch (e) {
       appDebugLog('❌ Error updating watch status: ');
@@ -159,6 +166,12 @@ class WatchlistService {
             malId: existingItem?.malId,
           ),
         );
+      }
+
+      // Propagate the removal to Simkl (movies, TV & anime) so the next pull
+      // doesn't resurrect it. No-op when Simkl isn't connected.
+      if (existingItem != null) {
+        unawaited(SimklAuthService.instance.removeItem(existingItem));
       }
 
       appDebugLog('✅ Removed from watchlist successfully');
@@ -413,7 +426,9 @@ class WatchlistService {
               malId: mergedMal,
               posterPath: mergedPoster,
               voteAverage: mergedVote,
-              updatedAt: DateTime.now(),
+              // Preserve original timestamp: a background sync must not reorder
+              // the watchlist. Only real user actions bump updatedAt.
+              updatedAt: existing.updatedAt ?? existing.addedAt,
             );
             await _box.put(existing.id, updated);
             if (_authService.isSignedIn) {
@@ -479,11 +494,206 @@ class WatchlistService {
         appDebugLog('📤 Pushed ${pushes.length} change(s) to tracking (batched).');
       }
 
+      // --- PHASE 5: Backfill a connected service that's MISSING local anime
+      // (e.g. MAL connected after AniList already had the whole library). Each
+      // push carries an id only for the service that lacks it, so a service
+      // that already has the item isn't re-pushed. This converges: once a
+      // service has an item, its presence set includes it next run.
+      if (pushOfflineChanges) {
+        final backfill = <TrackingPush>[];
+        for (final loc in _box.values) {
+          if (loc.mediaType != 'anime') continue;
+          final aId = loc.anilistId ?? (loc.id > 0 ? loc.id : null);
+          final mId = loc.malId;
+          final missingAniList = coordinator.aniListConnected &&
+              aId != null &&
+              !coordinator.anilistHas(aId);
+          final missingMal =
+              coordinator.malConnected && mId != null && !coordinator.malHas(mId);
+          if (missingAniList || missingMal) {
+            backfill.add(
+              TrackingPush(
+                anilistId: missingAniList ? aId : null,
+                malId: missingMal ? mId : null,
+                status: loc.watchStatus,
+                episode: loc.currentEpisode ??
+                    (loc.watchStatus == WatchStatus.completed ? 1 : 0),
+              ),
+            );
+          }
+        }
+        if (backfill.isNotEmpty) {
+          await coordinator.pushBatch(backfill);
+          appDebugLog('📤 Backfilled ${backfill.length} anime to missing service(s).');
+        }
+      }
+
       // Update sync timestamp
       await coordinator.updateLastSyncedAt(DateTime.now());
       appDebugLog('✅ Anime library tracking sync complete: $processedCount items processed.');
     } catch (e) {
       appDebugLog('❌ Error importing from anime tracking: $e');
+    }
+
+    return processedCount;
+  }
+
+  /// Bidirectionally syncs the watchlist (movies, TV & anime) with Simkl, using
+  /// the same reconcile strategy as [importFromAnimeTracking], but the push is
+  /// DETERMINISTIC — it compares each local item's status against what Simkl
+  /// already has and pushes only genuine differences. Nothing is pushed when
+  /// local and remote agree, so a no-change run sends no request (idempotent,
+  /// independent of `updatedAt`/timestamps which the cloud merge bumps).
+  Future<int> importFromSimkl({bool pushOfflineChanges = true}) async {
+    final simkl = SimklAuthService.instance;
+    if (!simkl.isAuthenticated) {
+      appDebugLog('[WatchlistService] Simkl not connected to sync.');
+      return 0;
+    }
+
+    int processedCount = 0;
+
+    // The effective Simkl `to` status for a local item, accounting for movies
+    // being atomic (Simkl silently rewrites a movie's `watching` → `completed`,
+    // so treat it as completed here to avoid a phantom perpetual diff).
+    String effStatus(WatchlistItem i) {
+      var s = SimklAuthService.simklStatus(i.watchStatus);
+      if (i.mediaType == 'movie' && s == 'watching') s = 'completed';
+      return s;
+    }
+
+    try {
+      // --- Pull remote library, then index it by every id we might match on ---
+      final remoteItems = await simkl.fetchAllItems();
+      final remoteByKey = <String, SimklSyncedItem>{};
+      for (final r in remoteItems) {
+        if (r.tmdbId != null) remoteByKey['tmdb:${r.mediaType}:${r.tmdbId}'] = r;
+        if (r.malId != null) remoteByKey['mal:${r.malId}'] = r;
+        if (r.anilistId != null) remoteByKey['anilist:${r.anilistId}'] = r;
+        remoteByKey['title:${r.mediaType}:${r.title.trim().toLowerCase()}'] = r;
+      }
+
+      SimklSyncedItem? remoteFor(WatchlistItem loc) =>
+          remoteByKey['tmdb:${loc.mediaType}:${loc.id}'] ??
+          (loc.malId != null ? remoteByKey['mal:${loc.malId}'] : null) ??
+          (loc.anilistId != null ? remoteByKey['anilist:${loc.anilistId}'] : null) ??
+          remoteByKey['title:${loc.mediaType}:${loc.title.trim().toLowerCase()}'];
+
+      final localItems = _box.values.toList();
+
+      // --- PULL: merge remote → local (create missing, upgrade status/progress).
+      //     This direction is idempotent: it only writes when a field changed. ---
+      for (final r in remoteItems) {
+        WatchlistItem? existing;
+        for (final loc in localItems) {
+          if (loc.mediaType != r.mediaType) continue;
+          final sameTmdb = r.tmdbId != null && loc.id == r.tmdbId;
+          final sameMal = r.malId != null && loc.malId == r.malId;
+          final sameAnilist = r.anilistId != null && loc.anilistId == r.anilistId;
+          final sameTitle =
+              loc.title.trim().toLowerCase() == r.title.trim().toLowerCase();
+          if (sameTmdb || sameMal || sameAnilist || sameTitle) {
+            existing = loc;
+            break;
+          }
+        }
+
+        if (existing != null) {
+          final resolvedEpisode =
+              math.max(existing.currentEpisode ?? 0, r.watchedEpisodes);
+          WatchStatus resolvedStatus = r.status;
+          if (existing.watchStatus == WatchStatus.completed ||
+              r.status == WatchStatus.completed) {
+            resolvedStatus = WatchStatus.completed;
+          } else if (resolvedEpisode > 0 &&
+              r.status == WatchStatus.planning &&
+              existing.watchStatus != WatchStatus.planning) {
+            resolvedStatus = WatchStatus.watching;
+          }
+
+          final mergedTotal = r.totalEpisodes ?? existing.totalEpisodes;
+          final mergedMal = existing.malId ?? r.malId;
+          final mergedAnilist = existing.anilistId ?? r.anilistId;
+          final mergedPoster =
+              (existing.posterPath == null || existing.posterPath!.isEmpty)
+                  ? (r.posterUrl ?? existing.posterPath)
+                  : existing.posterPath;
+          final mergedEpisode =
+              resolvedEpisode > 0 ? resolvedEpisode : existing.currentEpisode;
+
+          final localNeedsUpdate = existing.watchStatus != resolvedStatus ||
+              existing.currentEpisode != mergedEpisode ||
+              existing.totalEpisodes != mergedTotal ||
+              existing.malId != mergedMal ||
+              existing.anilistId != mergedAnilist ||
+              existing.posterPath != mergedPoster;
+
+          if (localNeedsUpdate) {
+            // Preserve the original updatedAt: a background reconcile must not
+            // reorder the user's watchlist (getAllItems sorts by updatedAt).
+            // Only genuine user actions bump the timestamp.
+            final updated = existing.copyWith(
+              watchStatus: resolvedStatus,
+              currentEpisode: mergedEpisode,
+              totalEpisodes: mergedTotal,
+              malId: mergedMal,
+              anilistId: mergedAnilist,
+              posterPath: mergedPoster,
+              updatedAt: existing.updatedAt ?? existing.addedAt,
+            );
+            await _box.put(existing.id, updated);
+            if (_authService.isSignedIn) unawaited(_syncToCloud(updated));
+            processedCount++;
+          }
+        } else {
+          final itemId = r.tmdbId ??
+              r.malId ??
+              r.anilistId ??
+              r.simklId ??
+              r.title.hashCode.abs();
+          final newItem = WatchlistItem(
+            id: itemId,
+            title: r.title,
+            posterPath: r.posterUrl,
+            mediaType: r.mediaType,
+            releaseDate: r.year?.toString(),
+            addedAt: DateTime.now(),
+            watchStatus: r.status,
+            currentEpisode: r.watchedEpisodes > 0 ? r.watchedEpisodes : null,
+            totalEpisodes: r.totalEpisodes,
+            malId: r.malId,
+            anilistId: r.anilistId,
+            updatedAt: DateTime.now(),
+          );
+          await _box.put(newItem.id, newItem);
+          if (_authService.isSignedIn) unawaited(_syncToCloud(newItem));
+          processedCount++;
+        }
+      }
+
+      // --- PUSH (deterministic): send a local item ONLY when Simkl is missing
+      //     it or has a different status. No timestamps involved, so a run with
+      //     no real changes produces an empty batch and makes no request. ---
+      if (pushOfflineChanges) {
+        final toPush = <WatchlistItem>[];
+        for (final loc in _box.values) {
+          final remote = remoteFor(loc);
+          if (remote == null || effStatus(loc) != SimklAuthService.simklStatus(remote.status)) {
+            toPush.add(loc);
+          }
+        }
+        if (toPush.isNotEmpty) {
+          await simkl.syncItems(toPush);
+          appDebugLog('📤 Pushed ${toPush.length} change(s) to Simkl.');
+        } else {
+          appDebugLog('✅ Simkl already up to date — nothing to push.');
+        }
+      }
+
+      await simkl.updateLastSyncedAt(DateTime.now());
+      appDebugLog('✅ Simkl library sync complete: $processedCount items processed.');
+    } catch (e) {
+      appDebugLog('❌ Error importing from Simkl: $e');
     }
 
     return processedCount;

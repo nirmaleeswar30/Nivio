@@ -64,6 +64,13 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
     _startHideTimer();
     final nextVal = !_isWindowFullScreen;
     await windowManager.setFullScreen(nextVal);
+    // On Windows, setFullScreen() rewrites the native window style and undoes
+    // TitleBarStyle.hidden, which makes the OS caption buttons (minimize /
+    // maximize / close) reappear at the top-right. Re-assert the hidden title
+    // bar style after every toggle so the player stays truly borderless.
+    if (Platform.isWindows) {
+      await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
+    }
     if (mounted) {
       setState(() {
         _isWindowFullScreen = nextVal;

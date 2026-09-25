@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   flutter_inappwebview_linux
+  flutter_secure_storage_linux
   flutter_volume_controller
   gtk
   media_kit_libs_linux

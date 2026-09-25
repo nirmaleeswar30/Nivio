@@ -43,9 +43,8 @@ class MalAuthService {
   final ValueNotifier<TrackingUser?> userNotifier =
       ValueNotifier<TrackingUser?>(null);
 
-  String get clientId =>
-      dotenv.env['MAL_CLIENT_ID']?.trim() ??
-      '36f080169b17784558ab37d5f2ad03cd';
+  // Credentials come only from .env. No hardcoded values.
+  String get clientId => dotenv.env['MAL_CLIENT_ID']?.trim() ?? '';
 
   String get redirectUrl =>
       dotenv.env['MAL_REDIRECT_URL']?.trim() ?? 'nivio://auth/mal';

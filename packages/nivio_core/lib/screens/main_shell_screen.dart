@@ -15,6 +15,7 @@ import 'package:animations/animations.dart';
 import 'package:nivio/services/schedule_api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nivio/services/anime_tracking_coordinator.dart';
+import 'package:nivio/services/simkl_auth_service.dart';
 import '../main.dart';
 class MainShellScreen extends ConsumerStatefulWidget {
   final StatefulNavigationShell navigationShell;
@@ -59,13 +60,27 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
       final prefs = await SharedPreferences.getInstance();
       final autoSyncEnabled = prefs.getBool('anime_auto_sync_watchlist') ?? true;
       if (!autoSyncEnabled) return;
-      if (!AnimeTrackingCoordinator.instance.hasAnyAccountConnected) return;
 
       final watchlistService = ref.read(watchlistServiceProvider);
-      final count =
-          await watchlistService.importFromAnimeTracking(pushOfflineChanges: true);
-      if (count > 0 && mounted) {
-        ref.read(watchlistRefreshProvider.notifier).refresh();
+
+      // AniList/MAL: two-way anime sync (import remote + push offline changes).
+      if (AnimeTrackingCoordinator.instance.hasAnyAccountConnected) {
+        final count =
+            await watchlistService.importFromAnimeTracking(pushOfflineChanges: true);
+        if (count > 0 && mounted) {
+          ref.read(watchlistRefreshProvider.notifier).refresh();
+        }
+      }
+
+      // Simkl: two-way library sync (movies, TV & anime) — pulls the remote
+      // list, merges it in, and pushes local changes. Independent of whether
+      // AniList/MAL are connected.
+      if (SimklAuthService.instance.isAuthenticated) {
+        final simklCount =
+            await watchlistService.importFromSimkl(pushOfflineChanges: true);
+        if (simklCount > 0 && mounted) {
+          ref.read(watchlistRefreshProvider.notifier).refresh();
+        }
       }
     } catch (e) {
       debugPrint('[AnimeSyncStartup] Background sync failed: $e');

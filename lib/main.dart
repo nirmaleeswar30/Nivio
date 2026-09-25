@@ -50,6 +50,7 @@ import 'package:nivio/services/download_service.dart';
 import 'package:nivio/services/hls_proxy_service.dart';
 import 'package:nivio/services/discord_rpc_service.dart';
 import 'package:nivio/services/anilist_auth_service.dart';
+import 'package:nivio/services/simkl_auth_service.dart';
 import 'package:nivio/services/mal_auth_service.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:nivio/widgets/title_bar_overlay.dart';
@@ -218,6 +219,7 @@ void main([List<String> args = const []]) async {
   // Initialize anime tracking auth services (AniList & MAL)
   await AniListAuthService.instance.init();
   await MalAuthService.instance.init();
+  await SimklAuthService.instance.init();
 
   final receivePort = ReceivePort();
   IsolateNameServer.removePortNameMapping('download_cancel_port');
@@ -393,6 +395,24 @@ void _handleDeepLink(Uri uri) {
           if (ok) {
             WatchlistService(AuthService())
                 .importFromAnimeTracking(pushOfflineChanges: true);
+          }
+        }),
+      );
+    }
+    return;
+  }
+
+  // Simkl: nivio://auth/simkl?code=...
+  if (fullPath.contains('auth/simkl') ||
+      (uri.host == 'auth' && uri.path.contains('simkl'))) {
+    final code = uri.queryParameters['code'];
+    if (code != null && code.isNotEmpty) {
+      debugPrint('🔗 Deep link: Exchanging Simkl auth code');
+      unawaited(
+        SimklAuthService.instance.exchangeCodeForToken(code).then((ok) {
+          if (ok) {
+            // Pull the Simkl library right after connecting (two-way sync).
+            WatchlistService(AuthService()).importFromSimkl(pushOfflineChanges: true);
           }
         }),
       );
@@ -674,7 +694,7 @@ class _NivioAppState extends ConsumerState<NivioApp> {
     );
 
     return MaterialApp.router(
-      showPerformanceOverlay: true,
+      showPerformanceOverlay: false,
       scrollBehavior: DesktopScrollBehavior(),
       title: 'Nivio',
       theme: appTheme,

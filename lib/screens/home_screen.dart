@@ -351,7 +351,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
                 final seenIds = <int>{};
                 final watchlistItems = watchlist
-                    .where((item) => seenIds.add(item.id))
+                    // "Your List" surfaces only actively-tracked titles:
+                    // Watching + Plan to Watch. Completed/On Hold/Dropped
+                    // live in the full watchlist screen, not here.
+                    .where((item) =>
+                        (item.watchStatus == WatchStatus.watching ||
+                            item.watchStatus == WatchStatus.planning) &&
+                        seenIds.add(item.id))
                     .take(20)
                     .map(
                       (WatchlistItem item) => {
@@ -366,6 +372,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       },
                     )
                     .toList(growable: false);
+
+                if (watchlistItems.isEmpty) return const SizedBox.shrink();
 
                 return ContentRow(
                   title: 'Your List',

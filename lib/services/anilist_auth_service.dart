@@ -40,12 +40,10 @@ class AniListAuthService {
   TrackingUser? get currentUser => _currentUser;
   String? get accessToken => _accessToken;
 
-  String get clientId =>
-      dotenv.env['ANILIST_CLIENT_ID']?.trim() ?? '51426';
+  // Credentials come only from .env (bundled per-package). No hardcoded values.
+  String get clientId => dotenv.env['ANILIST_CLIENT_ID']?.trim() ?? '';
 
-  String get clientSecret =>
-      dotenv.env['ANILIST_CLIENT_SECRET']?.trim() ??
-      'jIlRqzaZIXM1HruaKPaAKr9DiBoVf4h0b6xZ7BLo';
+  String get clientSecret => dotenv.env['ANILIST_CLIENT_SECRET']?.trim() ?? '';
 
   String get redirectUrl =>
       dotenv.env['ANILIST_REDIRECT_URL']?.trim() ?? 'nivio://auth/anilist';

@@ -18,8 +18,21 @@ class AnimeTrackingCoordinator {
   DateTime? _lastSyncedAt;
   bool _isSyncing = false;
 
+  // Per-service presence, refreshed by [fetchAllSyncedItems]. Used to backfill a
+  // service that's missing items (e.g. MAL connected after AniList already had
+  // the whole library) without re-pushing what a service already has.
+  final Set<int> _anilistPresentIds = {};
+  final Set<int> _malPresentIds = {};
+
   DateTime? get lastSyncedAt => _lastSyncedAt;
   bool get isSyncing => _isSyncing;
+
+  bool get aniListConnected => _aniList.isAuthenticated;
+  bool get malConnected => _mal.isAuthenticated;
+
+  bool anilistHas(int? anilistId) =>
+      anilistId != null && _anilistPresentIds.contains(anilistId);
+  bool malHas(int? malId) => malId != null && _malPresentIds.contains(malId);
 
   bool get hasAnyAccountConnected =>
       _aniList.isAuthenticated || _mal.isAuthenticated;
@@ -229,15 +242,23 @@ class AnimeTrackingCoordinator {
   Future<List<SyncedAnimeItem>> fetchAllSyncedItems() async {
     final results = <SyncedAnimeItem>[];
     _isSyncing = true;
+    _anilistPresentIds.clear();
+    _malPresentIds.clear();
 
     try {
       if (_aniList.isAuthenticated) {
         final anilistItems = await _aniList.fetchUserAnimeList();
         results.addAll(anilistItems);
+        for (final it in anilistItems) {
+          if (it.anilistId != null) _anilistPresentIds.add(it.anilistId!);
+        }
       }
 
       if (_mal.isAuthenticated) {
         final malItems = await _mal.fetchUserAnimeList();
+        for (final it in malItems) {
+          if (it.malId != null) _malPresentIds.add(it.malId!);
+        }
         // Avoid duplicate items if both services have the same anime (match by malId or title)
         for (final malItem in malItems) {
           final alreadyPresent = results.any((existing) =>
