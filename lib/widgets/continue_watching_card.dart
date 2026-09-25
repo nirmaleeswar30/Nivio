@@ -132,7 +132,7 @@ class _ContinueWatchingCardState extends ConsumerState<ContinueWatchingCard>
         
         // Avoid redundancy if TMDB just returned "Episode X" as the name
         if (epName != null && epName.isNotEmpty && !epName.toLowerCase().startsWith('episode ${widget.history.currentEpisode}')) {
-          subtitle = '$prefix - $epName';
+          subtitle = '$prefix • $epName';
         } else {
           subtitle = prefix;
         }
@@ -167,182 +167,249 @@ class _ContinueWatchingCardState extends ConsumerState<ContinueWatchingCard>
         child: AnimatedBuilder(
           animation: _animationController,
           builder: (context, child) {
+            final accentColor = NivioTheme.accentColorOf(context);
+
             return Transform.scale(
               scale: _scaleAnimation.value,
               child: Container(
-                width: 220, // Increased width
+                width: 220,
                 margin: const EdgeInsets.only(right: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF151922),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    width: 1,
+                  ),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Stack(
                   children: [
-                    // Landscape Thumbnail with progress bar
-                    Container(
-                      height: 124, // ~16:9 ratio for 220 width
-                      width: 220,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: _elevationAnimation.value > 0
-                            ? [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.5 * _elevationAnimation.value),
-                                  blurRadius: 15 * _elevationAnimation.value,
-                                  spreadRadius: 1 * _elevationAnimation.value,
-                                  offset: Offset(0, 6 * _elevationAnimation.value),
-                                ),
-                              ]
-                            : null,
-                      ),
-                      child: Stack(
-                        children: [
-                          imageUrl.isNotEmpty
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: CachedNetworkImage(
-                                    imageUrl: imageUrl,
-                                    width: 220,
-                                    height: 124,
-                                    alignment: Alignment.topCenter,
-                                    fit: BoxFit.cover,
-                                    placeholder: (context, url) =>
-                                        const DecoratedBox(
-                                      decoration:
-                                          BoxDecoration(color: Color(0xFF23262E)),
-                                    ),
-                                    errorWidget: (context, url, error) => Container(
-                                      color: NivioTheme.netflixDarkGrey,
-                                      child: const Icon(Icons.movie, size: 32, color: Colors.grey),
-                                    ),
-                                  ),
-                                )
-                              : Container(
-                                  decoration: BoxDecoration(
-                                    color: NivioTheme.netflixDarkGrey,
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: const Center(
-                                    child: Icon(Icons.movie, size: 32, color: Colors.grey),
-                                  ),
-                                ),
-                          // Subtle gradient at bottom for the progress bar
-                          Positioned(
-                            bottom: 0,
-                            left: 0,
-                            right: 0,
-                            height: 24,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: const BorderRadius.only(
-                                  bottomLeft: Radius.circular(10),
-                                  bottomRight: Radius.circular(10),
-                                ),
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Colors.transparent,
-                                    Colors.black.withOpacity(0.6),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          // NO PLAY BUTTON - Removed per request
-                          // Progress bar at bottom
-                          Positioned(
-                            bottom: 0,
-                            left: 0,
-                            right: 0,
-                            child: ClipRRect(
-                              borderRadius: const BorderRadius.only(
-                                bottomLeft: Radius.circular(10),
-                                bottomRight: Radius.circular(10),
-                              ),
-                              child: LinearProgressIndicator(
-                                value: widget.history.progressPercent,
-                                backgroundColor: Colors.white.withOpacity(0.3),
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  NivioTheme.accentColorOf(context),
-                                ),
-                                minHeight: 2,
-                              ),
-                            ),
-                          ),
-                          // Remove Overlay
-                          if (_showRemoveOverlay)
-                            Positioned.fill(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.7),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Center(
-                                  child: IconButton(
-                                    iconSize: 48,
-                                    icon: const Icon(Icons.delete_forever_rounded, color: Colors.white),
-                                    onPressed: () async {
-                                      setState(() => _showRemoveOverlay = false);
-                                      final service = ref.read(watchHistoryServiceProvider);
-                                      await service.deleteHistory(widget.history.tmdbId);
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text('Removed ${widget.history.title}'),
-                                            behavior: SnackBarBehavior.floating,
-                                          ),
-                                        );
-                                      }
-                                    },
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    // Main Title (Episode title if TV, Movie title if Movie)
-                    Text(
-                      topTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    // Subtitle & Time (Episode X/Y - Series Name    12m)
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Expanded(
-                          child: Text(
-                            subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.grey,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
+                        // Landscape Thumbnail with progress bar
+                        SizedBox(
+                          height: 124,
+                          width: double.infinity,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              imageUrl.isNotEmpty
+                                  ? CachedNetworkImage(
+                                      imageUrl: imageUrl,
+                                      width: double.infinity,
+                                      height: 124,
+                                      alignment: Alignment.topCenter,
+                                      fit: BoxFit.cover,
+                                      placeholder: (context, url) =>
+                                          const DecoratedBox(
+                                        decoration: BoxDecoration(
+                                          color: Color(0xFF23262E),
+                                        ),
+                                      ),
+                                      errorWidget: (context, url, error) =>
+                                          Container(
+                                        color: NivioTheme.netflixDarkGrey,
+                                        child: const Icon(
+                                          Icons.movie,
+                                          size: 32,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    )
+                                  : Container(
+                                      color: NivioTheme.netflixDarkGrey,
+                                      child: const Center(
+                                        child: Icon(
+                                          Icons.movie,
+                                          size: 32,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ),
+                              // Subtle gradient at bottom for the progress bar
+                              Positioned(
+                                bottom: 0,
+                                left: 0,
+                                right: 0,
+                                height: 28,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Colors.transparent,
+                                        Colors.black.withValues(alpha: 0.65),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              // Progress bar at bottom of thumbnail
+                              Positioned(
+                                bottom: 0,
+                                left: 0,
+                                right: 0,
+                                child: LinearProgressIndicator(
+                                  value: widget.history.progressPercent.clamp(0.0, 1.0),
+                                  backgroundColor: Colors.white.withValues(alpha: 0.25),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    accentColor,
+                                  ),
+                                  minHeight: 2.5,
+                                ),
+                              ),
+                              // Quick dismiss/remove button on hover for desktop
+                              Positioned(
+                                top: 6,
+                                right: 6,
+                                child: AnimatedOpacity(
+                                  opacity: _elevationAnimation.value > 0.3 ? 1.0 : 0.0,
+                                  duration: const Duration(milliseconds: 150),
+                                  child: IgnorePointer(
+                                    ignoring: _elevationAnimation.value <= 0.3,
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(14),
+                                        onTap: () async {
+                                          final service = ref.read(watchHistoryServiceProvider);
+                                          await service.deleteHistory(widget.history.tmdbId);
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(
+                                                content: Text('Removed ${widget.history.title}'),
+                                                behavior: SnackBarBehavior.floating,
+                                              ),
+                                            );
+                                          }
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.all(5),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black.withValues(alpha: 0.7),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: Colors.white.withValues(alpha: 0.15),
+                                            ),
+                                          ),
+                                          child: const Icon(
+                                            Icons.close_rounded,
+                                            size: 13,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // Card Content Info Section
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Main Title
+                              Text(
+                                topTitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: -0.1,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              // Subtitle & Time
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      subtitle,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: Colors.white.withValues(alpha: 0.55),
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w400,
+                                      ),
+                                    ),
+                                  ),
+                                  if (remainingMinutes > 0) ...[
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '${remainingMinutes}m left',
+                                      style: TextStyle(
+                                        color: accentColor,
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // Full Card Remove Overlay (on long press)
+                    if (_showRemoveOverlay)
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.82),
+                          ),
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  iconSize: 42,
+                                  icon: const Icon(
+                                    Icons.delete_forever_rounded,
+                                    color: Colors.white,
+                                  ),
+                                  onPressed: () async {
+                                    setState(() => _showRemoveOverlay = false);
+                                    final service = ref.read(watchHistoryServiceProvider);
+                                    await service.deleteHistory(widget.history.tmdbId);
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('Removed ${widget.history.title}'),
+                                          behavior: SnackBarBehavior.floating,
+                                        ),
+                                      );
+                                    }
+                                  },
+                                ),
+                                const Text(
+                                  'Remove',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
-                        if (remainingMinutes > 0)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 6),
-                            child: Text(
-                              '${remainingMinutes}m',
-                              style: const TextStyle(
-                                color: Colors.grey,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
+                      ),
                   ],
                 ),
               ),

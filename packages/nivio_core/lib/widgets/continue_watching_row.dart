@@ -43,9 +43,10 @@ class ContinueWatchingRow extends ConsumerWidget {
           );
         }
         return SizedBox(
-          height: 190,
+          height: 196,
           child: AppListView.builder(
             scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(vertical: 6),
             cacheExtent: 250,
             scrollSpeed: 2.0,
             silkyScrollDuration: const Duration(milliseconds: 500),
@@ -63,35 +64,51 @@ class ContinueWatchingRow extends ConsumerWidget {
       },
       loading: () => Skeletonizer(
         child: SizedBox(
-          height: 190,
+          height: 196,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             physics: const NeverScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            padding: const EdgeInsets.symmetric(vertical: 6),
             itemCount: 6,
-            itemBuilder: (_, __) => const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SkeletonBox(
-                    width: 220,
-                    height: 124,
-                    borderRadius: BorderRadius.all(Radius.circular(8)),
-                  ),
-                  SizedBox(height: 8),
-                  SkeletonBox(width: 150, height: 12),
-                  SizedBox(height: 6),
-                  SkeletonBox(width: 90, height: 10),
-                ],
+            itemBuilder: (_, __) => Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Container(
+                width: 220,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: const Color(0xFF151922),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SkeletonBox(
+                      width: 220,
+                      height: 124,
+                      borderRadius: BorderRadius.zero,
+                    ),
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(10, 8, 10, 9),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SkeletonBox(width: 140, height: 13),
+                          SizedBox(height: 5),
+                          SkeletonBox(width: 80, height: 11),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
       ),
       error: (err, stack) => SizedBox(
-        height: 200,
+        height: 196,
         child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
