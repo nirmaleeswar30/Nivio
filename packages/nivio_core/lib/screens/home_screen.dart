@@ -245,7 +245,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               : const Padding(
                   padding: EdgeInsets.only(top: 6, left: 2),
                   child: SizedBox(
-                    height: 80,
+                    height: 48,
                     child: Image(
                       image: AssetImage('assets/images/nivio.png'),
                       fit: BoxFit.contain,

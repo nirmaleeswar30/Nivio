@@ -502,6 +502,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget _buildSearchField() {
     return Container(
       height: 44,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(14),
@@ -514,10 +515,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         textAlignVertical: TextAlignVertical.center,
         style: const TextStyle(color: Colors.white, fontSize: 15),
         decoration: InputDecoration(
+          filled: false,
+          fillColor: Colors.transparent,
           hintText: 'Search titles...',
           isDense: true,
           hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.45)),
           border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          errorBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
           contentPadding: const EdgeInsets.only(
             left: 14,
             right: 14,
@@ -528,6 +535,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               Icons.search_rounded,
               color: Colors.white.withValues(alpha: 0.7),
             ),
+            splashRadius: 20,
             onPressed: () {
               final query = _controller.text.trim();
               if (query.isEmpty) return;
@@ -545,6 +553,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     Icons.close_rounded,
                     color: Colors.white.withValues(alpha: 0.8),
                   ),
+                  splashRadius: 20,
                   onPressed: () {
                     _searchDebounce?.cancel();
                     _controller.clear();

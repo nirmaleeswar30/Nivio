@@ -236,3 +236,125 @@ class PosterGridSkeleton extends StatelessWidget {
     );
   }
 }
+
+/// A grid of watchlist card placeholders matching [WatchlistScreen].
+class WatchlistGridSkeleton extends StatelessWidget {
+  final EdgeInsetsGeometry padding;
+  final double maxCrossAxisExtent;
+  final double childAspectRatio;
+  final int itemCount;
+
+  const WatchlistGridSkeleton({
+    super.key,
+    this.padding = const EdgeInsets.all(16),
+    this.maxCrossAxisExtent = 180,
+    this.childAspectRatio = 0.65,
+    this.itemCount = 12,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Skeletonizer(
+      child: GridView.builder(
+        padding: padding,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: maxCrossAxisExtent,
+          childAspectRatio: childAspectRatio,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: itemCount,
+        itemBuilder: (_, __) => Card(
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Expanded(
+                child: SkeletonBox(
+                  width: double.infinity,
+                  height: double.infinity,
+                  borderRadius: BorderRadius.zero,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 6, 4, 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    SkeletonBox(width: 110, height: 13),
+                    SizedBox(height: 6),
+                    Row(
+                      children: [
+                        SkeletonBox(width: 35, height: 11),
+                        SizedBox(width: 6),
+                        SkeletonBox(width: 45, height: 11),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A list of watchlist item placeholders matching [WatchlistScreen].
+class WatchlistListSkeleton extends StatelessWidget {
+  final EdgeInsetsGeometry padding;
+  final int itemCount;
+
+  const WatchlistListSkeleton({
+    super.key,
+    this.padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    this.itemCount = 8,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Skeletonizer(
+      child: ListView.builder(
+        padding: padding,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: itemCount,
+        itemBuilder: (_, __) => Card(
+          margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 6),
+          clipBehavior: Clip.antiAlias,
+          child: Row(
+            children: [
+              const SizedBox(
+                width: 85,
+                height: 122,
+                child: SkeletonBox(
+                  width: 85,
+                  height: 122,
+                  borderRadius: BorderRadius.zero,
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: const [
+                      SkeletonBox(width: double.infinity, height: 15),
+                      SizedBox(height: 8),
+                      SkeletonBox(width: 120, height: 12),
+                      SizedBox(height: 10),
+                      SkeletonBox(width: 75, height: 18),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

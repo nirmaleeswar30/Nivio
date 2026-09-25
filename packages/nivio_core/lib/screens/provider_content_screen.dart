@@ -1586,46 +1586,43 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
     required bool isActive,
     String? photoUrl,
   }) {
-    return Tooltip(
-      message: label,
-      child: Align(
-        alignment: isActive ? Alignment.centerLeft : Alignment.center,
-        child: InkWell(
-          onTap: () {
-            context.go(route);
-          },
-          borderRadius: isActive
-              ? const BorderRadius.only(
-                  topRight: Radius.circular(20),
-                  bottomRight: Radius.circular(20),
-                )
-              : BorderRadius.circular(8),
-          child: Container(
-            width: isActive ? 48 : 40,
-            height: 40,
-            padding: isActive ? const EdgeInsets.only(left: 8) : EdgeInsets.zero,
-            decoration: BoxDecoration(
-              color: isActive ? Colors.white : Colors.transparent,
-              borderRadius: isActive
-                  ? const BorderRadius.only(
-                      topRight: Radius.circular(20),
-                      bottomRight: Radius.circular(20),
-                    )
-                  : BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: photoUrl != null
-                  ? CircleAvatar(
-                      radius: 14,
-                      backgroundImage: CachedNetworkImageProvider(photoUrl),
-                      backgroundColor: NivioTheme.netflixDarkGrey,
-                    )
-                  : PhosphorIcon(
-                      isActive ? activeIcon : icon,
-                      color: isActive ? NivioTheme.netflixBlack : Colors.white,
-                      size: 20,
-                    ),
-            ),
+    return Align(
+      alignment: isActive ? Alignment.centerLeft : Alignment.center,
+      child: InkWell(
+        onTap: () {
+          context.go(route);
+        },
+        borderRadius: isActive
+            ? const BorderRadius.only(
+                topRight: Radius.circular(20),
+                bottomRight: Radius.circular(20),
+              )
+            : BorderRadius.circular(8),
+        child: Container(
+          width: isActive ? 48 : 40,
+          height: 40,
+          padding: isActive ? const EdgeInsets.only(left: 8) : EdgeInsets.zero,
+          decoration: BoxDecoration(
+            color: isActive ? Colors.white : Colors.transparent,
+            borderRadius: isActive
+                ? const BorderRadius.only(
+                    topRight: Radius.circular(20),
+                    bottomRight: Radius.circular(20),
+                  )
+                : BorderRadius.circular(8),
+          ),
+          child: _AnimatedIconWrapper(
+            child: photoUrl != null
+                ? CircleAvatar(
+                    radius: 14,
+                    backgroundImage: CachedNetworkImageProvider(photoUrl),
+                    backgroundColor: NivioTheme.netflixDarkGrey,
+                  )
+                : PhosphorIcon(
+                    isActive ? activeIcon : icon,
+                    color: isActive ? NivioTheme.netflixBlack : Colors.white,
+                    size: 20,
+                  ),
           ),
         ),
       ),
@@ -1680,6 +1677,38 @@ class _AnimatedProgressBarDot extends StatelessWidget {
         decoration: BoxDecoration(
           color: isActive ? activeColor : Colors.white24,
           borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+    );
+  }
+}
+
+class _AnimatedIconWrapper extends StatefulWidget {
+  final Widget child;
+  const _AnimatedIconWrapper({required this.child});
+
+  @override
+  State<_AnimatedIconWrapper> createState() => _AnimatedIconWrapperState();
+}
+
+class _AnimatedIconWrapperState extends State<_AnimatedIconWrapper> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: SizedBox(
+        width: 40,
+        height: 40,
+        child: Center(
+          child: AnimatedScale(
+            scale: _isHovered ? 1.25 : 1.0,
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOutBack,
+            child: widget.child,
+          ),
         ),
       ),
     );

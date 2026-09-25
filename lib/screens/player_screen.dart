@@ -1107,6 +1107,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _applyDisplaySettings(refreshUi: false);
       _maybeAutoEnterFullscreenOnce();
       _prefetchNextEpisode();
+      if (_bingeMode) {
+        _prefetchBingeNext();
+      }
       
       if (_resumePosition != null && mounted) {
         final marginHorizontal = (MediaQuery.of(context).size.width - 250) / 2;
@@ -2230,8 +2233,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_isPrefetching) return;
     if (!_hasNextEpisode()) return;
     
-    // Disable prefetching for P2P streams to save bandwidth and prevent replacing the active torrent.
-    if (_currentProvider == 'Nivio Torrents') return;
+    // For P2P streams, prefetch next episode if binge mode is active
+    if (_currentProvider == 'Nivio Torrents') {
+      if (_bingeMode) {
+        _prefetchBingeNext();
+      }
+      return;
+    }
     // Don't prefetch while streaming a still-downloading item.
     if (_isDownloadStream) return;
 
@@ -2352,6 +2360,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final group =
           await _cachedTorrentService?.recallReleaseGroup(widget.mediaId);
       if (mounted) setState(() => _bingeGroup = group);
+      _prefetchBingeNext();
     }
     // Rebuild the overlay so it reflects the new binge state immediately.
     if (_showNextEpisodeButton) {
@@ -6638,49 +6647,9 @@ class _NextEpisodeOverlayWidget extends StatelessWidget {
                               ),
                               const Spacer(),
                               if (isTorrent)
-                                GestureDetector(
-                                  onTap: onToggleBinge,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: bingeMode
-                                          ? const Color(0xFF4ADE80).withOpacity(0.18)
-                                          : Colors.white.withOpacity(0.08),
-                                      borderRadius: BorderRadius.circular(20),
-                                      border: Border.all(
-                                        color: bingeMode
-                                            ? const Color(0xFF4ADE80).withOpacity(0.5)
-                                            : Colors.white24,
-                                        width: 0.8,
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          bingeMode
-                                              ? Icons.all_inclusive_rounded
-                                              : Icons.fast_forward_rounded,
-                                          size: 13,
-                                          color: bingeMode
-                                              ? const Color(0xFF4ADE80)
-                                              : Colors.white70,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          bingeMode ? 'Binge On' : 'Binge',
-                                          style: TextStyle(
-                                            color: bingeMode
-                                                ? const Color(0xFF4ADE80)
-                                                : Colors.white70,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+                                _BingeModeToggleButton(
+                                  bingeMode: bingeMode,
+                                  onToggle: onToggleBinge,
                                 ),
                             ],
                           ),
@@ -6772,6 +6741,125 @@ class _NextEpisodeOverlayWidget extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+class _BingeModeToggleButton extends StatefulWidget {
+  final bool bingeMode;
+  final VoidCallback onToggle;
+
+  const _BingeModeToggleButton({
+    required this.bingeMode,
+    required this.onToggle,
+  });
+
+  @override
+  State<_BingeModeToggleButton> createState() => _BingeModeToggleButtonState();
+}
+
+class _BingeModeToggleButtonState extends State<_BingeModeToggleButton> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = widget.bingeMode;
+    const green = Color(0xFF4ADE80);
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        cursor: SystemMouseCursors.click,
+        child: AnimatedScale(
+          scale: _isHovered ? 1.04 : 1.0,
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: widget.onToggle,
+              borderRadius: BorderRadius.circular(20),
+              splashColor: active
+                  ? green.withValues(alpha: 0.25)
+                  : Colors.white.withValues(alpha: 0.15),
+              highlightColor: active
+                  ? green.withValues(alpha: 0.1)
+                  : Colors.white.withValues(alpha: 0.08),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOutCubic,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: active
+                      ? green.withValues(alpha: _isHovered ? 0.28 : 0.20)
+                      : Colors.white.withValues(alpha: _isHovered ? 0.14 : 0.07),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: active
+                        ? green
+                        : Colors.white.withValues(alpha: _isHovered ? 0.40 : 0.22),
+                    width: active ? 1.2 : 1.0,
+                  ),
+                  boxShadow: active
+                      ? [
+                          BoxShadow(
+                            color: green.withValues(alpha: _isHovered ? 0.45 : 0.25),
+                            blurRadius: _isHovered ? 12 : 8,
+                            offset: const Offset(0, 1),
+                          ),
+                        ]
+                      : (_isHovered
+                          ? [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ]
+                          : null),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (active) ...[
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: green,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: green,
+                              blurRadius: 5,
+                              spreadRadius: 0.5,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                    ],
+                    Icon(
+                      Icons.all_inclusive_rounded,
+                      size: 14,
+                      color: active ? green : (_isHovered ? Colors.white : Colors.white70),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      active ? 'Binge ON' : 'Binge Mode',
+                      style: TextStyle(
+                        color: active ? green : (_isHovered ? Colors.white : Colors.white70),
+                        fontSize: 11.5,
+                        fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
   }
 }
 

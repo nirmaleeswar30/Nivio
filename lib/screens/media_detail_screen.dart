@@ -798,6 +798,10 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                         const SizedBox(width: 12),
                                         _AnimatedHoverScale(
                                           child: TextButton.icon(
+                                            style: TextButton.styleFrom(
+                                              overlayColor: Colors.transparent,
+                                              splashFactory: NoSplash.splashFactory,
+                                            ),
                                             onPressed: () => _showTrailerPlayer(context),
                                             icon: Icon(
                                               Icons.play_circle_outline,
@@ -815,6 +819,10 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                         const SizedBox(width: 12),
                                         _AnimatedHoverScale(
                                           child: TextButton.icon(
+                                            style: TextButton.styleFrom(
+                                              overlayColor: Colors.transparent,
+                                              splashFactory: NoSplash.splashFactory,
+                                            ),
                                             onPressed: () => _openWatchPartyHub(media),
                                             icon: Icon(
                                               PhosphorIconsRegular.users,
@@ -829,23 +837,29 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                         ),
                                       ],
                                       const SizedBox(width: 12),
-                                      TextButton.icon(
-                                        onPressed: () {
-                                          final title = Uri.encodeComponent(
-                                            media.title ?? media.name ?? '',
-                                          );
-                                          context.push(
-                                            '/similar/${media.id}?type=${media.mediaType}&title=$title',
-                                          );
-                                        },
-                                        icon: Icon(
-                                          PhosphorIconsRegular.magicWand,
-                                          size: 17,
-                                          color: accentColor,
-                                        ),
-                                        label: Text(
-                                          'More Like This',
-                                          style: TextStyle(color: accentColor),
+                                      _AnimatedHoverScale(
+                                        child: TextButton.icon(
+                                          style: TextButton.styleFrom(
+                                            overlayColor: Colors.transparent,
+                                            splashFactory: NoSplash.splashFactory,
+                                          ),
+                                          onPressed: () {
+                                            final title = Uri.encodeComponent(
+                                              media.title ?? media.name ?? '',
+                                            );
+                                            context.push(
+                                              '/similar/${media.id}?type=${media.mediaType}&title=$title',
+                                            );
+                                          },
+                                          icon: Icon(
+                                            PhosphorIconsRegular.magicWand,
+                                            size: 17,
+                                            color: accentColor,
+                                          ),
+                                          label: Text(
+                                            'More Like This',
+                                            style: TextStyle(color: accentColor),
+                                          ),
                                         ),
                                       ),
                                     ],
@@ -1062,6 +1076,10 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                               if (_trailerSource != null) ...[
                                 _AnimatedHoverScale(
                                   child: TextButton.icon(
+                                    style: TextButton.styleFrom(
+                                      overlayColor: Colors.transparent,
+                                      splashFactory: NoSplash.splashFactory,
+                                    ),
                                     onPressed: () =>
                                         _showTrailerPlayer(context),
                                     icon: Icon(
@@ -1079,23 +1097,29 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                   ),
                                 ),
                               ],
-                              TextButton.icon(
-                                onPressed: () {
-                                  final title = Uri.encodeComponent(
-                                    media.title ?? media.name ?? '',
-                                  );
-                                  context.push(
-                                    '/similar/${media.id}?type=${media.mediaType}&title=$title',
-                                  );
-                                },
-                                icon: PhosphorIcon(
-                                  PhosphorIconsRegular.magicWand,
-                                  size: 17,
-                                  color: accentColor,
-                                ),
-                                label: Text(
-                                  'More Like This',
-                                  style: TextStyle(color: accentColor),
+                              _AnimatedHoverScale(
+                                child: TextButton.icon(
+                                  style: TextButton.styleFrom(
+                                    overlayColor: Colors.transparent,
+                                    splashFactory: NoSplash.splashFactory,
+                                  ),
+                                  onPressed: () {
+                                    final title = Uri.encodeComponent(
+                                      media.title ?? media.name ?? '',
+                                    );
+                                    context.push(
+                                      '/similar/${media.id}?type=${media.mediaType}&title=$title',
+                                    );
+                                  },
+                                  icon: PhosphorIcon(
+                                    PhosphorIconsRegular.magicWand,
+                                    size: 17,
+                                    color: accentColor,
+                                  ),
+                                  label: Text(
+                                    'More Like This',
+                                    style: TextStyle(color: accentColor),
+                                  ),
                                 ),
                               ),
                             ],
@@ -2269,35 +2293,32 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     required String label,
     String? photoUrl,
   }) {
-    return Tooltip(
-      message: label,
-      child: Align(
-        alignment: Alignment.center,
-        child: InkWell(
-          onTap: () {
-            context.go(route);
-          },
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: photoUrl != null
-                  ? CircleAvatar(
-                      radius: 14,
-                      backgroundImage: CachedNetworkImageProvider(photoUrl),
-                      backgroundColor: NivioTheme.netflixDarkGrey,
-                    )
-                  : PhosphorIcon(
-                      icon,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-            ),
+    return Align(
+      alignment: Alignment.center,
+      child: InkWell(
+        onTap: () {
+          context.go(route);
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: _AnimatedIconWrapper(
+            child: photoUrl != null
+                ? CircleAvatar(
+                    radius: 14,
+                    backgroundImage: CachedNetworkImageProvider(photoUrl),
+                    backgroundColor: NivioTheme.netflixDarkGrey,
+                  )
+                : PhosphorIcon(
+                    icon,
+                    color: Colors.white,
+                    size: 20,
+                  ),
           ),
         ),
       ),
@@ -2772,6 +2793,38 @@ class _AnimatedHoverScaleState extends State<_AnimatedHoverScale> {
         duration: const Duration(milliseconds: 150),
         curve: Curves.easeOutBack,
         child: widget.child,
+      ),
+    );
+  }
+}
+
+class _AnimatedIconWrapper extends StatefulWidget {
+  final Widget child;
+  const _AnimatedIconWrapper({required this.child});
+
+  @override
+  State<_AnimatedIconWrapper> createState() => _AnimatedIconWrapperState();
+}
+
+class _AnimatedIconWrapperState extends State<_AnimatedIconWrapper> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: SizedBox(
+        width: 40,
+        height: 40,
+        child: Center(
+          child: AnimatedScale(
+            scale: _isHovered ? 1.25 : 1.0,
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOutBack,
+            child: widget.child,
+          ),
+        ),
       ),
     );
   }

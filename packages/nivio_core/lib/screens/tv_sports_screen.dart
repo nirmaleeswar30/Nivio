@@ -40,10 +40,16 @@ class _TvSportsScreenState extends ConsumerState<TvSportsScreen> {
             children: [
               Padding(
                 padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 14, 16, 10),
-                child: _SegmentedToggle(
-                  index: _index,
-                  labels: const ['Live TV', 'Sports'],
-                  onChanged: (i) => setState(() => _index = i),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: SizedBox(
+                    width: isDesktop ? 290 : double.infinity,
+                    child: _ModernTabSwitcher(
+                      index: _index,
+                      onChanged: (i) => setState(() => _index = i),
+                      isDesktop: isDesktop,
+                    ),
+                  ),
                 ),
               ),
               Expanded(
@@ -63,53 +69,128 @@ class _TvSportsScreenState extends ConsumerState<TvSportsScreen> {
   }
 }
 
-class _SegmentedToggle extends StatelessWidget {
+class _ModernTabSwitcher extends StatelessWidget {
   final int index;
-  final List<String> labels;
   final ValueChanged<int> onChanged;
-  const _SegmentedToggle({
+  final bool isDesktop;
+
+  const _ModernTabSwitcher({
     required this.index,
-    required this.labels,
     required this.onChanged,
+    this.isDesktop = true,
   });
 
   @override
   Widget build(BuildContext context) {
     final accent = NivioTheme.accentColorOf(context);
+    final items = const [
+      (label: 'Live TV', iconFill: PhosphorIconsFill.television, iconReg: PhosphorIconsRegular.television),
+      (label: 'Sports', iconFill: PhosphorIconsFill.trophy, iconReg: PhosphorIconsRegular.trophy),
+    ];
+
     return Container(
+      height: 42,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(30),
+        color: const Color(0xFF141720),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(3),
       child: Row(
-        children: List.generate(labels.length, (i) {
+        mainAxisSize: isDesktop ? MainAxisSize.min : MainAxisSize.max,
+        children: List.generate(items.length, (i) {
           final selected = i == index;
-          return Expanded(
-            child: GestureDetector(
-              onTap: () => onChanged(i),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOut,
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: selected ? accent : Colors.transparent,
-                  borderRadius: BorderRadius.circular(26),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  labels[i],
-                  style: TextStyle(
-                    color: selected ? Colors.white : Colors.white60,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                  ),
+          final item = items[i];
+          final tabWidget = _TabItem(
+            label: item.label,
+            icon: selected ? item.iconFill : item.iconReg,
+            selected: selected,
+            accentColor: accent,
+            onTap: () => onChanged(i),
+          );
+
+          return Expanded(child: tabWidget);
+        }),
+      ),
+    );
+  }
+}
+
+class _TabItem extends StatefulWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final Color accentColor;
+  final VoidCallback onTap;
+
+  const _TabItem({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.accentColor,
+    required this.onTap,
+  });
+
+  @override
+  State<_TabItem> createState() => _TabItemState();
+}
+
+class _TabItemState extends State<_TabItem> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            color: widget.selected
+                ? widget.accentColor
+                : (_hovered ? Colors.white.withValues(alpha: 0.08) : Colors.transparent),
+            borderRadius: BorderRadius.circular(9),
+            boxShadow: widget.selected
+                ? [
+                    BoxShadow(
+                      color: widget.accentColor.withValues(alpha: 0.35),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                widget.icon,
+                size: 16,
+                color: widget.selected
+                    ? Colors.white
+                    : (_hovered ? Colors.white : Colors.white60),
+              ),
+              const SizedBox(width: 7),
+              Text(
+                widget.label,
+                style: TextStyle(
+                  color: widget.selected
+                      ? Colors.white
+                      : (_hovered ? Colors.white : Colors.white60),
+                  fontWeight: widget.selected ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 13,
+                  letterSpacing: 0.2,
                 ),
               ),
-            ),
-          );
-        }),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -129,6 +210,7 @@ class _SportsViewState extends ConsumerState<SportsView>
   String? _error;
   List<SportsMatch> _matches = [];
   bool _resolving = false;
+  String _selectedCategory = 'All';
 
   @override
   bool get wantKeepAlive => true;
@@ -159,6 +241,26 @@ class _SportsViewState extends ConsumerState<SportsView>
         _error = 'Could not load live sports.';
       });
     }
+  }
+
+  List<String> get _categories {
+    final set = <String>{};
+    for (final m in _matches) {
+      final cat = m.category.trim();
+      if (cat.isNotEmpty) {
+        set.add(cat);
+      }
+    }
+    final list = set.toList()..sort();
+    return ['All', ...list];
+  }
+
+  List<SportsMatch> get _filteredMatches {
+    if (_selectedCategory == 'All') return _matches;
+    return _matches.where((m) =>
+      m.category.toLowerCase() == _selectedCategory.toLowerCase() ||
+      m.category.toLowerCase().contains(_selectedCategory.toLowerCase())
+    ).toList();
   }
 
   Future<void> _openMatch(SportsMatch match) async {
@@ -197,9 +299,11 @@ class _SportsViewState extends ConsumerState<SportsView>
   }
 
   void _showStreamPicker(SportsMatch match, List<SportsStream> streams) {
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     showModalBottomSheet(
       context: context,
       backgroundColor: NivioTheme.netflixDarkGrey,
+      constraints: BoxConstraints(maxWidth: isDesktop ? 500 : double.infinity),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -276,23 +380,147 @@ class _SportsViewState extends ConsumerState<SportsView>
       );
     }
 
+    final filtered = _filteredMatches;
+    final liveCount = _matches.where((m) => m.isLikelyLive).length;
+    final cats = _categories;
+
     return RefreshIndicator(
       onRefresh: _load,
       child: Stack(
         children: [
-          Center(
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 850),
-              child: AppListView.builder(
-                padding: EdgeInsets.fromLTRB(leftPad, 4, 16, 24),
-                cacheExtent: 250,
-                scrollSpeed: 2.0,
-                silkyScrollDuration: const Duration(milliseconds: 500),
-                animationCurve: Curves.easeOutQuart,
-                itemCount: _matches.length,
-                itemBuilder: (context, index) => _matchTile(_matches[index]),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Category filter chips
+              if (cats.length > 1) ...[
+                SizedBox(
+                  height: 38,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: EdgeInsets.symmetric(horizontal: leftPad),
+                    itemCount: cats.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (context, idx) {
+                      final cat = cats[idx];
+                      final count = cat == 'All'
+                          ? _matches.length
+                          : _matches.where((m) => m.category.toLowerCase() == cat.toLowerCase()).length;
+                      final isSelected = _selectedCategory == cat;
+                      final accent = NivioTheme.accentColorOf(context);
+
+                      return _SportsCategoryChip(
+                        label: '$cat ($count)',
+                        isSelected: isSelected,
+                        accentColor: accent,
+                        onTap: () => setState(() => _selectedCategory = cat),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
+
+              // Sub-header status bar
+              Padding(
+                padding: EdgeInsets.fromLTRB(leftPad, 4, 16, 8),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: liveCount > 0 ? const Color(0xFFEF4444) : Colors.amber,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: (liveCount > 0 ? const Color(0xFFEF4444) : Colors.amber).withValues(alpha: 0.6),
+                            blurRadius: 6,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      liveCount > 0
+                          ? '$liveCount LIVE EVENT${liveCount > 1 ? 'S' : ''}'
+                          : '${_matches.length} SCHEDULED EVENT${_matches.length > 1 ? 'S' : ''}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    if (_selectedCategory != 'All') ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        '· $_selectedCategory (${filtered.length})',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(PhosphorIconsRegular.arrowClockwise, size: 18),
+                      tooltip: 'Refresh sports',
+                      color: Colors.white60,
+                      onPressed: _load,
+                    ),
+                  ],
+                ),
               ),
-            ),
+
+              // Match Grid
+              Expanded(
+                child: filtered.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(PhosphorIconsRegular.trophy,
+                                size: 40, color: Colors.white.withValues(alpha: 0.3)),
+                            const SizedBox(height: 12),
+                            Text(
+                              'No events found in "$_selectedCategory"',
+                              style: const TextStyle(color: Colors.white60, fontSize: 14),
+                            ),
+                            const SizedBox(height: 12),
+                            OutlinedButton(
+                              onPressed: () => setState(() => _selectedCategory = 'All'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                              ),
+                              child: const Text('Show all categories'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : AppGridView.builder(
+                        padding: EdgeInsets.fromLTRB(leftPad, 4, 16, 28),
+                        cacheExtent: isDesktop ? 1000 : 350,
+                        scrollSpeed: 2.0,
+                        silkyScrollDuration: const Duration(milliseconds: 500),
+                        animationCurve: Curves.easeOutQuart,
+                        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: isDesktop ? 440 : 480,
+                          childAspectRatio: isDesktop ? 1.85 : 1.9,
+                          crossAxisSpacing: 14,
+                          mainAxisSpacing: 14,
+                        ),
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) => _SportsMatchCard(
+                          key: ValueKey(filtered[index].id),
+                          match: filtered[index],
+                          onOpen: () => _openMatch(filtered[index]),
+                        ),
+                      ),
+              ),
+            ],
           ),
           if (_resolving)
             Positioned.fill(
@@ -305,88 +533,302 @@ class _SportsViewState extends ConsumerState<SportsView>
       ),
     );
   }
+}
 
-  Widget _matchTile(SportsMatch match) {
-    final live = match.isLikelyLive;
-    final time = match.startTime;
-    final subtitle = live
-        ? 'LIVE · ${match.category}'
-        : (time != null
-            ? '${_formatTime(time)} · ${match.category}'
-            : match.category);
-    return RepaintBoundary(
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.04),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-          borderRadius: BorderRadius.circular(14),
+class _SportsCategoryChip extends StatefulWidget {
+  final String label;
+  final bool isSelected;
+  final Color accentColor;
+  final VoidCallback onTap;
+
+  const _SportsCategoryChip({
+    required this.label,
+    required this.isSelected,
+    required this.accentColor,
+    required this.onTap,
+  });
+
+  @override
+  State<_SportsCategoryChip> createState() => _SportsCategoryChipState();
+}
+
+class _SportsCategoryChipState extends State<_SportsCategoryChip> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          decoration: BoxDecoration(
+            color: widget.isSelected
+                ? widget.accentColor.withValues(alpha: 0.9)
+                : (_hovered
+                    ? Colors.white.withValues(alpha: 0.1)
+                    : Colors.white.withValues(alpha: 0.05)),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: widget.isSelected
+                  ? widget.accentColor
+                  : (_hovered
+                      ? Colors.white.withValues(alpha: 0.2)
+                      : Colors.white.withValues(alpha: 0.08)),
+              width: 1,
+            ),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            widget.label,
+            style: TextStyle(
+              color: widget.isSelected
+                  ? Colors.white
+                  : (_hovered ? Colors.white : Colors.white70),
+              fontSize: 12.5,
+              fontWeight: widget.isSelected ? FontWeight.bold : FontWeight.w500,
+            ),
+          ),
         ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: () => _openMatch(match),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                children: [
-                  _poster(match),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          match.title.isNotEmpty ? match.title : 'Live Event',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+}
+
+class _SportsMatchCard extends StatefulWidget {
+  final SportsMatch match;
+  final VoidCallback onOpen;
+
+  const _SportsMatchCard({
+    super.key,
+    required this.match,
+    required this.onOpen,
+  });
+
+  @override
+  State<_SportsMatchCard> createState() => _SportsMatchCardState();
+}
+
+class _SportsMatchCardState extends State<_SportsMatchCard> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final match = widget.match;
+    final accent = NivioTheme.accentColorOf(context);
+    final isLive = match.isLikelyLive;
+    final time = match.startTime;
+
+    return RepaintBoundary(
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: widget.onOpen,
+          behavior: HitTestBehavior.opaque,
+          child: AnimatedScale(
+            scale: _isHovered ? 1.025 : 1.0,
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutCubic,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOutCubic,
+              decoration: BoxDecoration(
+                color: _isHovered ? const Color(0xFF1B202D) : const Color(0xFF141720),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: _isHovered
+                      ? accent.withValues(alpha: 0.5)
+                      : Colors.white.withValues(alpha: 0.08),
+                  width: _isHovered ? 1.5 : 1.0,
+                ),
+                boxShadow: _isHovered
+                    ? [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8),
+                          spreadRadius: 1,
                         ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            if (live)
-                              Container(
-                                margin: const EdgeInsets.only(right: 6),
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.red,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: const Text('LIVE',
-                                    style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
-                              ),
-                            Flexible(
-                              child: Text(
-                                live ? match.category : subtitle,
+                      ]
+                    : null,
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Top Row: Category + LIVE/Kickoff Time + Hot Tag
+                  Row(
+                    children: [
+                      if (match.category.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            match.category.toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      if (match.popular) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3.5),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(PhosphorIconsFill.fire, size: 11, color: Colors.amber),
+                              SizedBox(width: 3),
+                              Text(
+                                'HOT',
                                 style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.45),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
+                                  color: Colors.amber,
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const Spacer(),
+                      if (isLive)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDC2626),
+                            borderRadius: BorderRadius.circular(6),
+                            boxShadow: const [
+                              BoxShadow(color: Color(0x66DC2626), blurRadius: 6),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 5,
+                                height: 5,
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Text(
+                                'LIVE',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else if (time != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(PhosphorIconsRegular.clock, size: 12, color: Colors.white60),
+                              const SizedBox(width: 4),
+                              Text(
+                                _formatTime(time),
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+
+                  // Center Matchup Area
+                  Expanded(
+                    child: match.hasTeams
+                        ? _buildTeamsMatchup(match)
+                        : _buildEventMatchup(match),
+                  ),
+
+                  // Bottom Action Row
+                  Row(
+                    children: [
+                      const Icon(PhosphorIconsRegular.broadcast, size: 14, color: Colors.white54),
+                      const SizedBox(width: 5),
+                      Text(
+                        '${match.sources.length} stream${match.sources.length == 1 ? '' : 's'}${match.sources.any((s) => s.source.isNotEmpty) ? ' · HD' : ''}',
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const Spacer(),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 160),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6.5),
+                        decoration: BoxDecoration(
+                          color: _isHovered ? accent : accent.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: _isHovered ? accent : accent.withValues(alpha: 0.35),
+                          ),
+                          boxShadow: _isHovered
+                              ? [
+                                  BoxShadow(
+                                    color: accent.withValues(alpha: 0.4),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              PhosphorIconsFill.play,
+                              size: 11,
+                              color: _isHovered ? Colors.white : accent,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              isLive ? 'Watch Live' : 'Watch',
+                              style: TextStyle(
+                                color: _isHovered ? Colors.white : accent,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: NivioTheme.accentColorOf(context).withValues(alpha: 0.15),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(PhosphorIconsRegular.play,
-                        color: NivioTheme.accentColorOf(context), size: 16),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -397,28 +839,180 @@ class _SportsViewState extends ConsumerState<SportsView>
     );
   }
 
-  Widget _poster(SportsMatch match) {
-    final img = match.homeBadge.isNotEmpty ? match.homeBadge : match.poster;
+  Widget _buildTeamsMatchup(SportsMatch match) {
+    return Row(
+      children: [
+        // Home Team
+        Expanded(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _teamBadge(match.homeBadge, match.homeTeam),
+              const SizedBox(height: 8),
+              Text(
+                match.homeTeam,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+        // VS Divider
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            alignment: Alignment.center,
+            child: const Text(
+              'VS',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ),
+        // Away Team
+        Expanded(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _teamBadge(match.awayBadge, match.awayTeam),
+              const SizedBox(height: 8),
+              Text(
+                match.awayTeam,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _teamBadge(String url, String name) {
+    final hasUrl = url.isNotEmpty && (url.startsWith('http://') || url.startsWith('https://'));
     return Container(
-      width: 46,
-      height: 46,
+      width: 48,
+      height: 48,
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
-      child: img.isNotEmpty
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: CachedNetworkImage(
-                imageUrl: img,
-                fit: BoxFit.contain,
-                errorWidget: (c, u, e) => Icon(PhosphorIconsRegular.trophy,
-                    color: Colors.white.withValues(alpha: 0.3), size: 22),
-              ),
+      padding: const EdgeInsets.all(5),
+      child: hasUrl
+          ? CachedNetworkImage(
+              imageUrl: url,
+              fit: BoxFit.contain,
+              errorWidget: (_, __, ___) => _badgeLetterFallback(name),
             )
-          : Icon(PhosphorIconsRegular.trophy,
-              color: Colors.white.withValues(alpha: 0.3), size: 22),
+          : _badgeLetterFallback(name),
+    );
+  }
+
+  Widget _badgeLetterFallback(String name) {
+    final char = name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?';
+    return Center(
+      child: Text(
+        char,
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.6),
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEventMatchup(SportsMatch match) {
+    final img = match.homeBadge.isNotEmpty ? match.homeBadge : match.poster;
+    final hasUrl = img.isNotEmpty && (img.startsWith('http://') || img.startsWith('https://'));
+
+    return Row(
+      children: [
+        Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.04),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: hasUrl
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: CachedNetworkImage(
+                    imageUrl: img,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => Icon(
+                      PhosphorIconsRegular.trophy,
+                      color: Colors.white.withValues(alpha: 0.35),
+                      size: 26,
+                    ),
+                  ),
+                )
+              : Icon(
+                  PhosphorIconsRegular.trophy,
+                  color: Colors.white.withValues(alpha: 0.35),
+                  size: 26,
+                ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                match.title.isNotEmpty ? match.title : 'Live Sports Event',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
+                  height: 1.25,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (match.category.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  match.category,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 

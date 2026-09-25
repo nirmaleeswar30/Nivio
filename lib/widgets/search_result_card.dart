@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/providers/service_providers.dart';
+import 'package:nivio/widgets/skeleton.dart';
 
 class SearchResultCard extends ConsumerWidget {
   final SearchResult media;
@@ -47,17 +48,12 @@ class SearchResultCard extends ConsumerWidget {
                           imageUrl: posterUrl,
                           fit: BoxFit.cover,
                           width: double.infinity,
-                          placeholder: (context, url) => Container(
-                            color: NivioTheme.netflixDarkGrey,
-                            child: Center(
-                              child: SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  color: NivioTheme.accentColorOf(context),
-                                  strokeWidth: 2,
-                                ),
-                              ),
+                          memCacheWidth: 350,
+                          placeholder: (context, url) => const Skeletonizer(
+                            child: SkeletonBox(
+                              width: double.infinity,
+                              height: double.infinity,
+                              borderRadius: BorderRadius.zero,
                             ),
                           ),
                           errorWidget: (context, url, error) => Container(

@@ -11,6 +11,8 @@ import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/models/watchlist_item.dart';
 import 'package:nivio/services/anime_tracking_coordinator.dart';
+import 'package:nivio/services/simkl_auth_service.dart';
+import 'package:nivio/widgets/skeleton.dart';
 
 class WatchlistScreen extends ConsumerStatefulWidget {
   final bool embedded;
@@ -26,6 +28,9 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
   bool _isListView = false;
   String _searchQuery = '';
   WatchStatus? _selectedStatusFilter;
+  bool _isInitialLoading = true;
+  bool _isSyncing = false;
+  Timer? _initialLoadingTimer;
 
   @override
   void initState() {
@@ -35,12 +40,53 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
         _searchQuery = _searchController.text;
       });
     });
+
+    final initialItems = ref.read(watchlistProvider);
+    if (initialItems.isNotEmpty) {
+      _isInitialLoading = false;
+    } else {
+      _initialLoadingTimer = Timer(const Duration(milliseconds: 700), () {
+        if (mounted && _isInitialLoading) {
+          setState(() {
+            _isInitialLoading = false;
+          });
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    _initialLoadingTimer?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _syncWatchlist() async {
+    if (_isSyncing) return;
+    setState(() => _isSyncing = true);
+    try {
+      final watchlistService = ref.read(watchlistServiceProvider);
+      if (ref.read(isSignedInProvider)) {
+        await watchlistService.downloadFromCloud();
+      }
+      if (AnimeTrackingCoordinator.instance.hasAnyAccountConnected) {
+        await watchlistService.importFromAnimeTracking(pushOfflineChanges: true);
+      }
+      if (SimklAuthService.instance.isAuthenticated) {
+        await watchlistService.importFromSimkl(pushOfflineChanges: true);
+      }
+      ref.read(watchlistRefreshProvider.notifier).refresh();
+    } catch (e) {
+      debugPrint('[WatchlistScreen] Sync error: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSyncing = false;
+          _isInitialLoading = false;
+        });
+      }
+    }
   }
 
   Color _getStatusColor(WatchStatus status) {
@@ -107,7 +153,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
   Widget _buildItemStatusMenu(WatchlistItem item) {
     return PopupMenuButton<dynamic>(
       icon: const Icon(Icons.more_vert_rounded, size: 20),
-      tooltip: 'Options',
+      tooltip: '',
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(),
       splashRadius: 20,
@@ -190,6 +236,10 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
   Widget build(BuildContext context) {
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     final allWatchlist = ref.watch(watchlistProvider);
+    if (allWatchlist.isNotEmpty && _isInitialLoading) {
+      _isInitialLoading = false;
+      _initialLoadingTimer?.cancel();
+    }
     final theme = Theme.of(context);
     final tmdbService = ref.watch(tmdbServiceProvider);
 
@@ -220,9 +270,12 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                       imageUrl: posterUrl,
                       fit: BoxFit.cover,
                       memCacheWidth: 300,
-                      placeholder: (context, url) => Container(
-                        color: theme.colorScheme.surfaceContainerHighest,
-                        child: const Center(child: CircularProgressIndicator()),
+                      placeholder: (context, url) => const Skeletonizer(
+                        child: SkeletonBox(
+                          width: double.infinity,
+                          height: double.infinity,
+                          borderRadius: BorderRadius.zero,
+                        ),
                       ),
                       errorWidget: (context, url, error) => Container(
                         color: theme.colorScheme.surfaceContainerHighest,
@@ -362,15 +415,15 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
     Widget buildListItem(WatchlistItem item, String posterUrl) {
       final statusColor = _getStatusColor(item.watchStatus);
       return Card(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        margin: const EdgeInsets.symmetric(vertical: 4),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => context.push('/media/${item.id}?type=${item.mediaType}'),
           child: Row(
             children: [
               SizedBox(
-                width: 90,
-                height: 130,
+                width: 85,
+                height: 122,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
@@ -379,9 +432,12 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                         imageUrl: posterUrl,
                         fit: BoxFit.cover,
                         memCacheWidth: 300,
-                        placeholder: (context, url) => Container(
-                          color: theme.colorScheme.surfaceContainerHighest,
-                          child: const Center(child: CircularProgressIndicator()),
+                        placeholder: (context, url) => const Skeletonizer(
+                          child: SkeletonBox(
+                            width: double.infinity,
+                            height: double.infinity,
+                            borderRadius: BorderRadius.zero,
+                          ),
                         ),
                         errorWidget: (context, url, error) => Container(
                           color: theme.colorScheme.surfaceContainerHighest,
@@ -498,8 +554,8 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       final counts = <WatchStatus?, int>{
         null: allWatchlist.length,
       };
-      for (final s in WatchStatus.values) {
-        counts[s] = allWatchlist.where((i) => i.watchStatus == s).length;
+      for (final item in allWatchlist) {
+        counts[item.watchStatus] = (counts[item.watchStatus] ?? 0) + 1;
       }
 
       final options = [
@@ -556,12 +612,12 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
 
     final gridContent = AppGridView.builder(
       padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 16, 16, 16),
-      cacheExtent: 250,
+      cacheExtent: isDesktop ? 1000 : 350,
       scrollSpeed: 2.0,
       silkyScrollDuration: const Duration(milliseconds: 500),
       animationCurve: Curves.easeOutQuart,
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 200,
+      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: isDesktop ? 180 : 185,
         childAspectRatio: 0.65,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
@@ -570,18 +626,17 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       itemBuilder: (context, index) {
         final item = watchlist[index];
         final posterUrl = tmdbService.getPosterUrl(item.posterPath);
-        return RepaintBoundary(
-          child: InkWell(
-            onTap: () => context.push('/media/${item.id}?type=${item.mediaType}'),
-            child: buildItemCard(item, posterUrl),
-          ),
+        return _WatchlistHoverCard(
+          onTap: () => context.push('/media/${item.id}?type=${item.mediaType}'),
+          hoverScale: 1.05,
+          child: buildItemCard(item, posterUrl),
         );
       },
     );
 
     final listContent = AppListView.builder(
       padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 8, 16, 8),
-      cacheExtent: 250,
+      cacheExtent: isDesktop ? 1000 : 350,
       scrollSpeed: 2.0,
       silkyScrollDuration: const Duration(milliseconds: 500),
       animationCurve: Curves.easeOutQuart,
@@ -589,75 +644,94 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       itemBuilder: (context, index) {
         final item = watchlist[index];
         final posterUrl = tmdbService.getPosterUrl(item.posterPath);
-        return RepaintBoundary(
+        return _WatchlistHoverCard(
+          onTap: () => context.push('/media/${item.id}?type=${item.mediaType}'),
+          hoverScale: 1.015,
+          borderRadius: BorderRadius.circular(12),
           child: buildListItem(item, posterUrl),
         );
       },
     );
 
-    final content = allWatchlist.isEmpty
-        ? _buildEmptyState(theme)
-        : Column(
-            children: [
-              Padding(
-                padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 16, 16, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        decoration: InputDecoration(
-                          hintText: 'Search watchlist...',
-                          prefixIcon: const Icon(Icons.search),
-                          suffixIcon: _searchQuery.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear),
-                                  onPressed: () => _searchController.clear(),
-                                )
-                              : null,
-                          filled: true,
-                          fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: Icon(_isListView ? Icons.grid_view : Icons.view_list),
-                      onPressed: () {
-                        setState(() {
-                          _isListView = !_isListView;
-                        });
-                      },
-                      tooltip: _isListView ? 'Grid View' : 'List View',
-                    ),
-                  ],
+    final showSkeleton = (_isInitialLoading || _isSyncing) && allWatchlist.isEmpty;
+
+    final content = showSkeleton
+        ? _buildSkeletonView(isDesktop)
+        : allWatchlist.isEmpty
+            ? RefreshIndicator(
+                onRefresh: _syncWatchlist,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: SizedBox(
+                    height: MediaQuery.sizeOf(context).height * 0.7,
+                    child: _buildEmptyState(theme),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              buildFilterChips(),
-              const SizedBox(height: 8),
-              Expanded(
-                child: watchlist.isEmpty
-                    ? Center(
-                        child: Text(
-                          _searchQuery.isNotEmpty
-                              ? 'No results found for "$_searchQuery"'
-                              : 'No items in ${_selectedStatusFilter?.label ?? 'this category'}',
-                          style: TextStyle(
-                            color: theme.colorScheme.onSurface.withOpacity(0.6),
-                            fontSize: 14,
+              )
+            : Column(
+                children: [
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 16, 16, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _searchController,
+                            decoration: InputDecoration(
+                              hintText: 'Search watchlist...',
+                              prefixIcon: const Icon(Icons.search),
+                              suffixIcon: _searchQuery.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear),
+                                      onPressed: () => _searchController.clear(),
+                                    )
+                                  : null,
+                              filled: true,
+                              fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                            ),
                           ),
                         ),
-                      )
-                    : (_isListView ? listContent : gridContent),
-              ),
-            ],
-          );
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: Icon(_isListView ? Icons.grid_view : Icons.view_list),
+                          onPressed: () {
+                            setState(() {
+                              _isListView = !_isListView;
+                            });
+                          },
+                          tooltip: _isListView ? 'Grid View' : 'List View',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  buildFilterChips(),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: watchlist.isEmpty
+                        ? Center(
+                            child: Text(
+                              _searchQuery.isNotEmpty
+                                  ? 'No results found for "$_searchQuery"'
+                                  : 'No items in ${_selectedStatusFilter?.label ?? 'this category'}',
+                              style: TextStyle(
+                                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                                fontSize: 14,
+                              ),
+                            ),
+                          )
+                        : RefreshIndicator(
+                            onRefresh: _syncWatchlist,
+                            child: _isListView ? listContent : gridContent,
+                          ),
+                  ),
+                ],
+              );
 
     if (widget.embedded) {
       return Container(
@@ -683,6 +757,23 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                     ),
                   ),
                   const Spacer(),
+                  IconButton(
+                    icon: _isSyncing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: NivioTheme.netflixWhite,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.refresh_rounded,
+                            color: NivioTheme.netflixWhite,
+                          ),
+                    tooltip: 'Sync Watchlist',
+                    onPressed: _syncWatchlist,
+                  ),
                   if (allWatchlist.isNotEmpty)
                     IconButton(
                       icon: const Icon(
@@ -705,6 +796,17 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       appBar: AppBar(
         title: const Text('My Watchlist'),
         actions: [
+          IconButton(
+            icon: _isSyncing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+            tooltip: 'Sync Watchlist',
+            onPressed: _syncWatchlist,
+          ),
           if (allWatchlist.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.info_outline),
@@ -714,6 +816,72 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
         ],
       ),
       body: content,
+    );
+  }
+
+  Widget _buildSkeletonView(bool isDesktop) {
+    return Column(
+      children: [
+        // Search bar skeleton
+        Padding(
+          padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 16, 16, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Skeletonizer(
+                  child: SkeletonBox(
+                    width: double.infinity,
+                    height: 48,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Skeletonizer(
+                child: SkeletonBox(
+                  width: 40,
+                  height: 40,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        // Filter chips skeleton
+        SizedBox(
+          height: 36,
+          child: Skeletonizer(
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: EdgeInsets.symmetric(horizontal: isDesktop ? 68 : 16),
+              itemCount: 6,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, idx) => SkeletonBox(
+                width: idx == 0 ? 55 : (70.0 + (idx * 8)),
+                height: 32,
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Grid or List skeleton
+        Expanded(
+          child: _isListView
+              ? WatchlistListSkeleton(
+                  padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 8, 16, 8),
+                  itemCount: 8,
+                )
+              : WatchlistGridSkeleton(
+                  padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 16, 16, 16),
+                  maxCrossAxisExtent: isDesktop ? 180 : 185,
+                  childAspectRatio: 0.65,
+                  itemCount: 16,
+                ),
+        ),
+      ],
     );
   }
 
@@ -761,6 +929,64 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
             child: const Text('OK'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Interactive hover card with smooth scale and soft drop-shadow animation on desktop.
+class _WatchlistHoverCard extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  final double hoverScale;
+  final BorderRadius borderRadius;
+
+  const _WatchlistHoverCard({
+    required this.child,
+    required this.onTap,
+    this.hoverScale = 1.05,
+    this.borderRadius = const BorderRadius.all(Radius.circular(12)),
+  });
+
+  @override
+  State<_WatchlistHoverCard> createState() => _WatchlistHoverCardState();
+}
+
+class _WatchlistHoverCardState extends State<_WatchlistHoverCard> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedScale(
+          scale: _isHovered ? widget.hoverScale : 1.0,
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutCubic,
+            decoration: BoxDecoration(
+              borderRadius: widget.borderRadius,
+              boxShadow: _isHovered
+                  ? [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6),
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: widget.child,
+          ),
+        ),
       ),
     );
   }

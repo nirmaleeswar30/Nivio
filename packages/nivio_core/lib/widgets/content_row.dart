@@ -165,11 +165,8 @@ class _AnimatedPosterCard extends ConsumerStatefulWidget {
       _AnimatedPosterCardState();
 }
 
-class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _scaleAnimation;
-  late Animation<double> _elevationAnimation;
+class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard> {
+  bool _isHovered = false;
 
   final GlobalKey _cardKey = GlobalKey();
   Timer? _hoverTimer;
@@ -178,23 +175,6 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
 
   static OverlayEntry? _activeOverlay;
   static _AnimatedPosterCardState? _activeCardState;
-
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 250),
-      vsync: this,
-    );
-
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.05).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
-    );
-
-    _elevationAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
-    );
-  }
 
   void _showOverlay([VoidCallback? onPlayAction]) {
     if (!mounted) return;
@@ -285,7 +265,6 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
     if (_activeCardState == this) {
       _dismissOverlay();
     }
-    _animationController.dispose();
     super.dispose();
   }
 
@@ -385,135 +364,110 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard>
     return CompositedTransformTarget(
       link: _layerLink,
       child: MouseRegion(
-            onEnter: (_) {
-              _animationController.forward();
-              if (isDesktop) {
-                _dismissTimer?.cancel();
-                if (_activeCardState == this) return;
-                _hoverTimer?.cancel();
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) {
+          setState(() => _isHovered = true);
+          if (isDesktop) {
+            _dismissTimer?.cancel();
+            if (_activeCardState == this) return;
+            _hoverTimer?.cancel();
+            
+            // Prefetch details and trailer URL immediately on hover enter
+            unawaited(HoverPreviewCard.prefetch(ref, widget.tmdbId, widget.mediaType, widget.title));
+            
+            _hoverTimer = Timer(const Duration(milliseconds: 500), () {
+              _showOverlay(action);
+            });
+          }
+        },
+        onExit: (event) {
+          setState(() => _isHovered = false);
+          if (isDesktop) {
+            _hoverTimer?.cancel();
+            if (_activeCardState == this) {
+              // Check if cursor is inside the hover overlay bounds
+              final renderBox = _cardKey.currentContext?.findRenderObject() as RenderBox?;
+              if (renderBox != null) {
+                final position = renderBox.localToGlobal(Offset.zero);
+                final size = renderBox.size;
+                final hoverWidth = 250.0;
+                final hoverHeight = 260.0;
+                final left = (position.dx + size.width / 2) - hoverWidth / 2;
+                final top = (position.dy + size.height / 2) - hoverHeight / 2;
+                final hoverRect = Rect.fromLTWH(left, top, hoverWidth, hoverHeight);
                 
-                // Prefetch details and trailer URL immediately on hover enter
-                unawaited(HoverPreviewCard.prefetch(ref, widget.tmdbId, widget.mediaType, widget.title));
-                
-                _hoverTimer = Timer(const Duration(milliseconds: 500), () {
-                  _showOverlay(action);
-                });
-              }
-            },
-            onExit: (event) {
-              _animationController.reverse();
-              if (isDesktop) {
-                _hoverTimer?.cancel();
-                if (_activeCardState == this) {
-                  // Check if cursor is inside the hover overlay bounds
-                  final renderBox = _cardKey.currentContext?.findRenderObject() as RenderBox?;
-                  if (renderBox != null) {
-                    final position = renderBox.localToGlobal(Offset.zero);
-                    final size = renderBox.size;
-                    final hoverWidth = 250.0;
-                    final hoverHeight = 260.0;
-                    final left = (position.dx + size.width / 2) - hoverWidth / 2;
-                    final top = (position.dy + size.height / 2) - hoverHeight / 2;
-                    final hoverRect = Rect.fromLTWH(left, top, hoverWidth, hoverHeight);
-                    
-                    if (hoverRect.contains(event.position)) {
-                      // Cursor is over the hover preview overlay, don't dismiss
-                      return;
-                    }
-                  }
-      
-                  _dismissTimer?.cancel();
-                  _dismissTimer = Timer(const Duration(milliseconds: 200), () {
-                    _dismissOverlay();
-                  });
+                if (hoverRect.contains(event.position)) {
+                  // Cursor is over the hover preview overlay, don't dismiss
+                  return;
                 }
               }
-            },
-            child: GestureDetector(
-              onTap: () {
-                _dismissActiveOverlay();
-                action();
-              },
-              child: AnimatedBuilder(
-            animation: _animationController,
-            builder: (context, child) {
-              return Transform.scale(
-                scale: _scaleAnimation.value,
-                child: Container(
-                  key: _cardKey,
-                  width: isDesktop ? 140 : 120,
-                  height: isDesktop ? 210 : 170,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(4),
-                    color: const Color(0xFF2F2F2F),
-                    boxShadow: _elevationAnimation.value > 0
-                        ? [
-                            BoxShadow(
-                              color: Colors.black.withValues(
-                                alpha: 0.5 * _elevationAnimation.value,
-                              ),
-                              blurRadius: 15 * _elevationAnimation.value,
-                              spreadRadius: 1 * _elevationAnimation.value,
-                              offset: Offset(0, 6 * _elevationAnimation.value),
-                            ),
-                          ]
-                        : null,
-                  ),
-                  child: Stack(
-                    children: [
-                      // Poster Image (cached statically)
-                      Positioned.fill(child: child!),
-                      
-                      // Hover Overlay with Play Icon
-                      if (_elevationAnimation.value > 0)
-                        Opacity(
-                          opacity: _elevationAnimation.value,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(4),
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.transparent,
-                                  Colors.black.withOpacity(0.7),
-                                ],
-                              ),
-                            ),
-                              child: const Center(
-                                child: Icon(
-                                  Icons.play_circle_fill,
-                                  color: Colors.white,
-                                  size: 48,
-                                ),
-                              ),
-                            ),
+  
+              _dismissTimer?.cancel();
+              _dismissTimer = Timer(const Duration(milliseconds: 200), () {
+                _dismissOverlay();
+              });
+            }
+          }
+        },
+        child: GestureDetector(
+          onTap: () {
+            _dismissActiveOverlay();
+            action();
+          },
+          behavior: HitTestBehavior.opaque,
+          child: AnimatedScale(
+            scale: _isHovered ? 1.05 : 1.0,
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutCubic,
+            child: AnimatedContainer(
+              key: _cardKey,
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOutCubic,
+              width: isDesktop ? 140 : 120,
+              height: isDesktop ? 210 : 170,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(6),
+                color: const Color(0xFF2F2F2F),
+                boxShadow: _isHovered
+                    ? [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                          spreadRadius: 1,
+                        ),
+                      ]
+                    : null,
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Stack(
+                  children: [
+                    // Poster Image (cached statically)
+                    Positioned.fill(child: imageWithTitle),
+                    if (isInWatchlist)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: NivioTheme.accentColorOf(
+                              context,
+                            ).withValues(alpha: 0.95),
+                            shape: BoxShape.circle,
                           ),
-                        if (isInWatchlist)
-                          Positioned(
-                            top: 8,
-                            right: 8,
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(
-                                color: NivioTheme.accentColorOf(
-                                  context,
-                                ).withValues(alpha: 0.95),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.check,
-                                color: Colors.white,
-                                size: 14,
-                              ),
-                            ),
+                          child: const Icon(
+                            Icons.check,
+                            color: Colors.white,
+                            size: 14,
                           ),
-                    ],
-                  ),
+                        ),
+                      ),
+                  ],
                 ),
-              );
-            },
-            child: imageWithTitle,
+              ),
+            ),
           ),
         ),
       ),
