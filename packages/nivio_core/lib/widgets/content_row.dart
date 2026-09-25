@@ -215,26 +215,8 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard> {
               posterPath: widget.posterPath,
               onDismiss: _dismissOverlay,
               onPlayAction: onPlayAction,
-              onScroll: (event) {
-                try {
-                  if (event.scrollDelta.dx != 0) {
-                    final scrollable = Scrollable.of(_cardKey.currentContext!, axis: Axis.horizontal);
-                    final pos = scrollable.position;
-                    pos.jumpTo((pos.pixels + event.scrollDelta.dx).clamp(
-                      pos.minScrollExtent,
-                      pos.maxScrollExtent,
-                    ));
-                  }
-                  if (event.scrollDelta.dy != 0) {
-                    final scrollable = Scrollable.of(_cardKey.currentContext!, axis: Axis.vertical);
-                    final pos = scrollable.position;
-                    pos.jumpTo((pos.pixels + event.scrollDelta.dy).clamp(
-                      pos.minScrollExtent,
-                      pos.maxScrollExtent,
-                    ));
-                  }
-                } catch (_) {}
-              },
+              onScroll: (event) => _applyHoverScroll(event.scrollDelta),
+              onPanScroll: _applyHoverScroll,
             ),
           ),
         );
@@ -242,6 +224,26 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard> {
     );
 
     Overlay.of(_cardKey.currentContext!).insert(_activeOverlay!);
+  }
+
+  // Forward a scroll delta (from the hover preview's mouse wheel OR trackpad
+  // pan) to the underlying horizontal row / vertical page scrollables, so the
+  // app keeps scrolling while a hover preview is open.
+  void _applyHoverScroll(Offset delta) {
+    final ctx = _cardKey.currentContext;
+    if (ctx == null) return;
+    try {
+      if (delta.dx != 0) {
+        final pos = Scrollable.of(ctx, axis: Axis.horizontal).position;
+        pos.jumpTo((pos.pixels + delta.dx)
+            .clamp(pos.minScrollExtent, pos.maxScrollExtent));
+      }
+      if (delta.dy != 0) {
+        final pos = Scrollable.of(ctx, axis: Axis.vertical).position;
+        pos.jumpTo((pos.pixels + delta.dy)
+            .clamp(pos.minScrollExtent, pos.maxScrollExtent));
+      }
+    } catch (_) {}
   }
 
   void _dismissOverlay() {

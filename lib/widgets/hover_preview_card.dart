@@ -20,6 +20,9 @@ class HoverPreviewCard extends ConsumerStatefulWidget {
   final String? posterPath;
   final VoidCallback onDismiss;
   final void Function(PointerScrollEvent) onScroll;
+  // Trackpad pan forwarding (mouse wheel goes through onScroll). Receives an
+  // already-normalized scroll delta (same sign convention as a wheel).
+  final void Function(Offset scrollDelta)? onPanScroll;
   final VoidCallback? onPlayAction;
 
   const HoverPreviewCard({
@@ -31,6 +34,7 @@ class HoverPreviewCard extends ConsumerStatefulWidget {
     this.posterPath,
     required this.onDismiss,
     required this.onScroll,
+    this.onPanScroll,
     this.onPlayAction,
   });
 
@@ -405,6 +409,10 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
               widget.onScroll.call(pointerSignal);
             }
           },
+          // Forward trackpad two-finger pans to the underlying scrollables so
+          // the page/row still scrolls while the hover preview is open. Negated
+          // to match the mouse-wheel (add) convention used by onScroll.
+          onPointerPanZoomUpdate: (e) => widget.onPanScroll?.call(-e.panDelta),
           child: MouseRegion(
             onExit: (_) => widget.onDismiss(),
             cursor: SystemMouseCursors.click,

@@ -41,7 +41,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final ScrollController _scrollController = ScrollController();
   final PageController _pageController = PageController();
-  bool _showAppBarBackground = false;
+  final ValueNotifier<bool> _showAppBarBg = ValueNotifier<bool>(false);
   bool _isBannerVisible = true;
   int _currentBannerIndex = 0;
   int _currentBannerPage = 0;
@@ -56,14 +56,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(() {
-      if (_scrollController.offset > 50 && !_showAppBarBackground) {
-        setState(() => _showAppBarBackground = true);
-      } else if (_scrollController.offset <= 50 && _showAppBarBackground) {
-        setState(() => _showAppBarBackground = false);
+      final offset = _scrollController.offset;
+      // Use a ValueNotifier (not setState) so crossing the threshold only
+      // repaints the appbar background — NOT the whole HomeScreen. A full
+      // rebuild here janked the first scroll (and on desktop there's no appbar
+      // at all, so setState was pure waste that stuttered the first swipe).
+      if (offset > 50 && !_showAppBarBg.value) {
+        _showAppBarBg.value = true;
+      } else if (offset <= 50 && _showAppBarBg.value) {
+        _showAppBarBg.value = false;
       }
-      
+
       // The hero banner is ~500-600px tall. If we've scrolled past 800px, it's definitely offscreen.
-      final isVisible = _scrollController.offset < 800;
+      final isVisible = offset < 800;
       if (isVisible != _isBannerVisible) {
         // We don't setState here because we don't need to rebuild the UI,
         // we just need to update the flag so the timer knows to pause.
@@ -142,6 +147,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void dispose() {
     _scrollController.dispose();
     _pageController.dispose();
+    _showAppBarBg.dispose();
     _bannerTimer?.cancel();
     super.dispose();
   }
@@ -217,28 +223,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         child: AppBar(
           elevation: 0,
           backgroundColor: Colors.transparent,
-          flexibleSpace: ClipRect(
-            child: _showAppBarBackground
-                ? Container(
-                    decoration: const BoxDecoration(
-                      color: Color(0xFA0D0F14), // Near opaque dark background
-                      border: Border(
-                        bottom: BorderSide(color: Color(0x22FFFFFF)),
+          flexibleSpace: ValueListenableBuilder<bool>(
+            valueListenable: _showAppBarBg,
+            builder: (context, showBg, _) => ClipRect(
+              child: showBg
+                  ? Container(
+                      decoration: const BoxDecoration(
+                        color: Color(0xFA0D0F14), // Near opaque dark background
+                        border: Border(
+                          bottom: BorderSide(color: Color(0x22FFFFFF)),
+                        ),
+                      ),
+                    )
+                  : Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.7),
+                            Colors.transparent,
+                          ],
+                        ),
                       ),
                     ),
-                  )
-                : Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.black.withValues(alpha: 0.7),
-                          Colors.transparent,
-                        ],
-                      ),
-                    ),
-                  ),
+            ),
           ),
           title: isDesktop 
               ? const SizedBox.shrink()
@@ -638,6 +647,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  // Total pan of the current trackpad gesture over the hero (see the Listener
+  // in the carousel — the outer scroll eats these so we handle them directly).
+  Offset _heroPanTotal = Offset.zero;
+  bool _heroPanActive = false;
+
+  /// Advance/rewind the hero on a horizontal-dominant trackpad swipe. Vertical
+  /// gestures are ignored here so they keep scrolling the page normally.
+  void _handleHeroTrackpadSwipe(Offset pan) {
+    if (!_pageController.hasClients) return;
+    if (pan.dx.abs() < 24 || pan.dx.abs() <= pan.dy.abs()) return; // not horizontal
+    final current =
+        (_pageController.page ?? _currentBannerPage.toDouble()).round();
+    final next = pan.dx < 0 ? current + 1 : current - 1; // swipe left => next
+    if (next < 0) return;
+    _pageController.animateToPage(
+      next,
+      duration: const Duration(milliseconds: 450),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   Widget _buildHeroBannerCarousel(BuildContext context, List<Map<String, dynamic>> items) {
     if (items.isEmpty) return const SizedBox(height: 500);
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
@@ -656,9 +686,55 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return SizedBox(
       height: bannerHeight,
-      child: PageView.builder(
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        // On desktop the hero PageView is set to NeverScrollable so it never
+        // competes for trackpad/mouse gestures (that competition ate the first
+        // vertical swipe over the hero and froze page scrolling). Instead we
+        // drive it here: a horizontal-dominant swipe/drag changes the banner,
+        // while vertical gestures fall straight through to scroll the page.
+        // Mobile keeps native touch paging.
+        onPointerDown: isDesktop
+            ? (e) {
+                _heroPanTotal = Offset.zero;
+                _heroPanActive = true;
+              }
+            : null,
+        onPointerMove: isDesktop
+            ? (e) {
+                if (_heroPanActive) _heroPanTotal += e.delta;
+              }
+            : null,
+        onPointerUp: isDesktop
+            ? (e) {
+                if (_heroPanActive) {
+                  _heroPanActive = false;
+                  _handleHeroTrackpadSwipe(_heroPanTotal);
+                }
+              }
+            : null,
+        onPointerCancel: isDesktop ? (e) => _heroPanActive = false : null,
+        onPointerPanZoomStart: isDesktop
+            ? (_) {
+                _heroPanTotal = Offset.zero;
+                _heroPanActive = true;
+              }
+            : null,
+        onPointerPanZoomUpdate: isDesktop ? (e) => _heroPanTotal = e.pan : null,
+        onPointerPanZoomEnd: isDesktop
+            ? (_) {
+                if (_heroPanActive) {
+                  _heroPanActive = false;
+                  _handleHeroTrackpadSwipe(_heroPanTotal);
+                }
+              }
+            : null,
+        child: PageView.builder(
         controller: _pageController,
         itemCount: itemCount,
+        physics: isDesktop
+            ? const NeverScrollableScrollPhysics()
+            : const PageScrollPhysics(),
         onPageChanged: (index) {
           final actualIndex = index % items.length;
           _extractColorForIndex(items, actualIndex);
@@ -1041,6 +1117,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ],
           );
         },
+        ),
       ),
     );
   }
