@@ -262,6 +262,52 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ScaffoldMessengerState get _messenger =>
       _messengerKey.currentState ?? ScaffoldMessenger.of(context);
 
+  // —— [STUCK_DEBUG] watchdog for "server loads but playback never leaves 0:00" ——
+  Timer? _stuckWatchdog;
+  DateTime? _openStartedAt; // when _player.open() returned for the current load
+  bool _sawFirstFrame = false; // set once position advances past zero
+  bool _stuckReported = false; // one stuck report per load
+
+  /// Called right after a successful direct-stream _player.open(). Arms a timer
+  /// that fires if the position is still 0:00 after a grace period, and logs the
+  /// full player state so we can tell which anime servers open but never play.
+  void _startStuckWatchdog() {
+    _stuckWatchdog?.cancel();
+    _openStartedAt = DateTime.now();
+    _sawFirstFrame = false;
+    _stuckReported = false;
+
+    void snapshot(String tag) {
+      final s = _player.state;
+      final vp = s.videoParams;
+      appDebugLog(
+        '⏱️ [STUCK_DEBUG] PlayerScreen#$_sid $tag — provider="$_currentProvider" '
+        'pos=${s.position} dur=${s.duration} buffer=${s.buffer} '
+        'playing=${s.playing} buffering=${s.buffering} completed=${s.completed} '
+        'width=${vp.w} height=${vp.h} dw=${vp.dw} dh=${vp.dh} '
+        'videoTracks=${s.tracks.video.length} audioTracks=${s.tracks.audio.length} '
+        'url=${_streamResult?.url}',
+      );
+    }
+
+    // Two checks: an early one (server never even started) and a later one.
+    _stuckWatchdog = Timer(const Duration(seconds: 8), () {
+      if (!mounted || _isDeactivated) return;
+      if (_sawFirstFrame) return;
+      _stuckReported = true;
+      snapshot('STUCK at 0:00 after 8s');
+      // Re-check once more a few seconds later to distinguish "slow" from "dead".
+      Timer(const Duration(seconds: 7), () {
+        if (!mounted || _isDeactivated) return;
+        if (_sawFirstFrame) {
+          appDebugLog('✅ [STUCK_DEBUG] PlayerScreen#$_sid recovered — playback started late for "$_currentProvider"');
+        } else {
+          snapshot('STILL STUCK at 0:00 after 15s (server likely dead — user must switch)');
+        }
+      });
+    });
+  }
+
   // —— [CW_DEBUG] diagnostics for the continue-watching replay failure ——
   // Short id so logs from overlapping PlayerScreen instances can be told apart.
   late final String _sid = (identityHashCode(this) & 0xFFFF).toRadixString(16);
@@ -707,6 +753,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // must not be treated as a provider failure — that used to cycle through
     // every provider while the first stream kept playing in the background.
     var mediaOpened = false;
+    // Cancel any watchdog from a previous load/retry before starting a new one.
+    _stuckWatchdog?.cancel();
+    _sawFirstFrame = false;
     _hasAppliedGlobalTracks = false;
     _autoFullscreenTriggeredForCurrentLoad = false;
     _useNativePlayer = false;
@@ -858,12 +907,49 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // on disk — torrents via rqbit, direct files via the local range server,
       // HLS via a growing local playlist. Never falls back to re-streaming the
       // source; if it can't be resolved we surface an error instead.
-      if (widget.downloadStreamId != null) {
+      //
+      // An explicit downloadStreamId (from the Downloads screen) is honoured
+      // as-is. Otherwise, if this media/episode happens to be downloading right
+      // now, reuse it automatically — so launching from media detail, continue
+      // watching, or a watch-party sync doesn't waste a fresh remote stream.
+      // A hard error is only surfaced for the explicit case; for auto-detected
+      // in-progress items we fall through to normal providers if not yet ready.
+      String? effectiveDownloadStreamId = widget.downloadStreamId;
+      bool isExplicitDownload = widget.downloadStreamId != null;
+      if (effectiveDownloadStreamId == null &&
+          widget.localPath == null &&
+          widget.directStreamUrl == null &&
+          downloadItem == null) {
+        final inProgress = DownloadService.findInProgressDownload(
+          mediaId: widget.mediaId,
+          season: widget.season,
+          episode: _currentEpisode,
+        );
+        if (inProgress != null) {
+          effectiveDownloadStreamId = inProgress.id;
+          appDebugLog(
+            '🧪 [CW_DEBUG] PlayerScreen#$_sid auto-reusing in-progress download '
+            'id=${inProgress.id} (status=${inProgress.status}) for '
+            'media=${widget.mediaId} S${widget.season}E$_currentEpisode',
+          );
+        }
+      }
+
+      if (effectiveDownloadStreamId != null) {
         final dl = await DownloadService.resolveInProgressStream(
-          widget.downloadStreamId!,
+          effectiveDownloadStreamId,
         );
         if (dl != null) {
           _isDownloadStream = true;
+          // Register the download's torrent with the streaming service so the
+          // live P2P stats overlay (speed/peers/%) shows for watch-while-
+          // downloading torrents, not just picker-started ones. Both use the
+          // same shared rqbit engine, so stats resolve by torrent id.
+          if (dl.isTorrent && dl.torrentId != null) {
+            await ref
+                .read(torrentStreamServiceProvider)
+                .adoptActiveTorrent(dl.torrentId!);
+          }
           result = StreamResult(
             url: dl.url,
             quality: 'Downloading',
@@ -873,7 +959,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             headers: dl.headers,
             isM3U8: dl.isM3u8,
           );
-        } else {
+        } else if (isExplicitDownload) {
           if (!mounted) return;
           setState(() {
             _isLoading = false;
@@ -881,6 +967,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 "This download isn't ready to stream yet — give it a moment and try again.";
           });
           return;
+        } else {
+          // Auto-detected but not streamable yet (e.g. HLS segments not
+          // registered): fall through to normal remote providers.
+          appDebugLog(
+            '🧪 [CW_DEBUG] PlayerScreen#$_sid in-progress download not streamable yet — using remote providers',
+          );
         }
       }
 
@@ -1225,6 +1317,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (!_transferredToMiniPlayer) await _player.stop();
         return;
       }
+      // Watch for servers that open cleanly but never produce a frame.
+      _startStuckWatchdog();
 
       // Load custom remote subtitle if saved
       try {
@@ -1628,7 +1722,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _player.stream.position.listen((position) {
         if (!mounted) return;
         if (_isZombieCallback('position stream')) return;
-        // appDebugLog('🎬 POSITION_DEBUG: Current player position = $position');
+        // First time the stream actually advances past zero: the server works.
+        if (!_sawFirstFrame && position > Duration.zero) {
+          _sawFirstFrame = true;
+          _stuckWatchdog?.cancel();
+          final ms = _openStartedAt == null
+              ? '?'
+              : DateTime.now().difference(_openStartedAt!).inMilliseconds;
+          appDebugLog(
+            '▶️ [STUCK_DEBUG] PlayerScreen#$_sid first frame for "$_currentProvider" '
+            'after ${ms}ms (pos=$position)${_stuckReported ? ' (was flagged stuck — recovered)' : ''}',
+          );
+        }
         _checkNextEpisode();
         unawaited(_broadcastWatchPartyPlayback(force: false));
         _updateDiscordActivity();
@@ -1726,7 +1831,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subscriptions.add(
       _player.stream.buffering.listen((buffering) {
         if (!mounted) return;
-        // Can be used for UI indicators
+        if (_isZombieCallback('buffering stream')) return;
+        // Only log while we haven't seen playback yet — a server stuck at 0:00
+        // usually sits in buffering=true forever, or flips to false with no frame.
+        if (!_sawFirstFrame) {
+          appDebugLog(
+            '⏳ [STUCK_DEBUG] PlayerScreen#$_sid buffering=$buffering for "$_currentProvider" '
+            '(pos=${_player.state.position} dur=${_player.state.duration})',
+          );
+        }
       }),
     );
   }
@@ -3750,6 +3863,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     try {
       appDebugLog('🔴 [DISPOSE] Step 4: cancel timers...');
       _progressTimer?.cancel();
+      _stuckWatchdog?.cancel();
       _watchPartyHostSyncTimer?.cancel();
       _watchPartyPlaybackSub?.cancel();
       _watchPartySessionSub?.cancel();

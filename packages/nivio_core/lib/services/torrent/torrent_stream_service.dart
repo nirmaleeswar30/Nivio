@@ -90,6 +90,10 @@ class TorrentStreamService {
   TmdbService? get tmdbService => _tmdbService;
 
   int? _activeTorrentId;
+  // True when _activeTorrentId points at a torrent owned by DownloadService
+  // (adopted only so stats can be shown). We must NOT forget/delete it on
+  // stopActive — that would kill the user's ongoing download.
+  bool _activeIsAdopted = false;
   RqbitClient? _client;
 
   // Binge prefetch: the next episode pre-added to rqbit (metadata + first
@@ -381,8 +385,11 @@ class TorrentStreamService {
 
     if (!p.fromPack) {
       final old = _activeTorrentId;
+      final oldAdopted = _activeIsAdopted;
       _activeTorrentId = p.torrentId;
-      if (old != null && old != p.torrentId) {
+      _activeIsAdopted = false;
+      // Never release an adopted download torrent — it belongs to DownloadService.
+      if (old != null && old != p.torrentId && !oldAdopted) {
         unawaited(_releaseTorrent(old));
       }
     }
@@ -490,9 +497,11 @@ class TorrentStreamService {
     final id = add.id ?? 0;
     _log('torrent added id=$id; waiting for metadata/files…');
 
-    // Stop any previously-playing torrent.
+    // Stop any previously-playing torrent — unless it was an adopted download
+    // torrent (owned by DownloadService), which must keep running.
     final prev = _activeTorrentId;
-    if (prev != null && prev != id) {
+    final prevAdopted = _activeIsAdopted;
+    if (prev != null && prev != id && !prevAdopted) {
       try {
         if (persistFiles) {
           await client.forget(prev);
@@ -502,6 +511,7 @@ class TorrentStreamService {
       } catch (_) {}
     }
     _activeTorrentId = id;
+    _activeIsAdopted = false;
 
     // Magnets resolve metadata from peers — wait for the file list.
     var details = await client.getDetails(id);
@@ -562,6 +572,18 @@ class TorrentStreamService {
 
   bool get hasActive => _activeTorrentId != null && _client != null;
 
+  /// Adopts a torrent that was started elsewhere (e.g. a DownloadService
+  /// "watch while downloading" torrent running on the same shared rqbit engine)
+  /// so the player's live P2P stats overlay can report it. The engine client is
+  /// shared, so getStats(id) works once we point [_activeTorrentId] at it.
+  Future<void> adoptActiveTorrent(int torrentId) async {
+    try {
+      _client ??= await RqbitEngine.instance.ensureStarted();
+      _activeTorrentId = torrentId;
+      _activeIsAdopted = true;
+    } catch (_) {}
+  }
+
   /// Live stats for the active torrent (peers, speed, progress), or null when
   /// nothing is playing or on error. Safe to poll from the player UI.
   Future<TorrentStats?> activeStats() async {
@@ -581,7 +603,15 @@ class TorrentStreamService {
   Future<void> stopActive({bool deleteFiles = false}) async {
     final id = _activeTorrentId;
     final client = _client;
+    final wasAdopted = _activeIsAdopted;
     _activeTorrentId = null;
+    _activeIsAdopted = false;
+    // An adopted torrent is owned by DownloadService's ongoing download — just
+    // stop reporting it; forgetting/deleting it would abort that download.
+    if (wasAdopted) {
+      unawaited(TorrentForegroundService.instance.stop());
+      return;
+    }
     if (id != null && client != null) {
       try {
         deleteFiles ? await client.delete(id) : await client.forget(id);

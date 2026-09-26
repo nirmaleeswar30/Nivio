@@ -173,6 +173,39 @@ class DownloadService {
     return null;
   }
 
+  /// Finds a still-downloading item for this media/episode so playback launched
+  /// from anywhere (media detail, continue watching, a watch-party sync) can
+  /// reuse the bytes already on disk instead of opening a fresh remote stream.
+  /// Returns the item whose id feeds [resolveInProgressStream]; completed items
+  /// are handled by [findPlayableDownload] instead.
+  static DownloadItem? findInProgressDownload({
+    required int mediaId,
+    int? season,
+    int? episode,
+  }) {
+    if (!Hive.isBoxOpen(_boxName)) return null;
+    for (final item in box.values) {
+      if (item.mediaId != mediaId) continue;
+      // In-progress = actively downloading, extracting, or paused mid-download.
+      // (pending/queued has no bytes yet; failed/completed aren't "in progress".)
+      if (item.status != DownloadStatus.downloading &&
+          item.status != DownloadStatus.extracting &&
+          item.status != DownloadStatus.paused) {
+        continue;
+      }
+
+      final bool isEpisode = item.season != null && item.episode != null;
+      if (isEpisode) {
+        if (item.season != season || item.episode != episode) continue;
+      }
+
+      // Must have something to stream from: a torrent handle or a source URL.
+      if (item.torrentId == null && (item.streamUrl ?? '').isEmpty) continue;
+      return item;
+    }
+    return null;
+  }
+
   /// Whether an in-progress download offers a "play while downloading" option.
   /// All supported types reuse the on-disk bytes: torrents via rqbit, direct
   /// files via the local range server, and HLS via a growing local playlist the
@@ -192,7 +225,8 @@ class DownloadService {
         String url,
         Map<String, String> headers,
         bool isTorrent,
-        bool isM3u8
+        bool isM3u8,
+        int? torrentId,
       })?> resolveInProgressStream(String downloadId) async {
     if (!Hive.isBoxOpen(_boxName)) return null;
     DownloadItem? item;
@@ -208,16 +242,45 @@ class DownloadService {
     if (item.torrentId != null) {
       try {
         final client = await RqbitEngine.instance.ensureStarted();
+        final tId = item.torrentId!;
+
+        // The torrent may be paused, or re-hash-checking its on-disk pieces
+        // ("initializing") right after the engine (re)started — e.g. tapping
+        // "watch while downloading" resumes it and it re-verifies existing
+        // files (progress jumps 0→N% with no network). If we hand mpv the
+        // stream URL during that window, it opens against a stream that serves
+        // nothing yet and gets stuck at 0:00. So: make sure it's started, then
+        // wait for it to go live before returning the URL.
+        try {
+          await client.start(tId); // resume if paused; no-op if already live
+        } catch (_) {}
+
         // Bias piece-picking toward the selected file so playback starts fast.
         try {
-          await client.updateOnlyFiles(item.torrentId!, [item.fileIndex ?? 0]);
+          await client.updateOnlyFiles(tId, [item.fileIndex ?? 0]);
         } catch (_) {}
-        final url = client.streamUrl(item.torrentId!, item.fileIndex ?? 0);
+
+        // Wait out the initializing/checking state (up to ~20s) so the stream
+        // endpoint can actually serve the file header when mpv opens it. rqbit
+        // reports 'initializing' while hash-checking on-disk pieces and 'live'
+        // once it can serve; we key on that transition (best-effort — return
+        // the URL anyway on timeout so we never hang the player indefinitely).
+        for (int i = 0; i < 40; i++) {
+          try {
+            final stats = await client.getStats(tId);
+            final state = stats.state.toLowerCase();
+            if (state == 'live' || state == 'error') break;
+          } catch (_) {}
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+
+        final url = client.streamUrl(tId, item.fileIndex ?? 0);
         return (
           url: url,
           headers: <String, String>{},
           isTorrent: true,
           isM3u8: false,
+          torrentId: item.torrentId,
         );
       } catch (_) {
         return null;
@@ -239,6 +302,7 @@ class DownloadService {
         headers: <String, String>{},
         isTorrent: false,
         isM3u8: true,
+        torrentId: null,
       );
     }
 
@@ -251,6 +315,7 @@ class DownloadService {
       headers: <String, String>{},
       isTorrent: false,
       isM3u8: false,
+      torrentId: null,
     );
   }
 
