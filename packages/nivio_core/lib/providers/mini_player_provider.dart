@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/services/discord_rpc_service.dart';
 
@@ -74,6 +75,11 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
     required VideoController videoController,
     required MiniPlayerMediaInfo mediaInfo,
   }) {
+    appDebugLog(
+      '🧪 [CW_DEBUG] MiniPlayer.activate — player=${_h(player)} ctrl=${_h(videoController)} '
+      'media=${mediaInfo.mediaId} S${mediaInfo.season}E${mediaInfo.episode} '
+      '| wasActive=${state.isActive} prevPlayer=${_h(state.player)}',
+    );
     // If there's already an active mini player with a different player instance,
     // dispose the old one first.
     if (state.isActive && state.player != null && state.player != player) {
@@ -92,6 +98,11 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
   void deactivate() {
     final player = state.player;
     final info = state.mediaInfo;
+    appDebugLog(
+      '🧪 [CW_DEBUG] MiniPlayer.deactivate — disposing player=${_h(player)} '
+      'media=${info?.mediaId} E${info?.episode} pos=${player?.state.position} '
+      '(torrent stopActive will also run)',
+    );
 
     if (player != null && info != null && player.state.duration > Duration.zero) {
       final historyService = ref.read(watchHistoryServiceProvider);
@@ -127,7 +138,14 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
   /// Returns the current state and clears the mini player without disposing
   /// the underlying player (the full screen will take ownership).
   MiniPlayerState? reclaim() {
-    if (!state.isActive || state.player == null) return null;
+    if (!state.isActive || state.player == null) {
+      appDebugLog('🧪 [CW_DEBUG] MiniPlayer.reclaim — nothing to reclaim (active=${state.isActive})');
+      return null;
+    }
+    appDebugLog(
+      '🧪 [CW_DEBUG] MiniPlayer.reclaim — player=${_h(state.player)} '
+      'media=${state.mediaInfo?.mediaId} E${state.mediaInfo?.episode}',
+    );
     final reclaimed = state;
     // Clear state without disposing — the full-screen player now owns it.
     state = const MiniPlayerState();
@@ -140,6 +158,9 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
     super.dispose();
   }
 }
+
+String _h(Object? o) =>
+    o == null ? 'null' : (identityHashCode(o) & 0xFFFF).toRadixString(16);
 
 final miniPlayerProvider =
     StateNotifierProvider<MiniPlayerNotifier, MiniPlayerState>(

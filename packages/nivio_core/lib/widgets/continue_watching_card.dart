@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:nivio/models/season_info.dart';
 import 'package:nivio/models/watch_history.dart';
 import 'package:nivio/core/theme.dart';
+import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/providers/service_providers.dart';
 
 class ContinueWatchingCard extends ConsumerStatefulWidget {
@@ -154,6 +155,12 @@ class _ContinueWatchingCardState extends ConsumerState<ContinueWatchingCard>
             setState(() => _showRemoveOverlay = false);
             return;
           }
+          appDebugLog(
+            '🧪 [CW_DEBUG] ContinueWatching tap — media=${widget.history.tmdbId} '
+            'type=${widget.history.mediaType} S${widget.history.currentSeason}'
+            'E${widget.history.currentEpisode} pos=${widget.history.lastPositionSeconds}s '
+            'preferredProvider=${widget.history.preferredProviderIndex}',
+          );
           context.push(
             '/player/${widget.history.tmdbId}'
             '?season=${widget.history.currentSeason}'

@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/main.dart'; // To access appRouter
 import 'package:nivio/providers/mini_player_provider.dart';
 
@@ -54,6 +55,12 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay>
   StreamSubscription? _positionSub;
   StreamSubscription? _durationSub;
   StreamSubscription? _playingSub;
+
+  // [CW_DEBUG] last surface state we logged
+  Object? _loggedSurface;
+  bool _loggedDetached = false;
+  static String _h(Object? o) =>
+      o == null ? 'null' : (identityHashCode(o) & 0xFFFF).toRadixString(16);
 
   @override
   void initState() {
@@ -167,6 +174,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay>
     final info = state.mediaInfo;
     if (info == null) return;
     if (_videoDetached) return; // Already expanding, prevent double-tap
+    appDebugLog('🧪 [CW_DEBUG] MiniOverlay expand tapped — media=${info.mediaId} E${info.episode}');
 
     // Unfocus any active element to avoid AXTree focus node corruption on Windows
     FocusManager.instance.primaryFocus?.unfocus();
@@ -193,6 +201,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay>
   }
 
   void _close() {
+    appDebugLog('🧪 [CW_DEBUG] MiniOverlay close tapped');
     FocusManager.instance.primaryFocus?.unfocus();
     _positionSub?.cancel();
     _durationSub?.cancel();
@@ -229,6 +238,11 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay>
 
     final miniState = ref.watch(miniPlayerProvider);
     if (!miniState.isActive || miniState.videoController == null) {
+      if (_loggedSurface != null || _loggedDetached) {
+        appDebugLog('🧪 [CW_DEBUG] MiniOverlay build — hidden (mini player inactive)');
+      }
+      _loggedSurface = null;
+      _loggedDetached = false;
       // Clean up subscriptions when deactivated
       _positionSub?.cancel();
       _durationSub?.cancel();
@@ -246,6 +260,18 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _subscribeToPlayer();
       });
+    }
+
+    // [CW_DEBUG] log only when the rendered surface changes, not every frame.
+    final surfaceKey = _videoDetached ? null : miniState.videoController;
+    if (!identical(surfaceKey, _loggedSurface) || _loggedDetached != _videoDetached) {
+      _loggedSurface = surfaceKey;
+      _loggedDetached = _videoDetached;
+      appDebugLog(
+        '🧪 [CW_DEBUG] MiniOverlay build — ${_videoDetached ? 'BLACK BOX (detached)' : 'Video MOUNTED'} '
+        'ctrl=${_h(miniState.videoController)} player=${_h(miniState.player)} '
+        'media=${miniState.mediaInfo?.mediaId} E${miniState.mediaInfo?.episode}',
+      );
     }
 
     final screenSize = MediaQuery.sizeOf(context);

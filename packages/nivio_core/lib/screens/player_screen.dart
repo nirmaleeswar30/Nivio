@@ -257,6 +257,61 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   static const int _watchPartyDriftThresholdMs = 1200;
   String? _loadingMessage;
 
+  final GlobalKey<ScaffoldMessengerState> _messengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+  ScaffoldMessengerState get _messenger =>
+      _messengerKey.currentState ?? ScaffoldMessenger.of(context);
+
+  // —— [CW_DEBUG] diagnostics for the continue-watching replay failure ——
+  // Short id so logs from overlapping PlayerScreen instances can be told apart.
+  late final String _sid = (identityHashCode(this) & 0xFFFF).toRadixString(16);
+  static String _hash(Object? o) =>
+      o == null ? 'null' : (identityHashCode(o) & 0xFFFF).toRadixString(16);
+  // Set between deactivate() and dispose(). A deactivated State is still
+  // `mounted`, so stream callbacks keep running and ref.read() throws.
+  bool _isDeactivated = false;
+  DateTime? _deactivatedAt;
+  final Set<String> _zombieLogged = {};
+
+  /// Returns true (and logs once per source) when a callback fires on a
+  /// deactivated-but-not-disposed State.
+  bool _isZombieCallback(String source) {
+    if (!_isDeactivated) return false;
+    if (_zombieLogged.add(source)) {
+      final ageMs = _deactivatedAt == null
+          ? '?'
+          : DateTime.now().difference(_deactivatedAt!).inMilliseconds;
+      appDebugLog(
+        '🧟 [CW_DEBUG] PlayerScreen#$_sid ZOMBIE: "$source" fired ${ageMs}ms after '
+        'deactivate() but dispose() has not run (player=${_hash(_player)}, '
+        'transferredToMini=$_transferredToMiniPlayer). Skipping to avoid ref.read on '
+        'a deactivated element. Further "$source" hits are silenced.',
+      );
+    }
+    return true;
+  }
+
+  @override
+  void deactivate() {
+    _isDeactivated = true;
+    _deactivatedAt = DateTime.now();
+    appDebugLog(
+      '🧪 [CW_DEBUG] PlayerScreen#$_sid deactivate() — media=${widget.mediaId} '
+      'E$_currentEpisode transferredToMini=$_transferredToMiniPlayer '
+      'player=${_hash(_player)} subs=${_subscriptions.length} '
+      'progressTimerActive=${_progressTimer?.isActive}',
+    );
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _isDeactivated = false;
+    _deactivatedAt = null;
+    appDebugLog('🧪 [CW_DEBUG] PlayerScreen#$_sid activate() (re-inserted into tree)');
+  }
+
   bool _isAnimeMedia(SearchResult? media) {
     if (media == null) return false;
     if (media.mediaType == 'anime') return true;
@@ -293,7 +348,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // Check if the mini player has an active player we can reclaim
     // (user tapped expand on mini player or navigated back to same media)
     final miniPlayerState = ref.read(miniPlayerProvider);
+    final miniInfo = miniPlayerState.mediaInfo;
+    appDebugLog(
+      '🧪 [CW_DEBUG] PlayerScreen#$_sid initState — media=${widget.mediaId} '
+      'S${widget.season}E${widget.episode} type=${widget.mediaType} '
+      'providerIndex=${widget.providerIndex} | mini: active=${miniPlayerState.isActive} '
+      'player=${_hash(miniPlayerState.player)} ctrl=${_hash(miniPlayerState.videoController)} '
+      'miniMedia=${miniInfo?.mediaId} S${miniInfo?.season}E${miniInfo?.episode} '
+      '| selectedMedia=${ref.read(selectedMediaProvider)?.id}',
+    );
     if (miniPlayerState.isActive && miniPlayerState.player != null) {
+      appDebugLog(
+        '🧪 [CW_DEBUG] PlayerScreen#$_sid RECLAIMING mini player '
+        '(same media: ${miniInfo?.mediaId == widget.mediaId && miniInfo?.episode == widget.episode}) '
+        '— mini overlay may still have a Video on ctrl=${_hash(miniPlayerState.videoController)}',
+      );
       _player = miniPlayerState.player!;
       _videoController = miniPlayerState.videoController!;
       _isDirectStream = true;
@@ -308,6 +377,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         configuration: VideoControllerConfiguration(
           enableHardwareAcceleration: !Platform.isLinux,
         ),
+      );
+      appDebugLog(
+        '🧪 [CW_DEBUG] PlayerScreen#$_sid created NEW player=${_hash(_player)} ctrl=${_hash(_videoController)}',
       );
     }
 
@@ -583,6 +655,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // ├────────────────────────────────────────────────────────────────────────────────────────── Player initialization ──────────────────────────────────────────────────────────────────────────────────────────
   Future<void> _initializePlayer({bool isRetry = true}) async {
+    appDebugLog(
+      '🧪 [CW_DEBUG] PlayerScreen#$_sid _initializePlayer(isRetry=$isRetry) '
+      'providerIdx=$_currentProviderIndex runningFetchers=${_runningFetchers?.keys.toList()} '
+      'player=${_hash(_player)} playing=${_player.state.playing} '
+      'dur=${_player.state.duration} deactivated=$_isDeactivated',
+    );
+    // Once the stream is open and playing, later failures (UI/snackbar/etc.)
+    // must not be treated as a provider failure — that used to cycle through
+    // every provider while the first stream kept playing in the background.
+    var mediaOpened = false;
     _hasAppliedGlobalTracks = false;
     _autoFullscreenTriggeredForCurrentLoad = false;
     _useNativePlayer = false;
@@ -606,6 +688,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!isRetry && widget.providerIndex == null && _currentHistory?.preferredProviderIndex != null) {
         _currentProviderIndex = _currentHistory!.preferredProviderIndex!;
       }
+      appDebugLog(
+        '🧪 [CW_DEBUG] PlayerScreen#$_sid history: '
+        'S${_currentHistory?.currentSeason}E${_currentHistory?.currentEpisode} '
+        'pos=${_currentHistory?.lastPositionSeconds}s/${_currentHistory?.totalDurationSeconds}s '
+        'preferredProvider=${_currentHistory?.preferredProviderIndex} '
+        'preferredRes=${_currentHistory?.preferredResolution} '
+        'preferredAudio=${_currentHistory?.preferredAudioTrack} '
+        '→ providerIdx=$_currentProviderIndex',
+      );
 
       var media = ref.read(selectedMediaProvider);
       final hasMatchingSelectedMedia =
@@ -850,6 +941,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
 
       if (!mounted) return;
+      appDebugLog(
+        '🧪 [CW_DEBUG] PlayerScreen#$_sid provider[$_currentProviderIndex/$_maxProviders] '
+        'result=${result == null ? 'NULL' : '${result.provider} ${result.quality} m3u8=${result.isM3U8} url=${result.url}'}',
+      );
       if (result == null) {
         if (_currentProviderIndex < _maxProviders - 1) {
           _currentProviderIndex++;
@@ -1050,6 +1145,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
 
       appDebugLog('✅ [FLOW] Direct player loaded! Starting playback...');
+      appDebugLog(
+        '🧪 [CW_DEBUG] PlayerScreen#$_sid _player.open → player=${_hash(_player)} '
+        'provider=${result.provider} startAt=$startAt url=$targetUrl',
+      );
       // Start playback
       await _player.open(
         Media(
@@ -1057,6 +1156,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           httpHeaders: headers,
         ),
         play: true,
+      );
+      mediaOpened = true;
+      appDebugLog(
+        '🧪 [CW_DEBUG] PlayerScreen#$_sid _player.open returned — mounted=$mounted '
+        'deactivated=$_isDeactivated',
       );
 
       // Load custom remote subtitle if saved
@@ -1113,7 +1217,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       
       if (_resumePosition != null && mounted) {
         final marginHorizontal = (MediaQuery.of(context).size.width - 250) / 2;
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messenger.showSnackBar(
           SnackBar(
             behavior: SnackBarBehavior.floating,
             margin: EdgeInsets.only(bottom: 32, left: marginHorizontal, right: marginHorizontal),
@@ -1147,7 +1251,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _startProgressTracking();
       _updateWatchPartyHostSyncTimer();
       _scheduleWatchPartyBootstrapSyncs();
-    } catch (e) {
+      appDebugLog('🧪 [CW_DEBUG] PlayerScreen#$_sid _initializePlayer SUCCESS on provider[$_currentProviderIndex] $_currentProvider');
+    } catch (e, st) {
+      appDebugLog(
+        '❌ [CW_DEBUG] PlayerScreen#$_sid _initializePlayer FAILED on provider[$_currentProviderIndex/$_maxProviders] '
+        '"$_currentProvider" — mounted=$mounted deactivated=$_isDeactivated '
+        'player=${_hash(_player)} playing=${_player.state.playing} dur=${_player.state.duration}\n'
+        '   error: $e\n$st',
+      );
+      if (mediaOpened) {
+        appDebugLog(
+          '🧪 [CW_DEBUG] PlayerScreen#$_sid stream already playing — treating as non-fatal, NOT switching provider',
+        );
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+          _retryCount = 0;
+        });
+        _startProgressTracking();
+        return;
+      }
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -1440,6 +1563,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subscriptions.add(
       _player.stream.position.listen((position) {
         if (!mounted) return;
+        if (_isZombieCallback('position stream')) return;
         // appDebugLog('🎬 POSITION_DEBUG: Current player position = $position');
         _checkNextEpisode();
         unawaited(_broadcastWatchPartyPlayback(force: false));
@@ -1451,6 +1575,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subscriptions.add(
       _player.stream.playing.listen((playing) {
         if (!mounted) return;
+        if (_isZombieCallback('playing stream')) return;
         unawaited(_broadcastWatchPartyPlayback(force: true));
         _updateDiscordActivity(isPlaying: playing, force: true);
       }),
@@ -1460,6 +1585,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subscriptions.add(
       _player.stream.completed.listen((completed) {
         if (!mounted || !completed) return;
+        if (_isZombieCallback('completed stream')) return;
 
         final pos = _player.state.position;
         final dur = _player.state.duration;
@@ -1515,6 +1641,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subscriptions.add(
       _player.stream.tracks.listen((_) {
         if (!mounted) return;
+        if (_isZombieCallback('tracks stream')) return;
         _applyTrackPreferences();
         setState(() {});
       }),
@@ -1524,7 +1651,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subscriptions.add(
       _player.stream.error.listen((error) {
         if (!mounted) return;
-        appDebugLog('🎬 Player error: $error');
+        appDebugLog(
+          '🎬 Player error (screen#$_sid, player=${_hash(_player)}, '
+          'deactivated=$_isDeactivated): $error',
+        );
       }),
     );
 
@@ -1639,7 +1769,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final service = ref.read(watchPartyServiceProvider);
     if (service == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messenger.showSnackBar(
         const SnackBar(
           content: Text(
             'Watch Party unavailable. Configure SUPABASE_URL and SUPABASE_ANON_KEY.',
@@ -1665,9 +1795,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
     _watchPartyErrorSub ??= service.errorStream.listen((message) {
       if (!mounted || message.trim().isEmpty) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message.trim())));
+      _messenger.showSnackBar(SnackBar(content: Text(message.trim())));
     });
 
     final targetCode = _resolvedWatchPartyCode;
@@ -1688,7 +1816,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!mounted) return;
 
     if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messenger.showSnackBar(
         const SnackBar(content: Text('Unable to connect to watch party')),
       );
       return;
@@ -2047,7 +2175,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                       );
                                     }
                                     if (!mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
+                                    _messenger.showSnackBar(
                                       SnackBar(
                                         content: Text(
                                           hasControl
@@ -2496,7 +2624,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messenger.showSnackBar(
         SnackBar(content: Text('Marked ${match.title} as completed')),
       );
     }
@@ -2517,7 +2645,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       if (skippedCount > 0 && mounted) {
         if (nextEpisode > maxEp) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          _messenger.showSnackBar(
             SnackBar(
               content: const Text('Reached end of season (no more non-filler episodes)'),
               duration: const Duration(seconds: 3),
@@ -2526,7 +2654,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           );
           return;
         }
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messenger.showSnackBar(
           SnackBar(
             content: Text(
               'Skipped $skippedCount filler episode${skippedCount > 1 ? 's' : ''} -> Playing Episode $nextEpisode',
@@ -2605,7 +2733,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     await _saveProgress();
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messenger.showSnackBar(
         SnackBar(
           content: Text(
             'Switching to ${_providerSelectorLabel(providerIndex)}...',
@@ -2787,7 +2915,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
         if (mounted) {
           setDialogState(() {});
-          ScaffoldMessenger.of(context).showSnackBar(
+          _messenger.showSnackBar(
             SnackBar(content: Text('Loaded local subtitle: $fileName')),
           );
         }
@@ -2833,7 +2961,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       Uri? parsedUri = Uri.tryParse(url);
       if (parsedUri == null || !parsedUri.hasAbsolutePath) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          _messenger.showSnackBar(
             const SnackBar(content: Text('Invalid URL entered.')),
           );
         }
@@ -2864,7 +2992,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       if (mounted) {
         setDialogState(() {});
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messenger.showSnackBar(
           SnackBar(content: Text('Loaded remote subtitle: $name')),
         );
       }
@@ -2997,7 +3125,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     ref.read(watchHistoryServiceProvider).saveTrackPreferences(widget.mediaId, resolution: normalizedTarget);
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messenger.showSnackBar(
         SnackBar(
           content: Text(
             'Switching quality to ${normalizedTarget.toUpperCase()}',
@@ -3105,7 +3233,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       ref.read(selectedQualityProvider.notifier).state = null;
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messenger.showSnackBar(
           SnackBar(
             content: Text('Switching to ${target.toUpperCase()}'),
             duration: const Duration(seconds: 2),
@@ -3159,7 +3287,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     ref.read(watchHistoryServiceProvider).saveTrackPreferences(widget.mediaId, audioTrack: audioOption);
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messenger.showSnackBar(
         SnackBar(
           content: Text('Switching to $audioOption...'),
           duration: const Duration(seconds: 2),
@@ -3334,6 +3462,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _startProgressTracking() {
     _progressTimer?.cancel();
     _progressTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (_isZombieCallback('progress timer')) return;
       if (_isDirectStream) {
         if (_player.state.duration > Duration.zero && _player.state.playing) {
           _saveProgress();
@@ -3509,25 +3638,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   @override
   void dispose() {
-    debugPrint('🔴 [DISPOSE] Step 0: dispose() CALLED — mounted=$mounted, _transferredToMiniPlayer=$_transferredToMiniPlayer, _isDirectStream=$_isDirectStream');
+    final zombieMs = _deactivatedAt == null
+        ? 'n/a'
+        : '${DateTime.now().difference(_deactivatedAt!).inMilliseconds}ms';
+    appDebugLog('🧪 [CW_DEBUG] PlayerScreen#$_sid dispose() — $zombieMs after deactivate(), player=${_hash(_player)}');
+    appDebugLog('🔴 [DISPOSE] Step 0: dispose() CALLED — mounted=$mounted, _transferredToMiniPlayer=$_transferredToMiniPlayer, _isDirectStream=$_isDirectStream');
     _isDisposing = true;
 
     try {
       if (!Platform.isAndroid && !Platform.isIOS) {
-        debugPrint('🔴 [DISPOSE] Step 1: setWindowFullScreen(false)...');
+        appDebugLog('🔴 [DISPOSE] Step 1: setWindowFullScreen(false)...');
         setWindowFullScreen(false);
-        debugPrint('🔴 [DISPOSE] Step 1: ✅ done');
+        appDebugLog('🔴 [DISPOSE] Step 1: ✅ done');
       }
     } catch (e, st) {
-      debugPrint('🔴 [DISPOSE] Step 1: ❌ FAILED — $e\n$st');
+      appDebugLog('🔴 [DISPOSE] Step 1: ❌ FAILED — $e\n$st');
     }
 
     try {
-      debugPrint('🔴 [DISPOSE] Step 2: WakelockPlus.disable()...');
+      appDebugLog('🔴 [DISPOSE] Step 2: WakelockPlus.disable()...');
       unawaited(WakelockPlus.disable());
-      debugPrint('🔴 [DISPOSE] Step 2: ✅ done');
+      appDebugLog('🔴 [DISPOSE] Step 2: ✅ done');
     } catch (e, st) {
-      debugPrint('🔴 [DISPOSE] Step 2: ❌ FAILED — $e\n$st');
+      appDebugLog('🔴 [DISPOSE] Step 2: ❌ FAILED — $e\n$st');
     }
 
     // Release the active torrent unless playback continues in the mini-player.
@@ -3539,98 +3672,98 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     if (Platform.isAndroid) {
       try {
-        debugPrint('🔴 [DISPOSE] Step 3: Android PIP cleanup...');
+        appDebugLog('🔴 [DISPOSE] Step 3: Android PIP cleanup...');
         const MethodChannel('com.nivio/gesture_exclusion').invokeMethod('setCanEnterPip', {'value': false});
         const MethodChannel('com.nivio/gesture_exclusion').setMethodCallHandler(null);
         const MethodChannel('puntito.simple_pip_mode').setMethodCallHandler(null);
         SimplePip().setAutoPipMode(aspectRatio: const (16, 9), autoEnter: false);
-        debugPrint('🔴 [DISPOSE] Step 3: ✅ done');
+        appDebugLog('🔴 [DISPOSE] Step 3: ✅ done');
       } catch (e, st) {
-        debugPrint('🔴 [DISPOSE] Step 3: ❌ FAILED — $e\n$st');
+        appDebugLog('🔴 [DISPOSE] Step 3: ❌ FAILED — $e\n$st');
       }
     }
 
     try {
-      debugPrint('🔴 [DISPOSE] Step 4: cancel timers...');
+      appDebugLog('🔴 [DISPOSE] Step 4: cancel timers...');
       _progressTimer?.cancel();
       _watchPartyHostSyncTimer?.cancel();
       _watchPartyPlaybackSub?.cancel();
       _watchPartySessionSub?.cancel();
       _watchPartyErrorSub?.cancel();
       _nextEpisodeTimer?.cancel();
-      debugPrint('🔴 [DISPOSE] Step 4: ✅ done');
+      appDebugLog('🔴 [DISPOSE] Step 4: ✅ done');
     } catch (e, st) {
-      debugPrint('🔴 [DISPOSE] Step 4: ❌ FAILED — $e\n$st');
+      appDebugLog('🔴 [DISPOSE] Step 4: ❌ FAILED — $e\n$st');
     }
 
     try {
-      debugPrint('🔴 [DISPOSE] Step 5: _removeOverlayEntry()...');
+      appDebugLog('🔴 [DISPOSE] Step 5: _removeOverlayEntry()...');
       _removeOverlayEntry();
-      debugPrint('🔴 [DISPOSE] Step 5: ✅ done');
+      appDebugLog('🔴 [DISPOSE] Step 5: ✅ done');
     } catch (e, st) {
-      debugPrint('🔴 [DISPOSE] Step 5: ❌ FAILED — $e\n$st');
+      appDebugLog('🔴 [DISPOSE] Step 5: ❌ FAILED — $e\n$st');
     }
 
     try {
-      debugPrint('🔴 [DISPOSE] Step 6: _removeFullscreenTopBarOverlayEntry()...');
+      appDebugLog('🔴 [DISPOSE] Step 6: _removeFullscreenTopBarOverlayEntry()...');
       _removeFullscreenTopBarOverlayEntry();
       _removeTrackingPromptOverlay();
-      debugPrint('🔴 [DISPOSE] Step 6: ✅ done');
+      appDebugLog('🔴 [DISPOSE] Step 6: ✅ done');
     } catch (e, st) {
-      debugPrint('🔴 [DISPOSE] Step 6: ❌ FAILED — $e\n$st');
+      appDebugLog('🔴 [DISPOSE] Step 6: ❌ FAILED — $e\n$st');
     }
 
     try {
-      debugPrint('🔴 [DISPOSE] Step 7: dispose notifiers...');
+      appDebugLog('🔴 [DISPOSE] Step 7: dispose notifiers...');
       _nextEpNotifier.dispose();
       _fullscreenTopBarVisibleNotifier.dispose();
-      debugPrint('🔴 [DISPOSE] Step 7: ✅ done');
+      appDebugLog('🔴 [DISPOSE] Step 7: ✅ done');
     } catch (e, st) {
-      debugPrint('🔴 [DISPOSE] Step 7: ❌ FAILED — $e\n$st');
+      appDebugLog('🔴 [DISPOSE] Step 7: ❌ FAILED — $e\n$st');
     }
 
     try {
-      debugPrint('🔴 [DISPOSE] Step 8: _saveProgress (duration=${_player.state.duration})...');
+      appDebugLog('🔴 [DISPOSE] Step 8: _saveProgress (duration=${_player.state.duration})...');
       if (_player.state.duration > Duration.zero) {
         _saveProgress();
       }
-      debugPrint('🔴 [DISPOSE] Step 8: ✅ done');
+      appDebugLog('🔴 [DISPOSE] Step 8: ✅ done');
     } catch (e, st) {
-      debugPrint('🔴 [DISPOSE] Step 8: ❌ FAILED — $e\n$st');
+      appDebugLog('🔴 [DISPOSE] Step 8: ❌ FAILED — $e\n$st');
     }
 
     try {
-      debugPrint('🔴 [DISPOSE] Step 9: _player.dispose() — _transferredToMiniPlayer=$_transferredToMiniPlayer...');
+      appDebugLog('🔴 [DISPOSE] Step 9: _player.dispose() — _transferredToMiniPlayer=$_transferredToMiniPlayer...');
       if (!_transferredToMiniPlayer) {
         _player.dispose();
       }
-      debugPrint('🔴 [DISPOSE] Step 9: ✅ done');
+      appDebugLog('🔴 [DISPOSE] Step 9: ✅ done');
     } catch (e, st) {
-      debugPrint('🔴 [DISPOSE] Step 9: ❌ FAILED — $e\n$st');
+      appDebugLog('🔴 [DISPOSE] Step 9: ❌ FAILED — $e\n$st');
     }
 
     try {
-      debugPrint('🔴 [DISPOSE] Step 10: cancel stream subscriptions (${_subscriptions.length})...');
+      appDebugLog('🔴 [DISPOSE] Step 10: cancel stream subscriptions (${_subscriptions.length})...');
       for (final sub in _subscriptions) {
         sub.cancel();
       }
       _subscriptions.clear();
       _hasAppliedGlobalTracks = false;
-      debugPrint('🔴 [DISPOSE] Step 10: ✅ done');
+      appDebugLog('🔴 [DISPOSE] Step 10: ✅ done');
     } catch (e, st) {
-      debugPrint('🔴 [DISPOSE] Step 10: ❌ FAILED — $e\n$st');
+      appDebugLog('🔴 [DISPOSE] Step 10: ❌ FAILED — $e\n$st');
     }
 
     try {
-      debugPrint('🔴 [DISPOSE] Step 11: _focusNode.dispose()...');
+      appDebugLog('🔴 [DISPOSE] Step 11: _focusNode.dispose()...');
       _focusNode.dispose();
-      debugPrint('🔴 [DISPOSE] Step 11: ✅ done');
+      appDebugLog('🔴 [DISPOSE] Step 11: ✅ done');
     } catch (e, st) {
-      debugPrint('🔴 [DISPOSE] Step 11: ❌ FAILED — $e\n$st');
+      appDebugLog('🔴 [DISPOSE] Step 11: ❌ FAILED — $e\n$st');
     }
 
     try {
-      debugPrint('🔴 [DISPOSE] Step 12: signal player inactive...');
+      appDebugLog('🔴 [DISPOSE] Step 12: signal player inactive...');
       final cachedNotifier = _cachedPlayerActiveNotifier;
       if (cachedNotifier != null) {
         Future.microtask(() => cachedNotifier.state = false);
@@ -3639,48 +3772,48 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
         DiscordRpcService.instance.setBrowsing();
       }
-      debugPrint('🔴 [DISPOSE] Step 12: ✅ done');
+      appDebugLog('🔴 [DISPOSE] Step 12: ✅ done');
     } catch (e, st) {
-      debugPrint('🔴 [DISPOSE] Step 12: ❌ FAILED — $e\n$st');
+      appDebugLog('🔴 [DISPOSE] Step 12: ❌ FAILED — $e\n$st');
     }
 
     try {
-      debugPrint('🔴 [DISPOSE] Step 13: SystemChrome orientations + UI mode...');
+      appDebugLog('🔴 [DISPOSE] Step 13: SystemChrome orientations + UI mode...');
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
       ]);
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      debugPrint('🔴 [DISPOSE] Step 13: ✅ done');
+      appDebugLog('🔴 [DISPOSE] Step 13: ✅ done');
     } catch (e, st) {
-      debugPrint('🔴 [DISPOSE] Step 13: ❌ FAILED — $e\n$st');
+      appDebugLog('🔴 [DISPOSE] Step 13: ❌ FAILED — $e\n$st');
     }
 
     try {
       WidgetsBinding.instance.removeObserver(this);
     } catch (_) {}
 
-    debugPrint('🔴 [DISPOSE] Step 14: super.dispose()...');
+    appDebugLog('🔴 [DISPOSE] Step 14: super.dispose()...');
     super.dispose();
-    debugPrint('🔴 [DISPOSE] Step 14: ✅ ALL DONE');
+    appDebugLog('🔴 [DISPOSE] Step 14: ✅ ALL DONE');
   }
 
   void _handleBackNavigation() {
-    debugPrint('🟡 [BACK_NAV] Step 0: _handleBackNavigation() CALLED — mounted=$mounted, _isDirectStream=$_isDirectStream, _isInFullscreen=$_isInFullscreen, _useNativePlayer=$_useNativePlayer');
+    appDebugLog('🟡 [BACK_NAV] Step 0: _handleBackNavigation() CALLED — mounted=$mounted, _isDirectStream=$_isDirectStream, _isInFullscreen=$_isInFullscreen, _useNativePlayer=$_useNativePlayer');
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
 
     if (isDesktop) {
       try {
-        debugPrint('🟡 [BACK_NAV] Step 1: setWindowFullScreen(false)...');
+        appDebugLog('🟡 [BACK_NAV] Step 1: setWindowFullScreen(false)...');
         setWindowFullScreen(false);
-        debugPrint('🟡 [BACK_NAV] Step 1: ✅ done');
+        appDebugLog('🟡 [BACK_NAV] Step 1: ✅ done');
       } catch (e, st) {
-        debugPrint('🟡 [BACK_NAV] Step 1: ❌ FAILED — $e\n$st');
+        appDebugLog('🟡 [BACK_NAV] Step 1: ❌ FAILED — $e\n$st');
       }
     }
     FocusManager.instance.primaryFocus?.unfocus();
 
     if (!_isDirectStream && _isInFullscreen) {
-      debugPrint('🟡 [BACK_NAV] Step 2: exit embed fullscreen (not direct stream)...');
+      appDebugLog('🟡 [BACK_NAV] Step 2: exit embed fullscreen (not direct stream)...');
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
         DeviceOrientation.portraitDown,
@@ -3689,7 +3822,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _isInFullscreen = false;
       });
       _syncFullscreenTopBarVisibility();
-      debugPrint('🟡 [BACK_NAV] Step 2: ✅ done — returning early');
+      appDebugLog('🟡 [BACK_NAV] Step 2: ✅ done — returning early');
       return;
     }
 
@@ -3700,7 +3833,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // share the same VideoController/native texture simultaneously, causing a
     // native DirectX crash on Windows.
     if (isDesktop && !_useNativePlayer && _player.state.duration > Duration.zero) {
-      debugPrint('🟡 [BACK_NAV] Step 3: detaching Video widget before mini player handoff...');
+      appDebugLog('🟡 [BACK_NAV] Step 3: detaching Video widget before mini player handoff...');
       setState(() {
         _videoDetached = true;
       });
@@ -3710,7 +3843,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         try {
-          debugPrint('🟡 [BACK_NAV] Step 3b: activating mini player (post-frame)...');
+          appDebugLog('🟡 [BACK_NAV] Step 3b: activating mini player (post-frame)...');
           final media = ref.read(selectedMediaProvider);
           _transferredToMiniPlayer = true;
           ref.read(miniPlayerProvider.notifier).activate(
@@ -3727,9 +3860,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               totalEpisodes: _currentSeasonData?.episodes.length,
             ),
           );
-          debugPrint('🟡 [BACK_NAV] Step 3b: ✅ mini player activated');
+          appDebugLog('🟡 [BACK_NAV] Step 3b: ✅ mini player activated');
+          appDebugLog(
+            '🧪 [CW_DEBUG] PlayerScreen#$_sid handed player=${_hash(_player)} '
+            'ctrl=${_hash(_videoController)} to mini player — this screen should dispose next',
+          );
         } catch (e, st) {
-          debugPrint('🟡 [BACK_NAV] Step 3b: ❌ FAILED — $e\n$st');
+          appDebugLog('🟡 [BACK_NAV] Step 3b: ❌ FAILED — $e\n$st');
         }
 
         _navigateAway(isDesktop);
@@ -3738,7 +3875,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     if (!isDesktop) {
-      debugPrint('🟡 [BACK_NAV] Step 4: mobile orientation reset...');
+      appDebugLog('🟡 [BACK_NAV] Step 4: mobile orientation reset...');
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
         DeviceOrientation.portraitDown,
@@ -3751,22 +3888,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _navigateAway(bool isDesktop) {
     try {
-      debugPrint('🟡 [BACK_NAV] Step 5: navigating away — canPop=${context.canPop()}...');
+      appDebugLog('🟡 [BACK_NAV] Step 5: navigating away — canPop=${context.canPop()}...');
       if (context.canPop()) {
         Navigator.of(context).pop();
-        debugPrint('🟡 [BACK_NAV] Step 5: ✅ popped');
+        appDebugLog('🟡 [BACK_NAV] Step 5: ✅ popped');
         return;
       }
-      debugPrint('🟡 [BACK_NAV] Step 5: cannot pop, using context.go("/home")...');
+      appDebugLog('🟡 [BACK_NAV] Step 5: cannot pop, using context.go("/home")...');
       context.go('/home');
-      debugPrint('🟡 [BACK_NAV] Step 5: ✅ navigated to /home');
+      appDebugLog('🟡 [BACK_NAV] Step 5: ✅ navigated to /home');
     } catch (e, st) {
-      debugPrint('🟡 [BACK_NAV] Step 5: ❌ FAILED — $e\n$st');
+      appDebugLog('🟡 [BACK_NAV] Step 5: ❌ FAILED — $e\n$st');
     }
   }
 
   void _forceExitPlayer() {
-    debugPrint('🟠 [FORCE_EXIT] CALLED — mounted=$mounted');
+    appDebugLog('🟠 [FORCE_EXIT] CALLED — mounted=$mounted');
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     if (!isDesktop) {
       SystemChrome.setPreferredOrientations([
@@ -3777,16 +3914,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     
     try {
-      debugPrint('🟠 [FORCE_EXIT] navigating — canPop=${context.canPop()}...');
+      appDebugLog('🟠 [FORCE_EXIT] navigating — canPop=${context.canPop()}...');
       if (context.canPop()) {
         Navigator.of(context).pop();
-        debugPrint('🟠 [FORCE_EXIT] ✅ popped');
+        appDebugLog('🟠 [FORCE_EXIT] ✅ popped');
         return;
       }
       context.go('/home');
-      debugPrint('🟠 [FORCE_EXIT] ✅ navigated to /home');
+      appDebugLog('🟠 [FORCE_EXIT] ✅ navigated to /home');
     } catch (e, st) {
-      debugPrint('🟠 [FORCE_EXIT] ❌ FAILED — $e\n$st');
+      appDebugLog('🟠 [FORCE_EXIT] ❌ FAILED — $e\n$st');
     }
   }
 
@@ -4530,9 +4667,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         MediaQuery.of(context).orientation == Orientation.portrait;
 
     if (_isPipMode) {
-      return Scaffold(
-        backgroundColor: Colors.black,
-        body: _buildDirectStreamLayout(isPortrait, isPipMode: true),
+      return ScaffoldMessenger(
+        key: _messengerKey,
+        child: Scaffold(
+          backgroundColor: Colors.black,
+          body: _buildDirectStreamLayout(isPortrait, isPipMode: true),
+        ),
       );
     }
 
@@ -4548,11 +4688,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         child: Focus(
           focusNode: _focusNode,
           onKeyEvent: _handleKeyEvent,
-          child: Scaffold(
-            backgroundColor: Colors.black,
-            extendBodyBehindAppBar: false,
-            appBar: null,
-            body: _buildPlayerBody(isPortrait),
+          // Player-local messenger: snackbars shown here never touch the
+          // app-root messenger (which also drives the home Scaffold), and a
+          // PlayerScreen that lingers after pop can't poison later snackbars.
+          child: ScaffoldMessenger(
+            key: _messengerKey,
+            child: Scaffold(
+              backgroundColor: Colors.black,
+              extendBodyBehindAppBar: false,
+              appBar: null,
+              body: _buildPlayerBody(isPortrait),
+            ),
           ),
         ),
       ),
@@ -4608,7 +4754,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   },
                   onError: (errorMessage) {
                     if (!mounted) return;
-                    debugPrint("WebView failed with error: \$errorMessage, trying next provider...");
+                    appDebugLog(
+                      '❌ [CW_DEBUG] PlayerScreen#$_sid WebView provider[$_currentProviderIndex/$_maxProviders] '
+                      'failed: $errorMessage — native player=${_hash(_player)} '
+                      'playing=${_player.state.playing} (if true, audio you hear is NOT from this WebView)',
+                    );
                     if (_currentProviderIndex < _maxProviders - 1) {
                       setState(() {
                         _currentProviderIndex++;
@@ -5129,7 +5279,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     try {
       _fullscreenTopBarOverlayEntry?.remove();
     } catch (e) {
-      debugPrint('🔴 [DISPOSE] _removeFullscreenTopBarOverlayEntry failed: $e');
+      appDebugLog('🔴 [DISPOSE] _removeFullscreenTopBarOverlayEntry failed: $e');
     }
     _fullscreenTopBarOverlayEntry = null;
   }
@@ -5308,7 +5458,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     try {
       _nextEpOverlayEntry?.remove();
     } catch (e) {
-      debugPrint('🔴 [DISPOSE] _removeOverlayEntry failed: $e');
+      appDebugLog('🔴 [DISPOSE] _removeOverlayEntry failed: $e');
     }
     _nextEpOverlayEntry = null;
   }
@@ -5317,7 +5467,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     try {
       _trackingPromptOverlayEntry?.remove();
     } catch (e) {
-      debugPrint('🔴 [DISPOSE] _removeTrackingPromptOverlay failed: $e');
+      appDebugLog('🔴 [DISPOSE] _removeTrackingPromptOverlay failed: $e');
     }
     _trackingPromptOverlayEntry = null;
   }
@@ -5384,7 +5534,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           );
 
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
+            _messenger.showSnackBar(
               SnackBar(
                 content: Text('Added "${media.title ?? media.name}" to Watching!'),
                 backgroundColor: NivioTheme.accentColorOf(context),

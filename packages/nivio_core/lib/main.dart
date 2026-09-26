@@ -37,6 +37,7 @@ import 'package:nivio/screens/media_detail_screen.dart';
 import 'package:nivio/screens/similar_content_screen.dart';
 import 'package:nivio/screens/all_providers_screen.dart';
 import 'package:nivio/screens/player_screen.dart';
+import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/screens/auth_screen.dart';
 import 'package:nivio/screens/library_screen.dart';
 import 'package:nivio/screens/profile_screen.dart';
@@ -165,6 +166,7 @@ void main([List<String> args = const []]) async {
         return false;
       };
     }
+    initDebugLogFile();
     MediaKit.ensureInitialized();
 
     if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
