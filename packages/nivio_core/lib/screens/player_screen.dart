@@ -301,6 +301,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       'player=${_hash(_player)} subs=${_subscriptions.length} '
       'progressTimerActive=${_progressTimer?.isActive}',
     );
+    // A popped route is deactivated, then disposed at the end of the frame.
+    // If that frame aborts (the debug semantics assertions), dispose() never
+    // runs and a player that was NOT handed to the mini player keeps playing
+    // in the background. Silence it here; dispose() still releases it later.
+    if (!_transferredToMiniPlayer) {
+      _progressTimer?.cancel();
+      _nextEpisodeTimer?.cancel();
+      try {
+        _player.stop();
+        appDebugLog('🧪 [CW_DEBUG] PlayerScreen#$_sid deactivate() stopped player=${_hash(_player)} (not handed to mini player)');
+      } catch (e) {
+        appDebugLog('🧪 [CW_DEBUG] PlayerScreen#$_sid deactivate() stop failed: $e');
+      }
+    }
     super.deactivate();
   }
 
@@ -316,6 +330,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (media == null) return false;
     if (media.mediaType == 'anime') return true;
     return false;
+  }
+
+  // Automatic fallback walks from _providerStartIndex to the end, then wraps to
+  // 0 and stops just before _providerStartIndex. Without the wrap, a saved
+  // preferredProviderIndex (a raw index into the *dynamic* anime server list,
+  // whose contents shift between sessions) silently skipped every provider
+  // before it — e.g. anime replays starting at 4 never tried Animex at 0–3.
+  int _providerStartIndex = 0;
+  bool _providerWrapped = false;
+
+  bool get _hasNextProvider {
+    final next = _currentProviderIndex + 1;
+    if (_providerWrapped) return next < _providerStartIndex;
+    return next < _maxProviders || _providerStartIndex > 0;
+  }
+
+  void _advanceProvider() {
+    final next = _currentProviderIndex + 1;
+    if (!_providerWrapped && next >= _maxProviders) {
+      _providerWrapped = true;
+      _currentProviderIndex = 0;
+      appDebugLog(
+        '🔁 [CW_DEBUG] PlayerScreen#$_sid reached end of $_maxProviders providers — '
+        'wrapping to 0 to try the ones before start index $_providerStartIndex',
+      );
+    } else {
+      _currentProviderIndex = next;
+    }
   }
 
   int get _maxProviders {
@@ -888,10 +930,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (targetAudio == 'Original') targetAudio = null;
 
         if (_runningFetchers == null) {
-          appDebugLog('🚀 [FLOW] Launching fetchers starting from provider index $_currentProviderIndex');
-          _runningFetchers = {};
+          // Fresh fallback run: remember where it began so it can wrap around
+          // to the providers *before* a saved preferred index (see _advanceProvider).
+          _providerStartIndex = _currentProviderIndex;
+          _providerWrapped = false;
+        }
+        if (_runningFetchers == null || !_runningFetchers!.containsKey(_currentProviderIndex)) {
+          appDebugLog('🚀 [FLOW] Launching fetchers starting from provider index $_currentProviderIndex (wrapped=$_providerWrapped)');
+          _runningFetchers ??= {};
           // Fire all remaining providers in parallel to eliminate sequential fallback latency!
           for (int i = _currentProviderIndex; i < _maxProviders; i++) {
+            if (_runningFetchers!.containsKey(i)) continue;
             appDebugLog('🚀 [FLOW] Launching fetcher for provider index $i');
             _runningFetchers![i] = streamingService.fetchStreamUrl(
               media: media!,
@@ -946,8 +995,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         'result=${result == null ? 'NULL' : '${result.provider} ${result.quality} m3u8=${result.isM3U8} url=${result.url}'}',
       );
       if (result == null) {
-        if (_currentProviderIndex < _maxProviders - 1) {
-          _currentProviderIndex++;
+        if (_hasNextProvider) {
+          _advanceProvider();
           setState(() => _error = 'Provider unavailable, trying next...');
           await Future.delayed(const Duration(milliseconds: 500));
           if (!mounted) return;
@@ -1041,8 +1090,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (!mounted) return;
         if (working == null) {
           appDebugLog('❌ All ${candidates.length} source(s) failed for ${result.provider}');
-          if (_currentProviderIndex < _maxProviders - 1) {
-            _currentProviderIndex++;
+          if (_hasNextProvider) {
+            _advanceProvider();
             setState(() => _error = lastStatus != null
                 ? 'Stream returned $lastStatus, trying next...'
                 : 'Stream unreachable, trying next provider...');
@@ -1074,6 +1123,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       // Embed providers use WebView
       if (!_isDirectStream) {
+        _dismissTooltips('loading → WebView player');
         setState(() {
           _isLoading = false;
           _retryCount = 0;
@@ -1144,6 +1194,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         targetUrl = 'file://$targetUrl';
       }
 
+      // The user may have backed out while providers were resolving. A removed
+      // screen still reports mounted == true, so check deactivation as well.
+      if (!mounted || _isDeactivated) {
+        appDebugLog('🧪 [CW_DEBUG] PlayerScreen#$_sid screen closed during load — NOT opening stream');
+        return;
+      }
       appDebugLog('✅ [FLOW] Direct player loaded! Starting playback...');
       appDebugLog(
         '🧪 [CW_DEBUG] PlayerScreen#$_sid _player.open → player=${_hash(_player)} '
@@ -1162,6 +1218,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         '🧪 [CW_DEBUG] PlayerScreen#$_sid _player.open returned — mounted=$mounted '
         'deactivated=$_isDeactivated',
       );
+      if (!mounted || _isDeactivated) {
+        // Closed while open() was in flight; deactivate()'s stop() ran before
+        // the media started, so stop it again.
+        appDebugLog('🧪 [CW_DEBUG] PlayerScreen#$_sid screen closed during open — stopping player');
+        if (!_transferredToMiniPlayer) await _player.stop();
+        return;
+      }
 
       // Load custom remote subtitle if saved
       try {
@@ -1243,6 +1306,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
       unawaited(_broadcastWatchPartyPlayback(force: true));
 
+      _dismissTooltips('loading → direct player');
       setState(() {
         _isLoading = false;
         _retryCount = 0;
@@ -1276,8 +1340,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _isLoading = false;
       });
 
-      if (_currentProviderIndex < _maxProviders - 1) {
-        _currentProviderIndex++;
+      if (_hasNextProvider) {
+        _advanceProvider();
         setState(() => _error = 'Switching to next provider...');
         await Future.delayed(const Duration(milliseconds: 500));
         _initializePlayer(isRetry: true);
@@ -3797,7 +3861,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     appDebugLog('🔴 [DISPOSE] Step 14: ✅ ALL DONE');
   }
 
+  /// Closes any visible tooltip before a big subtree swap (route pop, loading →
+  /// playing). A tooltip's overlay child left open while its owner is torn out
+  /// is the prime suspect for the '!child.attached' semantics assertion.
+  void _dismissTooltips(String where) {
+    final hadTooltip = Tooltip.dismissAllToolTips();
+    appDebugLog('🧪 [CW_DEBUG] PlayerScreen#$_sid tooltips dismissed at $where — anyVisible=$hadTooltip');
+  }
+
   void _handleBackNavigation() {
+    _dismissTooltips('back navigation');
     appDebugLog('🟡 [BACK_NAV] Step 0: _handleBackNavigation() CALLED — mounted=$mounted, _isDirectStream=$_isDirectStream, _isInFullscreen=$_isInFullscreen, _useNativePlayer=$_useNativePlayer');
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
 
@@ -4663,6 +4736,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   @override
   Widget build(BuildContext context) {
+    // No tooltips anywhere in the player. Every Tooltip builds an OverlayPortal,
+    // and OverlayPortal semantics corrupt the accessibility tree when nearby
+    // siblings change (snackbar hiding, mini-player handoff) — flutter#189902,
+    // fix pending in flutter#190431. In debug that asserted every frame, which
+    // blocked disposal of popped player screens. With visibility off, Tooltip
+    // returns its child directly and no OverlayPortal is created.
+    return TooltipVisibility(
+      visible: false,
+      child: _buildScreen(context),
+    );
+  }
+
+  Widget _buildScreen(BuildContext context) {
     final isPortrait =
         MediaQuery.of(context).orientation == Orientation.portrait;
 
@@ -4759,9 +4845,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       'failed: $errorMessage — native player=${_hash(_player)} '
                       'playing=${_player.state.playing} (if true, audio you hear is NOT from this WebView)',
                     );
-                    if (_currentProviderIndex < _maxProviders - 1) {
+                    if (_hasNextProvider) {
                       setState(() {
-                        _currentProviderIndex++;
+                        _advanceProvider();
                         _error = 'Provider unavailable, switching to next...';
                       });
                       Future.delayed(const Duration(milliseconds: 500), () {
@@ -5589,7 +5675,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               child: IconButton(
                 icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
                 onPressed: _handleBackNavigation,
-                tooltip: 'Go Back',
               ),
             ),
           ),

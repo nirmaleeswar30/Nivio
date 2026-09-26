@@ -118,11 +118,14 @@ class AnimexScraperService {
       
       final serversRes = await _serversCache[serversKey];
 
-      if (serversRes == null || serversRes.statusCode != 200) return null;
+      if (serversRes == null || serversRes.statusCode != 200) {
+        appDebugLog('Animex: /servers returned ${serversRes?.statusCode} for $slug ep $episode (server "$providerName")');
+        return null;
+      }
 
       final serversData = jsonDecode(serversRes.body);
       final providersList = (type == 'dub' ? serversData['dubProviders'] : serversData['subProviders']) as List<dynamic>?;
-      
+
       final List<String> availableAudios = [];
       if ((serversData['subProviders'] as List<dynamic>?)?.isNotEmpty == true) {
         availableAudios.add('Japanese (Sub)');

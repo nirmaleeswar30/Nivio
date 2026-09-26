@@ -123,7 +123,12 @@ class StreamingService {
       });
       _dynamicAnimexServers = animexResult.map((id) => 'Animex ($id)').toList();
     }
-    appDebugLog('🔧 [FLOW] prepareProviders END — total providers: ${_animeProviders.length}');
+    final ordered = _animeProviders;
+    appDebugLog(
+      '🔧 [FLOW] prepareProviders END — pref=${ref.read(preferredAnimeSourceProvider)} '
+      'total providers: ${ordered.length} → '
+      '${[for (var i = 0; i < ordered.length; i++) '$i:${ordered[i]}'].join(', ')}',
+    );
   }
 
   // Dynamic getter for anime providers based on user preference
@@ -231,6 +236,7 @@ class StreamingService {
       }
 
       final providerName = providersList[providerIndex];
+      appDebugLog('fetchStreamUrl: providerIdx=$providerIndex → "$providerName"');
 
       // Handle Nivio Torrents (embedded rqbit P2P streaming)
       if (providerName == 'Nivio Torrents') {

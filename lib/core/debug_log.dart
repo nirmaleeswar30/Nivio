@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/semantics.dart';
 
 /// Debug-only log file, truncated on each launch:
 /// `%TEMP%\nivio_debug.log` (Windows) / `$TMPDIR/nivio_debug.log` elsewhere.
@@ -44,6 +45,21 @@ void initDebugLogFile() {
   } catch (e) {
     debugPrint('📝 Could not open debug log file: $e');
     return;
+  }
+
+  // The per-frame '!child.attached' / 'node.built' assertions only run while
+  // the semantics tree is on. On Windows that is switched on by an assistive
+  // tech / UI Automation client — record when it happens.
+  try {
+    final semantics = SemanticsBinding.instance;
+    void logSemantics(String when) => _writeToFile(
+          '[${_timestamp()}] ♿ Semantics $when: enabled=${semantics.semanticsEnabled} '
+          'accessibilityFeatures=${PlatformDispatcher.instance.accessibilityFeatures}',
+        );
+    logSemantics('at startup');
+    semantics.addSemanticsEnabledListener(() => logSemantics('CHANGED'));
+  } catch (e) {
+    _writeToFile('[${_timestamp()}] ♿ Semantics listener failed: $e');
   }
 
   final previousFlutterOnError = FlutterError.onError;

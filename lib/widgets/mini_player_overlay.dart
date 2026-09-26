@@ -174,7 +174,10 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay>
     final info = state.mediaInfo;
     if (info == null) return;
     if (_videoDetached) return; // Already expanding, prevent double-tap
-    appDebugLog('🧪 [CW_DEBUG] MiniOverlay expand tapped — media=${info.mediaId} E${info.episode}');
+    appDebugLog(
+      '🧪 [CW_DEBUG] MiniOverlay expand tapped — media=${info.mediaId} E${info.episode} '
+      'tooltipsDismissed=${Tooltip.dismissAllToolTips()}',
+    );
 
     // Unfocus any active element to avoid AXTree focus node corruption on Windows
     FocusManager.instance.primaryFocus?.unfocus();
