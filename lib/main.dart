@@ -204,6 +204,8 @@ void main([List<String> args = const []]) async {
     _initHive(),
     // Optional: initialize Supabase for watch party if configured
     WatchPartySupabaseConfig.initializeIfConfigured(),
+    // Seed synchronously-read settings (torrent toggles) with saved values
+    preloadSettingsPrefs(),
   ]);
 
   // Initialize cache service

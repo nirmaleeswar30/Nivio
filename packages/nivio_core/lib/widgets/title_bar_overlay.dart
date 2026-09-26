@@ -1,6 +1,7 @@
 ﻿import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:nivio/main.dart'; // To access appRouter
+import 'package:nivio/services/window_fullscreen.dart';
 import 'package:nivio/widgets/custom_title_bar.dart';
 
 class TitleBarOverlay extends StatefulWidget {
@@ -50,11 +51,17 @@ class _TitleBarOverlayState extends State<TitleBarOverlay> {
       return const SizedBox.shrink();
     }
 
-    return const Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: CustomTitleBar(),
+    return ValueListenableBuilder<bool>(
+      valueListenable: windowFullScreenNotifier,
+      builder: (context, isFullScreen, _) {
+        if (isFullScreen) return const SizedBox.shrink();
+        return const Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: CustomTitleBar(),
+        );
+      },
     );
   }
 }

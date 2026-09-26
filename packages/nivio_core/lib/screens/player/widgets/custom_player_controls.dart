@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:nivio/services/window_fullscreen.dart';
 
 import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/widgets/watch_party_chat_overlay.dart';
@@ -63,14 +64,7 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
   void _toggleWindowFullScreen() async {
     _startHideTimer();
     final nextVal = !_isWindowFullScreen;
-    await windowManager.setFullScreen(nextVal);
-    // On Windows, setFullScreen() rewrites the native window style and undoes
-    // TitleBarStyle.hidden, which makes the OS caption buttons (minimize /
-    // maximize / close) reappear at the top-right. Re-assert the hidden title
-    // bar style after every toggle so the player stays truly borderless.
-    if (Platform.isWindows) {
-      await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
-    }
+    await setWindowFullScreen(nextVal);
     if (mounted) {
       setState(() {
         _isWindowFullScreen = nextVal;

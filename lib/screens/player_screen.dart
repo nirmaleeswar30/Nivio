@@ -1,7 +1,7 @@
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:simple_pip_mode/actions/pip_actions_layout.dart';
-import 'package:window_manager/window_manager.dart';
+import 'package:nivio/services/window_fullscreen.dart';
 import 'dart:io';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:simple_pip_mode/simple_pip.dart';
@@ -3514,13 +3514,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     try {
       if (!Platform.isAndroid && !Platform.isIOS) {
-        debugPrint('🔴 [DISPOSE] Step 1: windowManager.setFullScreen(false)...');
-        windowManager.setFullScreen(false);
-        // Windows restores the native caption after exiting fullscreen; keep it
-        // hidden so other screens don't show OS buttons + the custom title bar.
-        if (Platform.isWindows) {
-          windowManager.setTitleBarStyle(TitleBarStyle.hidden);
-        }
+        debugPrint('🔴 [DISPOSE] Step 1: setWindowFullScreen(false)...');
+        setWindowFullScreen(false);
         debugPrint('🔴 [DISPOSE] Step 1: ✅ done');
       }
     } catch (e, st) {
@@ -3675,12 +3670,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     if (isDesktop) {
       try {
-        debugPrint('🟡 [BACK_NAV] Step 1: windowManager.setFullScreen(false)...');
-        windowManager.setFullScreen(false);
-        // Keep the native caption hidden after exiting fullscreen (Windows).
-        if (Platform.isWindows) {
-          windowManager.setTitleBarStyle(TitleBarStyle.hidden);
-        }
+        debugPrint('🟡 [BACK_NAV] Step 1: setWindowFullScreen(false)...');
+        setWindowFullScreen(false);
         debugPrint('🟡 [BACK_NAV] Step 1: ✅ done');
       } catch (e, st) {
         debugPrint('🟡 [BACK_NAV] Step 1: ❌ FAILED — $e\n$st');
@@ -4634,22 +4625,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   },
                   onEnterFullscreen: () async {
                     _setFullscreenTopBarVisibility(true);
-                    if (!Platform.isAndroid && !Platform.isIOS) {
-                      await windowManager.setFullScreen(true);
-                      // Windows re-adds the native caption on fullscreen; keep it hidden.
-                      if (Platform.isWindows) {
-                        await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
-                      }
-                    }
+                    await setWindowFullScreen(true);
                   },
                   onExitFullscreen: () async {
                     _setFullscreenTopBarVisibility(false);
-                    if (!Platform.isAndroid && !Platform.isIOS) {
-                      await windowManager.setFullScreen(false);
-                      if (Platform.isWindows) {
-                        await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
-                      }
-                    }
+                    await setWindowFullScreen(false);
                   },
                   onShowEpisodesRequested: () {
                     _showEpisodesBottomSheet();

@@ -5,6 +5,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/episode_check_service.dart';
 import '../core/theme.dart';
 
+// SharedPreferences loaded once before runApp, so settings that are read
+// synchronously (e.g. the torrent toggles consulted when the player builds its
+// provider list) start from the saved value instead of a hard-coded default
+// that is only corrected after an async load.
+SharedPreferences? _startupPrefs;
+
+Future<void> preloadSettingsPrefs() async {
+  _startupPrefs = await SharedPreferences.getInstance();
+}
+
 class AppAccentOption {
   const AppAccentOption({
     required this.key,
@@ -582,7 +592,7 @@ final enableTorrentsProvider =
 });
 
 class EnableTorrentsNotifier extends StateNotifier<bool> {
-  EnableTorrentsNotifier() : super(true) {
+  EnableTorrentsNotifier() : super(_startupPrefs?.getBool('enable_torrents') ?? true) {
     _loadPreference();
   }
 
@@ -804,7 +814,7 @@ final torrentNyaaEnabledProvider =
 });
 
 class TorrentNyaaEnabledNotifier extends StateNotifier<bool> {
-  TorrentNyaaEnabledNotifier() : super(true) {
+  TorrentNyaaEnabledNotifier() : super(_startupPrefs?.getBool('torrent_source_nyaa') ?? true) {
     _loadPreference();
   }
 
@@ -826,7 +836,7 @@ final torrentTorrentioEnabledProvider =
 });
 
 class TorrentTorrentioEnabledNotifier extends StateNotifier<bool> {
-  TorrentTorrentioEnabledNotifier() : super(true) {
+  TorrentTorrentioEnabledNotifier() : super(_startupPrefs?.getBool('torrent_source_torrentio') ?? true) {
     _loadPreference();
   }
 
@@ -848,7 +858,7 @@ final torrentPirateBayEnabledProvider =
 });
 
 class TorrentPirateBayEnabledNotifier extends StateNotifier<bool> {
-  TorrentPirateBayEnabledNotifier() : super(true) {
+  TorrentPirateBayEnabledNotifier() : super(_startupPrefs?.getBool('torrent_source_piratebay') ?? true) {
     _loadPreference();
   }
 
