@@ -139,6 +139,25 @@ Or run the included bash script to build a Universal APK:
 
 *(Note: Nivio also supports Shorebird for over-the-air (OTA) code pushes without requiring a full app update).*
 
+### 🖥️ Windows Desktop (installer)
+
+> **Important:** the Windows app **must** be built from `packages/nivio_desktop`, **not** the repo root. The desktop package swaps `google_sign_in` / `firebase_*` for local stubs (browser‑OAuth loopback login that works on Windows); the root build uses the real `google_sign_in`, which has no Windows implementation and fails at runtime with `UnimplementedError`.
+
+Build the release and package the installer in one step:
+```bash
+./scripts/build_windows_installer.sh
+```
+
+Or run the steps manually:
+```bash
+# 1. Build the desktop app (from the desktop package, not root)
+cd packages/nivio_desktop && flutter build windows --release && cd ../..
+
+# 2. Compile the Inno Setup installer (needs Inno Setup 6 / ISCC.exe)
+"$LOCALAPPDATA/Programs/Inno Setup 6/ISCC.exe" installer/nivio.iss
+```
+The installer is written to `dist/Nivio-<version>-windows-x64-setup.exe`.
+
 ---
 
 ## 🤝 Contributing

@@ -146,6 +146,13 @@ flutter_launcher_icons:
   adaptive_icon_background: "#000000"
   adaptive_icon_foreground: "assets/images/nivio.png"
   min_sdk_android: 21
+  # Windows: generates windows/runner/resources/app_icon.ico (a proper
+  # multi-size .ico) which is used both as the running app's icon and as the
+  # Inno Setup installer icon (SetupIconFile in installer/nivio.iss).
+  windows:
+    generate: true
+    image_path: "assets/images/nivio.png"
+    icon_size: 256
 
 # Splash Screen Configuration  
 flutter_native_splash:
