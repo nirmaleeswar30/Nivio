@@ -587,6 +587,7 @@ class DownloadService {
         if (File(actualFilePath).existsSync()) {
           item.progress = 1.0;
           _updateStatus(item, DownloadStatus.completed);
+          await _showCompletedNotification(item);
           return;
         } else {
           // If the exact path differed, search baseDir for the file
@@ -600,6 +601,7 @@ class DownloadService {
           } catch (_) {}
           item.progress = 1.0;
           _updateStatus(item, DownloadStatus.completed);
+          await _showCompletedNotification(item);
           return;
         }
       }
@@ -1592,6 +1594,12 @@ class DownloadService {
     item.progress = 1.0;
     await box.put(item.id, item);
 
+    await _showCompletedNotification(item);
+  }
+
+  /// Replaces the ongoing progress notification with a dismissible
+  /// "Download Complete" notification. Reused by direct/HLS and torrent paths.
+  static Future<void> _showCompletedNotification(DownloadItem item) async {
     String title = item.title;
     if (item.season != null && item.episode != null) {
       title += ' S${item.season} E${item.episode}';

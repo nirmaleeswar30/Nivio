@@ -1662,6 +1662,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       episode: 1,
       providerIndex: usedProviderIndex ?? 0,
       isAnime: media.mediaType == 'anime',
+      showTorrentOption: true,
     );
 
     if (langChoice == null) return; // User cancelled

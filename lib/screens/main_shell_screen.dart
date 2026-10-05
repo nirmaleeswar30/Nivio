@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -31,6 +32,10 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   DateTime? _lastBackHandledAt;
   bool _scrolled = false;
   String? _lastLocation;
+
+  // Frosted mobile nav: hides when scrolling down, reappears when scrolling up
+  // or when the view is back at the top.
+  bool _navVisible = true;
 
   @override
   void initState() {
@@ -112,6 +117,28 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     } catch (e) {
       // Silently fail on startup check
     }
+  }
+
+  // Drives the hide-on-scroll behaviour of the mobile frosted nav.
+  bool _handleMobileScroll(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical) return false;
+    if (notification is ScrollUpdateNotification) {
+      final pixels = notification.metrics.pixels;
+      final delta = notification.scrollDelta ?? 0;
+
+      // Always reveal near the very top so the bar greets you there.
+      if (pixels <= 24) {
+        if (!_navVisible) setState(() => _navVisible = true);
+        return false;
+      }
+      // Ignore tiny jitter; otherwise hide when scrolling down, show when up.
+      if (delta > 6 && _navVisible) {
+        setState(() => _navVisible = false);
+      } else if (delta < -6 && !_navVisible) {
+        setState(() => _navVisible = true);
+      }
+    }
+    return false;
   }
 
   void _onTap(int index) {
@@ -397,6 +424,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     if (_lastLocation != location) {
       _lastLocation = location;
       _scrolled = false;
+      _navVisible = true;
     }
 
     final leftPadding = 0.0;
@@ -448,93 +476,341 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
       );
     }
 
+    // Space the floating bar occupies, so page content can scroll clear of it.
+    final bottomSafe = MediaQuery.of(context).padding.bottom;
+    final navReserve = 64.0 + 12.0 + bottomSafe;
+    final mq = MediaQuery.of(context);
+
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Scaffold(
+        extendBody: true,
         body: Stack(
           children: [
-            // Foreground UI
-            widget.navigationShell,
+            // Foreground UI. Reserve bottom space via MediaQuery padding so
+            // SafeArea/scroll-aware pages don't hide content behind the bar.
+            MediaQuery(
+              data: mq.copyWith(
+                padding: mq.padding.copyWith(bottom: navReserve),
+              ),
+              child: NotificationListener<ScrollNotification>(
+                onNotification: _handleMobileScroll,
+                child: widget.navigationShell,
+              ),
+            ),
             // Background physical WebView for Cloudflare Turnstile bypass (drawn on top when needed)
             const Positioned.fill(child: SizedBox.shrink()),
+            // Frosted floating navigation bar.
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: IgnorePointer(
+                ignoring: !_navVisible,
+                child: AnimatedSlide(
+                  offset: _navVisible ? Offset.zero : const Offset(0, 1.4),
+                  duration: const Duration(milliseconds: 520),
+                  curve: Curves.easeInOutCubicEmphasized,
+                  child: AnimatedOpacity(
+                    opacity: _navVisible ? 1 : 0,
+                    duration: const Duration(milliseconds: 420),
+                    curve: Curves.easeOutCubic,
+                    child: _NivioFloatingNav(
+                      currentIndex: widget.navigationShell.currentIndex,
+                      onTap: _onTap,
+                      accentColor: accentColor,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
-        bottomNavigationBar: Container(
-          decoration: const BoxDecoration(
-            color: NivioTheme.netflixBlack,
-            border: Border(top: BorderSide(color: Color(0x1FFFFFFF))),
-          ),
-          child: BottomNavigationBar(
-            currentIndex: widget.navigationShell.currentIndex,
-            onTap: _onTap,
-            backgroundColor: NivioTheme.netflixBlack,
-            elevation: 0,
-            type: BottomNavigationBarType.fixed,
-            selectedItemColor: accentColor,
-            unselectedItemColor: NivioTheme.netflixGrey,
-            showUnselectedLabels: true,
-            selectedLabelStyle: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
+      ),
+    );
+  }
+
+}
+
+/// Floating frosted navigation bar with a sliding radial-glow indicator that
+/// tracks the active tab, plus a bounce on selection. Ported from the standard
+/// floating nav design.
+class _NivioFloatingNav extends StatefulWidget {
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+  final Color accentColor;
+
+  const _NivioFloatingNav({
+    required this.currentIndex,
+    required this.onTap,
+    required this.accentColor,
+  });
+
+  @override
+  State<_NivioFloatingNav> createState() => _NivioFloatingNavState();
+}
+
+class _NivioFloatingNavState extends State<_NivioFloatingNav>
+    with TickerProviderStateMixin {
+  late AnimationController _slideController;
+  late AnimationController _bounceController;
+  late Animation<double> _slideAnimation;
+  late Animation<double> _bounceAnimation;
+  int _previousIndex = 0;
+
+  static const _navItems = <(IconData, IconData, String)>[
+    (PhosphorIconsRegular.house, PhosphorIconsFill.house, 'Home'),
+    (PhosphorIconsRegular.calendarBlank, PhosphorIconsFill.calendarCheck, 'Library'),
+    (PhosphorIconsRegular.television, PhosphorIconsFill.television, 'Live TV'),
+    (PhosphorIconsRegular.users, PhosphorIconsFill.users, 'Party'),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _previousIndex = widget.currentIndex;
+
+    _slideController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _bounceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+
+    _slideAnimation = Tween<double>(
+      begin: widget.currentIndex.toDouble(),
+      end: widget.currentIndex.toDouble(),
+    ).animate(
+      CurvedAnimation(parent: _slideController, curve: Curves.easeOutBack),
+    );
+    _bounceAnimation = _makeBounce();
+  }
+
+  Animation<double> _makeBounce() {
+    return TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.85), weight: 20),
+      TweenSequenceItem(tween: Tween(begin: 0.85, end: 1.1), weight: 40),
+      TweenSequenceItem(tween: Tween(begin: 1.1, end: 1.0), weight: 40),
+    ]).animate(
+      CurvedAnimation(parent: _bounceController, curve: Curves.easeOut),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _NivioFloatingNav oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentIndex != widget.currentIndex) {
+      _previousIndex = oldWidget.currentIndex;
+      _slideAnimation = Tween<double>(
+        begin: _previousIndex.toDouble(),
+        end: widget.currentIndex.toDouble(),
+      ).animate(
+        CurvedAnimation(parent: _slideController, curve: Curves.easeOutBack),
+      );
+      _slideController.forward(from: 0);
+
+      _bounceAnimation = _makeBounce();
+      _bounceController.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _slideController.dispose();
+    _bounceController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final accent = widget.accentColor;
+    final bottomMargin = (bottomPadding > 0 ? bottomPadding : 10.0) + 14.0;
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(10, 0, 10, bottomMargin),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(32),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.30),
+              blurRadius: 16,
+              spreadRadius: 1,
+              offset: const Offset(0, 4),
             ),
-            unselectedLabelStyle: const TextStyle(fontSize: 11),
-            items: [
-              BottomNavigationBarItem(
-                icon: PhosphorIcon(
-                  PhosphorIconsRegular.house,
-                  color: NivioTheme.netflixGrey,
-                  size: 22,
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(32),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              height: 64,
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.62),
+                    const Color(0xFF101010).withValues(alpha: 0.56),
+                  ],
                 ),
-                activeIcon: PhosphorIcon(
-                  PhosphorIconsFill.house,
-                  color: accentColor,
-                  size: 22,
+                borderRadius: BorderRadius.circular(32),
+                border: Border.all(
+                  color: accent.withValues(alpha: 0.38),
+                  width: 1.0,
                 ),
-                label: 'Home',
               ),
-              BottomNavigationBarItem(
-                icon: PhosphorIcon(
-                  PhosphorIconsRegular.calendarBlank,
-                  color: NivioTheme.netflixGrey,
-                  size: 22,
-                ),
-                activeIcon: PhosphorIcon(
-                  PhosphorIconsFill.calendarCheck,
-                  color: accentColor,
-                  size: 22,
-                ),
-                label: 'Library',
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final itemWidth = constraints.maxWidth / _navItems.length;
+                  const indicatorWidth = 44.0;
+
+                  return Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Sliding radial glow indicator behind the active tab.
+                      AnimatedBuilder(
+                        animation: _slideController,
+                        builder: (context, child) {
+                          final position = _slideController.isAnimating
+                              ? _slideAnimation.value
+                              : widget.currentIndex.toDouble();
+                          final leftOffset =
+                              (itemWidth - indicatorWidth) / 2 +
+                              (position * itemWidth);
+
+                          return Positioned(
+                            left: leftOffset,
+                            top: (56.0 - indicatorWidth) / 2,
+                            child: Container(
+                              width: indicatorWidth,
+                              height: indicatorWidth,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: RadialGradient(
+                                  colors: [
+                                    accent.withValues(alpha: 0.35),
+                                    accent.withValues(alpha: 0.10),
+                                    accent.withValues(alpha: 0.0),
+                                  ],
+                                  stops: const [0.0, 0.5, 1.0],
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: accent.withValues(alpha: 0.40),
+                                    blurRadius: 16,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      // Nav items.
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: List.generate(_navItems.length, (index) {
+                          final item = _navItems[index];
+                          final isSelected = widget.currentIndex == index;
+
+                          return GestureDetector(
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              widget.onTap(index);
+                            },
+                            behavior: HitTestBehavior.opaque,
+                            child: SizedBox(
+                              width: itemWidth,
+                              child: AnimatedBuilder(
+                                animation: _bounceController,
+                                builder: (context, child) {
+                                  final scale = isSelected &&
+                                          _bounceController.isAnimating
+                                      ? _bounceAnimation.value
+                                      : 1.0;
+                                  return Transform.scale(
+                                    scale: scale,
+                                    child: _NivioNavItem(
+                                      icon: item.$1,
+                                      selectedIcon: item.$2,
+                                      label: item.$3,
+                                      isSelected: isSelected,
+                                      accentColor: accent,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    ],
+                  );
+                },
               ),
-              BottomNavigationBarItem(
-                icon: PhosphorIcon(
-                  PhosphorIconsRegular.television,
-                  color: NivioTheme.netflixGrey,
-                  size: 22,
-                ),
-                activeIcon: PhosphorIcon(
-                  PhosphorIconsFill.television,
-                  color: accentColor,
-                  size: 22,
-                ),
-                label: 'Live TV',
-              ),
-              BottomNavigationBarItem(
-                icon: PhosphorIcon(
-                  PhosphorIconsRegular.users,
-                  color: NivioTheme.netflixGrey,
-                  size: 22,
-                ),
-                activeIcon: PhosphorIcon(
-                  PhosphorIconsFill.users,
-                  color: accentColor,
-                  size: 22,
-                ),
-                label: 'Party',
-              ),
-            ],
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _NivioNavItem extends StatelessWidget {
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+  final bool isSelected;
+  final Color accentColor;
+
+  const _NivioNavItem({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+    required this.isSelected,
+    required this.accentColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isSelected
+                ? accentColor.withValues(alpha: 0.15)
+                : Colors.transparent,
+          ),
+          child: PhosphorIcon(
+            isSelected ? selectedIcon : icon,
+            size: isSelected ? 23 : 21,
+            color: isSelected ? accentColor : NivioTheme.netflixLightGrey,
+          ),
+        ),
+        const SizedBox(height: 1),
+        AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 200),
+          style: TextStyle(
+            fontSize: isSelected ? 10.5 : 9.5,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+            color: isSelected ? accentColor : NivioTheme.netflixLightGrey,
+            letterSpacing: isSelected ? 0.2 : 0,
+          ),
+          child: Text(label),
+        ),
+      ],
     );
   }
 }

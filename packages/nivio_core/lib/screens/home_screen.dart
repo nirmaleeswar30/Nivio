@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
@@ -227,11 +228,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             valueListenable: _showAppBarBg,
             builder: (context, showBg, _) => ClipRect(
               child: showBg
-                  ? Container(
-                      decoration: const BoxDecoration(
-                        color: Color(0xFA0D0F14), // Near opaque dark background
-                        border: Border(
-                          bottom: BorderSide(color: Color(0x22FFFFFF)),
+                  ? BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 7, sigmaY: 7),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withValues(alpha: 0.38),
+                              const Color(0xFF101010).withValues(alpha: 0.32),
+                            ],
+                          ),
                         ),
                       ),
                     )
