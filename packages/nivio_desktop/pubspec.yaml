@@ -32,6 +32,7 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/nivio-preload.mpeg
     - shorebird.yaml
     - assets/fonts/satoshi/
     - .env

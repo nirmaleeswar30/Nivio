@@ -43,6 +43,7 @@ import 'package:nivio/screens/library_screen.dart';
 import 'package:nivio/screens/profile_screen.dart';
 import 'package:nivio/screens/provider_content_screen.dart';
 import 'package:nivio/screens/main_shell_screen.dart';
+import 'package:nivio/screens/app_preloader_screen.dart';
 import 'package:nivio/screens/watch_party_screen.dart';
 import 'package:nivio/screens/tv_sports_screen.dart';
 import 'package:nivio/services/watch_party/watch_party_models.dart';
@@ -450,12 +451,19 @@ final partyNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'party');
 
 // Router configuration
 final appRouter = GoRouter(
-  initialLocation: '/home',
+  initialLocation: '/splash',
   // Optimize: Use refreshListenable for auth state instead of checking on every navigation
   refreshListenable: _AuthStateNotifier(),
   redirect: (context, state) {
     final user = FirebaseAuth.instance.currentUser;
-    final isAuthRoute = state.matchedLocation == '/auth';
+    final location = state.matchedLocation;
+    final isSplashRoute = location == '/splash';
+    final isAuthRoute = location == '/auth';
+
+    // Allow splash/preloader screen to play uninterrupted
+    if (isSplashRoute) {
+      return null;
+    }
 
     // If not signed in and not on auth route, redirect to auth
     if (user == null && !isAuthRoute) {
@@ -471,6 +479,17 @@ final appRouter = GoRouter(
     return null;
   },
   routes: [
+    GoRoute(
+      path: '/splash',
+      pageBuilder: (context, state) => CustomTransitionPage(
+        key: state.pageKey,
+        transitionDuration: const Duration(milliseconds: 350),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        child: const AppPreloaderScreen(),
+      ),
+    ),
     GoRoute(path: '/auth', builder: (context, state) => const AuthScreen()),
     GoRoute(
       path: '/search',

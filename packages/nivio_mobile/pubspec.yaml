@@ -36,6 +36,7 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/nivio-preload.mpeg
     - shorebird.yaml
     - assets/fonts/satoshi/
     - .env
@@ -78,11 +79,9 @@ flutter_launcher_icons:
   min_sdk_android: 21
 
 flutter_native_splash:
-  color: "#000000"
-  image: assets/images/nivio-dark.png
+  color: "#05070B"
   android: true
   ios: false
   web: false
   android_12:
-    image: assets/images/nivio-dark.png
-    color: "#000000"
+    color: "#05070B"

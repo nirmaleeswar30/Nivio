@@ -105,6 +105,7 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/nivio-preload.mpeg
     - shorebird.yaml
     - assets/fonts/satoshi/
     - .env
@@ -154,16 +155,14 @@ flutter_launcher_icons:
     image_path: "assets/images/nivio.png"
     icon_size: 256
 
-# Splash Screen Configuration  
+# Splash Screen Configuration (Clean Dark background — kinetic preloader handles brand reveal)
 flutter_native_splash:
-  color: "#000000"
-  image: assets/images/nivio-dark.png
+  color: "#05070B"
   android: true
   ios: false
   web: false
   android_12:
-    image: assets/images/nivio-dark.png
-    color: "#000000"
+    color: "#05070B"
 
 
 dependency_overrides:
