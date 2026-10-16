@@ -546,10 +546,31 @@ class TorrentStreamService {
     }
     _log('resolved file[${file.index}]="${file.name}" -> streaming');
 
+    // Wait out the initializing/checking state (up to ~20s) so the stream
+    // endpoint can actually serve the file header when mpv opens it. When replaying
+    // a torrent that was partially streamed previously, rqbit enters 'initializing'
+    // while hash-checking on-disk pieces. If mpv connects while rqbit is initializing,
+    // the stream endpoint serves nothing and mpv gets stuck at 0:00 forever.
+    for (int i = 0; i < 40; i++) {
+      try {
+        final stats = await client.getStats(id);
+        final state = stats.state.toLowerCase();
+        if (state == 'live' || stats.finished || state == 'error') break;
+        onStatus?.call(
+            'Verifying cached data… (${(stats.progressBytes / 1024 / 1024).toStringAsFixed(1)} MB)');
+      } catch (_) {}
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+
     // Restrict download to just the target file (faster, less disk).
-    try {
-      await client.updateOnlyFiles(id, [file.index]);
-    } catch (_) {/* single-file torrents / older state: ignore */}
+    for (int retry = 0; retry < 5; retry++) {
+      try {
+        await client.updateOnlyFiles(id, [file.index]);
+        break;
+      } catch (_) {
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
+    }
 
     // Keep the process alive for peers while backgrounded (Android; no-op else).
     unawaited(TorrentForegroundService.instance

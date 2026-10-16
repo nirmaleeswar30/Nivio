@@ -476,6 +476,8 @@ class DownloadService {
     if (torrentId == null) {
       throw StateError('Failed to add torrent to rqbit: no ID returned');
     }
+    item.torrentId = torrentId;
+    await box.put(item.id, item);
 
     // 2. Wait for metadata / file list
     TorrentDetails? details = addResponse.details;
@@ -583,26 +585,28 @@ class DownloadService {
       }
 
       if (stats.finished) {
-        // Double check if file exists
-        if (File(actualFilePath).existsSync()) {
-          item.progress = 1.0;
-          _updateStatus(item, DownloadStatus.completed);
-          await _showCompletedNotification(item);
-          return;
-        } else {
-          // If the exact path differed, search baseDir for the file
+        // Double check if file exists on disk
+        File targetFile = File(actualFilePath);
+        if (!targetFile.existsSync()) {
           try {
             final dir = Directory(baseDir);
             final match = dir.listSync(recursive: true).whereType<File>().firstWhere(
               (f) => f.path.endsWith(fileInfo.name) || f.path.split(Platform.pathSeparator).last == fileInfo.name,
               orElse: () => File(actualFilePath),
             );
-            item.savePath = match.path;
+            targetFile = match;
+            actualFilePath = targetFile.path;
           } catch (_) {}
+        }
+
+        if (targetFile.existsSync() && targetFile.lengthSync() > 0) {
+          item.savePath = actualFilePath;
           item.progress = 1.0;
           _updateStatus(item, DownloadStatus.completed);
           await _showCompletedNotification(item);
           return;
+        } else {
+          appDebugLog('Warning: rqbit reported finished, but $actualFilePath does not exist on disk or is 0 bytes');
         }
       }
 
@@ -1653,45 +1657,144 @@ class DownloadService {
     pauseDownload(id);
     final item = box.get(id);
     if (item != null) {
-      final file = File(item.savePath);
-      if (await file.exists()) {
-        await file.delete();
-      }
+      final isTorrent = (item.torrentId != null) ||
+          (item.streamUrl != null && item.streamUrl!.startsWith('torrent|||'));
 
-      // Also delete the associated subtitle (.srt) file if it exists
-      final srtPath = item.savePath.replaceAll(
-        RegExp(r'\.[a-zA-Z0-9]+$'),
-        '.srt',
-      );
-      final srtFile = File(srtPath);
-      if (await srtFile.exists()) {
+      if (isTorrent) {
         try {
-          await srtFile.delete();
-        } catch (_) {}
-      }
+          final client = await RqbitEngine.instance.ensureStarted();
+          // Check if any other download item in box is sharing this same torrent
+          final otherUsingSameTorrent = box.values.any((other) =>
+              other.id != item.id &&
+              ((item.torrentId != null && other.torrentId == item.torrentId) ||
+                  (item.streamUrl != null && other.streamUrl == item.streamUrl)));
 
-      try {
-        final dir = file.parent;
-        if (dir.existsSync()) {
-          // Cleanup Direct .part files
-          for (final f in dir.listSync()) {
-            if (f.path.startsWith(file.path) && f.path.contains('.part')) {
-              try {
-                f.deleteSync();
-              } catch (_) {}
-            }
+          final magnetOrUrl = item.streamUrl?.replaceFirst('torrent|||', '');
+          String? targetHash;
+          if (magnetOrUrl != null) {
+            final match = RegExp(r'urn:btih:([a-zA-Z0-9]+)', caseSensitive: false)
+                .firstMatch(magnetOrUrl);
+            if (match != null) targetHash = match.group(1)?.toLowerCase();
           }
 
-          // Cleanup HLS temporary folder
-          final hlsTempDir = Directory('${dir.path}/.hls_${item.id}');
-          if (hlsTempDir.existsSync()) {
+          if (!otherUsingSameTorrent) {
             try {
-              hlsTempDir.deleteSync(recursive: true);
+              final torrents = await client.listTorrents();
+              bool deletedAny = false;
+              for (final t in torrents) {
+                final matchesId = item.torrentId != null && t.id == item.torrentId;
+                final matchesHash =
+                    targetHash != null && t.infoHash.toLowerCase() == targetHash;
+                final matchesName = t.name != null &&
+                    t.name!.isNotEmpty &&
+                    item.savePath.contains(t.name!);
+                if (matchesId || matchesHash || matchesName) {
+                  if (t.id != null) {
+                    try {
+                      await client.delete(t.id!);
+                      deletedAny = true;
+                      appDebugLog('🗑️ Deleted torrent ${t.id} (${t.name}) from rqbit');
+                    } catch (e) {
+                      appDebugLog('Warning: client.delete(${t.id}) error: $e');
+                    }
+                  }
+                }
+              }
+              if (!deletedAny && item.torrentId != null) {
+                try {
+                  await client.delete(item.torrentId!);
+                  appDebugLog('🗑️ Deleted torrent ${item.torrentId} by ID from rqbit');
+                } catch (_) {}
+              }
+            } catch (e) {
+              appDebugLog('Warning: rqbit listTorrents / delete failed: $e');
+              if (item.torrentId != null) {
+                try {
+                  await client.delete(item.torrentId!);
+                } catch (_) {}
+              }
+            }
+          } else if (item.fileIndex != null && item.torrentId != null) {
+            // Other episodes share this torrent: deselect this file from downloading
+            try {
+              final remainingFiles = box.values
+                  .where((other) =>
+                      other.id != item.id &&
+                      other.torrentId == item.torrentId &&
+                      other.fileIndex != null)
+                  .map((other) => other.fileIndex!)
+                  .toList();
+              if (remainingFiles.isNotEmpty) {
+                await client.updateOnlyFiles(item.torrentId!, remainingFiles);
+              }
             } catch (_) {}
           }
+        } catch (e) {
+          appDebugLog('Warning: RqbitEngine cleanup failed during deleteDownload: $e');
         }
-      } catch (e) {
-        appDebugLog('Failed to cleanup temp files: $e');
+      }
+
+      if (item.savePath.isNotEmpty) {
+        final file = File(item.savePath);
+        if (await file.exists()) {
+          try {
+            await file.delete();
+          } catch (e) {
+            appDebugLog('Failed to delete download file: $e');
+          }
+        }
+
+        // Also delete the associated subtitle (.srt) file if it exists
+        final srtPath = item.savePath.replaceAll(
+          RegExp(r'\.[a-zA-Z0-9]+$'),
+          '.srt',
+        );
+        final srtFile = File(srtPath);
+        if (await srtFile.exists()) {
+          try {
+            await srtFile.delete();
+          } catch (_) {}
+        }
+
+        try {
+          final dir = file.parent;
+          final downloadDir = await getDownloadDirectory();
+          if (dir.existsSync()) {
+            // Cleanup Direct .part files
+            for (final f in dir.listSync()) {
+              if (f.path.startsWith(file.path) && f.path.contains('.part')) {
+                try {
+                  f.deleteSync();
+                } catch (_) {}
+              }
+            }
+
+            // Cleanup HLS temporary folder
+            final hlsTempDir = Directory('${dir.path}/.hls_${item.id}');
+            if (hlsTempDir.existsSync()) {
+              try {
+                hlsTempDir.deleteSync(recursive: true);
+              } catch (_) {}
+            }
+
+            // If this was a dedicated subfolder inside downloadDir (e.g. multi-file torrent),
+            // and no other downloads in Hive use this folder:
+            if (downloadDir != null && dir.path != downloadDir) {
+              final isFolderShared = box.values.any((other) =>
+                  other.id != item.id && other.savePath.startsWith(dir.path));
+              if (!isFolderShared) {
+                try {
+                  dir.deleteSync(recursive: true);
+                  appDebugLog('🗑️ Deleted torrent folder ${dir.path}');
+                } catch (e) {
+                  appDebugLog('Failed to cleanup torrent folder: $e');
+                }
+              }
+            }
+          }
+        } catch (e) {
+          appDebugLog('Failed to cleanup temp files: $e');
+        }
       }
 
       await box.delete(id);

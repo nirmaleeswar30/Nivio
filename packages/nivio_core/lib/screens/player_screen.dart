@@ -296,6 +296,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (_sawFirstFrame) return;
       _stuckReported = true;
       snapshot('STUCK at 0:00 after 8s');
+
+      // If a torrent stream is stuck at 0:00, rqbit may have finished hash-checking/connecting.
+      // Re-trigger open() so mpv re-connects to the localhost stream endpoint.
+      if (_currentProvider == 'Nivio Torrents' && _streamResult != null) {
+        appDebugLog('🔄 [STUCK_DEBUG] Torrent stream stuck at 0:00 — reloading player stream...');
+        _player.open(
+          Media(_streamResult!.url, httpHeaders: _streamResult!.headers),
+          play: true,
+        );
+      }
+
       // Re-check once more a few seconds later to distinguish "slow" from "dead".
       Timer(const Duration(seconds: 7), () {
         if (!mounted || _isDeactivated) return;
@@ -303,6 +314,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           appDebugLog('✅ [STUCK_DEBUG] PlayerScreen#$_sid recovered — playback started late for "$_currentProvider"');
         } else {
           snapshot('STILL STUCK at 0:00 after 15s (server likely dead — user must switch)');
+          if (_currentProvider == 'Nivio Torrents' && _streamResult != null) {
+            _player.open(
+              Media(_streamResult!.url, httpHeaders: _streamResult!.headers),
+              play: true,
+            );
+          }
         }
       });
     });
@@ -805,21 +822,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       } else if (!hasMatchingSelectedMedia) {
         setState(() => _currentProvider = 'Loading media details...');
         final tmdbService = ref.read(tmdbServiceProvider);
-        if (widget.mediaType == 'anime') {
-          final anilistService = ref.read(aniListServiceProvider);
-          media = await anilistService.getAnimeDetails(widget.mediaId);
-        } else if (widget.mediaType == 'tv') {
-          media = await tmdbService.getTVShowDetails(widget.mediaId);
-        } else if (widget.mediaType == 'movie') {
-          media = await tmdbService.getMovieDetails(widget.mediaId);
-        } else {
-          try {
+        try {
+          if (widget.mediaType == 'anime') {
+            final anilistService = ref.read(aniListServiceProvider);
+            media = await anilistService.getAnimeDetails(widget.mediaId);
+          } else if (widget.mediaType == 'tv') {
             media = await tmdbService.getTVShowDetails(widget.mediaId);
-          } catch (_) {
+          } else if (widget.mediaType == 'movie') {
             media = await tmdbService.getMovieDetails(widget.mediaId);
+          } else {
+            try {
+              media = await tmdbService.getTVShowDetails(widget.mediaId);
+            } catch (_) {
+              media = await tmdbService.getMovieDetails(widget.mediaId);
+            }
           }
+          ref.read(selectedMediaProvider.notifier).state = media;
+        } catch (e) {
+          appDebugLog('PlayerScreen: Could not load media details (offline or error): $e');
         }
-        ref.read(selectedMediaProvider.notifier).state = media;
       }
 
       if ((media?.mediaType == 'tv' || media?.mediaType == 'anime')) {
@@ -871,15 +892,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       StreamResult? result;
 
+      // When advancing between episodes (e.g. autoplay or manual next), route
+      // parameters like widget.localPath or widget.downloadStreamId only belong
+      // to the episode that originally opened the player. Subsequent episodes
+      // must resolve their own downloaded file or stream.
+      final isInitialEpisode = (_currentEpisode == widget.episode);
+
       // Always prefer a local downloaded copy if one exists for this media,
       // regardless of how playback was launched. An explicit localPath (e.g.
+      // from DownloadsScreen) applies to the initial episode; subsequent episodes
+      // query Hive for their own downloadItem.
       final downloadItem = DownloadService.findPlayableDownload(
         mediaId: widget.mediaId,
         season: widget.season,
         episode: _currentEpisode,
       );
 
-      _effectiveLocalPath = (widget.localPath != null && widget.localPath!.isNotEmpty)
+      _effectiveLocalPath = (isInitialEpisode && widget.localPath != null && widget.localPath!.isNotEmpty)
           ? widget.localPath
           : downloadItem?.savePath;
 
@@ -909,16 +938,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // source; if it can't be resolved we surface an error instead.
       //
       // An explicit downloadStreamId (from the Downloads screen) is honoured
-      // as-is. Otherwise, if this media/episode happens to be downloading right
+      // as-is for the initial episode. Otherwise, if this media/episode happens to be downloading right
       // now, reuse it automatically — so launching from media detail, continue
       // watching, or a watch-party sync doesn't waste a fresh remote stream.
       // A hard error is only surfaced for the explicit case; for auto-detected
       // in-progress items we fall through to normal providers if not yet ready.
-      String? effectiveDownloadStreamId = widget.downloadStreamId;
-      bool isExplicitDownload = widget.downloadStreamId != null;
+      String? effectiveDownloadStreamId = isInitialEpisode ? widget.downloadStreamId : null;
+      bool isExplicitDownload = effectiveDownloadStreamId != null;
       if (effectiveDownloadStreamId == null &&
-          widget.localPath == null &&
-          widget.directStreamUrl == null &&
+          _effectiveLocalPath == null &&
+          (isInitialEpisode ? widget.directStreamUrl == null : true) &&
           downloadItem == null) {
         final inProgress = DownloadService.findInProgressDownload(
           mediaId: widget.mediaId,
@@ -978,7 +1007,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       if (result != null) {
         // Already resolved above (play-while-downloading).
-      } else if (widget.directStreamUrl != null) {
+      } else if (isInitialEpisode && widget.directStreamUrl != null) {
         final lowerUrl = widget.directStreamUrl!.toLowerCase();
         final isHls = lowerUrl.contains('.m3u8') || lowerUrl.contains('.m3u') || widget.isLive;
 
@@ -1101,7 +1130,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _streamResult = result;
       _currentProvider = result.provider;
       // A local downloaded file is always played directly (never via WebView).
-      _isDirectStream = (widget.directStreamUrl != null || _isDownloadStream || (_effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty))
+      _isDirectStream = ((isInitialEpisode && widget.directStreamUrl != null) || _isDownloadStream || (_effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty))
           ? true
           : ref.read(streamingServiceProvider).isDirectStream(
               _currentProviderIndex,
@@ -1760,17 +1789,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         final dur = _player.state.duration;
         
         // Ignore premature EOF from network dropouts (especially on torrent streams 
-        // where mpv times out if pieces aren't downloaded fast enough).
-        if (dur.inSeconds > 60 && pos.inSeconds < dur.inSeconds - 15) {
-          appDebugLog('⚠️ Ignoring premature EOF (network timeout). Position (${pos.inSeconds}s) < Duration (${dur.inSeconds}s). Retrying stream...');
+        // where mpv times out if pieces aren't downloaded fast enough or before container headers are read).
+        final isTorrentStream = _currentProvider == 'Nivio Torrents';
+        final isPrematureEof = (dur.inSeconds > 60 && pos.inSeconds < dur.inSeconds - 15) ||
+            (dur == Duration.zero && !_sawFirstFrame);
+
+        if (isPrematureEof) {
+          appDebugLog('⚠️ Ignoring premature EOF or instant completion (pos=${pos.inSeconds}s, dur=${dur.inSeconds}s, torrent=$isTorrentStream). Retrying stream...');
           
-          _resumePosition = pos;
+          _resumePosition = pos > Duration.zero ? pos : null;
           
           Future.microtask(() async {
             if (mounted) {
               setState(() {
                 _isLoading = true;
               });
+
+              if (isTorrentStream) {
+                await Future.delayed(const Duration(milliseconds: 1000));
+              }
               
               if (_streamResult != null) {
                 await _player.open(
@@ -1780,7 +1817,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   ),
                   play: true,
                 );
-                await _player.seek(pos);
+                if (pos > Duration.zero) {
+                  await _player.seek(pos);
+                }
               } else {
                 // Fallback if _streamResult is somehow null
                 _disposePlayer();
@@ -2741,8 +2780,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   bool _hasNextEpisode() {
     final media = ref.read(selectedMediaProvider);
-    if (media == null) return false;
-    if (media.mediaType != 'tv' && media.mediaType != 'anime') return false; // Movies return false
+    final effectiveMediaType = media?.mediaType ?? widget.mediaType;
+    if (effectiveMediaType != 'tv' && effectiveMediaType != 'anime') return false; // Movies return false
+
+    // Check if the next episode exists locally in completed downloads or active downloads
+    final nextDownloaded = DownloadService.findPlayableDownload(
+      mediaId: widget.mediaId,
+      season: widget.season,
+      episode: _currentEpisode + 1,
+    );
+    if (nextDownloaded != null) return true;
+
+    final nextInProgress = DownloadService.findInProgressDownload(
+      mediaId: widget.mediaId,
+      season: widget.season,
+      episode: _currentEpisode + 1,
+    );
+    if (nextInProgress != null) return true;
     
     if (_prefetchedStreams.containsKey(_currentEpisode + 1)) return true;
     
@@ -2852,7 +2906,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _removeOverlayEntry();
     
     final media = ref.read(selectedMediaProvider);
-    if (media == null || (media.mediaType != 'tv' && media.mediaType != 'anime')) return;
+    final effectiveMediaType = media?.mediaType ?? widget.mediaType;
+    if (effectiveMediaType != 'tv' && effectiveMediaType != 'anime') return;
 
     _player.stop();
     _progressTimer?.cancel();
