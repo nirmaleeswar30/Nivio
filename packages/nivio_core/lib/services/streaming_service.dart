@@ -76,7 +76,12 @@ class StreamingService {
     appDebugLog('🔧 [FLOW] prepareProviders START (tmdbId=$tmdbId, S${season}E$episode, audio=$subDubPreference)');
     // Fetch dynamically in parallel
     final results = await Future.wait([
-      miruroScraper.fetchAvailableServers(tmdbId: tmdbId),
+      miruroScraper.fetchAvailableServers(
+        tmdbId: tmdbId,
+        title: media.title,
+        episode: episode,
+        preferredAudio: subDubPreference == 'dub' ? 'english' : 'japanese',
+      ),
       animexScraper.fetchAvailableServers(
         tmdbId: tmdbId,
         episode: episode,
@@ -92,7 +97,18 @@ class StreamingService {
     appDebugLog('🔧 [FLOW] Animex servers: $animexResult');
 
     if (miruroResult.isNotEmpty) {
-      const preferredMiruroOrder = ['zoro', 'gogo', 'pahe', 'marin'];
+      const preferredMiruroOrder = [
+        'icarus',
+        'anikoto',
+        'kickassanime',
+        'aniwaves',
+        'animegg',
+        'animepahe',
+        'zoro',
+        'gogo',
+        'pahe',
+        'marin'
+      ];
       miruroResult.sort((a, b) {
         final aLower = a.toLowerCase();
         final bLower = b.toLowerCase();
@@ -139,12 +155,10 @@ class StreamingService {
     final animexServers = _dynamicAnimexServers;
     final animetsuServers = [
       'Animetsu (Auto)',
+      'Animetsu (Bee)',
       'Animetsu (Koto)',
-      'Animetsu (DB)',
-      'Animetsu (Kari)',
-      'Animetsu (Flow)',
-      'Animetsu (Zuri)',
-      'Animetsu (Gojo)',
+      'Animetsu (Wave)',
+      'Animetsu (GG)',
       'Animetsu (Mega)',
     ];
 
@@ -298,7 +312,7 @@ class StreamingService {
         String server = providerName.substring('Miruro ('.length);
         if (server.endsWith(')')) server = server.substring(0, server.length - 1);
         
-        if (server == 'Auto') server = 'zoro'; // Fallback if Auto
+        if (server == 'Auto') server = 'icarus'; // Fallback if Auto
 
         final streamResult = await miruroScraper.fetchStreamUrl(
           tmdbId: media.id.toString(), // Anime media ID from Anilist
@@ -306,6 +320,7 @@ class StreamingService {
           episode: episode,
           preferredAudio: preferredAudio ?? (subDubPreference == 'dub' ? 'english' : 'japanese'),
           providerName: server,
+          title: media.title,
         );
         return streamResult;
       }
@@ -331,8 +346,16 @@ class StreamingService {
       // Handle Animetsu
       if (providerName.startsWith('Animetsu')) {
         String server = 'auto';
-        if (providerName.contains('Koto')) {
+        if (providerName.contains('Bee')) {
+          server = 'bee';
+        } else if (providerName.contains('Koto')) {
           server = 'koto';
+        } else if (providerName.contains('Wave')) {
+          server = 'wave';
+        } else if (providerName.contains('GG')) {
+          server = 'gg';
+        } else if (providerName.contains('Mega')) {
+          server = 'mega';
         } else if (providerName.contains('DB')) {
           server = 'db';
         } else if (providerName.contains('Kari')) {
@@ -343,8 +366,6 @@ class StreamingService {
           server = 'zuri';
         } else if (providerName.contains('Gojo')) {
           server = 'gojo';
-        } else if (providerName.contains('Mega')) {
-          server = 'mega';
         } else if (providerName.contains('AniChan')) {
           server = 'koto';
         } else if (providerName.contains('AnimeKai')) {
@@ -362,7 +383,7 @@ class StreamingService {
           episode: episode,
           preferredAudio: preferredAudio ?? (subDubPreference == 'dub' ? 'english' : 'japanese'),
           server: server,
-        ).timeout(const Duration(seconds: 6), onTimeout: () => null);
+        ).timeout(const Duration(seconds: 10), onTimeout: () => null);
         return streamResult;
       }
 

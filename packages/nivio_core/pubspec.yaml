@@ -16,6 +16,7 @@ dependencies:
   # Networking
   dio: ^5.7.0
   http: ^1.6.0
+  cronet_http: ^1.9.0
   supabase_flutter: ^2.8.0
 
   # Local Storage

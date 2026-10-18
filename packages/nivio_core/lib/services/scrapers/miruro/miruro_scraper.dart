@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/models/stream_result.dart';
@@ -9,279 +8,393 @@ import 'package:nivio/services/hls_proxy_service.dart';
 
 class MiruroScraperService {
   late final http.Client client;
-  final List<int> _obfKey = utf8.encode('71951034f8fbcf53d89db52ceb3dc22c');
+  final List<int> _xorKey = utf8.encode('miruro/catalog');
+  static const String _baseUrl = 'https://www.miruro.bz';
+  static const String _userAgent =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+  final Map<String, String> _animeIdCache = {};
+  final Map<String, Future<dynamic>> _playCache = {};
 
   MiruroScraperService() {
     client = NetworkClientFactory.createClient();
   }
 
-  String _encodePipeRequest(Map<String, dynamic> payload) {
-    final jsonString = jsonEncode(payload);
-    return base64UrlEncode(utf8.encode(jsonString)).replaceAll('=', '');
+  dynamic _decodeCatalogResponse(List<int> bytes) {
+    final xorBytes = List<int>.generate(
+      bytes.length,
+      (i) => bytes[i] ^ _xorKey[i % _xorKey.length],
+    );
+    final decompressed = gzip.decode(xorBytes);
+    return jsonDecode(utf8.decode(decompressed));
   }
 
-  dynamic _decodePipeResponse(String encodedStr, String? obfHeader) {
-    final padded = encodedStr.padRight((encodedStr.length + 3) ~/ 4 * 4, '=');
-    var rawBytes = base64Url.decode(padded);
-
-    if (obfHeader == '2') {
-      final xored = Uint8List(rawBytes.length);
-      for (int i = 0; i < rawBytes.length; i++) {
-        xored[i] = rawBytes[i] ^ _obfKey[i % _obfKey.length];
+  Future<String?> _resolveTitleFromAniList(int anilistId) async {
+    try {
+      final res = await client.post(
+        Uri.parse('https://graphql.anilist.co'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': _userAgent,
+        },
+        body: jsonEncode({
+          'query': 'query (\$id: Int) { Media(id: \$id, type: ANIME) { title { romaji english } } }',
+          'variables': {'id': anilistId},
+        }),
+      );
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final titleObj = data['data']?['Media']?['title'];
+        return titleObj?['romaji'] ?? titleObj?['english'];
       }
-      rawBytes = xored;
+    } catch (e) {
+      appDebugLog('AniList GraphQL lookup error in Miruro: $e');
+    }
+    return null;
+  }
+
+  Future<String?> _resolveMiruroAnimeId({
+    required String anilistId,
+    String? title,
+  }) async {
+    if (_animeIdCache.containsKey(anilistId)) {
+      return _animeIdCache[anilistId];
     }
 
-    final decompressed = gzip.decode(rawBytes);
-    final jsonStr = utf8.decode(decompressed);
-    return jsonDecode(jsonStr);
+    String? searchTitle = title;
+    if (searchTitle == null || searchTitle.trim().isEmpty) {
+      final idNum = int.tryParse(anilistId);
+      if (idNum != null) {
+        searchTitle = await _resolveTitleFromAniList(idNum);
+      }
+    }
+
+    if (searchTitle == null || searchTitle.trim().isEmpty) {
+      return null;
+    }
+
+    final searchTitles = [
+      searchTitle,
+      searchTitle.replaceAll(RegExp(r'\([^)]*\)'), '').trim(),
+      searchTitle.replaceAll(RegExp(r'Season \d+', caseSensitive: false), '').trim(),
+    ].toSet().toList();
+
+    for (final q in searchTitles) {
+      if (q.isEmpty) continue;
+      try {
+        final uri = Uri.parse('$_baseUrl/api/v1/anime?q=${Uri.encodeComponent(q)}&limit=15&sort=-popularity');
+        final res = await client.get(uri, headers: {
+          'User-Agent': _userAgent,
+          'Referer': '$_baseUrl/',
+          'Origin': _baseUrl,
+          'Accept': 'application/octet-stream, application/json, */*',
+        });
+
+        if (res.statusCode != 200) continue;
+
+        dynamic data;
+        final ct = res.headers['content-type'] ?? '';
+        if (ct.contains('octet-stream')) {
+          data = _decodeCatalogResponse(res.bodyBytes);
+        } else {
+          data = jsonDecode(res.body);
+        }
+
+        final items = (data['data'] as List?) ?? [];
+        for (final item in items) {
+          final anilistIds = (item['external_ids']?['anilist'] as List?)
+                  ?.map((e) => e.toString())
+                  .toSet() ??
+              {};
+          if (anilistIds.contains(anilistId)) {
+            final id = item['id'] as String;
+            _animeIdCache[anilistId] = id;
+            return id;
+          }
+        }
+
+        if (items.isNotEmpty && q == searchTitle) {
+          final id = items.first['id'] as String;
+          _animeIdCache[anilistId] = id;
+          return id;
+        }
+      } catch (e) {
+        appDebugLog('Error searching Miruro for "$q": $e');
+      }
+    }
+
+    return null;
   }
 
-  Future<dynamic> _pipeRequest(String path, Map<String, dynamic> query) async {
-    final payload = {
-      'path': path,
-      'method': 'GET',
-      'query': query,
-      'body': null,
-    };
+  Future<dynamic> _fetchPlayData(String miruroId, int episode) async {
+    final cacheKey = '$miruroId:$episode';
+    if (_playCache.containsKey(cacheKey)) {
+      return await _playCache[cacheKey];
+    }
 
-    final encodedReq = _encodePipeRequest(payload);
-    final uri = Uri.parse('https://www.miruro.bz/api/secure/pipe?e=$encodedReq');
+    final future = () async {
+      final uri = Uri.parse('$_baseUrl/api/v1/anime/$miruroId/episodes/$episode/play');
+      final res = await client.get(uri, headers: {
+        'User-Agent': _userAgent,
+        'Referer': '$_baseUrl/',
+        'Origin': _baseUrl,
+        'Accept': 'application/octet-stream, application/json, */*',
+      });
 
-    final res = await client.get(uri, headers: {
-      "User-Agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36",
-      "Referer": "https://www.miruro.bz/",
-      "Origin": "https://www.miruro.bz",
-      "Accept": "application/json, text/plain, */*",
-      "Accept-Language": "en-US,en;q=0.9",
-      "sec-fetch-site": "same-origin",
-      "sec-fetch-mode": "cors",
-      "sec-fetch-dest": "empty",
-      "sec-ch-ua": "\"Not.A/Brand\";v=\"8\", \"Chromium\";v=\"114\", \"Google Chrome\";v=\"114\"",
-      "sec-ch-ua-mobile": "?1",
-      "sec-ch-ua-platform": "\"Android\"",
+      if (res.statusCode != 200) {
+        throw Exception('Play request failed with status: ${res.statusCode}');
+      }
+
+      final ct = res.headers['content-type'] ?? '';
+      if (ct.contains('octet-stream')) {
+        return _decodeCatalogResponse(res.bodyBytes);
+      } else {
+        return jsonDecode(res.body);
+      }
+    }();
+
+    _playCache[cacheKey] = future;
+    Future.delayed(const Duration(seconds: 30), () {
+      _playCache.remove(cacheKey);
     });
 
-    if (res.statusCode != 200) {
-      throw Exception('Pipe request failed with status: ${res.statusCode}');
-    }
-
-    return _decodePipeResponse(res.body, res.headers['x-obfuscated']);
+    return await future;
   }
 
-  Future<List<String>> fetchAvailableServers({required String tmdbId}) async {
+  Future<List<String>> fetchAvailableServers({
+    required String tmdbId,
+    String? title,
+    int episode = 1,
+    String? preferredAudio,
+  }) async {
     try {
-      final anilistId = int.tryParse(tmdbId);
-      if (anilistId == null) return [];
+      final miruroId = await _resolveMiruroAnimeId(anilistId: tmdbId, title: title);
+      if (miruroId == null) return [];
 
-      final episodesData = await _pipeRequest('episodes', {'anilistId': anilistId, 'version': '0.2.0'});
-      final providers = episodesData['providers'] as Map<String, dynamic>?;
-      if (providers == null) return [];
+      final playData = await _fetchPlayData(miruroId, episode);
+      final tracks = (playData['tracks'] as List?) ?? [];
+      if (tracks.isEmpty) return [];
 
-      return providers.keys.toList();
+      final isDub = preferredAudio?.toLowerCase().contains('dub') == true ||
+          preferredAudio?.toLowerCase().contains('english') == true;
+
+      Map<String, dynamic>? matchingTrack;
+      for (final t in tracks) {
+        final tName = (t['track'] as String? ?? '').toLowerCase();
+        if (isDub && tName == 'dub') {
+          matchingTrack = t as Map<String, dynamic>;
+          break;
+        } else if (!isDub && (tName == 'sub' || tName == 'ssub')) {
+          matchingTrack = t as Map<String, dynamic>;
+          break;
+        }
+      }
+
+      matchingTrack ??= tracks.first as Map<String, dynamic>;
+
+      final providers = (matchingTrack['providers'] as List?) ?? [];
+      final serverNames = <String>[];
+      for (final p in providers) {
+        final name = p['provider']?.toString();
+        final servers = (p['servers'] as List?) ?? [];
+        final hasStreams = servers.any((s) => ((s['streams'] as List?)?.isNotEmpty ?? false));
+        if (name != null && name.isNotEmpty && hasStreams) {
+          serverNames.add(name);
+        }
+      }
+
+      if (serverNames.isEmpty) {
+        for (final t in tracks) {
+          final provs = (t['providers'] as List?) ?? [];
+          for (final p in provs) {
+            final name = p['provider']?.toString();
+            final servers = (p['servers'] as List?) ?? [];
+            final hasStreams = servers.any((s) => ((s['streams'] as List?)?.isNotEmpty ?? false));
+            if (name != null && name.isNotEmpty && hasStreams && !serverNames.contains(name)) {
+              serverNames.add(name);
+            }
+          }
+        }
+      }
+
+      return serverNames;
     } catch (e) {
       appDebugLog('Error in Miruro fetchAvailableServers: $e');
       return [];
     }
   }
 
-  final Map<String, Future<dynamic>> _episodesCache = {};
-
   Future<StreamResult?> fetchStreamUrl({
-    required String tmdbId, // Actually Anilist ID is passed as tmdbId in anime
+    required String tmdbId,
     required int season,
     required int episode,
-    required String preferredAudio, // 'english' or 'japanese'
-    required String providerName, // e.g., 'zoro' or 'gogo'
+    required String preferredAudio,
+    required String providerName,
+    String? title,
   }) async {
     try {
-      final anilistId = int.tryParse(tmdbId);
-      if (anilistId == null) return null;
+      final miruroId = await _resolveMiruroAnimeId(anilistId: tmdbId, title: title);
+      if (miruroId == null) return null;
 
-      // 1. Fetch episodes (deduplicated across parallel scrapers)
-      final cacheKey = '$anilistId';
-      if (!_episodesCache.containsKey(cacheKey)) {
-        _episodesCache[cacheKey] = _pipeRequest('episodes', {'anilistId': anilistId, 'version': '0.2.0'});
-        Future.delayed(const Duration(seconds: 10), () { _episodesCache.remove(cacheKey); });
-      }
-      final episodesData = await _episodesCache[cacheKey];
-      
-      final providers = episodesData['providers'] as Map<String, dynamic>?;
-      if (providers == null) return null;
+      final playData = await _fetchPlayData(miruroId, episode);
+      final tracks = (playData['tracks'] as List?) ?? [];
+      if (tracks.isEmpty) return null;
 
-      final provData = providers[providerName] as Map<String, dynamic>?;
-      if (provData == null) return null;
+      final isDub = preferredAudio.toLowerCase().contains('dub') ||
+          preferredAudio.toLowerCase().contains('english');
 
-      String category = 'sub';
-      final prefLower = preferredAudio.toLowerCase();
-      if (prefLower == 'english' || prefLower == 'dub' || prefLower.contains('english (dub)')) {
-          category = 'dub';
-      } else if (prefLower == 'japanese' || prefLower == 'sub' || prefLower.contains('japanese (sub)')) {
-          category = 'sub';
-      } else {
-          category = prefLower;
-      }
-
-      final episodes = provData['episodes']?[category] as List<dynamic>?;
-      if (episodes == null || episodes.isEmpty) return null;
-
-      final availableAudios = <String>[];
-      final epsMap = provData['episodes'] as Map<String, dynamic>?;
-      if (epsMap != null) {
-        for (final key in epsMap.keys) {
-          if ((epsMap[key] as List<dynamic>?)?.isNotEmpty == true) {
-              if (key.toLowerCase() == 'sub') availableAudios.add('Japanese (Sub)');
-              else if (key.toLowerCase() == 'dub') availableAudios.add('English (Dub)');
-              else availableAudios.add(key.toUpperCase());
-          }
-        }
-      }
-
-      // Find episode by number
-      dynamic targetEp;
-      for (final ep in episodes) {
-        if (ep['number'] == episode) {
-          targetEp = ep;
+      Map<String, dynamic>? targetTrack;
+      for (final t in tracks) {
+        final tName = (t['track'] as String? ?? '').toLowerCase();
+        if (isDub && tName == 'dub') {
+          targetTrack = t as Map<String, dynamic>;
+          break;
+        } else if (!isDub && (tName == 'sub' || tName == 'ssub')) {
+          targetTrack = t as Map<String, dynamic>;
           break;
         }
       }
+      targetTrack ??= tracks.first as Map<String, dynamic>;
 
-      if (targetEp == null) return null;
+      final providers = (targetTrack['providers'] as List?) ?? [];
+      if (providers.isEmpty) return null;
 
-      // Get the rawPipeId or id
-      String rawId = targetEp['id'] ?? '';
-      
-      // Let's decode if necessary
-      String targetId = rawId;
-      try {
-        final padded = rawId.padRight((rawId.length + 3) ~/ 4 * 4, '=');
-        final decoded = utf8.decode(base64Url.decode(padded));
-        if (decoded.contains(':')) targetId = decoded;
-      } catch (_) {}
+      Map<String, dynamic>? selectedProv;
+      final targetPName = providerName.toLowerCase();
+      if (targetPName != 'auto') {
+        for (final p in providers) {
+          if ((p['provider']?.toString() ?? '').toLowerCase() == targetPName) {
+            selectedProv = p as Map<String, dynamic>;
+            break;
+          }
+        }
+      }
 
-      // 2. Fetch sources
-      final encId = base64UrlEncode(utf8.encode(targetId)).replaceAll('=', '');
-      final sourcesData = await _pipeRequest('sources', {
-        'episodeId': encId,
-        'provider': providerName,
-        'category': category,
-        'anilistId': anilistId,
-        'version': '0.2.0',
-      });
+      selectedProv ??= providers.firstWhere(
+        (p) {
+          final servers = (p['servers'] as List?) ?? [];
+          return servers.any((s) => ((s['streams'] as List?)?.isNotEmpty ?? false));
+        },
+        orElse: () => null,
+      ) as Map<String, dynamic>?;
 
-      final streams = sourcesData['streams'] as List<dynamic>?;
-      if (streams == null || streams.isEmpty) return null;
+      if (selectedProv == null) return null;
 
-      final String userAgent = 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36';
+      final pName = selectedProv['provider']?.toString() ?? providerName;
+      final servers = (selectedProv['servers'] as List?) ?? [];
+      final subtitlesRaw = (selectedProv['subtitles'] as List?) ?? [];
 
       final List<StreamSource> sources = [];
       dynamic bestStream;
+      Map<String, dynamic>? bestServer;
 
-      for (final s in streams) {
-        final url = s['url'] as String?;
-        if (url != null) {
-          final referer = (s['referer'] as String? ?? '').toLowerCase();
-          // Filter out streams hosted on banned ByteDance/TikTok domain (ibyteimg.com / vivibebe)
-          if (url.contains('ibyteimg.com') || referer.contains('vivibebe.site')) {
-            appDebugLog('⚠️ Skipping dead bonk/ibyteimg stream: $url (referer: $referer)');
+      for (final s in servers) {
+        final sServersStreams = (s['streams'] as List?) ?? [];
+        final sHeaders = (s['headers'] as Map<String, dynamic>?) ?? {};
+        final serverName = s['server']?.toString() ?? '';
+
+        String streamReferer = sHeaders['Referer']?.toString() ?? '$_baseUrl/';
+        String streamOrigin = sHeaders['Origin']?.toString() ?? _baseUrl;
+
+        for (final stream in sServersStreams) {
+          final url = stream['url'] as String?;
+          if (url == null || url.isEmpty) continue;
+
+          final refLower = streamReferer.toLowerCase();
+          if (url.contains('ibyteimg.com') || refLower.contains('vivibebe.site')) {
+            appDebugLog('⚠️ Skipping dead bonk/ibyteimg stream: $url');
             continue;
           }
 
-          final isHlsStream = url.contains('.m3u8') || s['type'] == 'hls';
-          if (isHlsStream && bestStream == null) bestStream = s;
-          
-          String streamReferer = s['referer'] as String? ?? 'https://www.miruro.bz/';
-          String streamOrigin = streamReferer.endsWith('/') ? streamReferer.substring(0, streamReferer.length - 1) : streamReferer;
-          String streamExtension = isHlsStream ? '.m3u8' : (url.contains('.mp4') ? '.mp4' : '');
-          
+          final isHlsStream = url.contains('.m3u8') || stream['format'] == 'hls';
+          if (bestStream == null) {
+            bestStream = stream;
+            bestServer = s as Map<String, dynamic>?;
+          }
+
+          final streamExtension = isHlsStream ? '.m3u8' : (url.contains('.mp4') ? '.mp4' : '');
+
           final proxiedUrl = HlsProxyService.instance.getProxyUrl(
             url,
-            userAgent,
+            _userAgent,
             {},
             referer: streamReferer,
             origin: streamOrigin,
             extension: streamExtension,
           );
 
-          String rawQuality = s['quality']?.toString().trim() ?? '';
-          final resMatch = RegExp(r'(\d{3,4}p?)', caseSensitive: false).firstMatch(rawQuality);
-          String qualityLabel;
-          if (resMatch != null) {
-            String q = resMatch.group(1)!;
-            if (!q.toLowerCase().endsWith('p')) q += 'p';
-            qualityLabel = q;
-          } else if (rawQuality.isNotEmpty && 
-                     rawQuality.toLowerCase() != 'default' &&
-                     rawQuality.toLowerCase() != 'backup' &&
-                     !rawQuality.toLowerCase().contains('subsplease')) {
-            qualityLabel = rawQuality;
-          } else {
+          String qualityLabel = stream['quality']?.toString().trim() ?? '';
+          if (qualityLabel.isEmpty) {
+            qualityLabel = stream['resolution']?.toString().trim() ?? '';
+          }
+          if (qualityLabel.isEmpty && serverName.isNotEmpty) {
+            qualityLabel = serverName;
+          }
+          if (qualityLabel.isEmpty) {
             qualityLabel = 'Auto';
           }
 
           sources.add(StreamSource(
             url: proxiedUrl,
             quality: qualityLabel,
-            isDub: category == 'dub',
+            isDub: isDub,
           ));
         }
       }
-      
-      bestStream ??= streams.firstWhere(
-        (s) {
-          final u = s['url'] as String?;
-          final ref = (s['referer'] as String? ?? '').toLowerCase();
-          return u != null && !u.contains('ibyteimg.com') && !ref.contains('vivibebe.site');
-        },
-        orElse: () => null,
-      );
-      if (bestStream == null || sources.isEmpty) return null;
 
-      // Subtitles
+      if (sources.isEmpty || bestStream == null) return null;
+
       final subtitles = <StreamSubtitleTrack>[];
-      final rawSubs = sourcesData['subtitles'] as List<dynamic>?;
-      if (rawSubs != null) {
-        for (final sub in rawSubs) {
-          final url = sub['url'] ?? sub['file'];
-          if (url != null && url.startsWith('http')) {
-            final rawLang = (sub['language'] ?? sub['lang'] ?? sub['label'] ?? sub['name'] ?? '').toString().trim();
-            final lang = (rawLang.isEmpty || rawLang.toLowerCase() == 'auto' || rawLang.toLowerCase() == 'und' || rawLang.toLowerCase() == 'unknown')
-                ? 'Default Subtitle'
-                : rawLang;
-            subtitles.add(StreamSubtitleTrack(
-              url: url,
-              lang: lang,
-            ));
+      for (final sub in subtitlesRaw) {
+        final fileUrl = (sub['file'] ?? sub['url'])?.toString();
+        if (fileUrl != null && fileUrl.startsWith('http')) {
+          final label = (sub['label'] ?? sub['language'] ?? 'Default Subtitle').toString();
+          subtitles.add(StreamSubtitleTrack(
+            url: fileUrl,
+            lang: label,
+          ));
+        }
+      }
+
+      final availableAudios = <String>[];
+      for (final t in tracks) {
+        final tName = (t['track'] as String? ?? '').toLowerCase();
+        final provs = (t['providers'] as List?) ?? [];
+        if (provs.isNotEmpty) {
+          if (tName == 'dub' && !availableAudios.contains('English (Dub)')) {
+            availableAudios.add('English (Dub)');
+          } else if ((tName == 'sub' || tName == 'ssub') && !availableAudios.contains('Japanese (Sub)')) {
+            availableAudios.add('Japanese (Sub)');
           }
         }
       }
 
-      // Best stream proxy info for main stream
-      String referer = bestStream['referer'] as String? ?? 'https://www.miruro.bz/';
-      String origin = referer.endsWith('/') ? referer.substring(0, referer.length - 1) : referer;
-      final String streamUrl = bestStream['url'];
-      final bool isHls = streamUrl.contains('.m3u8') || bestStream['type'] == 'hls';
-      final String streamExtension = isHls ? '.m3u8' : (streamUrl.contains('.mp4') ? '.mp4' : '');
+      final bestServerHeaders = (bestServer?['headers'] as Map<String, dynamic>?) ?? {};
+      final String finalReferer = bestServerHeaders['Referer']?.toString() ?? '$_baseUrl/';
+      final String finalOrigin = bestServerHeaders['Origin']?.toString() ?? _baseUrl;
+      final String mainStreamUrl = bestStream['url'] as String;
+      final bool isHls = mainStreamUrl.contains('.m3u8') || bestStream['format'] == 'hls';
 
-      final proxiedUrl = HlsProxyService.instance.getProxyUrl(
-        streamUrl,
-        userAgent,
-        {}, // No cookies needed yet
-        referer: referer.toString(),
-        origin: origin.toString(),
-        extension: streamExtension,
+      final proxiedMainUrl = HlsProxyService.instance.getProxyUrl(
+        mainStreamUrl,
+        _userAgent,
+        {},
+        referer: finalReferer,
+        origin: finalOrigin,
+        extension: isHls ? '.m3u8' : (mainStreamUrl.contains('.mp4') ? '.mp4' : ''),
       );
 
       final Map<String, String> finalHeaders = {
-        'Referer': referer.toString(),
-        'Origin': origin.toString(),
-        'User-Agent': userAgent,
+        'Referer': finalReferer,
+        'Origin': finalOrigin,
+        'User-Agent': _userAgent,
       };
-      
+
       return StreamResult(
-        url: proxiedUrl,
+        url: proxiedMainUrl,
         quality: sources.first.quality,
-        provider: 'Miruro ($providerName)',
+        provider: 'Miruro ($pName)',
         headers: finalHeaders,
         subtitles: subtitles,
         isM3U8: isHls,
@@ -289,7 +402,6 @@ class MiruroScraperService {
         availableAudios: availableAudios,
         selectedAudio: preferredAudio,
       );
-
     } catch (e) {
       appDebugLog('Error in MiruroScraperService: $e');
       return null;

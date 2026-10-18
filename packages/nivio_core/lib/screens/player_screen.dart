@@ -3679,7 +3679,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
       child: ListTile(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: isTorrent
+              ? BorderSide(
+                  color: isCurrent
+                      ? Theme.of(context).primaryColor.withOpacity(0.5)
+                      : Colors.white.withOpacity(0.18),
+                  width: 1.0,
+                )
+              : BorderSide.none,
+        ),
         tileColor: isCurrent 
             ? Theme.of(context).primaryColor.withOpacity(0.15) 
             : (isTorrent ? Colors.white.withOpacity(0.04) : null),
