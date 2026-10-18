@@ -359,17 +359,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
               borderRadius: BorderRadius.circular(12),
               onTap: () {
                 final isAnime = widget.media.mediaType == 'anime';
-                int targetMediaId = widget.media.id;
-                if (isAnime) {
-                  final seriesInfo = ref.read(seriesInfoProvider(widget.media.id)).valueOrNull;
-                  if (seriesInfo != null && seriesInfo.seasons.isNotEmpty) {
-                    final matchingSeason = seriesInfo.seasons.firstWhere(
-                      (s) => s.seasonNumber == widget.season,
-                      orElse: () => seriesInfo.seasons.first,
-                    );
-                    targetMediaId = matchingSeason.id;
-                  }
-                }
+                final int targetMediaId = widget.media.id;
                 context.push(
                   '/player/$targetMediaId?season=${widget.season}&episode=${episode.episodeNumber}${isAnime ? '&type=anime' : ''}',
                 );
@@ -635,20 +625,8 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
   Future<void> _downloadEpisode(EpisodeData episode) async {
     final streamingService = ref.read(streamingServiceProvider);
     final isAnime = StreamingService.isAnimeMedia(widget.media);
-    int targetMediaId = widget.media.id;
-    if (isAnime) {
-      final seriesInfo = ref.read(seriesInfoProvider(widget.media.id)).valueOrNull;
-      if (seriesInfo != null && seriesInfo.seasons.isNotEmpty) {
-        final matchingSeason = seriesInfo.seasons.firstWhere(
-          (s) => s.seasonNumber == widget.season,
-          orElse: () => seriesInfo.seasons.first,
-        );
-        targetMediaId = matchingSeason.id;
-      }
-    }
-    final targetMedia = isAnime && targetMediaId != widget.media.id
-        ? widget.media.copyWith(id: targetMediaId)
-        : widget.media;
+    final int targetMediaId = widget.media.id;
+    final targetMedia = widget.media;
     
     if (isAnime) {
       if (mounted) {

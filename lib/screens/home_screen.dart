@@ -851,7 +851,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           final tmdbId = content['id'] as int? ?? 0;
           final mediaType = content['media_type'] as String? ?? 'movie';
           final seasonNumber = content['season_number'] as int? ?? 1;
-          final seasonQuery = seasonNumber > 1 ? '&season=$seasonNumber' : '';
+          final seasonQuery = (mediaType == 'tv' && seasonNumber > 1) ? '&season=$seasonNumber' : '';
           final title = content['title'] as String? ?? 'Featured';
           final rawBackdropPath = content['backdrop_path'] as String?;
           final posterPath = content['poster_path'] as String?;

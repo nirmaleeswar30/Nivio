@@ -759,8 +759,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           if (mounted) setState(() { _skipTimes = times; });
         }
       } else if ((media.mediaType == 'tv' || media.mediaType == 'anime')) {
-        // Normal show - TheIntroDB (v3 public API)
+        // Normal show - TheIntroDB (v4 public API)
         final times = await TheIntroDBService.getSkipTimes(media.id, widget.season, episode);
+        if (mounted) setState(() { _skipTimes = times; });
+      } else if (media.mediaType == 'movie') {
+        // Movie - TheIntroDB (v4 public API)
+        final times = await TheIntroDBService.getMovieSkipTimes(media.id);
         if (mounted) setState(() { _skipTimes = times; });
       }
     } finally {

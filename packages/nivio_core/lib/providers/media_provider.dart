@@ -64,14 +64,6 @@ final seasonDataProvider =
             targetId = result.id;
           }
         }
-        final seriesInfo = ref.watch(seriesInfoProvider(params.showId)).valueOrNull;
-        if (seriesInfo != null && seriesInfo.seasons.isNotEmpty) {
-          final matchingSeason = seriesInfo.seasons.firstWhere(
-            (s) => s.seasonNumber == params.seasonNumber,
-            orElse: () => seriesInfo.seasons.first,
-          );
-          targetId = matchingSeason.id;
-        }
         return await anilist.getAnimeSeasonData(targetId);
       }
 

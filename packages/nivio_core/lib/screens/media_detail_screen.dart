@@ -112,13 +112,15 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.initialSeason != null && widget.initialSeason! > 0) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          ref.read(selectedSeasonProvider.notifier).state = widget.initialSeason!;
-        }
-      });
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(selectedSeasonProvider.notifier).state =
+            (widget.initialSeason != null && widget.initialSeason! > 0)
+                ? widget.initialSeason!
+                : 1;
+        ref.read(selectedEpisodeProvider.notifier).state = 1;
+      }
+    });
     _fetchMediaDetails();
   }
 
@@ -356,18 +358,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         sessionCode != null &&
         sessionCode.trim().isNotEmpty;
 
-    final isAnime = media.mediaType == 'anime';
-    int targetMediaId = media.id;
-    if (isAnime) {
-      final seriesInfo = ref.read(seriesInfoProvider(media.id)).valueOrNull;
-      if (seriesInfo != null && seriesInfo.seasons.isNotEmpty) {
-        final matchingSeason = seriesInfo.seasons.firstWhere(
-          (s) => s.seasonNumber == season,
-          orElse: () => seriesInfo.seasons.first,
-        );
-        targetMediaId = matchingSeason.id;
-      }
-    }
+    final int targetMediaId = media.id;
 
     final query = <String, String>{
       'season': '$season',
@@ -2024,50 +2015,51 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                     ),
                   ),
                 ),
-                Container(
-                  width: 154,
-                  height: 36,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0x241F2431),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: const Color(0x36FFFFFF)),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<int>(
-                      focusNode: FocusNode(canRequestFocus: false),
-                      isDense: true,
-                      focusColor: Colors.transparent,
-                      value: currentSeasonValue,
-                      dropdownColor: NivioTheme.netflixDarkGrey,
-                      borderRadius: BorderRadius.circular(14),
-                      icon: Icon(
-                        Icons.expand_more,
-                        color: NivioTheme.netflixWhite,
+                if (seriesInfo.seasons.where((s) => s.seasonNumber > 0).length > 1)
+                  Container(
+                    width: 154,
+                    height: 36,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0x241F2431),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: const Color(0x36FFFFFF)),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<int>(
+                        focusNode: FocusNode(canRequestFocus: false),
+                        isDense: true,
+                        focusColor: Colors.transparent,
+                        value: currentSeasonValue,
+                        dropdownColor: NivioTheme.netflixDarkGrey,
+                        borderRadius: BorderRadius.circular(14),
+                        icon: Icon(
+                          Icons.expand_more,
+                          color: NivioTheme.netflixWhite,
+                        ),
+                        style: TextStyle(
+                          color: NivioTheme.netflixWhite,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                        items: seriesInfo.seasons
+                            .where((s) => s.seasonNumber > 0)
+                            .map(
+                              (season) => DropdownMenuItem(
+                                value: season.seasonNumber,
+                                child: Text(season.name.isNotEmpty ? season.name : 'Season ${season.seasonNumber}'),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          FocusScope.of(context).unfocus();
+                          ref.read(selectedSeasonProvider.notifier).state = value;
+                          ref.read(selectedEpisodeProvider.notifier).state = 1;
+                        },
                       ),
-                      style: TextStyle(
-                        color: NivioTheme.netflixWhite,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                      items: seriesInfo.seasons
-                          .where((s) => s.seasonNumber > 0)
-                          .map(
-                            (season) => DropdownMenuItem(
-                              value: season.seasonNumber,
-                              child: Text(season.name.isNotEmpty ? season.name : 'Season ${season.seasonNumber}'),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        FocusScope.of(context).unfocus();
-                        ref.read(selectedSeasonProvider.notifier).state = value;
-                        ref.read(selectedEpisodeProvider.notifier).state = 1;
-                      },
                     ),
                   ),
-                ),
               ],
             ),
             const SizedBox(height: 14),
