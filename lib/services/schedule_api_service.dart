@@ -106,30 +106,43 @@ class ScheduleApiService {
       final startOfDay = DateTime(date.year, date.month, date.day).millisecondsSinceEpoch ~/ 1000;
       final endOfDay = DateTime(date.year, date.month, date.day, 23, 59, 59).millisecondsSinceEpoch ~/ 1000;
 
-      final query = '''
-        query {
-          Page(page: 1, perPage: 50) {
-            airingSchedules(airingAt_greater: $startOfDay, airingAt_lesser: $endOfDay, sort: TIME) {
-              airingAt
-              episode
-              media {
-                id
-                idMal
-                title {
-                  romaji
-                  english
-                }
-                coverImage {
-                  large
+      int page = 1;
+      bool hasNextPage = true;
+      final schedules = <dynamic>[];
+
+      while (hasNextPage && page <= 3) {
+        final query = '''
+          query {
+            Page(page: $page, perPage: 50) {
+              pageInfo {
+                hasNextPage
+              }
+              airingSchedules(airingAt_greater: $startOfDay, airingAt_lesser: $endOfDay, sort: TIME) {
+                airingAt
+                episode
+                media {
+                  id
+                  idMal
+                  title {
+                    romaji
+                    english
+                  }
+                  coverImage {
+                    large
+                  }
                 }
               }
             }
           }
-        }
-      ''';
+        ''';
 
-      final response = await _aniListDio.post('', data: {'query': query});
-      final schedules = response.data['data']['Page']['airingSchedules'] as List<dynamic>? ?? [];
+        final response = await _aniListDio.post('', data: {'query': query});
+        final pageData = response.data['data']['Page'];
+        final pageSchedules = pageData['airingSchedules'] as List<dynamic>? ?? [];
+        schedules.addAll(pageSchedules);
+        hasNextPage = pageData['pageInfo']?['hasNextPage'] == true;
+        page++;
+      }
 
       for (var schedule in schedules) {
         final media = schedule['media'];

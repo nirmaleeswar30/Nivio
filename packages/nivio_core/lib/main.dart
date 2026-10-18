@@ -46,6 +46,8 @@ import 'package:nivio/screens/main_shell_screen.dart';
 import 'package:nivio/screens/app_preloader_screen.dart';
 import 'package:nivio/screens/watch_party_screen.dart';
 import 'package:nivio/screens/tv_sports_screen.dart';
+import 'package:nivio/screens/latest_releases_screen.dart';
+import 'package:nivio/screens/new_episodes_screen.dart';
 import 'package:nivio/services/watch_party/watch_party_models.dart';
 import 'package:nivio/services/watch_party/watch_party_supabase_config.dart';
 import 'package:nivio/services/download_service.dart';
@@ -573,7 +575,20 @@ final appRouter = GoRouter(
       path: '/watchlist',
       redirect: (context, state) => '/library?tab=watchlist',
     ),
-    GoRoute(path: '/new-episodes', redirect: (context, state) => '/library'),
+    GoRoute(
+      path: '/latest-releases',
+      builder: (context, state) {
+        final category = state.uri.queryParameters['category'] ?? 'movie';
+        return LatestReleasesScreen(initialCategory: category);
+      },
+    ),
+    GoRoute(
+      path: '/schedule',
+      builder: (context, state) => const Scaffold(
+        body: NewEpisodesScreen(embedded: false),
+      ),
+    ),
+    GoRoute(path: '/new-episodes', redirect: (context, state) => '/schedule'),
     GoRoute(
       path: '/watch-party',
       redirect: (context, state) {
@@ -595,7 +610,12 @@ final appRouter = GoRouter(
       builder: (context, state) {
         final id = state.pathParameters['id']!;
         final mediaType = state.uri.queryParameters['type'];
-        return MediaDetailScreen(mediaId: int.parse(id), mediaType: mediaType);
+        final initialSeason = int.tryParse(state.uri.queryParameters['season'] ?? '');
+        return MediaDetailScreen(
+          mediaId: int.parse(id),
+          mediaType: mediaType,
+          initialSeason: initialSeason,
+        );
       },
     ),
     GoRoute(

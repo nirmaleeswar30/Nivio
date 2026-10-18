@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:nivio/core/constants.dart';
+import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/season_info.dart';
 import 'package:nivio/services/cache_service.dart';
@@ -801,6 +802,232 @@ class TmdbService {
       return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: 'movie');
     } catch (e) {
       throw Exception('Failed to get latest Tamil OTT releases: $e');
+    }
+  }
+
+  /// Resolves the verified digital/OTT or physical release date for a movie by ID.
+  /// Prioritizes US digital release (type 4), followed by global digital release,
+  /// then physical release (type 5).
+  Future<String?> getMovieDigitalReleaseDate(int id) async {
+    final cacheKey = 'movie_digital_date_$id';
+    final cached = await _cache.getRaw(cacheKey);
+    if (cached != null && cached.containsKey('date')) {
+      return cached['date'] as String?;
+    }
+
+    try {
+      final rdResponse = await _dio.get('/3/movie/$id/release_dates');
+      final countries = rdResponse.data['results'] as List<dynamic>? ?? [];
+      final today = DateTime.now().add(const Duration(days: 1)); // 1 day buffer for timezones
+
+      DateTime? usDigital;
+      DateTime? earliestDigital;
+      DateTime? usPhysical;
+      DateTime? earliestPhysical;
+
+      for (final c in countries) {
+        if (c is! Map) continue;
+        final isUS = c['iso_3166_1'] == 'US';
+        final dates = c['release_dates'] as List<dynamic>? ?? [];
+        for (final d in dates) {
+          if (d is! Map) continue;
+          final type = d['type'];
+          final rawStr = (d['release_date'] ?? '').toString().split('T')[0];
+          final parsed = DateTime.tryParse(rawStr);
+          if (parsed == null || parsed.isAfter(today)) continue;
+
+          if (type == 4) {
+            if (isUS && usDigital == null) {
+              usDigital = parsed;
+            }
+            if (earliestDigital == null || parsed.isBefore(earliestDigital)) {
+              earliestDigital = parsed;
+            }
+          } else if (type == 5) {
+            if (isUS && usPhysical == null) {
+              usPhysical = parsed;
+            }
+            if (earliestPhysical == null || parsed.isBefore(earliestPhysical)) {
+              earliestPhysical = parsed;
+            }
+          }
+        }
+      }
+
+      final resolved = usDigital ?? earliestDigital ?? usPhysical ?? earliestPhysical;
+      final dateStr = resolved?.toIso8601String().split('T')[0];
+
+      await _cache.set(
+        cacheKey,
+        {'date': dateStr},
+        ttl: dateStr != null ? CacheService.extraLongCache : CacheService.mediumCache,
+      );
+      return dateStr;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<List<dynamic>> _attachDigitalReleaseDates(List<dynamic>? results) async {
+    if (results == null || results.isEmpty) return [];
+
+    return await Future.wait(results.map((item) async {
+      if (item is! Map) return item;
+      final id = item['id'];
+      if (id == null) return item;
+
+      final digitalDate = await getMovieDigitalReleaseDate(id as int);
+      if (digitalDate != null && digitalDate.isNotEmpty) {
+        return {
+          ...item,
+          'digital_release_date': digitalDate,
+        };
+      }
+      return item;
+    }));
+  }
+
+  /// Get latest digital/OTT movie releases (verified digital streaming releases, non-theatrical)
+  Future<List<dynamic>> getLatestMovieOTT({int page = 1}) async {
+    final cacheKey = page == 1 ? 'latest_movie_ott_v3' : 'latest_movie_ott_page_v3_$page';
+    final staleCache = await _cache.getStaleRaw(cacheKey);
+
+    if (_cache.isExpired(cacheKey)) {
+      _cache.updateInBackground(cacheKey, () async {
+        final today = DateTime.now();
+        final todayStr = today.toIso8601String().split('T')[0];
+        final ninetyDaysAgo = today.subtract(const Duration(days: 90)).toIso8601String().split('T')[0];
+        final response = await _dio.get(
+          '/3/discover/movie',
+          queryParameters: {
+            'sort_by': 'popularity.desc',
+            'release_date.gte': ninetyDaysAgo,
+            'release_date.lte': todayStr,
+            'with_release_type': '4|5', // 4=Digital, 5=Physical (OTT/home releases)
+            'vote_count.gte': 20,
+            'page': page,
+          },
+        );
+        final enhanced = await _attachDigitalReleaseDates(response.data['results'] as List<dynamic>?);
+        enhanced.sort((a, b) {
+          final dateA = (a is Map) ? (a['digital_release_date'] ?? a['release_date'])?.toString() : null;
+          final dateB = (b is Map) ? (b['digital_release_date'] ?? b['release_date'])?.toString() : null;
+          if (dateA == null && dateB == null) return 0;
+          if (dateA == null) return 1;
+          if (dateB == null) return -1;
+          return dateB.compareTo(dateA);
+        });
+        return {'results': enhanced};
+      }, CacheService.shortCache);
+    }
+
+    if (staleCache != null) {
+      final list = staleCache['results'] as List<dynamic>?;
+      final hasDigitalDates = list != null && list.isNotEmpty && list.any((e) => e is Map && e.containsKey('digital_release_date'));
+      if (hasDigitalDates) {
+        return _filterAndMapResults(list, defaultMediaType: 'movie');
+      }
+    }
+
+    try {
+      final today = DateTime.now();
+      final todayStr = today.toIso8601String().split('T')[0];
+      final ninetyDaysAgo = today.subtract(const Duration(days: 90)).toIso8601String().split('T')[0];
+      final response = await _dio.get(
+        '/3/discover/movie',
+        queryParameters: {
+          'sort_by': 'popularity.desc',
+          'release_date.gte': ninetyDaysAgo,
+          'release_date.lte': todayStr,
+          'with_release_type': '4|5',
+          'vote_count.gte': 20,
+          'page': page,
+        },
+      );
+      final enhanced = await _attachDigitalReleaseDates(response.data['results'] as List<dynamic>?);
+      enhanced.sort((a, b) {
+        final dateA = (a is Map) ? (a['digital_release_date'] ?? a['release_date'])?.toString() : null;
+        final dateB = (b is Map) ? (b['digital_release_date'] ?? b['release_date'])?.toString() : null;
+        if (dateA == null && dateB == null) return 0;
+        if (dateA == null) return 1;
+        if (dateB == null) return -1;
+        return dateB.compareTo(dateA);
+      });
+      await _cache.set(cacheKey, {'results': enhanced}, ttl: CacheService.shortCache);
+      return _filterAndMapResults(enhanced, defaultMediaType: 'movie');
+    } catch (e) {
+      appDebugLog('Failed to get latest movie OTT releases: $e');
+      return [];
+    }
+  }
+
+  /// Get latest TV / OTT show releases (scripted series with recent digital premiere/episodes)
+  Future<List<dynamic>> getLatestTvOTT({int page = 1}) async {
+    final cacheKey = page == 1 ? 'latest_tv_ott' : 'latest_tv_ott_page_$page';
+    final staleCache = await _cache.getStaleRaw(cacheKey);
+
+    if (_cache.isExpired(cacheKey)) {
+      _cache.updateInBackground(cacheKey, () async {
+        final today = DateTime.now();
+        final todayStr = today.toIso8601String().split('T')[0];
+        final ninetyDaysAgo = today.subtract(const Duration(days: 90)).toIso8601String().split('T')[0];
+        final response = await _dio.get(
+          '/3/discover/tv',
+          queryParameters: {
+            'sort_by': 'first_air_date.desc',
+            'first_air_date.gte': ninetyDaysAgo,
+            'first_air_date.lte': todayStr,
+            'without_genres': '10763,10767,10764', // Filter out talk shows, news, reality
+            'vote_count.gte': 10,
+            'page': page,
+          },
+        );
+        final list = List<dynamic>.from(response.data['results'] as List<dynamic>? ?? []);
+        list.sort((a, b) {
+          final dateA = (a is Map) ? a['first_air_date']?.toString() : null;
+          final dateB = (b is Map) ? b['first_air_date']?.toString() : null;
+          if (dateA == null && dateB == null) return 0;
+          if (dateA == null) return 1;
+          if (dateB == null) return -1;
+          return dateB.compareTo(dateA);
+        });
+        return {'results': list};
+      }, CacheService.shortCache);
+    }
+
+    if (staleCache != null) {
+      return _filterAndMapResults(staleCache['results'] as List<dynamic>?, defaultMediaType: 'tv');
+    }
+
+    try {
+      final today = DateTime.now();
+      final todayStr = today.toIso8601String().split('T')[0];
+      final ninetyDaysAgo = today.subtract(const Duration(days: 90)).toIso8601String().split('T')[0];
+      final response = await _dio.get(
+        '/3/discover/tv',
+        queryParameters: {
+          'sort_by': 'first_air_date.desc',
+          'first_air_date.gte': ninetyDaysAgo,
+          'first_air_date.lte': todayStr,
+          'without_genres': '10763,10767,10764',
+          'vote_count.gte': 10,
+          'page': page,
+        },
+      );
+      final list = List<dynamic>.from(response.data['results'] as List<dynamic>? ?? []);
+      list.sort((a, b) {
+        final dateA = (a is Map) ? a['first_air_date']?.toString() : null;
+        final dateB = (b is Map) ? b['first_air_date']?.toString() : null;
+        if (dateA == null && dateB == null) return 0;
+        if (dateA == null) return 1;
+        if (dateB == null) return -1;
+        return dateB.compareTo(dateA);
+      });
+      await _cache.set(cacheKey, {'results': list}, ttl: CacheService.shortCache);
+      return _filterAndMapResults(list, defaultMediaType: 'tv');
+    } catch (e) {
+      appDebugLog('Failed to get latest TV OTT releases: $e');
+      return [];
     }
   }
 

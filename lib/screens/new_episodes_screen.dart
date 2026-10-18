@@ -153,15 +153,44 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(
-        children: const [
-          Icon(Icons.calendar_month_rounded, color: Colors.white, size: 28),
-          SizedBox(width: 12),
-          Text(
+        children: [
+          const Icon(Icons.calendar_month_rounded, color: Colors.white, size: 28),
+          const SizedBox(width: 12),
+          const Text(
             'Release Calendar',
             style: TextStyle(
               color: Colors.white,
               fontSize: 24,
               fontWeight: FontWeight.bold,
+            ),
+          ),
+          const Spacer(),
+          Tooltip(
+            message: 'Air times reflect original TV broadcast schedules in your local time.\nStreaming releases (Crunchyroll, Netflix) typically launch 30–90 min later.',
+            triggerMode: TooltipTriggerMode.tap,
+            showDuration: const Duration(seconds: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            textStyle: const TextStyle(
+              color: Colors.white,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+              height: 1.4,
+            ),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E222D),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white24, width: 1),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.5),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: Icon(Icons.info_outline_rounded, color: Colors.white70, size: 20),
             ),
           ),
         ],
@@ -372,6 +401,35 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
               side: const BorderSide(color: Colors.transparent),
             ),
           ),
+          const SizedBox(width: 8),
+          Tooltip(
+            message: 'Air times reflect original TV broadcast schedules in your local time.\nStreaming releases (Crunchyroll, Netflix) typically launch 30–90 min later.',
+            triggerMode: TooltipTriggerMode.tap,
+            showDuration: const Duration(seconds: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            textStyle: const TextStyle(
+              color: Colors.white,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+              height: 1.4,
+            ),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E222D),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white24, width: 1),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.5),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: const Padding(
+              padding: EdgeInsets.all(6.0),
+              child: Icon(Icons.info_outline_rounded, color: Colors.white60, size: 18),
+            ),
+          ),
         ],
       ),
     );
@@ -524,9 +582,33 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            Text(
-                              '• ${DateFormat('h:mm a').format(item.releaseDate)}',
-                              style: const TextStyle(color: Colors.white54, fontSize: 12),
+                            Tooltip(
+                              message: 'Broadcast air time (local). Streaming/simulcast drops ~30-90m later.',
+                              triggerMode: TooltipTriggerMode.tap,
+                              showDuration: const Duration(seconds: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              textStyle: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                height: 1.35,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E222D),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.white24, width: 1),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.5),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                              child: Text(
+                                '• ${DateFormat('h:mm a').format(item.releaseDate)}',
+                                style: const TextStyle(color: Colors.white54, fontSize: 12),
+                              ),
                             ),
                           ] else ...[
                             Text(

@@ -80,6 +80,7 @@ final featuredContentProvider = FutureProvider<List<Map<String, dynamic>>>((ref)
           'status': mediaType == 'tv' ? 'Releasing' : 'Released',
           'episodes': null,
           'season': null,
+          'season_number': 1,
         });
       }
     }
@@ -109,6 +110,24 @@ final featuredContentProvider = FutureProvider<List<Map<String, dynamic>>>((ref)
           ? '$capitalizedSeason $seasonYear'
           : (seasonYear?.toString());
 
+      int seasonNumber = 1;
+      final fullTitleStr = title.toString();
+      final seasonMatch = RegExp(r'\b(?:Season|Cour|Part)\s*(\d+)\b', caseSensitive: false).firstMatch(fullTitleStr) ??
+          RegExp(r'\b(\d+)(?:st|nd|rd|th)\s+Season\b', caseSensitive: false).firstMatch(fullTitleStr);
+      if (seasonMatch != null) {
+        seasonNumber = int.tryParse(seasonMatch.group(1) ?? '') ?? 1;
+      } else {
+        final romanMatch = RegExp(r'\b(?:Season\s+)?(II|III|IV|V|VI|VII|VIII|IX|X)\b').firstMatch(fullTitleStr);
+        if (romanMatch != null) {
+          const romanMap = {'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10};
+          seasonNumber = romanMap[romanMatch.group(1)!] ?? 1;
+        }
+      }
+
+      final seasonBadge = seasonNumber > 1
+          ? (season != null && season.isNotEmpty ? 'Season $seasonNumber · $season' : 'Season $seasonNumber')
+          : season;
+
       interleaved.add({
         'id': item['id'] as int? ?? 0,
         'tmdb_id': null, // We'll search for logo using title
@@ -123,7 +142,8 @@ final featuredContentProvider = FutureProvider<List<Map<String, dynamic>>>((ref)
         'format': format,
         'status': status,
         'episodes': item['episodes'] as int?,
-        'season': season,
+        'season': seasonBadge,
+        'season_number': seasonNumber,
       });
     }
   }
@@ -261,6 +281,24 @@ final malayalamMoviesProvider = FutureProvider<List<dynamic>>((ref) async {
 final trendingMalayalamMoviesProvider = FutureProvider<List<dynamic>>((ref) async {
   final tmdbService = ref.watch(tmdbServiceProvider);
   return await tmdbService.getTrendingByLanguage('movie', 'ml');
+});
+
+// Latest OTT Movies Provider (verified digital streaming releases)
+final latestMoviesOttProvider = FutureProvider<List<dynamic>>((ref) async {
+  final tmdbService = ref.watch(tmdbServiceProvider);
+  return await tmdbService.getLatestMovieOTT();
+});
+
+// Latest OTT / TV Shows Provider (verified fresh digital TV releases)
+final latestTvOttProvider = FutureProvider<List<dynamic>>((ref) async {
+  final tmdbService = ref.watch(tmdbServiceProvider);
+  return await tmdbService.getLatestTvOTT();
+});
+
+// Latest Anime Releases Provider (recently aired episodes in Japan)
+final latestAnimeReleasesProvider = FutureProvider<List<dynamic>>((ref) async {
+  final anilist = ref.watch(aniListServiceProvider);
+  return await anilist.getLatestAiringAnime();
 });
 
 final ambientColorProvider = StateProvider<Color>((ref) => const Color(0xFF0D0F14));

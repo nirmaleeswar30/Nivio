@@ -355,6 +355,16 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                 seekDuration: ref.watch(seekDurationProvider),
                 onSingleTap: _onSingleTap,
                 onLongPress: _toggleLock,
+                onDoubleTapSeekStart: () {
+                  if (_showControls && !_isLocked) {
+                    setState(() {
+                      _showControls = false;
+                      _showChatOnly = false;
+                    });
+                    widget.onPlayerVisibilityChanged(false);
+                    _hideControlsTimer?.cancel();
+                  }
+                },
                 onPinchZoom: (zoomIn) {
                   final newFit = zoomIn ? BoxFit.cover : BoxFit.contain;
                   widget.onFitChanged?.call(newFit);

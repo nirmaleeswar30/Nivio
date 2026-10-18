@@ -85,8 +85,14 @@ class _TrailerSource {
 class MediaDetailScreen extends ConsumerStatefulWidget {
   final int mediaId;
   final String? mediaType;
+  final int? initialSeason;
 
-  const MediaDetailScreen({super.key, required this.mediaId, this.mediaType});
+  const MediaDetailScreen({
+    super.key,
+    required this.mediaId,
+    this.mediaType,
+    this.initialSeason,
+  });
 
   @override
   ConsumerState<MediaDetailScreen> createState() => _MediaDetailScreenState();
@@ -106,6 +112,13 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialSeason != null && widget.initialSeason! > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ref.read(selectedSeasonProvider.notifier).state = widget.initialSeason!;
+        }
+      });
+    }
     _fetchMediaDetails();
   }
 
@@ -343,6 +356,19 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         sessionCode != null &&
         sessionCode.trim().isNotEmpty;
 
+    final isAnime = media.mediaType == 'anime';
+    int targetMediaId = media.id;
+    if (isAnime) {
+      final seriesInfo = ref.read(seriesInfoProvider(media.id)).valueOrNull;
+      if (seriesInfo != null && seriesInfo.seasons.isNotEmpty) {
+        final matchingSeason = seriesInfo.seasons.firstWhere(
+          (s) => s.seasonNumber == season,
+          orElse: () => seriesInfo.seasons.first,
+        );
+        targetMediaId = matchingSeason.id;
+      }
+    }
+
     final query = <String, String>{
       'season': '$season',
       'episode': '$episode',
@@ -351,7 +377,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       if (hasPartyContext)
         'partyRole': watchPartyService!.isHost ? 'host' : 'participant',
     };
-    return Uri(path: '/player/${media.id}', queryParameters: query).toString();
+    return Uri(path: '/player/$targetMediaId', queryParameters: query).toString();
   }
 
   void _openWatchPartyHub(SearchResult media) {
@@ -685,13 +711,13 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                         label: playLabel,
                                         onTap: () {
                                           final season = (media.mediaType == 'tv' || media.mediaType == 'anime')
-                                              ? continueSeason
+                                              ? (hasHistory ? continueSeason : ref.read(selectedSeasonProvider))
                                               : 1;
                                           context.push(
                                             _buildPlayerRoute(
                                               media: media,
                                               season: season,
-                                              episode: continueEpisode,
+                                              episode: hasHistory ? continueEpisode : 1,
                                             ),
                                           );
                                         },
@@ -917,13 +943,13 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                     final season =
                                         (media.mediaType == 'tv' ||
                                             media.mediaType == 'anime')
-                                        ? continueSeason
+                                        ? (hasHistory ? continueSeason : ref.read(selectedSeasonProvider))
                                         : 1;
                                     context.push(
                                       _buildPlayerRoute(
                                         media: media,
                                         season: season,
-                                        episode: continueEpisode,
+                                        episode: hasHistory ? continueEpisode : 1,
                                       ),
                                     );
                                   },
@@ -1552,6 +1578,33 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     );
   }
 
+  bool _isEpisodeAired(EpisodeData ep) {
+    if (ep.airDate == null || ep.airDate!.isEmpty) return true;
+    try {
+      final parsed = DateTime.tryParse(ep.airDate!);
+      if (parsed == null) return true;
+      final local = parsed.isUtc ? parsed.toLocal() : parsed;
+      final now = DateTime.now();
+      final hasTime = ep.airDate!.contains('T') || ep.airDate!.contains(':');
+      if (hasTime) {
+        return local.isBefore(now);
+      }
+      final today = DateTime(now.year, now.month, now.day);
+      final target = DateTime(local.year, local.month, local.day);
+      final diff = (target.difference(today).inHours / 24).round();
+      if (diff <= 0) return true;
+      if (diff == 1) {
+        final nowJst = now.toUtc().add(const Duration(hours: 9));
+        if (target.year == nowJst.year && target.month == nowJst.month && target.day == nowJst.day) {
+          return true;
+        }
+      }
+      return false;
+    } catch (_) {
+      return true;
+    }
+  }
+
   /// Probes the first episode to discover available languages, shows the language picker,
   /// then queues all episodes with the selected languages.
   Future<void> _startBatchDownload(
@@ -1603,9 +1656,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       seasonDataProvider((showId: media.id, seasonNumber: probeSeason)).future,
     );
     final probeEpisode = probeSeasonData.episodes.firstWhere(
-      (ep) =>
-          ep.airDate != null &&
-          DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) == true,
+      (ep) => _isEpisodeAired(ep),
       orElse: () => probeSeasonData.episodes.first,
     );
 
@@ -1756,12 +1807,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       );
 
       final validEpisodes = seasonData.episodes
-          .where(
-            (ep) =>
-                ep.airDate != null &&
-                DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) ==
-                    true,
-          )
+          .where((ep) => _isEpisodeAired(ep))
           .toList();
       if (validEpisodes.isEmpty) return;
 
@@ -1832,12 +1878,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         );
 
         final validEpisodes = seasonData.episodes
-            .where(
-              (ep) =>
-                  ep.airDate != null &&
-                  DateTime.tryParse(ep.airDate!)?.isBefore(DateTime.now()) ==
-                      true,
-            )
+            .where((ep) => _isEpisodeAired(ep))
             .toList();
 
         for (final ep in validEpisodes) {
@@ -1956,6 +1997,18 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     return seriesInfoAsync.when(
       data: (seriesInfo) {
         final selectedSeason = ref.watch(selectedSeasonProvider);
+        final matchingSeason = seriesInfo.seasons.any((s) => s.seasonNumber == selectedSeason);
+        final currentSeasonValue = matchingSeason
+            ? selectedSeason
+            : (seriesInfo.seasons.isNotEmpty ? seriesInfo.seasons.first.seasonNumber : 1);
+
+        if (!matchingSeason && seriesInfo.seasons.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              ref.read(selectedSeasonProvider.notifier).state = currentSeasonValue;
+            }
+          });
+        }
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1985,9 +2038,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                       focusNode: FocusNode(canRequestFocus: false),
                       isDense: true,
                       focusColor: Colors.transparent,
-                      value: selectedSeason <= seriesInfo.seasons.length
-                          ? selectedSeason
-                          : 1,
+                      value: currentSeasonValue,
                       dropdownColor: NivioTheme.netflixDarkGrey,
                       borderRadius: BorderRadius.circular(14),
                       icon: Icon(
@@ -2004,7 +2055,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                           .map(
                             (season) => DropdownMenuItem(
                               value: season.seasonNumber,
-                              child: Text('Season ${season.seasonNumber}'),
+                              child: Text(season.name.isNotEmpty ? season.name : 'Season ${season.seasonNumber}'),
                             ),
                           )
                           .toList(),
@@ -2022,7 +2073,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
             const SizedBox(height: 14),
             EpisodeList(
               media: media,
-              season: selectedSeason,
+              season: currentSeasonValue,
               colors: colors,
               scrollController: _scrollController,
             ),

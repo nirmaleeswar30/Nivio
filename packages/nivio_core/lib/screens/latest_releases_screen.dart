@@ -1,0 +1,831 @@
+import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:nivio/core/constants.dart';
+import 'package:nivio/core/theme.dart';
+import 'package:nivio/models/search_result.dart';
+import 'package:nivio/providers/service_providers.dart';
+import 'package:nivio/screens/new_episodes_screen.dart';
+import 'package:nivio/widgets/app_scroll_view.dart';
+import 'package:nivio/widgets/latest_releases_shelf.dart';
+import 'package:nivio/widgets/skeleton.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+
+class LatestReleasesScreen extends ConsumerStatefulWidget {
+  final String initialCategory;
+
+  const LatestReleasesScreen({
+    super.key,
+    this.initialCategory = 'movie',
+  });
+
+  @override
+  ConsumerState<LatestReleasesScreen> createState() => _LatestReleasesScreenState();
+}
+
+class _LatestReleasesScreenState extends ConsumerState<LatestReleasesScreen> {
+  late final String _category;
+  final ScrollController _scrollController = ScrollController();
+
+  final List<dynamic> _items = [];
+  int _currentPage = 1;
+  bool _hasMore = true;
+  bool _isInitialLoading = false;
+  bool _isLoadingMore = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _category = _normalizeCategory(widget.initialCategory);
+    _scrollController.addListener(_onScroll);
+    _fetchInitialData();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  String _normalizeCategory(String cat) {
+    final lower = cat.toLowerCase();
+    if (lower.contains('tv') || lower.contains('show') || lower.contains('series')) {
+      return 'tv';
+    }
+    if (lower.contains('anime')) {
+      return 'anime';
+    }
+    return 'movie';
+  }
+
+  void _onScroll() {
+    if (_isLoadingMore || _isInitialLoading || !_hasMore) return;
+
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final currentScroll = _scrollController.position.pixels;
+
+    if (currentScroll >= maxScroll - 400) {
+      _loadMoreData();
+    }
+  }
+
+  Future<void> _fetchInitialData() async {
+    setState(() {
+      _isInitialLoading = true;
+      _currentPage = 1;
+      _hasMore = true;
+    });
+
+    try {
+      List<dynamic> fetched = [];
+      if (_category == 'movie') {
+        final tmdb = ref.read(tmdbServiceProvider);
+        fetched = await tmdb.getLatestMovieOTT(page: 1);
+      } else if (_category == 'tv') {
+        final tmdb = ref.read(tmdbServiceProvider);
+        fetched = await tmdb.getLatestTvOTT(page: 1);
+      } else if (_category == 'anime') {
+        final anilist = ref.read(aniListServiceProvider);
+        fetched = await anilist.getLatestAiringAnime();
+      }
+
+      fetched.sort(compareReleaseDates);
+
+      if (mounted) {
+        setState(() {
+          _items
+            ..clear()
+            ..addAll(fetched);
+          _isInitialLoading = false;
+          if (fetched.isEmpty || _category == 'anime') {
+            _hasMore = false;
+          }
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isInitialLoading = false);
+      }
+    }
+  }
+
+  Future<void> _loadMoreData() async {
+    if (_isLoadingMore || !_hasMore) return;
+
+    setState(() => _isLoadingMore = true);
+
+    final nextPage = _currentPage + 1;
+
+    try {
+      List<dynamic> newItems = [];
+      if (_category == 'movie') {
+        final tmdb = ref.read(tmdbServiceProvider);
+        newItems = await tmdb.getLatestMovieOTT(page: nextPage);
+      } else if (_category == 'tv') {
+        final tmdb = ref.read(tmdbServiceProvider);
+        newItems = await tmdb.getLatestTvOTT(page: nextPage);
+      }
+
+      if (mounted) {
+        setState(() {
+          _currentPage = nextPage;
+          if (newItems.isEmpty) {
+            _hasMore = false;
+          } else {
+            final existingIds = _items.map((e) => e is Map ? e['id'] : null).toSet();
+            final unique = newItems.where((e) {
+              if (e is Map && e['id'] != null) {
+                return !existingIds.contains(e['id']);
+              }
+              return true;
+            }).toList();
+
+            if (unique.isEmpty) {
+              _hasMore = false;
+            } else {
+              _items.addAll(unique);
+              _items.sort(compareReleaseDates);
+            }
+          }
+          _isLoadingMore = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
+    }
+  }
+
+  List<Color> get _categoryGradient {
+    switch (_category) {
+      case 'tv':
+        return const [Color(0xFF8B5CF6), Color(0xFF6D28D9)];
+      case 'anime':
+        return const [Color(0xFF06B6D4), Color(0xFF0284C7)];
+      case 'movie':
+      default:
+        return const [Color(0xFFF59E0B), Color(0xFFD97706)];
+    }
+  }
+
+  String get _categoryTitle {
+    switch (_category) {
+      case 'tv':
+        return 'Latest TV Releases';
+      case 'anime':
+        return 'Latest Anime Releases';
+      case 'movie':
+      default:
+        return 'Latest OTT Releases';
+    }
+  }
+
+  String get _categorySubtitle {
+    switch (_category) {
+      case 'tv':
+        return 'New series & episodes streaming now';
+      case 'anime':
+        return 'Newly aired episodes in Japan';
+      case 'movie':
+      default:
+        return 'Verified digital premieres & streaming drops';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+
+    return Scaffold(
+      backgroundColor: NivioTheme.netflixBlack,
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF141720),
+              NivioTheme.netflixBlack,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          top: true,
+          bottom: false,
+          child: RefreshIndicator(
+            color: _categoryGradient.first,
+            backgroundColor: const Color(0xFF1A1D26),
+            onRefresh: _fetchInitialData,
+            child: AppCustomScrollView(
+              controller: _scrollController,
+              scrollSpeed: 2.0,
+              silkyScrollDuration: const Duration(milliseconds: 500),
+              animationCurve: Curves.easeOutQuart,
+              slivers: [
+                // Top Header: Back button on Desktop only, glowing accent, title, and optional Schedule button
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      isDesktop ? 68 : 16,
+                      isDesktop ? 16 : 14,
+                      isDesktop ? 68 : 16,
+                      14,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Back button ONLY on desktop; removed on mobile as requested
+                        if (isDesktop) ...[
+                          IconButton(
+                            icon: const PhosphorIcon(
+                              PhosphorIconsRegular.caretLeft,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: () {
+                              if (context.canPop()) {
+                                context.pop();
+                              } else {
+                                context.go('/home');
+                              }
+                            },
+                          ),
+                          const SizedBox(width: 14),
+                        ],
+
+                        // Glowing accent bar
+                        Container(
+                          width: 4,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: _categoryGradient,
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _categoryGradient.first.withValues(alpha: 0.6),
+                                blurRadius: 8,
+                                spreadRadius: 1,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+
+                        // Title and Subtitle
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _categoryTitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: isDesktop ? 22 : 20,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _categorySubtitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.6),
+                                  fontSize: isDesktop ? 12.5 : 11.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // Release Calendar action button for Anime
+                        if (_category == 'anime')
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: InkWell(
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const Scaffold(
+                                      body: NewEpisodesScreen(embedded: false),
+                                    ),
+                                  ),
+                                );
+                              },
+                              borderRadius: BorderRadius.circular(20),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6.5),
+                                decoration: BoxDecoration(
+                                  color: _categoryGradient.first.withValues(alpha: 0.16),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: _categoryGradient.first.withValues(alpha: 0.4),
+                                    width: 1.0,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      PhosphorIconsRegular.calendarBlank,
+                                      color: _categoryGradient.first,
+                                      size: 14,
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      'Schedule',
+                                      style: TextStyle(
+                                        color: _categoryGradient.first,
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Main Content Grid or Skeletons
+                if (_isInitialLoading)
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      isDesktop ? 68 : 14,
+                      8,
+                      isDesktop ? 68 : 14,
+                      40,
+                    ),
+                    sliver: SliverGrid(
+                      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: isDesktop ? 195 : 180,
+                        childAspectRatio: 0.67,
+                        crossAxisSpacing: isDesktop ? 14 : 10,
+                        mainAxisSpacing: isDesktop ? 16 : 12,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) => Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF141720),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: const SkeletonBox(width: double.infinity, height: double.infinity),
+                        ),
+                        childCount: isDesktop ? 14 : 6,
+                      ),
+                    ),
+                  )
+                else if (_items.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            PhosphorIconsRegular.filmStrip,
+                            size: 46,
+                            color: Colors.white.withValues(alpha: 0.25),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No releases found',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              fontSize: 14.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else ...[
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      isDesktop ? 68 : 14,
+                      8,
+                      isDesktop ? 68 : 14,
+                      20,
+                    ),
+                    sliver: SliverGrid(
+                      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: isDesktop ? 195 : 180,
+                        childAspectRatio: 0.67,
+                        crossAxisSpacing: isDesktop ? 14 : 10,
+                        mainAxisSpacing: isDesktop ? 16 : 12,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final item = _items[index];
+                          return _OptimizedReleaseCard(
+                            item: item,
+                            isAnime: _category == 'anime',
+                            accentGradient: _categoryGradient,
+                          );
+                        },
+                        childCount: _items.length,
+                        addRepaintBoundaries: true,
+                      ),
+                    ),
+                  ),
+
+                  // Loading More Spinner
+                  if (_isLoadingMore)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        child: Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.2,
+                              color: _categoryGradient.first,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  const SliverToBoxAdapter(
+                    child: SizedBox(height: 40),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Ultra-optimized poster release card:
+/// - Fast GPU rendering with zero BackdropFilter blur overhead
+/// - Downsampled cached images (memCacheWidth: 340) for minimal RAM usage
+/// - Native RepaintBoundary layer caching
+/// - Vertical poster aspect ratio matching industry-standard streaming catalogs
+class _OptimizedReleaseCard extends ConsumerStatefulWidget {
+  final dynamic item;
+  final bool isAnime;
+  final List<Color> accentGradient;
+
+  const _OptimizedReleaseCard({
+    required this.item,
+    required this.isAnime,
+    required this.accentGradient,
+  });
+
+  @override
+  ConsumerState<_OptimizedReleaseCard> createState() => _OptimizedReleaseCardState();
+}
+
+class _OptimizedReleaseCardState extends ConsumerState<_OptimizedReleaseCard> {
+  bool _isHovered = false;
+  String? _resolvedDigitalDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveDigitalDateIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(covariant _OptimizedReleaseCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item != widget.item) {
+      _resolveDigitalDateIfNeeded();
+    }
+  }
+
+  void _resolveDigitalDateIfNeeded() {
+    if (widget.isAnime) return;
+    final item = widget.item;
+    int? id;
+    String? mediaType;
+    String? existingDigital;
+
+    if (item is Map) {
+      id = item['id'] as int?;
+      mediaType = (item['media_type'] ?? (item['name'] != null ? 'tv' : 'movie')).toString();
+      existingDigital = item['digital_release_date']?.toString();
+    } else if (item is SearchResult) {
+      id = item.id;
+      mediaType = item.mediaType;
+    }
+
+    if (mediaType == 'movie' && (existingDigital == null || existingDigital.isEmpty) && id != null && id > 0) {
+      ref.read(tmdbServiceProvider).getMovieDigitalReleaseDate(id).then((resolved) {
+        if (resolved != null && mounted) {
+          setState(() => _resolvedDigitalDate = resolved);
+        }
+      });
+    }
+  }
+
+  String _formatReleaseTag(dynamic rawDate, dynamic digitalDate, dynamic airingAtSec) {
+    DateTime? date;
+    if (airingAtSec != null && airingAtSec is num && airingAtSec > 0) {
+      date = DateTime.fromMillisecondsSinceEpoch(airingAtSec.toInt() * 1000);
+    } else if (digitalDate != null && digitalDate.toString().isNotEmpty) {
+      date = DateTime.tryParse(digitalDate.toString());
+    } else if (rawDate != null && rawDate.toString().isNotEmpty) {
+      date = DateTime.tryParse(rawDate.toString());
+    }
+    if (date == null) return '';
+
+    final now = DateTime.now();
+    final diff = now.difference(date);
+
+    if (diff.isNegative) {
+      return 'Today';
+    }
+    if (diff.inMinutes < 60) {
+      final mins = diff.inMinutes.clamp(1, 59);
+      return '${mins}m ago';
+    }
+    if (diff.inHours < 24 && date.day == now.day && date.month == now.month && date.year == now.year) {
+      return '${diff.inHours}h ago';
+    }
+    final yesterday = now.subtract(const Duration(days: 1));
+    if (date.year == yesterday.year && date.month == yesterday.month && date.day == yesterday.day) {
+      return 'Yesterday';
+    }
+    if (diff.inDays <= 7 && diff.inDays > 0) {
+      return '${diff.inDays}d ago';
+    }
+
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final yearSuffix = date.year != now.year ? ', ${date.year}' : '';
+    return '${months[date.month - 1]} ${date.day}$yearSuffix';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    int id = 0;
+    String title = '';
+    String? posterPath;
+    String? backdropPath;
+    double? voteAverage;
+    String mediaType = widget.isAnime ? 'anime' : 'movie';
+    int? episodeNumber;
+    dynamic rawDate;
+    dynamic digitalDate;
+    dynamic airingAtSec;
+
+    if (item is SearchResult) {
+      id = item.id;
+      title = item.title ?? item.name ?? '';
+      posterPath = item.posterPath;
+      backdropPath = item.backdropPath;
+      voteAverage = item.voteAverage;
+      mediaType = item.mediaType;
+      rawDate = item.releaseDate ?? item.firstAirDate;
+    } else if (item is Map) {
+      id = item['id'] as int? ?? 0;
+      title = (item['title'] ?? item['name'] ?? '').toString();
+      posterPath = item['poster_path']?.toString();
+      backdropPath = item['backdrop_path']?.toString();
+      voteAverage = (item['vote_average'] as num?)?.toDouble();
+      mediaType = (item['media_type'] ?? (widget.isAnime ? 'anime' : (item['name'] != null ? 'tv' : 'movie'))).toString();
+      episodeNumber = item['episode_number'] as int?;
+      digitalDate = item['digital_release_date'];
+      rawDate = item['release_date'] ?? item['first_air_date'];
+      airingAtSec = item['airing_at'];
+    }
+
+    final effectiveDigitalDate = digitalDate ?? _resolvedDigitalDate;
+    final releaseTag = _formatReleaseTag(rawDate, effectiveDigitalDate, airingAtSec);
+
+    // Prefer poster for vertical card format; fallback to backdrop if poster unavailable
+    final imagePath = (posterPath != null && posterPath.isNotEmpty)
+        ? posterPath
+        : backdropPath;
+    final imageUrl = imagePath != null && imagePath.isNotEmpty
+        ? (imagePath.startsWith('http') ? imagePath : '$tmdbImageBaseUrl/w500$imagePath')
+        : null;
+
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+
+    Widget cardBody = Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF141720),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: _isHovered
+              ? widget.accentGradient.first.withValues(alpha: 0.75)
+              : Colors.white.withValues(alpha: 0.07),
+          width: _isHovered ? 1.4 : 0.9,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Cached Poster Image
+          if (imageUrl != null)
+            CachedNetworkImage(
+              imageUrl: imageUrl,
+              fit: BoxFit.cover,
+              memCacheWidth: 340,
+              placeholder: (context, url) => const DecoratedBox(
+                decoration: BoxDecoration(color: Color(0xFF1B1E28)),
+              ),
+              errorWidget: (context, url, error) => Container(
+                color: const Color(0xFF1B1E28),
+                child: const Center(
+                  child: Icon(Icons.movie_outlined, color: Colors.white24, size: 36),
+                ),
+              ),
+            )
+          else
+            Container(
+              color: const Color(0xFF1B1E28),
+              child: const Center(
+                child: Icon(Icons.movie_outlined, color: Colors.white24, size: 36),
+              ),
+            ),
+
+          // High-efficiency bottom gradient for contrast
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 110,
+            child: const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Color(0xB8000000), // ~72% black
+                    Color(0xF5090C12), // ~96% dark
+                  ],
+                  stops: [0.0, 0.42, 1.0],
+                ),
+              ),
+            ),
+          ),
+
+          // Top-Left Episode Badge (for Anime)
+          if (episodeNumber != null)
+            Positioned(
+              top: 7,
+              left: 7,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: widget.accentGradient),
+                  borderRadius: BorderRadius.circular(5),
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 1)),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(PhosphorIconsFill.playCircle, size: 10, color: Colors.white),
+                    const SizedBox(width: 3.5),
+                    Text(
+                      'EP $episodeNumber',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Top-Right Rating Badge
+          if (voteAverage != null && voteAverage > 0)
+            Positioned(
+              top: 7,
+              right: 7,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5.5, vertical: 2.5),
+                decoration: BoxDecoration(
+                  color: const Color(0xCC000000),
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(color: Colors.white24, width: 0.7),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.star_rounded, size: 11, color: Color(0xFFFFC107)),
+                    const SizedBox(width: 2.5),
+                    Text(
+                      voteAverage.toStringAsFixed(1),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Bottom Content: Title & Release Date
+          Positioned(
+            left: 8,
+            right: 8,
+            bottom: 8,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.bold,
+                    height: 1.2,
+                    shadows: [
+                      Shadow(color: Colors.black, blurRadius: 4),
+                    ],
+                  ),
+                ),
+                if (releaseTag.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Icon(
+                        PhosphorIconsRegular.clock,
+                        size: 10,
+                        color: widget.accentGradient.first.withValues(alpha: 0.9),
+                      ),
+                      const SizedBox(width: 3.5),
+                      Text(
+                        releaseTag,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.8),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (isDesktop) {
+      cardBody = MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: AnimatedScale(
+          scale: _isHovered ? 1.035 : 1.0,
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+          child: cardBody,
+        ),
+      );
+    }
+
+    return RepaintBoundary(
+      child: GestureDetector(
+        onTap: () {
+          if (id == 0) return;
+          GoRouter.of(context).push('/media/$id?type=$mediaType');
+        },
+        child: cardBody,
+      ),
+    );
+  }
+}

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../widgets/download_prompt.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -357,8 +358,20 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
               onTap: () {
+                final isAnime = widget.media.mediaType == 'anime';
+                int targetMediaId = widget.media.id;
+                if (isAnime) {
+                  final seriesInfo = ref.read(seriesInfoProvider(widget.media.id)).valueOrNull;
+                  if (seriesInfo != null && seriesInfo.seasons.isNotEmpty) {
+                    final matchingSeason = seriesInfo.seasons.firstWhere(
+                      (s) => s.seasonNumber == widget.season,
+                      orElse: () => seriesInfo.seasons.first,
+                    );
+                    targetMediaId = matchingSeason.id;
+                  }
+                }
                 context.push(
-                  '/player/${widget.media.id}?season=${widget.season}&episode=${episode.episodeNumber}',
+                  '/player/$targetMediaId?season=${widget.season}&episode=${episode.episodeNumber}${isAnime ? '&type=anime' : ''}',
                 );
               },
               child: Padding(
@@ -596,13 +609,24 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
   bool _isUnaired(String? airDate) {
     if (airDate == null || airDate.isEmpty) return false;
     try {
-      final date = DateTime.parse(airDate);
-      final today = DateTime(
-        DateTime.now().year,
-        DateTime.now().month,
-        DateTime.now().day,
-      );
-      return DateTime(date.year, date.month, date.day).isAfter(today);
+      final parsed = DateTime.parse(airDate);
+      final date = parsed.isUtc ? parsed.toLocal() : parsed;
+      final now = DateTime.now();
+      final hasTime = airDate.contains('T') || airDate.contains(':');
+      if (hasTime) {
+        return date.isAfter(now);
+      }
+      final today = DateTime(now.year, now.month, now.day);
+      final target = DateTime(date.year, date.month, date.day);
+      final diff = (target.difference(today).inHours / 24).round();
+      if (diff <= 0) return false;
+      if (diff == 1) {
+        final nowJst = now.toUtc().add(const Duration(hours: 9));
+        if (target.year == nowJst.year && target.month == nowJst.month && target.day == nowJst.day) {
+          return false;
+        }
+      }
+      return target.isAfter(today);
     } catch (_) {
       return true;
     }
@@ -611,6 +635,20 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
   Future<void> _downloadEpisode(EpisodeData episode) async {
     final streamingService = ref.read(streamingServiceProvider);
     final isAnime = StreamingService.isAnimeMedia(widget.media);
+    int targetMediaId = widget.media.id;
+    if (isAnime) {
+      final seriesInfo = ref.read(seriesInfoProvider(widget.media.id)).valueOrNull;
+      if (seriesInfo != null && seriesInfo.seasons.isNotEmpty) {
+        final matchingSeason = seriesInfo.seasons.firstWhere(
+          (s) => s.seasonNumber == widget.season,
+          orElse: () => seriesInfo.seasons.first,
+        );
+        targetMediaId = matchingSeason.id;
+      }
+    }
+    final targetMedia = isAnime && targetMediaId != widget.media.id
+        ? widget.media.copyWith(id: targetMediaId)
+        : widget.media;
     
     if (isAnime) {
       if (mounted) {
@@ -620,7 +658,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
       }
       final subDubPref = ref.read(languagePreferencesProvider).animePreferredAudio;
       await streamingService.prepareProviders(
-        media: widget.media,
+        media: targetMedia,
         season: widget.season,
         episode: episode.episodeNumber,
         subDubPreference: subDubPref,
@@ -644,7 +682,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
       
       try {
         result = await streamingService.fetchStreamUrl(
-          media: widget.media,
+          media: targetMedia,
           season: widget.season,
           episode: episode.episodeNumber,
           providerIndex: providerIndex,
@@ -664,13 +702,13 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
         context: context,
         ref: ref,
         streamResult: result,
-        mediaId: widget.media.id,
+        mediaId: targetMediaId,
         title: '${widget.media.title ?? widget.media.name ?? 'Episode'}|||${episode.episodeName ?? 'Episode ${episode.episodeNumber}'}',
         mediaType: isAnime ? 'anime' : 'tv',
         season: widget.season,
         episode: episode.episodeNumber,
         posterPath: '${widget.media.posterPath}|||${episode.stillPath ?? widget.media.posterPath}',
-        media: widget.media,
+        media: targetMedia,
         providerIndex: usedProviderIndex,
       );
     } else {
@@ -685,21 +723,33 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
   String _relativeDate(String? dateStr) {
     if (dateStr == null || dateStr.isEmpty) return '';
     try {
-      final date = DateTime.parse(dateStr);
-      final today = DateTime(
-        DateTime.now().year,
-        DateTime.now().month,
-        DateTime.now().day,
-      );
+      final parsed = DateTime.parse(dateStr);
+      final date = parsed.isUtc ? parsed.toLocal() : parsed;
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
       final target = DateTime(date.year, date.month, date.day);
-      final diff = target.difference(today).inDays;
+      
+      final hasTime = dateStr.contains('T') || dateStr.contains(':');
+      final timeSuffix = hasTime ? ' • ${DateFormat('h:mm a').format(date)}' : '';
 
-      if (diff == 0) return 'Today';
-      if (diff == 1) return 'Tomorrow';
-      if (diff == -1) return 'Yesterday';
+      final diff = (target.difference(today).inHours / 24).round();
+
+      if (diff == 0) return 'Today$timeSuffix';
+
+      // If it's a date without time (from TMDB / JST broadcast) and diff is 1,
+      // check if it's currently airing today in Japan (JST = UTC+9)
+      if (!hasTime && diff == 1) {
+        final nowJst = now.toUtc().add(const Duration(hours: 9));
+        if (target.year == nowJst.year && target.month == nowJst.month && target.day == nowJst.day) {
+          return 'Today';
+        }
+      }
+
+      if (diff == 1) return 'Tomorrow$timeSuffix';
+      if (diff == -1) return 'Yesterday$timeSuffix';
 
       if (diff > 0) {
-        if (diff < 7) return 'In $diff days';
+        if (diff < 7) return 'In $diff days$timeSuffix';
         if (diff < 14) return 'In 1 week';
         if (diff < 21) return 'In 2 weeks';
         if (diff < 28) return 'In 3 weeks';

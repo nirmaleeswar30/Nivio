@@ -5317,11 +5317,14 @@ class _HomeLayoutBottomSheetState extends ConsumerState<_HomeLayoutBottomSheet> 
   late List<String> _currentOrder;
   
   final Map<String, String> _sectionNames = {
+    'latest_movies_ott': 'Latest OTT Movies',
     'popular_movies': 'All Time Popular',
     'trending_movies': 'Trending Now',
     'top_rated_movies': 'Top Rated Movies',
+    'latest_tv_ott': 'Latest TV Releases',
     'popular_tv': 'Popular TV Shows',
     'trending_tv': 'Trending TV Shows',
+    'latest_anime': 'Latest Anime Releases',
     'popular_anime': 'Popular Anime',
     'trending_anime': 'Trending Anime',
     'tamil': 'Tamil Picks',

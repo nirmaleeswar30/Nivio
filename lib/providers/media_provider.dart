@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/service_providers.dart';
+import 'package:nivio/services/streaming_service.dart';
 
 // Selected media state
 final selectedMediaProvider = StateProvider<SearchResult?>((ref) => null);
@@ -21,7 +22,8 @@ final seriesInfoProvider = FutureProvider.family<SeriesInfo, int>((
   showId,
 ) async {
   final selectedMedia = ref.watch(selectedMediaProvider);
-  final isAnime = selectedMedia?.mediaType == 'anime';
+  final isAnime = selectedMedia?.mediaType == 'anime' ||
+      (selectedMedia != null && StreamingService.isAnimeMedia(selectedMedia));
 
   if (isAnime) {
     final anilist = ref.watch(aniListServiceProvider);
@@ -48,7 +50,8 @@ final seasonDataProvider =
       params,
     ) async {
       final selectedMedia = ref.watch(selectedMediaProvider);
-      final isAnime = selectedMedia?.mediaType == 'anime';
+      final isAnime = selectedMedia?.mediaType == 'anime' ||
+          (selectedMedia != null && StreamingService.isAnimeMedia(selectedMedia));
 
       if (isAnime) {
         final anilist = ref.watch(aniListServiceProvider);
@@ -60,6 +63,14 @@ final seasonDataProvider =
           if (result != null) {
             targetId = result.id;
           }
+        }
+        final seriesInfo = ref.watch(seriesInfoProvider(params.showId)).valueOrNull;
+        if (seriesInfo != null && seriesInfo.seasons.isNotEmpty) {
+          final matchingSeason = seriesInfo.seasons.firstWhere(
+            (s) => s.seasonNumber == params.seasonNumber,
+            orElse: () => seriesInfo.seasons.first,
+          );
+          targetId = matchingSeason.id;
         }
         return await anilist.getAnimeSeasonData(targetId);
       }

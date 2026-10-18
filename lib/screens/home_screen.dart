@@ -25,6 +25,7 @@ import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/api_status_service.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
 import 'package:nivio/widgets/content_row.dart';
+import 'package:nivio/widgets/latest_releases_shelf.dart';
 import 'package:nivio/widgets/skeleton.dart';
 import 'package:nivio/widgets/continue_watching_row.dart';
 import 'package:nivio/providers/player_active_provider.dart';
@@ -96,11 +97,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _prewarmHomeContent() async {
     await Future.wait([
       ref.read(featuredContentProvider.future),
+      ref.read(latestMoviesOttProvider.future),
       ref.read(popularMoviesProvider.future),
       ref.read(trendingMoviesProvider.future),
       ref.read(topRatedMoviesProvider.future),
+      ref.read(latestTvOttProvider.future),
       ref.read(popularTVShowsProvider.future),
       ref.read(trendingTVShowsProvider.future),
+      ref.read(latestAnimeReleasesProvider.future),
       ref.read(animeProvider.future),
       ref.read(trendingAnimeProvider.future),
     ]);
@@ -178,6 +182,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final List<Widget> dynamicSections = [];
     for (final sectionId in homeLayout) {
       switch (sectionId) {
+        case 'latest_movies_ott':
+          dynamicSections.add(_buildLatestShelfSection(
+            title: 'Latest OTT Releases',
+            subtitle: 'Verified digital premieres & streaming drops',
+            badgeText: 'DIGITAL PREMIERE',
+            badgeGradient: const [Color(0xFFF59E0B), Color(0xFFD97706)],
+            badgeIcon: PhosphorIconsFill.filmStrip,
+            provider: latestMoviesOttProvider,
+            onSeeAll: () => context.push('/latest-releases?category=movie'),
+          ));
+          break;
         case 'popular_movies':
           dynamicSections.add(_buildRowSection('All Time Popular', popularMoviesProvider));
           break;
@@ -187,11 +202,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         case 'top_rated_movies':
           dynamicSections.add(_buildRowSection('Top Rated Movies', topRatedMoviesProvider));
           break;
+        case 'latest_tv_ott':
+          dynamicSections.add(_buildLatestShelfSection(
+            title: 'Latest TV Releases',
+            subtitle: 'New series & episodes streaming now',
+            badgeText: 'STREAMING NOW',
+            badgeGradient: const [Color(0xFF8B5CF6), Color(0xFF6D28D9)],
+            badgeIcon: PhosphorIconsFill.television,
+            provider: latestTvOttProvider,
+            onSeeAll: () => context.push('/latest-releases?category=tv'),
+          ));
+          break;
         case 'popular_tv':
           dynamicSections.add(_buildRowSection('Popular TV Shows', popularTVShowsProvider));
           break;
         case 'trending_tv':
           dynamicSections.add(_buildRowSection('Trending TV Shows', trendingTVShowsProvider));
+          break;
+        case 'latest_anime':
+          if (languagePreferences.showAnime) {
+            dynamicSections.add(_buildLatestShelfSection(
+              title: 'Latest Anime Releases',
+              subtitle: 'Newly aired episodes in Japan',
+              badgeText: 'NEW EPISODE',
+              badgeGradient: const [Color(0xFF06B6D4), Color(0xFF0284C7)],
+              badgeIcon: PhosphorIconsFill.sparkle,
+              provider: latestAnimeReleasesProvider,
+              isAnime: true,
+              onSeeAll: () => context.push('/latest-releases?category=anime'),
+            ));
+          }
           break;
         case 'popular_anime':
           if (languagePreferences.showAnime) dynamicSections.add(_buildRowSection('Popular Anime', animeProvider));
@@ -443,6 +483,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           return asyncItems.when(
             data: (items) => ContentRow(title: title, items: items),
             loading: () => const ContentRowSkeleton(),
+            error: (error, stackTrace) => const SizedBox.shrink(),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildLatestShelfSection({
+    required String title,
+    String? subtitle,
+    required String badgeText,
+    required List<Color> badgeGradient,
+    required IconData badgeIcon,
+    required FutureProvider<List<dynamic>> provider,
+    bool isAnime = false,
+    VoidCallback? onSeeAll,
+  }) {
+    return SliverToBoxAdapter(
+      key: ValueKey(title),
+      child: Consumer(
+        builder: (context, ref, child) {
+          final asyncItems = ref.watch(provider);
+          return asyncItems.when(
+            data: (items) => LatestReleasesShelf(
+              title: title,
+              subtitle: subtitle,
+              items: items,
+              badgeText: badgeText,
+              badgeGradient: badgeGradient,
+              badgeIcon: badgeIcon,
+              isAnime: isAnime,
+              onSeeAll: onSeeAll,
+            ),
+            loading: () => LatestReleasesShelfSkeleton(title: title),
             error: (error, stackTrace) => const SizedBox.shrink(),
           );
         },
@@ -776,6 +850,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           
           final tmdbId = content['id'] as int? ?? 0;
           final mediaType = content['media_type'] as String? ?? 'movie';
+          final seasonNumber = content['season_number'] as int? ?? 1;
+          final seasonQuery = seasonNumber > 1 ? '&season=$seasonNumber' : '';
           final title = content['title'] as String? ?? 'Featured';
           final rawBackdropPath = content['backdrop_path'] as String?;
           final posterPath = content['poster_path'] as String?;
@@ -871,7 +947,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               children: [
                                 if (logoUrl != null && logoUrl.isNotEmpty)
                                   GestureDetector(
-                                    onTap: () => context.push('/media/$tmdbId?type=$mediaType'),
+                                    onTap: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
                                     child: MouseRegion(
                                       cursor: SystemMouseCursors.click,
                                       child: CachedNetworkImage(
@@ -888,7 +964,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   )
                                 else
                                   GestureDetector(
-                                    onTap: () => context.push('/media/$tmdbId?type=$mediaType'),
+                                    onTap: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
                                     child: MouseRegion(
                                       cursor: SystemMouseCursors.click,
                                       child: _buildTitleText(title),
@@ -905,7 +981,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   children: [
                                     _AnimatedHoverScale(
                                       child: ElevatedButton.icon(
-                                        onPressed: () => context.push('/media/$tmdbId?type=$mediaType'),
+                                        onPressed: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
                                         icon: PhosphorIcon(
                                           PhosphorIconsFill.play,
                                           color: slideColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
@@ -987,7 +1063,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         children: [
                           if (logoUrl != null && logoUrl.isNotEmpty)
                             GestureDetector(
-                              onTap: () => context.push('/media/$tmdbId?type=$mediaType'),
+                              onTap: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
                               child: CachedNetworkImage(
                                 imageUrl: logoUrl,
                                 height: 75,
@@ -1025,19 +1101,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               ),
                             )
                           else
-                            AnimatedOpacity(
-                              opacity: 1,
-                              duration: const Duration(milliseconds: 500),
-                              child: Text(
-                                title,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w700,
+                            GestureDetector(
+                              onTap: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
+                              child: AnimatedOpacity(
+                                opacity: 1,
+                                duration: const Duration(milliseconds: 500),
+                                child: Text(
+                                  title,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           const SizedBox(height: 8),
@@ -1055,7 +1134,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             children: [
                               _AnimatedHoverScale(
                                 child: ElevatedButton.icon(
-                                  onPressed: () => context.push('/media/$tmdbId?type=$mediaType'),
+                                  onPressed: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
                                   icon: PhosphorIcon(
                                     PhosphorIconsFill.play,
                                     color: slideColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
