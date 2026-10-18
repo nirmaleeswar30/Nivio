@@ -260,6 +260,11 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay>
 
     // Subscribe to player streams if not yet subscribed
     if (_positionSub == null) {
+      if (miniState.player != null) {
+        _position = miniState.player!.state.position;
+        _duration = miniState.player!.state.duration;
+        _isPlaying = miniState.player!.state.playing;
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _subscribeToPlayer();
       });

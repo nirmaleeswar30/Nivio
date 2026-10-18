@@ -610,8 +610,11 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       );
     }
 
+    final bottomGridPad = isDesktop ? 16.0 : (widget.embedded ? 96.0 : 16.0);
+    final bottomListPad = isDesktop ? 8.0 : (widget.embedded ? 96.0 : 8.0);
+
     final gridContent = AppGridView.builder(
-      padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 16, 16, 16),
+      padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 16, 16, bottomGridPad),
       cacheExtent: isDesktop ? 1000 : 350,
       scrollSpeed: 2.0,
       silkyScrollDuration: const Duration(milliseconds: 500),
@@ -635,7 +638,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
     );
 
     final listContent = AppListView.builder(
-      padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 8, 16, 8),
+      padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 8, 16, bottomListPad),
       cacheExtent: isDesktop ? 1000 : 350,
       scrollSpeed: 2.0,
       silkyScrollDuration: const Duration(milliseconds: 500),

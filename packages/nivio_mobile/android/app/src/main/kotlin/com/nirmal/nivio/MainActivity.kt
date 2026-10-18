@@ -3,11 +3,11 @@ package com.nirmal.nivio
 import android.os.Build
 import android.os.Bundle
 import android.graphics.Rect
-import io.flutter.embedding.android.FlutterActivity
+import cl.puntito.simple_pip_mode.PipCallbackHelperActivityWrapper
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+class MainActivity : PipCallbackHelperActivityWrapper() {
     private val CHANNEL = "com.nivio/gesture_exclusion"
     private var methodChannel: MethodChannel? = null
     private var canEnterPip = false

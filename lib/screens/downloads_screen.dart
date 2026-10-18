@@ -52,7 +52,12 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         final groups = groupedDownloads.values.toList();
 
         return AppListView.builder(
-          padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16, 16, 16, widget.embedded ? 80 : 16),
+          padding: EdgeInsets.fromLTRB(
+            isDesktop ? 68 : 16,
+            16,
+            16,
+            isDesktop ? 16 : (widget.embedded ? 96 : 16),
+          ),
           cacheExtent: 250,
           scrollSpeed: 2.0,
           silkyScrollDuration: const Duration(milliseconds: 500),

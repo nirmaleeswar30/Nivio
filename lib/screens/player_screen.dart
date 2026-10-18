@@ -136,6 +136,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  void _syncPipPlayingState([bool? isPlaying]) {
+    if (!Platform.isAndroid) return;
+    try {
+      final playing = isPlaying ?? _player.state.playing;
+      unawaited(SimplePip().setIsPlaying(playing).catchError((_) => false));
+    } catch (_) {}
+  }
+
   static const List<String> _displayFitOrder = [
     'bestFit',
     'fitScreen',
@@ -175,6 +183,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Map<int, Future<StreamResult?>>? _runningFetchers;
   bool _isPrefetching = false;
   bool _isDirectStream = false;
+  bool _isManualProviderSwitch = false;
+  Future<void>? _prepareProvidersFuture;
   // True when playing a still-downloading item (torrent rqbit stream or a direct
   // source URL) — always a direct/media_kit stream, never a WebView.
   bool _isDownloadStream = false;
@@ -499,9 +509,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             if (call.method == 'onPipEntered') {
               setState(() => _isPipMode = true);
               _updateSubtitleScalingForPip(true);
+              _syncPipPlayingState();
             } else if (call.method == 'onPipExited') {
               setState(() => _isPipMode = false);
               _updateSubtitleScalingForPip(false);
+              _syncPipPlayingState();
             } else if (call.method == 'onPipAction') {
               final String arg = call.arguments as String;
               final actionStr = arg.toLowerCase();
@@ -526,7 +538,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           final autoPip = ref.read(pipOnLostVisibilityProvider);
           await SimplePip().setPipActionsLayout(PipActionsLayout.mediaWithSeek10);
           await SimplePip().setAutoPipMode(aspectRatio: const (16, 9), autoEnter: autoPip);
-          await SimplePip().setIsPlaying(true);
+          _syncPipPlayingState();
         }();
       } catch (_) {}
     }
@@ -572,6 +584,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         } else {
           _player.pause();
         }
+      }
+    }
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    if (!Platform.isAndroid || !mounted) return;
+    final view = WidgetsBinding.instance.platformDispatcher.views.firstOrNull;
+    if (view != null) {
+      final physicalSize = view.physicalSize;
+      final dpr = view.devicePixelRatio;
+      final width = physicalSize.width / (dpr > 0 ? dpr : 1);
+      final height = physicalSize.height / (dpr > 0 ? dpr : 1);
+      final isSmall = width < 500 && height < 400;
+      if (isSmall != _isPipMode) {
+        setState(() {
+          _isPipMode = isSmall;
+        });
+        _updateSubtitleScalingForPip(isSmall);
+        _syncPipPlayingState();
       }
     }
   }
@@ -791,21 +824,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       await historyService.init();
       _currentHistory = await historyService.getHistory(widget.mediaId);
 
-      // If the route didn't explicitly specify a provider, use the saved preference
-      // Only do this if it's not a retry, so we don't infinitely loop back to a broken provider
-      if (!isRetry && widget.providerIndex == null && _currentHistory?.preferredProviderIndex != null) {
-        _currentProviderIndex = _currentHistory!.preferredProviderIndex!;
-      }
-      appDebugLog(
-        '🧪 [CW_DEBUG] PlayerScreen#$_sid history: '
-        'S${_currentHistory?.currentSeason}E${_currentHistory?.currentEpisode} '
-        'pos=${_currentHistory?.lastPositionSeconds}s/${_currentHistory?.totalDurationSeconds}s '
-        'preferredProvider=${_currentHistory?.preferredProviderIndex} '
-        'preferredRes=${_currentHistory?.preferredResolution} '
-        'preferredAudio=${_currentHistory?.preferredAudioTrack} '
-        '→ providerIdx=$_currentProviderIndex',
-      );
-
       var media = ref.read(selectedMediaProvider);
       final hasMatchingSelectedMedia =
           media != null &&
@@ -857,26 +875,75 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       final streamingService = ref.read(streamingServiceProvider);
 
+      final isAnime = (media != null && _isAnimeMedia(media)) || widget.mediaType == 'anime';
+      final isTorrentEnabled = streamingService.isTorrentEnabled(isAnime: isAnime);
+
+      if (widget.providerIndex != null) {
+        _currentProviderIndex = widget.providerIndex!;
+      } else if (isRetry) {
+        // Keep current provider index advanced by _advanceProvider
+      } else if (_isManualProviderSwitch) {
+        _isManualProviderSwitch = false;
+        // Keep user-selected provider index from _switchToProvider
+      } else if (isTorrentEnabled) {
+        // When torrent streaming is enabled, instantly prioritize Nivio Torrents (index 0)
+        // for both anime and movies/shows, instead of using a saved direct provider from history.
+        _currentProviderIndex = 0;
+      } else if (_currentHistory?.preferredProviderIndex != null) {
+        _currentProviderIndex = _currentHistory!.preferredProviderIndex!;
+      } else {
+        _currentProviderIndex = 0;
+      }
+
+      appDebugLog(
+        '🧪 [CW_DEBUG] PlayerScreen#$_sid history: '
+        'S${_currentHistory?.currentSeason}E${_currentHistory?.currentEpisode} '
+        'pos=${_currentHistory?.lastPositionSeconds}s/${_currentHistory?.totalDurationSeconds}s '
+        'preferredProvider=${_currentHistory?.preferredProviderIndex} '
+        'preferredRes=${_currentHistory?.preferredResolution} '
+        'preferredAudio=${_currentHistory?.preferredAudioTrack} '
+        'isTorrentEnabled=$isTorrentEnabled '
+        '→ providerIdx=$_currentProviderIndex',
+      );
+
       String subDubPref = ref.read(languagePreferencesProvider).animePreferredAudio;
       if (_selectedAudioOverride != null && _selectedAudioOverride!.isNotEmpty) {
         subDubPref = _selectedAudioOverride!.toLowerCase().contains('dub') ? 'dub' : 'sub';
       }
       
-      if (media != null) {
-        setState(() => _currentProvider = 'Preparing servers...');
-        appDebugLog('⏳ [FLOW] _initializePlayer: calling prepareProviders...');
-        await streamingService.prepareProviders(
-          media: media,
-          season: widget.season,
-          episode: _currentEpisode,
-          subDubPreference: subDubPref,
-        );
-        appDebugLog('✅ [FLOW] _initializePlayer: prepareProviders done, _maxProviders=$_maxProviders');
-        
-        if (_maxProviders > 0 && _currentProviderIndex >= _maxProviders) {
-          _currentProviderIndex = 0;
-          _runningFetchers = null;
+      if (media != null && _isAnimeMedia(media)) {
+        final isTorrent = streamingService.getProviderName(
+          _currentProviderIndex,
+          isAnime: true,
+        ) == 'Nivio Torrents';
+
+        if (isTorrent) {
+          // If starting with Nivio Torrents, fire prepareProviders in the background
+          // so the torrent picker sheet opens instantly without waiting for Miruro/Animex server queries.
+          _prepareProvidersFuture ??= streamingService.prepareProviders(
+            media: media,
+            season: widget.season,
+            episode: _currentEpisode,
+            subDubPreference: subDubPref,
+          );
+        } else {
+          // Direct anime provider is being used: ensure prepareProviders has completed
+          setState(() => _currentProvider = 'Preparing servers...');
+          appDebugLog('⏳ [FLOW] _initializePlayer: calling prepareProviders...');
+          _prepareProvidersFuture ??= streamingService.prepareProviders(
+            media: media,
+            season: widget.season,
+            episode: _currentEpisode,
+            subDubPreference: subDubPref,
+          );
+          await _prepareProvidersFuture;
+          appDebugLog('✅ [FLOW] _initializePlayer: prepareProviders done, _maxProviders=$_maxProviders');
         }
+      }
+
+      if (_maxProviders > 0 && _currentProviderIndex >= _maxProviders) {
+        _currentProviderIndex = 0;
+        _runningFetchers = null;
       }
 
       setState(() => _currentProvider = 'Fetching stream...');
@@ -1059,26 +1126,55 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (_runningFetchers == null || !_runningFetchers!.containsKey(_currentProviderIndex)) {
           appDebugLog('🚀 [FLOW] Launching fetchers starting from provider index $_currentProviderIndex (wrapped=$_providerWrapped)');
           _runningFetchers ??= {};
-          // Fire all remaining providers in parallel to eliminate sequential fallback latency!
-          for (int i = _currentProviderIndex; i < _maxProviders; i++) {
-            if (_runningFetchers!.containsKey(i)) continue;
-            appDebugLog('🚀 [FLOW] Launching fetcher for provider index $i');
-            _runningFetchers![i] = streamingService.fetchStreamUrl(
+
+          final isCurrentTorrent = streamingService.getProviderName(
+            _currentProviderIndex,
+            isAnime: _isAnimeMedia(media),
+          ) == 'Nivio Torrents';
+
+          if (isCurrentTorrent) {
+            // For Nivio Torrents, launch ONLY the torrent provider.
+            // Do NOT precheck or scrape direct sources in parallel while
+            // the user is interactively choosing a torrent release.
+            appDebugLog('🚀 [FLOW] Launching torrent fetcher for provider index $_currentProviderIndex');
+            _runningFetchers![_currentProviderIndex] = streamingService.fetchStreamUrl(
               media: media!,
               season: widget.season,
               episode: _currentEpisode,
               preferredQuality: preferredQuality,
-              providerIndex: i,
+              providerIndex: _currentProviderIndex,
               subDubPreference: subDubPref,
               preferredAudio: targetAudio,
               binge: _bingeMode,
-              context: (i == _currentProviderIndex ? context : null),
+              context: context,
               onStatusUpdate: (msg) {
-                if (mounted && _currentProviderIndex == i) {
+                if (mounted && _currentProviderIndex == _currentProviderIndex) {
                   setState(() => _loadingMessage = msg);
                 }
               },
             );
+          } else {
+            // Fire all remaining direct providers in parallel to eliminate sequential fallback latency!
+            for (int i = _currentProviderIndex; i < _maxProviders; i++) {
+              if (_runningFetchers!.containsKey(i)) continue;
+              appDebugLog('🚀 [FLOW] Launching fetcher for provider index $i');
+              _runningFetchers![i] = streamingService.fetchStreamUrl(
+                media: media!,
+                season: widget.season,
+                episode: _currentEpisode,
+                preferredQuality: preferredQuality,
+                providerIndex: i,
+                subDubPreference: subDubPref,
+                preferredAudio: targetAudio,
+                binge: _bingeMode,
+                context: (i == _currentProviderIndex ? context : null),
+                onStatusUpdate: (msg) {
+                  if (mounted && _currentProviderIndex == i) {
+                    setState(() => _loadingMessage = msg);
+                  }
+                },
+              );
+            }
           }
         }
 
@@ -1776,6 +1872,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (_isZombieCallback('playing stream')) return;
         unawaited(_broadcastWatchPartyPlayback(force: true));
         _updateDiscordActivity(isPlaying: playing, force: true);
+        _syncPipPlayingState(playing);
       }),
     );
 
@@ -2927,9 +3024,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _isInIntroSegment = false;
       _isInOutroSegment = false;
       _isFetchingSkipTimes = false;
+      _prepareProvidersFuture = null;
     });
     
-    _initializePlayer();
+    _initializePlayer(isRetry: false);
   }
 
   void _showEpisodesBottomSheet() {
@@ -2979,6 +3077,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _disposePlayer();
 
     setState(() {
+      _isManualProviderSwitch = true;
       _currentProviderIndex = providerIndex;
       _isLoading = true;
       _error = null;
@@ -4918,10 +5017,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Widget _buildScreen(BuildContext context) {
+    final screenSize = MediaQuery.sizeOf(context);
     final isPortrait =
         MediaQuery.of(context).orientation == Orientation.portrait;
+    final isPip = _isPipMode ||
+        (Platform.isAndroid && screenSize.width < 500 && screenSize.height < 400);
 
-    if (_isPipMode) {
+    if (isPip) {
       return ScaffoldMessenger(
         key: _messengerKey,
         child: Scaffold(
@@ -6142,8 +6244,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             ),
           );
 
-    if (isPipMode) {
-      final pipFontSize = (ref.watch(subtitleFontSizeProvider) * 1.1) * 0.45;
+    final screenSize = MediaQuery.sizeOf(context);
+    final isEffectivePip = isPipMode ||
+        (Platform.isAndroid && screenSize.width < 500 && screenSize.height < 400);
+
+    if (isEffectivePip) {
+      final baseFontSize = ref.watch(subtitleFontSizeProvider) * 1.1;
+      final pipFontSize = (baseFontSize * 0.45).clamp(8.0, 11.5);
       return RepaintBoundary(
         child: Stack(
           children: [

@@ -150,9 +150,7 @@ class StreamingService {
 
     // P2P torrent streaming (Hayase-style) is offered first for anime — it
     // yields the highest-quality releases when peers are available.
-    final torrentEnabled = ref.read(enableTorrentsProvider);
-    final nyaaEnabled = ref.read(torrentNyaaEnabledProvider);
-    final torrent = (torrentEnabled && nyaaEnabled) ? ['Nivio Torrents'] : <String>[];
+    final torrent = isTorrentEnabled(isAnime: true) ? ['Nivio Torrents'] : <String>[];
 
     if (pref == 'Miruro') {
       return [...torrent, ...miruroServers, ...animexServers, ...animetsuServers];
@@ -164,11 +162,7 @@ class StreamingService {
   }
 
   List<String> get _allProviders {
-    final torrentEnabled = ref.read(enableTorrentsProvider);
-    final torrentioEnabled = ref.read(torrentTorrentioEnabledProvider);
-    final pirateBayEnabled = ref.read(torrentPirateBayEnabledProvider);
-    final hasSource = torrentioEnabled || pirateBayEnabled;
-    final torrent = (torrentEnabled && hasSource) ? ['Nivio Torrents'] : <String>[];
+    final torrent = isTorrentEnabled(isAnime: false) ? ['Nivio Torrents'] : <String>[];
     return [...torrent, ..._premiumProviders, ..._standardProviders];
   }
 
@@ -536,6 +530,22 @@ class StreamingService {
   static bool isAnimeMedia(SearchResult media) {
     if (media.mediaType == 'anime') return true;
     return false;
+  }
+
+  bool isTorrentEnabled({required bool isAnime}) {
+    final torrentEnabled = ref.read(enableTorrentsProvider);
+    if (!torrentEnabled) return false;
+    if (isAnime) {
+      return ref.read(torrentNyaaEnabledProvider);
+    } else {
+      final torrentioEnabled = ref.read(torrentTorrentioEnabledProvider);
+      final pirateBayEnabled = ref.read(torrentPirateBayEnabledProvider);
+      return torrentioEnabled || pirateBayEnabled;
+    }
+  }
+
+  bool isTorrentEnabledForMedia(SearchResult media) {
+    return isTorrentEnabled(isAnime: isAnimeMedia(media));
   }
 
   int totalProvidersFor({required bool isAnime}) {

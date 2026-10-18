@@ -89,6 +89,7 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
       ),
       child: SafeArea(
         top: !widget.embedded,
+        bottom: false,
         child: AppCustomScrollView(
           controller: _scrollController,
           scrollSpeed: 2.0,
@@ -112,7 +113,7 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
               SliverPadding(
                 padding: EdgeInsets.only(
                   top: 8, 
-                  bottom: 80,
+                  bottom: isDesktop ? 16 : (widget.embedded ? 96 : 16),
                   left: isDesktop ? 68 : 0,
                   right: isDesktop ? 20 : 0,
                 ),

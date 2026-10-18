@@ -58,6 +58,7 @@ class _LibraryScreenState extends State<LibraryScreen>
           ),
         ),
         child: SafeArea(
+          bottom: false,
           child: Column(
             children: [
               Padding(

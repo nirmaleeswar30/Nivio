@@ -26,9 +26,13 @@ class StreamFlixScraperService {
 
   static const String _firebaseUrl = 'https://chilflix-410be-default-rtdb.asia-southeast1.firebasedatabase.app';
   static const String _firebaseNamespace = 'chilflix-410be-default-rtdb';
-  static const String _fallbackDownloadBase = 'https://s1.streamflixapi.site/';
+  static const List<String> _fallbackServers = [
+    'https://s1.streamflixserver.site/',
+    'https://s2.streamflixserver.site/',
+    'https://s3.streamflixserver.site/',
+  ];
 
-  String? _downloadBase;
+  Map<String, dynamic>? _config;
   List<_StreamFlixEntry>? _catalog;
 
   Future<StreamResult?> fetchStreamUrl({
@@ -49,22 +53,31 @@ class StreamFlixScraperService {
       final link = entry.isTv ? await _episodeLink(entry, season, episode) : entry.movieLink;
       if (link == null || link.trim().isEmpty) return null;
 
-      final base = await _loadDownloadBase();
-      final url = _joinUrl(base, link);
+      final servers = await _loadServers(isTv: isTv);
+      final primaryBase = servers.isNotEmpty ? servers.first : _fallbackServers.first;
+      final url = _joinUrl(primaryBase, link);
       final quality = _qualityFrom(link);
       
       final isHls = _isHls(url);
 
-      final mirrors = ['https://s1.streamflixapi.site/', 'https://s2.streamflixapi.site/', 'https://s3.streamflixapi.site/'];
-      final sources = <StreamSource>[
-        StreamSource(url: url, quality: quality, isM3U8: isHls),
-        for (final m in mirrors)
-          if (_normalizeBase(m) != _normalizeBase(base))
-            StreamSource(url: _joinUrl(m, link), quality: quality, isM3U8: isHls),
-      ];
+      final seenUrls = <String>{};
+      final sources = <StreamSource>[];
+      for (final server in servers) {
+        final streamUrl = _joinUrl(server, link);
+        if (seenUrls.add(streamUrl)) {
+          sources.add(StreamSource(
+            url: streamUrl,
+            quality: quality,
+            isM3U8: isHls,
+          ));
+        }
+      }
+      if (sources.isEmpty) {
+        sources.add(StreamSource(url: url, quality: quality, isM3U8: isHls));
+      }
 
       return StreamResult(
-        url: url,
+        url: sources.first.url,
         quality: quality,
         provider: providerName,
         availableQualities: [quality],
@@ -80,22 +93,33 @@ class StreamFlixScraperService {
     }
   }
 
-  Future<String> _loadDownloadBase() async {
-    if (_downloadBase != null && _downloadBase!.isNotEmpty) return _downloadBase!;
+  Future<List<String>> _loadServers({required bool isTv}) async {
     try {
-      final response = await _dio.get('/config/config-streamflix2.json');
-      if (response.statusCode == 200) {
-        final config = _asMap(response.data);
-        final download = _asList(config?['download']);
-        final base = download.isNotEmpty ? download.first?.toString() : null;
-        if (base != null && base.trim().isNotEmpty && !base.contains('streamflixserver.site')) {
-          _downloadBase = _normalizeBase(base);
-          return _downloadBase!;
+      if (_config == null) {
+        final response = await _dio.get('/config/config-streamflix2.json');
+        if (response.statusCode == 200) {
+          _config = _asMap(response.data);
         }
       }
-    } catch (_) {}
-    _downloadBase = _fallbackDownloadBase;
-    return _downloadBase!;
+      if (_config != null) {
+        final key = isTv ? 'tv' : 'movies';
+        final list = _asList(_config![key]).isNotEmpty
+            ? _asList(_config![key])
+            : _asList(_config!['download']);
+        final servers = list
+            .map((e) => e?.toString().trim())
+            .where((e) => e != null && e.isNotEmpty)
+            .cast<String>()
+            .map(_normalizeBase)
+            .toList();
+        if (servers.isNotEmpty) {
+          return servers;
+        }
+      }
+    } catch (e) {
+      appDebugLog('StreamFlix: failed to fetch config: $e');
+    }
+    return _fallbackServers;
   }
 
   Future<List<_StreamFlixEntry>> _loadCatalog() async {
