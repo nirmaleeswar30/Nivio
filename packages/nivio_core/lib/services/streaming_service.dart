@@ -162,7 +162,7 @@ class StreamingService {
       'Animetsu (Mega)',
     ];
 
-    // P2P torrent streaming (Hayase-style) is offered first for anime — it
+    // P2P torrent streaming is offered first for anime — it
     // yields the highest-quality releases when peers are available.
     final torrent = isTorrentEnabled(isAnime: true) ? ['Nivio Torrents'] : <String>[];
 

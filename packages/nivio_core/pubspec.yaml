@@ -41,7 +41,7 @@ dependencies:
   ffmpeg_kit_flutter_new: ^4.2.1
   wakelock_plus: ^1.2.8
 
-  # Embedded rqbit BitTorrent streaming engine (P2P anime, Hayase-style)
+  # Embedded rqbit BitTorrent streaming engine (P2P anime streaming)
   rqbit_ffi:
     path: ../rqbit_ffi
 

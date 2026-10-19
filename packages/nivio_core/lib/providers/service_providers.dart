@@ -59,7 +59,7 @@ final streamingServiceProvider = Provider<StreamingService>((ref) => StreamingSe
   ref: ref,
 ));
 
-// Embedded rqbit torrent streaming (P2P anime, Hayase-style). Single instance
+// Embedded rqbit torrent streaming (P2P anime). Single instance
 // so the engine and active torrent are shared across the app.
 final torrentStreamServiceProvider =
     Provider<TorrentStreamService>((ref) => TorrentStreamService(

@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'torrent_models.dart';
 
-/// Ranks torrent candidates for a query, Hayase-style: prefer curated "best"
+/// Ranks torrent candidates for a query: prefer curated "best"
 /// releases, then the right resolution, then healthy seeders, with accuracy and
 /// batch-ness as tie-breakers. Exclusions and specials are filtered out.
 class TorrentRanking {

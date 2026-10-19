@@ -139,10 +139,24 @@ exec "$HERE/nivio" "$@"
 EOF
 chmod +x "$APPDIR/AppRun"
 
-echo "📦 Step 7: Generating AppImage with appimagetool..."
+# Extract version from pubspec.yaml
+APP_VERSION="1.0.0"
+if [ -f "$PROJECT_ROOT/pubspec.yaml" ]; then
+  APP_VERSION=$(grep '^version:' "$PROJECT_ROOT/pubspec.yaml" | head -n 1 | awk '{print $2}' | cut -d'+' -f1)
+elif [ -f "$PROJECT_ROOT/packages/nivio_desktop/pubspec.yaml" ]; then
+  APP_VERSION=$(grep '^version:' "$PROJECT_ROOT/packages/nivio_desktop/pubspec.yaml" | head -n 1 | awk '{print $2}' | cut -d'+' -f1)
+fi
+APP_VERSION="${APP_VERSION:-1.0.0}"
+
+echo "📦 Step 7: Generating AppImage with appimagetool (Version: $APP_VERSION)..."
+VERSIONED_APPIMAGE="$DIST_DIR/Nivio-Linux-$APP_VERSION-x86_64.AppImage"
+GENERIC_APPIMAGE="$DIST_DIR/Nivio-Linux-x86_64.AppImage"
+
 ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL" \
-  "$APPDIR" "$DIST_DIR/Nivio-Linux-x86_64.AppImage"
+  "$APPDIR" "$VERSIONED_APPIMAGE"
 
-chmod +x "$DIST_DIR/Nivio-Linux-x86_64.AppImage"
+chmod +x "$VERSIONED_APPIMAGE"
+cp -f "$VERSIONED_APPIMAGE" "$GENERIC_APPIMAGE" 2>/dev/null || true
 
-echo "🎉 Success! Created AppImage: $DIST_DIR/Nivio-Linux-x86_64.AppImage"
+echo "🎉 Success! Created AppImage: $VERSIONED_APPIMAGE"
+echo "  (Also available as: $GENERIC_APPIMAGE)"

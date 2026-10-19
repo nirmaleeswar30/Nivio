@@ -1,7 +1,7 @@
 import 'anitomy.dart';
 
 /// A torrent candidate returned by a source (Nyaa / AnimeTosho / SeaDex),
-/// mirroring Hayase's `TorrentResult` shape plus the parsed release info.
+/// containing the parsed release info.
 class TorrentResult {
   TorrentResult({
     required this.title,
@@ -49,8 +49,7 @@ class TorrentResult {
   bool get isBatch => type == 'batch' || parsed.isBatch;
 }
 
-/// The search context built from a Nivio media selection, mirroring Hayase's
-/// `AnimeQuery`.
+/// The search context built from a Nivio media selection.
 class AnimeQuery {
   AnimeQuery({
     required this.titles,

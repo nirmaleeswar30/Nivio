@@ -55,7 +55,7 @@ dependencies:
   media_kit_video: ^1.2.4
   media_kit_libs_video: ^1.0.7
 
-  # Embedded rqbit BitTorrent streaming engine (P2P anime, Hayase-style)
+  # Embedded rqbit BitTorrent streaming engine (P2P anime streaming)
   rqbit_ffi:
     path: packages/rqbit_ffi
   shorebird_code_push: ^2.0.5

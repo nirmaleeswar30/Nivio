@@ -1,9 +1,15 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="preloader-active">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nivio</title>
+<script>
+  if ('scrollRestoration' in history) {
+    history.scrollRestoration = 'manual';
+  }
+  window.scrollTo(0, 0);
+</script>
 <link rel="icon" type="image/png" href="../assets/images/nivio.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -31,6 +37,17 @@
     --r:18px;
   }
   *{box-sizing:border-box}
+  html, body{
+    margin:0;
+    padding:0;
+  }
+  html.preloader-active, body.preloader-active{
+    overflow:hidden !important;
+    height:100% !important;
+    max-height:100vh !important;
+    touch-action:none !important;
+    overscroll-behavior:none !important;
+  }
   body{
     background:var(--bg);
     color:var(--ink);
@@ -55,13 +72,16 @@
   .grad-text{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
 
   /* nav */
-  header{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;
+  header{position:sticky;top:0;z-index:20;
+    padding-top:max(env(safe-area-inset-top,0px), 14px);
     background:transparent;border-bottom:1px solid transparent;
-    transition:background .35s ease,backdrop-filter .35s ease,border-color .35s ease,transform .32s cubic-bezier(.16,1,.3,1);
+    transition:background .35s ease,backdrop-filter .35s ease,border-color .35s ease,transform .32s cubic-bezier(.16,1,.3,1),padding .35s ease;
     will-change:transform}
+  header .wrap{max-width:min(96vw,1540px);box-sizing:border-box;padding-inline:clamp(24px,4vw,56px)}
   header.scrolled{backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4);
     background:linear-gradient(180deg,rgba(12,9,6,.75),rgba(12,9,6,.4));
-    border-bottom:1px solid var(--line)}
+    border-bottom:1px solid var(--line);
+    padding-top:max(env(safe-area-inset-top,0px), 6px)}
   header.nav-hidden{transform:translateY(-100%)}
   nav{display:flex;align-items:center;justify-content:space-between;height:70px}
   .brand{display:flex;align-items:center;gap:10px;font-family:var(--font-d);font-weight:700;font-size:19px;letter-spacing:-.01em}
@@ -91,23 +111,46 @@
   @media(max-width:520px){.hide-sm{display:none}.btn-star{padding-left:12px}}
 
   /* hero */
-  .hero{padding-top:64px;padding-bottom:40px}
-  .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:44px;align-items:center}
+  .hero{padding-top:clamp(14px, 1.8vw, 24px);padding-bottom:40px;max-width:min(96vw,1540px);box-sizing:border-box;padding-inline:clamp(24px,4vw,56px)}
+  .hero-grid{display:grid;grid-template-columns:0.78fr 1.22fr;gap:36px;align-items:center}
+  @media(max-width:1200px) and (min-width:901px){
+    .hero-grid{grid-template-columns:0.86fr 1.14fr;gap:24px}
+  }
   .badge{display:inline-flex;align-items:center;gap:9px;padding:6px 14px 6px 8px;border:1px solid var(--line-strong);
     border-radius:999px;background:rgba(255,70,50,.06);font-size:12.5px;color:var(--muted);font-weight:500;margin-bottom:26px}
   .badge b{background:var(--grad);color:#1a0e00;font-family:var(--font-d);font-weight:700;font-size:11px;
     padding:3px 9px;border-radius:999px;letter-spacing:.03em}
-  h1{font-size:clamp(42px,6.6vw,74px);font-weight:800}
-  .hero p.lead{margin-top:22px;font-size:clamp(16px,2vw,19px);color:var(--muted);max-width:33ch}
+  h1{font-size:clamp(38px,4.8vw,64px);font-weight:800;text-wrap:unset}
+  .hero h1 .nowrap{white-space:nowrap}
+  .hero p.lead{margin-top:22px;font-size:clamp(16px,1.8vw,19px);color:var(--muted);max-width:36ch}
   .cta-row{display:flex;gap:14px;flex-wrap:wrap;margin-top:34px}
   .meta-row{display:flex;gap:26px;margin-top:34px;flex-wrap:wrap}
   .meta{display:flex;flex-direction:column;gap:2px}
   .meta b{font-family:var(--font-d);font-size:22px;font-weight:700}
   .meta span{font-size:12.5px;color:var(--muted-dim);letter-spacing:.04em}
 
-  /* phone cluster */
-  .stage{position:relative;height:560px;display:flex;align-items:center;justify-content:center}
-  .glow-n{position:absolute;width:340px;filter:blur(6px);opacity:.16;z-index:0}
+  /* hero stage & platform-adaptive showcase */
+  .stage{position:relative;height:620px;display:flex;align-items:center;justify-content:center}
+  .glow-n{position:absolute;width:560px;filter:blur(10px);opacity:.2;z-index:0;pointer-events:none}
+
+  /* stage views */
+  .stage-view{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    transition:opacity .45s cubic-bezier(.16,1,.3,1),transform .45s cubic-bezier(.16,1,.3,1);
+    pointer-events:none;opacity:0;transform:scale(.95)}
+  .stage[data-view="desktop"] .stage-desktop-view{opacity:1;transform:scale(1);pointer-events:auto}
+  .stage[data-view="mobile"] .stage-mobile-view{opacity:1;transform:scale(1);pointer-events:auto}
+
+  /* Desktop Cinema Preview (Zero artificial outline, large high-res display) */
+  .desktop-frame{position:relative;width:100%;max-width:980px;border-radius:22px;
+    overflow:hidden;border:none;outline:none;
+    box-shadow:0 38px 95px -15px rgba(0,0,0,.9);
+    transition:transform .4s cubic-bezier(.2,.75,.2,1),box-shadow .4s ease;
+    animation:float 7.5s ease-in-out infinite}
+  .desktop-frame img{width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;display:block;
+    border-radius:22px;border:none;outline:none}
+  .desktop-frame:hover{transform:scale(1.02);box-shadow:0 48px 115px -15px rgba(0,0,0,.97)}
+
+  /* phone styling */
   .phone{position:absolute;border-radius:34px;padding:8px;background:linear-gradient(160deg,#2a2018,#100b07);
     border:1px solid rgba(255,255,255,.09);box-shadow:0 40px 90px -30px rgba(0,0,0,.8),0 0 0 1px rgba(0,0,0,.5);
     cursor:pointer;transition:transform .4s cubic-bezier(.2,.75,.2,1),box-shadow .4s ease,opacity .3s ease}
@@ -117,11 +160,12 @@
   .p-main{width:236px;z-index:3;animation:float 7s ease-in-out infinite}
   .p-left{width:186px;left:2%;top:20%;transform:rotate(-8deg);z-index:2;opacity:.96;animation:float 8s ease-in-out infinite .6s}
   .p-right{width:186px;right:2%;top:16%;transform:rotate(8deg);z-index:2;opacity:.96;animation:float 8.5s ease-in-out infinite .3s}
-  /* hero phone cluster enlarges together on hover */
-  .stage:hover .p-main{transform:scale(1.06);
+
+  /* hover on mobile cluster */
+  .stage-mobile-view:hover .p-main{transform:scale(1.06);
     box-shadow:0 55px 120px -26px rgba(0,0,0,.9),0 0 0 1px rgba(0,0,0,.5),0 0 70px rgba(229,35,26,.26)}
-  .stage:hover .p-left{transform:rotate(-8deg) scale(1.06);opacity:1}
-  .stage:hover .p-right{transform:rotate(8deg) scale(1.06);opacity:1}
+  .stage-mobile-view:hover .p-left{transform:rotate(-8deg) scale(1.06);opacity:1}
+  .stage-mobile-view:hover .p-right{transform:rotate(8deg) scale(1.06);opacity:1}
   @keyframes float{0%,100%{translate:0 0}50%{translate:0 -16px}}
 
   section{padding-block:88px;position:relative;z-index:2}
@@ -331,9 +375,9 @@
   }
   .player-arrow:hover{
     background:rgba(36,26,19,.95);
-    border-color:rgba(255,138,60,.55);
+    border-color:rgba(255,255,255,.32);
     transform:translateY(-50%) scale(1.08);
-    box-shadow:0 14px 32px rgba(0,0,0,.75),0 0 24px rgba(229,35,26,.35);
+    box-shadow:0 14px 32px rgba(0,0,0,.75);
     color:#fff;
   }
   .player-arrow:active{
@@ -411,15 +455,15 @@
     transform:scale(1.05);
     opacity:1;
     filter:none;
-    border-color:rgba(255,138,60,.4);
-    box-shadow:0 36px 85px -12px rgba(0,0,0,.92),0 16px 45px -8px rgba(229,35,26,.26);
-    background:radial-gradient(450px circle at 50% 0%,rgba(229,35,26,.1),transparent 75%),#18120d;
+    border-color:rgba(255,255,255,.24);
+    box-shadow:0 36px 85px -12px rgba(0,0,0,.92),0 16px 45px -8px rgba(0,0,0,.6);
+    background:radial-gradient(450px circle at 50% 0%,rgba(255,255,255,.04),transparent 75%),#18120d;
     z-index:10;
   }
   .player-card.focused:hover{
     transform:scale(1.06);
-    border-color:rgba(255,138,60,.55);
-    box-shadow:0 40px 90px -12px rgba(0,0,0,.95),0 18px 48px -8px rgba(229,35,26,.3);
+    border-color:rgba(255,255,255,.36);
+    box-shadow:0 40px 90px -12px rgba(0,0,0,.95),0 18px 48px -8px rgba(0,0,0,.7);
   }
   .player-card-frame{
     width:100%;
@@ -1009,12 +1053,6 @@
   .party-step-pill .step-text{display:flex;flex-direction:column;gap:2px;font-size:11.5px;color:var(--muted);line-height:1.4}
   .party-step-pill .step-text b{color:var(--ink);font-size:12px;font-weight:600}
 
-  @media(max-width:768px){
-    .wp-feat-stage{grid-template-columns:1fr;gap:8px}
-    .wp-users-panel{display:none}
-    .party-steps-row{grid-template-columns:1fr}
-  }
-
   /* 7 · Cloud Sync & Library Trackers (Featured 8-col Card) */
   .demo-sync-featured{
     display:flex;flex-direction:column;justify-content:center;gap:12px;
@@ -1080,8 +1118,284 @@
   .sync-step-pill .step-text b{color:var(--ink);font-size:12px;font-weight:600}
 
   @media(max-width:768px){
-    .sync-feat-services{grid-template-columns:1fr}
-    .sync-steps-row{grid-template-columns:1fr}
+    /* Allow rich featured demo dashboards to size naturally on mobile */
+    .card.card-featured .demo.demo-party-featured,
+    .card.card-featured .demo.demo-sync-featured{
+      height:auto!important;
+      min-height:0!important;
+      padding:10px 10px 12px;
+      gap:8px;
+    }
+
+    /* 6 · Watch Party Mobile Optimizations */
+    .wp-feat-header{
+      flex-direction:column;
+      align-items:stretch;
+      gap:6px;
+    }
+    .wp-code-box{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:4px;
+      padding:4px 7px;
+      width:100%;
+      box-sizing:border-box;
+      border-radius:9px;
+    }
+    .wp-code-tag{
+      font-family:var(--font-d);
+      font-size:8.5px;
+      font-weight:700;
+      color:var(--muted);
+      letter-spacing:.06em;
+      flex:none;
+    }
+    .wp-code-digits{
+      display:inline-flex;
+      gap:2.5px;
+      align-items:center;
+      flex:none;
+    }
+    .wp-code-digits b{
+      width:clamp(16px, 4.2vw, 20px);
+      height:21px;
+      font-size:11px;
+      border-radius:4px;
+    }
+    .wp-copy-pill{
+      display:inline-flex;
+      align-items:center;
+      gap:3px;
+      padding:2.5px 6px;
+      font-size:9.5px;
+      border-radius:5px;
+      flex:none;
+    }
+    .wp-copy-pill svg{width:10px;height:10px}
+    .wp-sync-status{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      width:100%;
+      padding-inline:2px;
+    }
+    .wp-sync-status .pv-badge{
+      font-size:10.5px;
+      gap:5px;
+    }
+    .wp-drift-tag{
+      font-size:9.5px;
+      padding:2px 7px;
+    }
+    .wp-feat-stage{
+      display:flex;
+      flex-direction:column;
+      gap:7px;
+      margin-top:0;
+    }
+    .wp-users-panel{
+      display:flex;
+      gap:5px;
+      background:rgba(0,0,0,.35);
+      border:1px solid rgba(255,255,255,.07);
+      border-radius:10px;
+      padding:5px 6px;
+      overflow-x:auto;
+      -webkit-overflow-scrolling:touch;
+      scrollbar-width:none;
+    }
+    .wp-users-panel::-webkit-scrollbar{display:none}
+    .wp-user-row{
+      flex:1 0 auto;
+      min-width:max-content;
+      display:flex;
+      align-items:center;
+      gap:5px;
+      padding:3px 6px;
+      border-radius:6px;
+      background:rgba(255,255,255,.025);
+      border:1px solid rgba(255,255,255,.05);
+    }
+    .wp-user-av{
+      width:18px;
+      height:18px;
+      font-size:9.5px;
+    }
+    .wp-user-info{
+      min-width:0;
+      flex:1;
+      display:flex;
+      flex-direction:column;
+    }
+    .wp-user-info b{
+      font-size:9.5px;
+      white-space:nowrap;
+      line-height:1.15;
+    }
+    .wp-user-info span{display:none}
+    .wp-user-pill{
+      font-size:7px;
+      padding:1px 3.5px;
+      letter-spacing:.02em;
+    }
+    .wp-player-panel{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      width:100%;
+    }
+    .wp-playback-bar{
+      padding:6px 9px;
+      border-radius:9px;
+      gap:5px;
+    }
+    .wp-bar-meta{
+      font-size:10px;
+    }
+    .wp-bar-meta b.wp-play-icon{
+      font-size:10.5px;
+      margin-right:2px;
+    }
+    .wp-time{font-size:10px}
+    .wp-track{height:4px}
+    .wp-scrub-dot{
+      width:8px;
+      height:8px;
+    }
+    .wp-controls-row{
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      gap:5px;
+    }
+    .wp-ctrl-chip{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:4px;
+      padding:4.5px 3px;
+      border-radius:6px;
+      font-size:9px;
+      white-space:nowrap;
+      text-align:center;
+    }
+    .wp-ctrl-chip svg{
+      width:10px;
+      height:10px;
+      flex:none;
+    }
+    .party-reaction-stream{
+      right:10px;
+      bottom:40px;
+      gap:4px;
+      opacity:0.85;
+    }
+    .party-rx{font-size:12px}
+    .party-steps-row,
+    .sync-steps-row{
+      grid-template-columns:1fr;
+      gap:7px;
+      margin-top:12px;
+    }
+    .party-step-pill,
+    .sync-step-pill{
+      padding:8px 10px;
+      border-radius:10px;
+      gap:8px;
+    }
+    .party-step-pill b.step-num,
+    .sync-step-pill b.step-num{
+      width:18px;
+      height:18px;
+      font-size:10px;
+    }
+    .party-step-pill .step-text,
+    .sync-step-pill .step-text{
+      font-size:11px;
+      line-height:1.35;
+      gap:1px;
+    }
+    .party-step-pill .step-text b,
+    .sync-step-pill .step-text b{
+      font-size:11.5px;
+    }
+
+    /* 7 · Cloud Sync Mobile Optimizations */
+    .sync-feat-hub{
+      padding:6px 10px;
+      gap:6px;
+      border-radius:10px;
+    }
+    .sfh-left{
+      font-size:11px;
+      gap:6px;
+    }
+    .sfh-left svg{
+      width:14px;
+      height:14px;
+    }
+    .sfh-right{
+      font-size:10px;
+      gap:5px;
+    }
+    .sync-feat-services{
+      grid-template-columns:1fr;
+      gap:7px;
+    }
+    .sync-svc-card{
+      padding:8px 10px;
+      border-radius:11px;
+      gap:9px;
+    }
+    .sync-svc-logo{
+      width:28px;
+      height:28px;
+      border-radius:7px;
+    }
+    .sync-svc-info{
+      display:grid;
+      grid-template-columns:1fr auto;
+      grid-template-rows:auto auto;
+      align-items:center;
+      column-gap:6px;
+      row-gap:2px;
+      min-width:0;
+      flex:1;
+    }
+    .sync-svc-info b{
+      grid-column:1;
+      grid-row:1;
+      font-size:12.5px;
+      line-height:1.2;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .sync-svc-badge{
+      grid-column:2;
+      grid-row:1;
+      align-self:center;
+      margin-top:0;
+      font-size:9px;
+      padding:2px 6px;
+      text-align:right;
+      white-space:nowrap;
+    }
+    .sync-svc-info span:not(.sync-svc-badge){
+      grid-column:1 / span 2;
+      grid-row:2;
+      font-size:10.5px;
+      line-height:1.2;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+  }
+
+  @media(max-width:440px){
+    .wp-chip-prefix{display:none}
+    .sfh-right{font-size:9.5px}
+    .sync-svc-badge{font-size:8.5px;padding:2px 5px}
   }
 
   /* 8 · subtitles */
@@ -1263,9 +1577,9 @@
   }
   .screens-arrow:hover{
     background:rgba(36,26,19,.95);
-    border-color:rgba(255,138,60,.55);
+    border-color:rgba(255,255,255,.32);
     transform:translateY(-50%) scale(1.08);
-    box-shadow:0 14px 32px rgba(0,0,0,.75),0 0 24px rgba(229,35,26,.35);
+    box-shadow:0 14px 32px rgba(0,0,0,.75);
     color:#fff;
   }
   .screens-arrow:active{
@@ -1389,15 +1703,15 @@
     transform:scale(1.05);
     opacity:1;
     filter:none;
-    border-color:rgba(255,138,60,.4);
-    box-shadow:0 36px 85px -12px rgba(0,0,0,.92),0 16px 45px -8px rgba(229,35,26,.26);
-    background:radial-gradient(450px circle at 50% 0%,rgba(229,35,26,.1),transparent 75%),#18120d;
+    border-color:rgba(255,255,255,.24);
+    box-shadow:0 36px 85px -12px rgba(0,0,0,.92),0 16px 45px -8px rgba(0,0,0,.6);
+    background:radial-gradient(450px circle at 50% 0%,rgba(255,255,255,.04),transparent 75%),#18120d;
     z-index:10;
   }
   .screens-track .shot.shot-desktop.focused:hover{
     transform:scale(1.06);
-    border-color:rgba(255,138,60,.55);
-    box-shadow:0 40px 90px -12px rgba(0,0,0,.95),0 18px 48px -8px rgba(229,35,26,.3);
+    border-color:rgba(255,255,255,.36);
+    box-shadow:0 40px 90px -12px rgba(0,0,0,.95),0 18px 48px -8px rgba(0,0,0,.7);
   }
 
   /* Desktop Frame & Aspect Ratio */
@@ -1898,6 +2212,82 @@
   .download p{color:var(--muted);margin-top:16px;font-size:17px;max-width:46ch;margin-inline:auto}
   .note{margin-top:18px;font-size:12.5px;color:var(--muted-dim)}
 
+  /* multi-platform download cards & detection */
+  .dl-detected-pill{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:6px 14px;border-radius:999px;
+    background:rgba(255,70,50,.08);border:1px solid rgba(255,70,50,.25);
+    font-size:12.5px;color:#ff9e7d;font-family:var(--font-d);font-weight:600;
+    margin-top:20px;
+  }
+  .dl-detected-pill .dl-dot{
+    width:7px;height:7px;border-radius:50%;background:#00e676;box-shadow:0 0 8px #00e676;flex-shrink:0;
+  }
+  .dl-platforms-divider{
+    display:flex;align-items:center;text-align:center;margin:46px 0 24px;
+    color:var(--muted-dim);font-family:var(--font-d);font-size:12px;font-weight:700;
+    letter-spacing:.14em;text-transform:uppercase;
+  }
+  .dl-platforms-divider::before,.dl-platforms-divider::after{
+    content:'';flex:1;border-bottom:1px solid var(--line);
+  }
+  .dl-platforms-divider span{padding:0 16px}
+  .dl-cards-grid{
+    display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:12px;text-align:left;
+  }
+  .dl-card{
+    background:rgba(23,17,12,.75);
+    border:1px solid var(--line);
+    border-radius:20px;padding:24px 20px;
+    display:flex;flex-direction:column;
+    transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease,background .2s ease;
+    position:relative;
+  }
+  .dl-card:hover{
+    transform:translateY(-4px);
+    border-color:rgba(255,255,255,.2);
+    box-shadow:0 16px 36px -10px rgba(0,0,0,.6);
+    background:var(--surface);
+  }
+  .dl-card.highlight-detected{
+    border-color:rgba(255,70,50,.45);
+    background:linear-gradient(180deg,rgba(229,35,26,.1),rgba(23,17,12,.85));
+    box-shadow:0 0 28px rgba(229,35,26,.18);
+  }
+  .dl-card.highlight-detected::before{
+    content:'YOUR DEVICE';
+    display:inline-block;align-self:flex-start;
+    font-family:var(--font-d);font-size:10px;font-weight:800;letter-spacing:.08em;
+    background:var(--grad);color:#1a0e00;padding:3px 9px;border-radius:999px;margin-bottom:12px;
+  }
+  .dl-card-head{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+  .dl-card-icon{
+    width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;background:rgba(255,255,255,.05);border:1px solid var(--line);
+  }
+  .dl-card-icon svg{width:22px;height:22px}
+  .dl-card-icon.win{color:#00a4ef;border-color:rgba(0,164,239,.3);background:rgba(0,164,239,.08)}
+  .dl-card-icon.android{color:#3ddc84;border-color:rgba(61,220,132,.3);background:rgba(61,220,132,.08)}
+  .dl-card-icon.linux{color:#f59e0b;border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.08)}
+  .dl-card-head h4{font-size:18px;font-weight:700;margin:0 0 2px;color:var(--ink)}
+  .dl-card-sub{font-size:12px;color:var(--muted-dim);display:block}
+  .dl-card-desc{font-size:13px;color:var(--muted);line-height:1.5;margin:0 0 18px;flex:1}
+  .dl-card-actions{display:flex;flex-direction:column;gap:8px}
+  .dl-card-actions.dual{display:grid;grid-template-columns:1.1fr 1fr;gap:8px}
+  .dl-card-btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:7px;
+    padding:10px 14px;border-radius:10px;font-family:var(--font-d);font-size:12.5px;font-weight:700;
+    transition:transform .15s ease,background .15s ease,border-color .15s ease,box-shadow .15s ease;
+    text-decoration:none;
+  }
+  .dl-card-btn svg{width:15px;height:15px}
+  .dl-card-btn.primary{background:var(--grad);color:#1a0e00;box-shadow:0 4px 14px rgba(229,35,26,.3)}
+  .dl-card-btn.primary:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(229,35,26,.45)}
+  .dl-card-btn.secondary{background:rgba(255,255,255,.05);color:var(--ink);border:1px solid var(--line)}
+  .dl-card-btn.secondary:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);transform:translateY(-2px)}
+  @media(max-width:960px){.dl-cards-grid{grid-template-columns:1fr}}
+  @media(max-width:480px){.dl-card-actions.dual{grid-template-columns:1fr}}
+
   /* footer */
   footer{border-top:1px solid var(--line);padding-block:60px 32px;position:relative;z-index:2;
     background:linear-gradient(180deg,transparent,rgba(229,35,26,.04))}
@@ -1928,11 +2318,138 @@
 
   .reveal{opacity:0;transform:translateY(22px);transition:opacity .7s ease,transform .7s ease}
   .reveal.in{opacity:1;transform:none}
-  @media(max-width:900px){.hero-grid{grid-template-columns:1fr;gap:20px}.stage{height:480px;order:2}.hero p.lead{max-width:none}}
+  @media(max-width:900px){
+    header .wrap,
+    .hero{padding-inline:20px}
+    .hero-grid{grid-template-columns:1fr;gap:20px}
+    .stage{height:480px;order:2}
+    .hero p.lead{max-width:none}
+    .desktop-frame{max-width:92vw}
+  }
   @media(prefers-reduced-motion:reduce){*{animation:none!important}.reveal{opacity:1;transform:none;transition:none}}
+
+  /* ==========================================================================
+     NIVIO KINETIC BRAND PRELOADER (1:1 with Flutter AppPreloaderScreen)
+     ========================================================================== */
+  .preloader-overlay{position:fixed;inset:0;width:100%;height:100%;background:#05070B;
+    z-index:999999;display:flex;align-items:center;justify-content:center;overflow:hidden;
+    user-select:none;opacity:1;transition:opacity .45s ease-out}
+  .preloader-overlay.fade-out{opacity:0;pointer-events:none}
+  .preloader-bg-glow{position:absolute;inset:0;
+    background:radial-gradient(circle at center,rgba(249,143,5,.14) 0%,rgba(248,2,1,.08) 35%,transparent 70%);
+    opacity:0;pointer-events:none;transition:opacity .5s ease-out}
+  .preloader-stage{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  
+  /* Scalable Logo Group (Exit Zoom-Through Camera Transition) */
+  .preloader-logo-container{position:relative;width:176px;height:176px;display:flex;align-items:center;justify-content:center;
+    transform-origin:center center;transition:transform .4s cubic-bezier(.7,0,.84,0),opacity .35s ease-in}
+  
+  /* Ribbons */
+  .preloader-piece{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;z-index:10;
+    opacity:0;will-change:transform,opacity,filter}
+  .preloader-orange{transform:translate(-150px,-130px) rotate(-18deg) scale(.85);filter:blur(6px)}
+  .preloader-red{transform:translate(150px,130px) rotate(18deg) scale(.85);filter:blur(6px)}
+  
+  /* Dual Brand Aura Shockwave (SVG: Outer Amber #F98F05 + Inner Crimson #F80201 - Zero White) */
+  .preloader-shockwave-wrap{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:320px;height:320px;
+    pointer-events:none;z-index:0;opacity:0;display:flex;align-items:center;justify-content:center}
+  .preloader-shockwave-svg{width:100%;height:100%;overflow:visible}
+  #orangeAuraRing{filter:drop-shadow(0 0 10px #F98F05) drop-shadow(0 0 20px rgba(249,143,5,.7))}
+  #redAuraRing{filter:drop-shadow(0 0 10px #F80201) drop-shadow(0 0 20px rgba(248,2,1,.7))}
+  
+  @keyframes svgWaveExpand{
+    0%{transform:translate(-50%,-50%) scale(.12);opacity:1}
+    45%{opacity:.95}
+    100%{transform:translate(-50%,-50%) scale(2.6);opacity:0}
+  }
+  .svg-wave-active{animation:svgWaveExpand .72s cubic-bezier(.14,.9,.28,1) forwards}
+  
+  /* 360-Degree Radial Sparks Container */
+  .preloader-sparks-container{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:0;height:0;
+    pointer-events:none;z-index:25}
+  
+  /* Impact Glow Bloom */
+  .preloader-impact-glow{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:190px;height:190px;
+    border-radius:50%;background:radial-gradient(circle,rgba(249,143,5,.45) 0%,rgba(248,2,1,.35) 50%,transparent 75%);
+    filter:blur(20px);opacity:0;pointer-events:none;z-index:0}
+  
+  /* Wordmark elevation */
+  .preloader-wordmark-wrap{margin-top:14px;display:flex;flex-direction:column;align-items:center;opacity:0;
+    transform:translateY(22px);pointer-events:none;transition:transform .48s cubic-bezier(.16,1,.3,1),opacity .48s cubic-bezier(.16,1,.3,1)}
+  .preloader-wordmark{height:38px;object-fit:contain;filter:drop-shadow(0 2px 14px rgba(255,255,255,.2))}
+  
+  /* Breathing Aura upon Assembly */
+  @keyframes preloaderBreath{
+    0%,100%{filter:drop-shadow(0 0 14px rgba(249,143,5,.4)) drop-shadow(0 0 25px rgba(248,2,1,.35))}
+    50%{filter:drop-shadow(0 0 26px rgba(249,143,5,.75)) drop-shadow(0 0 45px rgba(248,2,1,.65))}
+  }
+  .preloader-breathing{animation:preloaderBreath 2.2s ease-in-out infinite}
+  
+  /* Exit Zoom-Through */
+  .preloader-logo-container.zoom-exit{transform:scale(22) rotate(-3deg);opacity:0}
+  
+  /* Subtle Skip Button */
+  .preloader-skip-btn{position:absolute;bottom:24px;right:24px;padding:6px 14px;border-radius:999px;
+    background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.6);
+    font-family:var(--font-s);font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+    cursor:pointer;transition:all .2s ease;z-index:9999999}
+  .preloader-skip-btn:hover{background:rgba(255,255,255,.15);color:#fff}
 </style>
 </head>
-<body>
+<body id="top" class="preloader-active">
+
+<!-- KINETIC APP PRELOADER SCREEN (Exact 1:1 match with Nivio Flutter App Preloader) -->
+<div id="nivio-preloader" class="preloader-overlay" aria-hidden="false">
+  <div class="preloader-bg-glow" id="preloaderBgGlow"></div>
+  <div class="preloader-stage" id="preloaderStage">
+    <!-- Center Logo Container: Anchored Impact Origin -->
+    <div class="preloader-logo-container" id="preloaderLogoContainer">
+      <!-- Dual Brand Aura Shockwave (Outer Amber #F98F05 + Inner Crimson #F80201 - Zero White) -->
+      <div class="preloader-shockwave-wrap" id="preloaderShockwaveWrap">
+        <svg class="preloader-shockwave-svg" viewBox="0 0 300 300">
+          <defs>
+            <filter id="auraGlowOrange" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="auraGlowRed" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <!-- Outer Echo Wave: Brand Amber Orange (#F98F05) -->
+          <circle id="orangeAuraRing" cx="150" cy="150" r="105" fill="none" stroke="#F98F05" stroke-width="2.8" filter="url(#auraGlowOrange)" />
+          <!-- Inner Echo Wave: Brand Crimson Red (#F80201) -->
+          <circle id="redAuraRing" cx="150" cy="150" r="90" fill="none" stroke="#F80201" stroke-width="2.8" filter="url(#auraGlowRed)" />
+        </svg>
+      </div>
+
+      <!-- 360-Degree Radial Sparks Container -->
+      <div class="preloader-sparks-container" id="preloaderSparksContainer"></div>
+
+      <!-- Soft Localized Impact Bloom Flash -->
+      <div class="preloader-impact-glow" id="preloaderImpactGlow"></div>
+
+      <!-- Amber Top-Left Ribbon -->
+      <img id="preloaderOrangePiece" class="preloader-piece preloader-orange" src="preloader_orange.png" onerror="this.onerror=null;this.src='../assets/images/preloader_orange.png';" alt="Nivio Amber Ribbon">
+
+      <!-- Crimson Bottom-Right Ribbon -->
+      <img id="preloaderRedPiece" class="preloader-piece preloader-red" src="preloader_red.png" onerror="this.onerror=null;this.src='../assets/images/preloader_red.png';" alt="Nivio Crimson Ribbon">
+    </div>
+
+    <!-- Official Nivio Wordmark Elevation -->
+    <div class="preloader-wordmark-wrap" id="preloaderWordmarkWrap">
+      <img id="preloaderWordmarkImg" class="preloader-wordmark" src="nivio-wordmark.png" onerror="this.onerror=null;this.src='../assets/images/nivio-wordmark.png';" alt="Nivio">
+    </div>
+  </div>
+  <button type="button" class="preloader-skip-btn" id="preloaderSkipBtn" aria-label="Skip preloader animation">Skip</button>
+</div>
 
 <div class="field"></div>
 <div class="grain"></div>
@@ -1947,28 +2464,31 @@
           <span class="hide-sm">Star</span>
           <span class="count" data-gh-stars>16</span>
         </a>
-        <a class="btn btn-primary" data-apk-download href="https://github.com/nirmaleeswar30/Nivio/releases/download/v2.2.3/nivio.apk" target="_blank" rel="noopener noreferrer">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>
-          <span class="hide-sm">Download</span>
+        <a class="btn btn-primary" data-primary-download data-apk-download href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">
+          <span class="btn-icon" data-primary-icon style="display:inline-flex;align-items:center">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>
+          </span>
+          <span class="hide-sm" data-primary-nav-label>Download</span>
         </a>
       </div>
     </nav>
   </div>
 </header>
 
-<a id="top"></a>
 <div class="wrap hero">
   <div class="hero-grid">
     <div class="reveal in">
       <span class="badge"><b data-release-tag>v2.2.3</b> Movies · Shows · Anime · Live TV</span>
-      <h1>Everything you<br>watch in <span class="grad-text">One&nbsp;app.</span></h1>
+      <h1><span class="nowrap">Everything you</span><br>watch in <span class="grad-text">One&nbsp;app.</span></h1>
       <p class="lead">A beautiful all-in-one streaming home for Movies, TV, Anime and Live IPTV — with real-time Watch Parties and offline downloads.</p>
       <div class="cta-row">
-        <a class="btn btn-primary" data-apk-download href="https://github.com/nirmaleeswar30/Nivio/releases/download/v2.2.3/nivio.apk" target="_blank" rel="noopener noreferrer">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>
-          <span data-apk-label>Download APK</span>
+        <a class="btn btn-primary" data-primary-download data-apk-download href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">
+          <span class="btn-icon" data-primary-icon style="display:inline-flex;align-items:center">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>
+          </span>
+          <span data-primary-label>Download APK</span>
         </a>
-        <a class="btn btn-ghost" href="#player">Explore player</a>
+        <a class="btn btn-ghost" href="#download">All platforms</a>
       </div>
       <div class="meta-row">
         <div class="meta"><b class="grad-text">No ads</b><span>no subscriptions</span></div>
@@ -1976,11 +2496,22 @@
         <div class="meta"><b class="grad-text">OTA</b><span>instant updates</span></div>
       </div>
     </div>
-    <div class="stage reveal in">
-      <img class="glow-n" src="../assets/images/nivio.png" alt="">
-      <figure class="phone p-left"><img src="../assets/images/live-tv-screen.jpg" alt="Live TV screen"></figure>
-      <figure class="phone p-right"><img src="../assets/images/media-screen.jpg" alt="Media detail screen"></figure>
-      <figure class="phone p-main"><img src="../assets/images/home-screen.jpg" alt="Nivio home screen"></figure>
+    <div class="stage reveal in" id="heroStage" data-view="desktop">
+      <img class="glow-n" src="nivio.png" onerror="this.onerror=null;this.src='../assets/images/nivio.png';" alt="">
+
+      <!-- DESKTOP SHOWCASE (Clean Cinema Screenshot, Zero Artificial Frame) -->
+      <div class="stage-view stage-desktop-view">
+        <figure class="desktop-frame">
+          <img src="desktop_hero.jpeg" onerror="this.onerror=null;this.src='../assets/images/desktop_hero.jpeg';" alt="Nivio Desktop Cinema Player">
+        </figure>
+      </div>
+
+      <!-- MOBILE SHOWCASE (The 3-Phone Cluster) -->
+      <div class="stage-view stage-mobile-view">
+        <figure class="phone p-left"><img src="live-tv-screen.jpg" onerror="this.onerror=null;this.src='../assets/images/live-tv-screen.jpg';" alt="Live TV screen"></figure>
+        <figure class="phone p-right"><img src="media-screen.jpg" onerror="this.onerror=null;this.src='../assets/images/media-screen.jpg';" alt="Media detail screen"></figure>
+        <figure class="phone p-main"><img src="home-screen.jpg" onerror="this.onerror=null;this.src='../assets/images/home-screen.jpg';" alt="Nivio home screen"></figure>
+      </div>
     </div>
   </div>
 </div>
@@ -2368,7 +2899,7 @@
               </div>
             </div>
             <div class="wp-controls-row">
-              <span class="wp-ctrl-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Instant Play/Pause</span>
+              <span class="wp-ctrl-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> <span class="wp-chip-prefix">Instant </span>Play/Pause</span>
               <span class="wp-ctrl-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg> Audio Sync</span>
               <span class="wp-ctrl-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Seek Mirror</span>
             </div>
@@ -2807,15 +3338,102 @@
   <div class="download reveal">
     <img class="icon" src="nivio.png" onerror="this.onerror=null;this.src='../assets/images/nivio.png';" alt="Nivio">
     <h2>Ready when you are.</h2>
-    <p>Grab the latest APK and turn your phone into an all-in-one cinema. Free, open-source, and always up to date over the air.</p>
-    <div class="cta-row" style="justify-content:center">
-      <a class="btn btn-primary" data-apk-download href="https://github.com/nirmaleeswar30/Nivio/releases/download/v2.2.3/nivio.apk" target="_blank" rel="noopener noreferrer">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>
-        <span data-apk-label>Download APK</span>
+    <p>Install Nivio and turn your display into an all-in-one cinema. Free, open-source, and always up to date.</p>
+
+    <!-- Dynamic Primary CTA: Auto-detects user OS -->
+    <div class="cta-row" style="justify-content:center;margin-top:28px">
+      <a class="btn btn-primary" data-primary-download href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">
+        <span class="btn-icon" data-primary-icon style="display:inline-flex;align-items:center">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>
+        </span>
+        <span data-primary-label>Download</span>
       </a>
-      <a class="btn btn-ghost" href="https://github.com/nirmaleeswar30/Nivio" target="_blank" rel="noopener noreferrer">View on GitHub</a>
+      <a class="btn btn-ghost" href="https://github.com/nirmaleeswar30/Nivio" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" style="width:17px;height:17px"><path d="M12 2C6.5 2 2 6.6 2 12.3c0 4.5 2.9 8.3 6.8 9.7.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.4-3.4-1.4-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .9.1-.7.4-1.1.6-1.4-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.5-1.3.1-2.7 0 0 .8-.3 2.7 1a9.3 9.3 0 015 0c1.9-1.3 2.7-1 2.7-1 .6 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.3 4.7-4.6 5 .4.3.7 1 .7 2v3c0 .3.2.6.7.5A10 10 0 0022 12.3C22 6.6 17.5 2 12 2z"/></svg>
+        View on GitHub
+      </a>
     </div>
-    <p class="note">Android · <span data-release-tag>v2.2.3</span> · MIT licensed · Sign in with Google or stay anonymous</p>
+
+    <!-- Live Platform Detection Badge -->
+    <div>
+      <div class="dl-detected-pill">
+        <span class="dl-dot"></span>
+        <span data-detected-badge>Detected: Checking your device...</span>
+      </div>
+    </div>
+
+    <!-- Platform Selection Cards Divider -->
+    <div class="dl-platforms-divider">
+      <span>Choose your platform or format</span>
+    </div>
+
+    <!-- Multi-Platform Download Cards Grid -->
+    <div class="dl-cards-grid">
+      <!-- Windows Card -->
+      <div class="dl-card" data-card-platform="windows">
+        <div class="dl-card-head">
+          <div class="dl-card-icon win">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.949-1.801"/></svg>
+          </div>
+          <div>
+            <h4>Windows</h4>
+            <span class="dl-card-sub">Windows 10 / 11 · 64-bit</span>
+          </div>
+        </div>
+        <p class="dl-card-desc">Official setup installer with GPU hardware decoding and desktop system integration.</p>
+        <div class="dl-card-actions">
+          <a class="dl-card-btn primary" data-windows-download href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>
+            Download Setup (.exe)
+          </a>
+        </div>
+      </div>
+
+      <!-- Android Card -->
+      <div class="dl-card" data-card-platform="android">
+        <div class="dl-card-head">
+          <div class="dl-card-icon android">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.551 0 .9993.4482.9993.9993.0001.5511-.4482.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4482.9997-.9993.9997m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.4116 13.8533 8.0805 12 8.0805s-3.5902.3311-5.1367.8692L4.841 5.4467a.4161.4161 0 00-.5677-.1521.4157.4157 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3432-4.1021-2.6889-7.5743-6.1185-9.4396"/></svg>
+          </div>
+          <div>
+            <h4>Android</h4>
+            <span class="dl-card-sub">Phone, Tablet &amp; TV · Android 8.0+</span>
+          </div>
+        </div>
+        <p class="dl-card-desc">Choose nivio.apk for standard devices or Universal for all device architectures.</p>
+        <div class="dl-card-actions dual">
+          <a class="dl-card-btn primary" data-apk-download href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>
+            nivio.apk
+          </a>
+          <a class="dl-card-btn secondary" data-universal-apk-download href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">
+            Universal APK
+          </a>
+        </div>
+      </div>
+
+      <!-- Linux Card -->
+      <div class="dl-card" data-card-platform="linux">
+        <div class="dl-card-head">
+          <div class="dl-card-icon linux">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.003 2c-2.485 0-4.102 2.05-4.102 4.57 0 .843.197 1.875.525 2.94-.48.27-.923.633-1.287 1.07-.633.76-.94 1.706-.94 2.82 0 1.25.437 2.375 1.25 3.125.13.12.27.227.42.32-.42 1.3-.9 2.535-1.55 3.32-.32.39-.73.665-1.22.75-.38.07-.8.02-1.24-.13-.24-.08-.49.07-.56.32-.08.24.06.49.3.57.57.19 1.13.25 1.66.16.73-.13 1.36-.55 1.83-1.12.79-.96 1.34-2.35 1.82-3.83.69.24 1.45.38 2.27.38.83 0 1.58-.14 2.27-.38.48 1.48 1.03 2.87 1.82 3.83.47.57 1.1.99 1.83 1.12.53.09 1.09.03 1.66-.16.24-.08.38-.33.3-.57-.07-.25-.32-.4-.56-.32-.44.15-.86.2-1.24.13-.49-.085-.9-.36-1.22-.75-.65-.785-1.13-2.02-1.55-3.32.15-.093.29-.2.42-.32.813-.75 1.25-1.875 1.25-3.125 0-1.114-.307-2.06-.94-2.82-.364-.437-.807-.8-1.287-1.07.328-1.065.525-2.097.525-2.94C16.105 4.05 14.488 2 12.003 2zm-.9 4.3a.8.8 0 110 1.6.8.8 0 010-1.6zm1.8 0a.8.8 0 110 1.6.8.8 0 010-1.6z"/></svg>
+          </div>
+          <div>
+            <h4>Linux</h4>
+            <span class="dl-card-sub">Ubuntu, Arch, Fedora · x86_64</span>
+          </div>
+        </div>
+        <p class="dl-card-desc">Standalone portable AppImage with native GPU acceleration and zero installation hassle.</p>
+        <div class="dl-card-actions">
+          <a class="dl-card-btn primary" data-linux-download href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>
+            Download AppImage (.AppImage)
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <p class="note" style="margin-top:28px">Latest Version: <span data-release-tag>v2.2.3</span> · Free &amp; Open Source under MIT License · No account required</p>
   </div>
 </section>
 
@@ -2851,10 +3469,10 @@
         <div class="foot-col">
           <h4>Download</h4>
           <a href="https://github.com/nirmaleeswar30/Nivio/releases/latest" data-apk-download>Android APK (nivio.apk)</a>
-          <a href="https://github.com/nirmaleeswar30/Nivio/releases" target="_blank" rel="noopener noreferrer">Windows Release</a>
+          <a href="https://github.com/nirmaleeswar30/Nivio/releases/latest" data-universal-apk-download>Universal APK (universal.apk)</a>
+          <a href="https://github.com/nirmaleeswar30/Nivio/releases" data-windows-download target="_blank" rel="noopener noreferrer">Windows Setup (.exe)</a>
+          <a href="https://github.com/nirmaleeswar30/Nivio/releases" data-linux-download target="_blank" rel="noopener noreferrer">Linux AppImage (.AppImage)</a>
           <a href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">Latest Release Notes</a>
-          <a href="https://github.com/nirmaleeswar30/Nivio/releases" target="_blank" rel="noopener noreferrer">All GitHub Releases</a>
-          <a href="#download">System Requirements</a>
         </div>
         <div class="foot-col">
           <h4>Open Source</h4>
@@ -2874,6 +3492,41 @@
 </footer>
 
 <script>
+  function detectUserOS() {
+    const ua = (navigator.userAgent || '').toLowerCase();
+    const uadPlatform = (navigator.userAgentData && navigator.userAgentData.platform ? navigator.userAgentData.platform : '').toLowerCase();
+    const navPlatform = (navigator.platform || '').toLowerCase();
+
+    // 1. Android check (UA or client hints) - MUST be first because Android UA contains 'Linux' and desktop emulation may still report Win32 platform
+    if (ua.includes('android') || uadPlatform.includes('android') || navPlatform.includes('android')) {
+      return 'android';
+    }
+
+    // 2. iOS check (iPhone, iPad, iPod)
+    if (/iphone|ipad|ipod/.test(ua) || navPlatform.includes('iphone') || navPlatform.includes('ipad')) {
+      return 'ios';
+    }
+
+    // 3. Windows check (make sure not Android)
+    if (ua.includes('windows') || ua.includes('win32') || ua.includes('win64') || uadPlatform.includes('win') || navPlatform.includes('win')) {
+      return 'windows';
+    }
+
+    // 4. macOS check (make sure not iOS)
+    if (ua.includes('macintosh') || ua.includes('mac os') || uadPlatform.includes('mac') || navPlatform.includes('mac')) {
+      return 'mac';
+    }
+
+    // 5. Linux check (make sure not Android)
+    if (ua.includes('linux') || ua.includes('x11') || uadPlatform.includes('linux') || navPlatform.includes('linux')) {
+      return 'linux';
+    }
+
+    return 'android';
+  }
+
+  const detectedOS = detectUserOS();
+
   const io=new IntersectionObserver((es)=>{
     es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}});
   },{threshold:.12});
@@ -2883,6 +3536,11 @@
   const header = document.querySelector('header');
   let lastScrollY = window.scrollY;
   const onScroll = () => {
+    if (document.body.classList.contains('preloader-active')) {
+      header.classList.remove('nav-hidden');
+      header.classList.remove('scrolled');
+      return;
+    }
     const currentScrollY = Math.max(0, window.scrollY);
     const diff = currentScrollY - lastScrollY;
 
@@ -2903,6 +3561,14 @@
   };
   onScroll();
   window.addEventListener('scroll', onScroll, { passive: true });
+
+  // Handle #top logo click smoothly without URL hash jumping
+  document.querySelectorAll('a[href="#top"]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
 
   // Interactive scroll & click-driven horizontal showcase for The Player
   const playerScrollTrack = document.getElementById('player-track');
@@ -3156,8 +3822,8 @@
   if (screensScrollTrack && trackDesktop && trackMobile && screensViewport) {
     let ticking = false;
     let currentFocusedIdx = 0;
-    // Auto-detect initial platform based on viewport width (>= 1024 defaults to desktop)
-    let currentPlatform = window.innerWidth >= 1024 ? 'desktop' : 'mobile';
+    // Auto-detect initial platform based on detected OS (Android/iOS default to mobile) or viewport
+    let currentPlatform = (detectedOS === 'android' || detectedOS === 'ios') ? 'mobile' : (window.innerWidth >= 1024 ? 'desktop' : 'mobile');
 
     function getActiveTrack() {
       return currentPlatform === 'desktop' ? trackDesktop : trackMobile;
@@ -3435,14 +4101,99 @@
     const CACHE_KEY = 'nivio_gh_releases_cache_v3';
     const CACHE_TTL_MS = 15 * 60 * 1000; // 15-minute cache to respect GitHub rate limits
 
+    // Uses outer detectedOS resolved at script initialization with Android/mobile UA precedence
+
+    const OS_ICONS = {
+      windows: `<svg viewBox="0 0 24 24" fill="currentColor" style="width:17px;height:17px"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.949-1.801"/></svg>`,
+      linux: `<svg viewBox="0 0 24 24" fill="currentColor" style="width:17px;height:17px"><path d="M12.003 2c-2.485 0-4.102 2.05-4.102 4.57 0 .843.197 1.875.525 2.94-.48.27-.923.633-1.287 1.07-.633.76-.94 1.706-.94 2.82 0 1.25.437 2.375 1.25 3.125.13.12.27.227.42.32-.42 1.3-.9 2.535-1.55 3.32-.32.39-.73.665-1.22.75-.38.07-.8.02-1.24-.13-.24-.08-.49.07-.56.32-.08.24.06.49.3.57.57.19 1.13.25 1.66.16.73-.13 1.36-.55 1.83-1.12.79-.96 1.34-2.35 1.82-3.83.69.24 1.45.38 2.27.38.83 0 1.58-.14 2.27-.38.48 1.48 1.03 2.87 1.82 3.83.47.57 1.1.99 1.83 1.12.53.09 1.09.03 1.66-.16.24-.08.38-.33.3-.57-.07-.25-.32-.4-.56-.32-.44.15-.86.2-1.24.13-.49-.085-.9-.36-1.22-.75-.65-.785-1.13-2.02-1.55-3.32.15-.093.29-.2.42-.32.813-.75 1.25-1.875 1.25-3.125 0-1.114-.307-2.06-.94-2.82-.364-.437-.807-.8-1.287-1.07.328-1.065.525-2.097.525-2.94C16.105 4.05 14.488 2 12.003 2zm-.9 4.3a.8.8 0 110 1.6.8.8 0 010-1.6zm1.8 0a.8.8 0 110 1.6.8.8 0 010-1.6z"/></svg>`,
+      android: `<svg viewBox="0 0 24 24" fill="currentColor" style="width:17px;height:17px"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.551 0 .9993.4482.9993.9993.0001.5511-.4482.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4482.9997-.9993.9997m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.4116 13.8533 8.0805 12 8.0805s-3.5902.3311-5.1367.8692L4.841 5.4467a.4161.4161 0 00-.5677-.1521.4157.4157 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3432-4.1021-2.6889-7.5743-6.1185-9.4396"/></svg>`,
+      generic: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>`
+    };
+
+    function updatePlatformUi(urls) {
+      let targetUrl = urls.apk;
+      let label = 'Download APK';
+      let navLabel = 'Download';
+      let badge = 'Android, Windows & Linux available';
+      let icon = OS_ICONS.generic;
+
+      if (detectedOS === 'windows') {
+        targetUrl = urls.windows;
+        label = 'Download for Windows (.exe)';
+        navLabel = 'Download (.exe)';
+        badge = 'Detected: Windows (64-bit) · Installer ready';
+        icon = OS_ICONS.windows;
+      } else if (detectedOS === 'linux') {
+        targetUrl = urls.linux;
+        label = 'Download for Linux (.AppImage)';
+        navLabel = 'Download (.AppImage)';
+        badge = 'Detected: Linux (x86_64) · AppImage ready';
+        icon = OS_ICONS.linux;
+      } else if (detectedOS === 'android') {
+        targetUrl = urls.apk;
+        label = 'Download Android APK';
+        navLabel = 'Download APK';
+        badge = 'Detected: Android · Direct APK ready';
+        icon = OS_ICONS.android;
+      } else if (detectedOS === 'mac') {
+        targetUrl = urls.apk;
+        label = 'Download Android APK';
+        navLabel = 'Download';
+        badge = 'Detected: macOS · Mobile, Windows & Linux builds available';
+        icon = OS_ICONS.generic;
+      } else if (detectedOS === 'ios') {
+        targetUrl = urls.apk;
+        label = 'Download Android APK';
+        navLabel = 'Download';
+        badge = 'Detected: iOS · Android, Windows & Linux builds available';
+        icon = OS_ICONS.generic;
+      }
+
+      document.querySelectorAll('[data-primary-download]').forEach(el => {
+        el.href = targetUrl;
+      });
+      document.querySelectorAll('[data-primary-label]').forEach(el => {
+        el.textContent = label;
+      });
+      document.querySelectorAll('[data-primary-nav-label]').forEach(el => {
+        el.textContent = navLabel;
+      });
+      document.querySelectorAll('[data-primary-icon]').forEach(el => {
+        el.innerHTML = icon;
+      });
+      document.querySelectorAll('[data-detected-badge]').forEach(el => {
+        el.textContent = badge;
+      });
+
+      document.querySelectorAll('[data-card-platform]').forEach(card => {
+        if (card.getAttribute('data-card-platform') === detectedOS) {
+          card.classList.add('highlight-detected');
+        } else {
+          card.classList.remove('highlight-detected');
+        }
+      });
+    }
+
+    // Run initial pass immediately with static fallback URLs so UI renders instantly
+    updatePlatformUi({
+      apk: 'https://github.com/nirmaleeswar30/Nivio/releases/latest',
+      universal: 'https://github.com/nirmaleeswar30/Nivio/releases/latest',
+      windows: 'https://github.com/nirmaleeswar30/Nivio/releases/latest',
+      linux: 'https://github.com/nirmaleeswar30/Nivio/releases/latest'
+    });
+
     function applyReleaseData(release, repoInfo) {
       if (!release || !release.tag_name) return;
 
       const tagName = release.tag_name;
       const releaseUrl = release.html_url || `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/tag/${tagName}`;
 
-      // Find standard nivio.apk asset, strictly prioritizing non-universal build
+      // Find assets: standard nivio.apk, universal.apk, windows exe, linux appimage
       let apkUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${tagName}/nivio.apk`;
+      let universalApkUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${tagName}/universal.apk`;
+      let windowsUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
+      let linuxUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
+
       if (Array.isArray(release.assets) && release.assets.length > 0) {
         const exactApk = release.assets.find(a => a.name && a.name.toLowerCase() === 'nivio.apk');
         const nonUniversalApk = release.assets.find(a => a.name && a.name.toLowerCase().endsWith('.apk') && !a.name.toLowerCase().includes('universal'));
@@ -3451,6 +4202,21 @@
         if (chosenAsset && chosenAsset.browser_download_url) {
           apkUrl = chosenAsset.browser_download_url;
         }
+
+        const universalAsset = release.assets.find(a => a.name && a.name.toLowerCase().endsWith('.apk') && a.name.toLowerCase().includes('universal'));
+        if (universalAsset && universalAsset.browser_download_url) {
+          universalApkUrl = universalAsset.browser_download_url;
+        }
+
+        const winAsset = release.assets.find(a => a.name && a.name.toLowerCase().endsWith('.exe'));
+        if (winAsset && winAsset.browser_download_url) {
+          windowsUrl = winAsset.browser_download_url;
+        }
+
+        const linuxAsset = release.assets.find(a => a.name && a.name.toLowerCase().endsWith('.appimage'));
+        if (linuxAsset && linuxAsset.browser_download_url) {
+          linuxUrl = linuxAsset.browser_download_url;
+        }
       }
 
       // 1. Update all version tags across the page
@@ -3458,12 +4224,29 @@
         el.textContent = tagName;
       });
 
-      // 2. Update all APK download links across the page
+      // 2. Update all download links across the page
       document.querySelectorAll('[data-apk-download]').forEach(el => {
         el.href = apkUrl;
       });
+      document.querySelectorAll('[data-universal-apk-download]').forEach(el => {
+        el.href = universalApkUrl;
+      });
+      document.querySelectorAll('[data-windows-download]').forEach(el => {
+        el.href = windowsUrl;
+      });
+      document.querySelectorAll('[data-linux-download]').forEach(el => {
+        el.href = linuxUrl;
+      });
 
-      // 3. Update download labels
+      // 3. Update dynamic primary CTA and detected platform badge with fresh live URLs
+      updatePlatformUi({
+        apk: apkUrl,
+        universal: universalApkUrl,
+        windows: windowsUrl,
+        linux: linuxUrl
+      });
+
+      // 4. Update download labels
       document.querySelectorAll('[data-apk-label]').forEach(el => {
         if (el.closest('.rel-dl-btn')) {
           el.textContent = `Download ${tagName} APK`;
@@ -3472,7 +4255,7 @@
         }
       });
 
-      // 4. Update release notes links
+      // 5. Update release notes links
       document.querySelectorAll('[data-release-notes-link]').forEach(el => {
         el.href = releaseUrl;
       });
@@ -3561,6 +4344,263 @@
         // Silently maintain static fallback
       });
     }
+
+    // ==========================================================================
+    // NIVIO KINETIC APP PRELOADER
+    // Exact 1:1 reproduction of the Flutter AppPreloaderScreen
+    // ==========================================================================
+    let audioCtx = null;
+    function getAudioContext() {
+      if (!audioCtx) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) audioCtx = new AudioCtx();
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(() => {});
+      }
+      return audioCtx;
+    }
+
+    function playPreloaderSfx(type) {
+      try {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        if (type === 'whoosh') {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(110, now);
+          osc.frequency.exponentialRampToValueAtTime(320, now + 0.32);
+          gain.gain.setValueAtTime(0.001, now);
+          gain.gain.linearRampToValueAtTime(0.08, now + 0.12);
+          gain.gain.linearRampToValueAtTime(0.001, now + 0.35);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.36);
+        } else if (type === 'impact') {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(160, now);
+          osc.frequency.exponentialRampToValueAtTime(38, now + 0.32);
+          gain.gain.setValueAtTime(0.18, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.36);
+        }
+      } catch (_) {}
+    }
+
+    function createPreloaderSparks() {
+      const container = document.getElementById('preloaderSparksContainer');
+      if (!container) return;
+      container.innerHTML = '';
+      const sparkCount = 18; // Exact count from Flutter AppPreloaderScreen
+      for (let i = 0; i < sparkCount; i++) {
+        const spark = document.createElement('div');
+        const isOrange = i % 2 === 0;
+        const color = isOrange ? '#F98F05' : '#F80201';
+        const coreColor = isOrange ? '#FFAE33' : '#FF4D66';
+        const size = Math.random() * 3.2 + 2.0;
+
+        spark.style.position = 'absolute';
+        spark.style.top = '0px';
+        spark.style.left = '0px';
+        spark.style.width = size + 'px';
+        spark.style.height = size + 'px';
+        spark.style.backgroundColor = coreColor;
+        spark.style.borderRadius = '50%';
+        spark.style.boxShadow = `0 0 6px ${coreColor}, 0 0 14px ${color}, 0 0 22px ${color}`;
+        spark.style.pointerEvents = 'none';
+
+        // 360-degree organic distribution with jitter matching Flutter
+        const baseAngle = (i / sparkCount) * Math.PI * 2;
+        const jitter = (Math.random() * 0.35 - 0.175);
+        const angle = baseAngle + jitter;
+        const distance = 40.0 + Math.random() * 75.0;
+
+        const targetX = Math.cos(angle) * distance;
+        const targetY = Math.sin(angle) * distance;
+
+        container.appendChild(spark);
+
+        const animDuration = Math.random() * 0.18 + 0.38;
+        spark.style.transition = `all ${animDuration}s cubic-bezier(0.12, 0.9, 0.22, 1)`;
+
+        requestAnimationFrame(() => {
+          spark.style.transform = `translate(${targetX}px, ${targetY}px) scale(0.18)`;
+          spark.style.opacity = '0';
+        });
+      }
+    }
+
+    function initNivioPreloader() {
+      const overlay = document.getElementById('nivio-preloader');
+      if (!overlay) return;
+
+      // Prevent any touch, wheel, or trackpad gesture from scrolling document while preloader is active
+      overlay.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
+      overlay.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        overlay.style.display = 'none';
+        overlay.setAttribute('aria-hidden', 'true');
+        document.documentElement.classList.remove('preloader-active');
+        document.body.classList.remove('preloader-active');
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        return;
+      }
+
+      const orange = document.getElementById('preloaderOrangePiece');
+      const red = document.getElementById('preloaderRedPiece');
+      const logoCont = document.getElementById('preloaderLogoContainer');
+      const wordmarkWrap = document.getElementById('preloaderWordmarkWrap');
+      const bgGlow = document.getElementById('preloaderBgGlow');
+      const impactGlow = document.getElementById('preloaderImpactGlow');
+      const shockwave = document.getElementById('preloaderShockwaveWrap');
+      const skipBtn = document.getElementById('preloaderSkipBtn');
+      let hasExited = false;
+
+      function endPreloader() {
+        if (hasExited) return;
+        hasExited = true;
+
+        if (window.location.hash === '#top') {
+          history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        overlay.classList.add('fade-out');
+
+        setTimeout(() => {
+          overlay.style.display = 'none';
+          overlay.setAttribute('aria-hidden', 'true');
+
+          // Release the viewport lock once preloader has fully faded out
+          document.documentElement.classList.remove('preloader-active');
+          document.body.classList.remove('preloader-active');
+
+          window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+          requestAnimationFrame(() => {
+            window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+          });
+        }, 450);
+      }
+
+      if (skipBtn) {
+        skipBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          endPreloader();
+        });
+      }
+      overlay.addEventListener('click', endPreloader);
+
+      // Initial audio whoosh
+      playPreloaderSfx('whoosh');
+
+      // Step 1: Ribbons slide inward (0ms - 680ms)
+      setTimeout(() => {
+        if (hasExited) return;
+        if (orange) {
+          orange.style.transition = 'all 620ms cubic-bezier(0.16, 0.95, 0.3, 1.22)';
+          orange.style.transform = 'translate(0px, 0px) rotate(0deg) scale(1)';
+          orange.style.opacity = '1';
+          orange.style.filter = 'blur(0px)';
+        }
+        if (red) {
+          red.style.transition = 'all 620ms cubic-bezier(0.16, 0.95, 0.3, 1.22)';
+          red.style.transform = 'translate(0px, 0px) rotate(0deg) scale(1)';
+          red.style.opacity = '1';
+          red.style.filter = 'blur(0px)';
+        }
+      }, 60);
+
+      // Step 2: Impact snap at ~680ms (Wave burst + sparks + bloom)
+      setTimeout(() => {
+        if (hasExited) return;
+        playPreloaderSfx('impact');
+
+        if (bgGlow) bgGlow.style.opacity = '1';
+
+        if (impactGlow) {
+          impactGlow.style.transition = 'opacity 220ms ease-out';
+          impactGlow.style.opacity = '1';
+          setTimeout(() => {
+            if (impactGlow) impactGlow.style.opacity = '0';
+          }, 260);
+        }
+
+        if (shockwave) shockwave.classList.add('svg-wave-active');
+
+        createPreloaderSparks();
+
+        setTimeout(() => {
+          if (logoCont && !hasExited) logoCont.classList.add('preloader-breathing');
+        }, 280);
+      }, 680);
+
+      // Step 3: Official Nivio Wordmark elevation (920ms - 1300ms)
+      setTimeout(() => {
+        if (hasExited) return;
+        if (wordmarkWrap) {
+          wordmarkWrap.style.opacity = '1';
+          wordmarkWrap.style.transform = 'translateY(0px)';
+        }
+      }, 920);
+
+      // Step 4: Camera zoom-through exit transition (1520ms - 1850ms)
+      setTimeout(() => {
+        if (hasExited) return;
+        if (logoCont) {
+          logoCont.classList.add('zoom-exit');
+        }
+        if (wordmarkWrap) {
+          wordmarkWrap.style.transition = 'opacity 300ms ease-out, transform 300ms ease-out';
+          wordmarkWrap.style.opacity = '0';
+          wordmarkWrap.style.transform = 'translateY(16px)';
+        }
+        setTimeout(endPreloader, 340);
+      }, 1520);
+    }
+
+    // ==========================================================================
+    // HERO BANNER PLATFORM SHOWCASE (Desktop vs Mobile)
+    // Directly locks to the visitor's detected platform (no other versions shown)
+    // ==========================================================================
+    function initHeroDeviceShowcase() {
+      const stage = document.getElementById('heroStage');
+      if (!stage) return;
+
+      // Mobile OS always shows Mobile Showcase (3-Phone Cluster)
+      if (detectedOS === 'android' || detectedOS === 'ios') {
+        stage.setAttribute('data-view', 'mobile');
+        return;
+      }
+
+      // Desktop OS shows Desktop Showcase
+      if (detectedOS === 'windows' || detectedOS === 'linux' || detectedOS === 'mac') {
+        stage.setAttribute('data-view', 'desktop');
+        return;
+      }
+
+      // Fallback based on viewport
+      stage.setAttribute('data-view', window.innerWidth > 900 ? 'desktop' : 'mobile');
+    }
+
+    // Disable automatic browser scroll restoration on refresh so page always starts cleanly at top
+    if ('scrollRestoration' in history) {
+      history.scrollRestoration = 'manual';
+    }
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+
+    // Start preloader immediately
+    initNivioPreloader();
+    // Initialize device showcase
+    initHeroDeviceShowcase();
   })();
 </script>
 </body>

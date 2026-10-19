@@ -2,8 +2,8 @@ import 'package:rqbit_ffi/rqbit_ffi.dart';
 
 import 'anitomy.dart';
 
-/// Picks which file inside a torrent to stream for a target episode, mirroring
-/// Hayase's `resolveFilesPoorly`: keep video files, parse each, drop OP/ED/PV
+/// Picks which file inside a torrent to stream for a target episode:
+/// keep video files, parse each, drop OP/ED/PV
 /// specials, match the episode (season/absolute aware), with sensible fallbacks.
 class TorrentFileResolver {
   /// Returns the [TorrentFileInfo] to stream, or null if none.

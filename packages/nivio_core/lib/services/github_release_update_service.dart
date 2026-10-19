@@ -1,6 +1,9 @@
+import 'dart:io';
+import 'dart:ffi';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 enum GitHubReleaseUpdateStatus {
@@ -39,7 +42,6 @@ class GitHubReleaseUpdateService {
       'https://github.com/$repoOwner/$repoName/releases/latest';
   static const String _latestReleaseApiUrl =
       'https://api.github.com/repos/$repoOwner/$repoName/releases/latest';
-  static const String _apkAssetFileName = 'nivio.apk';
 
   static final Dio _dio = Dio(
     BaseOptions(
@@ -90,7 +92,7 @@ class GitHubReleaseUpdateService {
           ? data['tag_name'].toString().trim()
           : (data['name']?.toString().trim() ?? '');
       final latest = _normalizeVersion(latestRaw);
-      final releaseUrl = _resolveInstallUrl(data);
+      final releaseUrl = await _resolveInstallUrl(data);
 
       if (latest.isEmpty) {
         return _cache(
@@ -177,28 +179,205 @@ class GitHubReleaseUpdateService {
     return result;
   }
 
-  static String _resolveInstallUrl(Map<String, dynamic> releaseData) {
+  static Future<String> _resolveInstallUrl(Map<String, dynamic> releaseData) async {
     final fallbackWebUrl =
         (releaseData['html_url']?.toString().trim().isNotEmpty ?? false)
         ? releaseData['html_url'].toString().trim()
         : latestReleaseWebUrl;
 
-    final assets = releaseData['assets'];
-    if (assets is List) {
-      for (final item in assets) {
-        if (item is! Map) continue;
-        final asset = Map<String, dynamic>.from(item);
-        final name = asset['name']?.toString().trim().toLowerCase() ?? '';
-        if (name != _apkAssetFileName) continue;
-        final downloadUrl =
-            asset['browser_download_url']?.toString().trim() ?? '';
-        if (downloadUrl.isNotEmpty) {
-          return downloadUrl;
-        }
+    final rawAssets = releaseData['assets'];
+    if (rawAssets is! List || rawAssets.isEmpty) {
+      return fallbackWebUrl;
+    }
+
+    final assets = rawAssets
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
+
+    // 1. WINDOWS DESKTOP:
+    if (!kIsWeb && Platform.isWindows) {
+      final setupExe = assets.firstWhere(
+        (a) {
+          final name = a['name']?.toString().trim().toLowerCase() ?? '';
+          return (name.startsWith('nivio-setup') || name.contains('setup')) && name.endsWith('.exe');
+        },
+        orElse: () => assets.firstWhere(
+          (a) {
+            final name = a['name']?.toString().trim().toLowerCase() ?? '';
+            return name.endsWith('.exe');
+          },
+          orElse: () => <String, dynamic>{},
+        ),
+      );
+      final url = setupExe['browser_download_url']?.toString().trim() ?? '';
+      if (url.isNotEmpty) return url;
+      return fallbackWebUrl;
+    }
+
+    // 2. LINUX DESKTOP:
+    if (!kIsWeb && Platform.isLinux) {
+      final appImage = assets.firstWhere(
+        (a) {
+          final name = a['name']?.toString().trim().toLowerCase() ?? '';
+          return name.startsWith('nivio-linux') && name.endsWith('.appimage');
+        },
+        orElse: () => assets.firstWhere(
+          (a) {
+            final name = a['name']?.toString().trim().toLowerCase() ?? '';
+            return name.endsWith('.appimage');
+          },
+          orElse: () => <String, dynamic>{},
+        ),
+      );
+      final url = appImage['browser_download_url']?.toString().trim() ?? '';
+      if (url.isNotEmpty) return url;
+      return fallbackWebUrl;
+    }
+
+    // 3. MACOS DESKTOP:
+    if (!kIsWeb && Platform.isMacOS) {
+      final macAsset = assets.firstWhere(
+        (a) {
+          final name = a['name']?.toString().trim().toLowerCase() ?? '';
+          return name.endsWith('.dmg') || name.endsWith('.pkg');
+        },
+        orElse: () => <String, dynamic>{},
+      );
+      final url = macAsset['browser_download_url']?.toString().trim() ?? '';
+      if (url.isNotEmpty) return url;
+      return fallbackWebUrl;
+    }
+
+    // 4. ANDROID (MOBILE):
+    if (!kIsWeb && Platform.isAndroid) {
+      final flavor = await detectAndroidApkFlavor();
+
+      if (flavor == 'universal') {
+        // User has universal.apk installed -> prioritize universal.apk assets
+        final universalApk = assets.firstWhere(
+          (a) {
+            final name = a['name']?.toString().trim().toLowerCase() ?? '';
+            return name.endsWith('.apk') && name.contains('universal');
+          },
+          orElse: () => <String, dynamic>{},
+        );
+        final url = universalApk['browser_download_url']?.toString().trim() ?? '';
+        if (url.isNotEmpty) return url;
+      } else {
+        // User has standard / nivio.apk installed -> prioritize nivio.apk assets
+        final standardApk = assets.firstWhere(
+          (a) {
+            final name = a['name']?.toString().trim().toLowerCase() ?? '';
+            return (name == 'nivio.apk' || (name.startsWith('nivio') && name.endsWith('.apk'))) &&
+                !name.contains('universal') &&
+                !name.contains('armeabi') &&
+                !name.contains('x86');
+          },
+          orElse: () => <String, dynamic>{},
+        );
+        final url = standardApk['browser_download_url']?.toString().trim() ?? '';
+        if (url.isNotEmpty) return url;
       }
+
+      // Android Fallback: if preferred flavor wasn't found, try any non-universal then universal
+      final anyApk = assets.firstWhere(
+        (a) {
+          final name = a['name']?.toString().trim().toLowerCase() ?? '';
+          return name.endsWith('.apk') && !name.contains('universal');
+        },
+        orElse: () => assets.firstWhere(
+          (a) {
+            final name = a['name']?.toString().trim().toLowerCase() ?? '';
+            return name.endsWith('.apk');
+          },
+          orElse: () => <String, dynamic>{},
+        ),
+      );
+      final fallbackApkUrl = anyApk['browser_download_url']?.toString().trim() ?? '';
+      if (fallbackApkUrl.isNotEmpty) return fallbackApkUrl;
     }
 
     return fallbackWebUrl;
+  }
+
+  /// Detects whether the user is running universal.apk or standard nivio.apk
+  static Future<String> detectAndroidApkFlavor() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString('preferred_apk_flavor');
+      if (saved == 'universal' || saved == 'standard') {
+        return saved!;
+      }
+
+      if (!kIsWeb && Platform.isAndroid) {
+        // On 32-bit ARM (armeabi-v7a) or x86 Android, arm64-only nivio.apk cannot run.
+        // Therefore this device must run universal APK.
+        try {
+          final abi = Abi.current();
+          if (abi != Abi.androidArm64) {
+            await prefs.setString('preferred_apk_flavor', 'universal');
+            return 'universal';
+          }
+        } catch (_) {}
+
+        // Inspect running APK's central directory via /proc/self/maps
+        final apkFlavor = await _inspectInstalledApkCentralDirectory();
+        if (apkFlavor != null) {
+          await prefs.setString('preferred_apk_flavor', apkFlavor);
+          return apkFlavor;
+        }
+      }
+    } catch (e) {
+      debugPrint('[GitHubUpdate] Flavor detection error: $e');
+    }
+    return 'standard';
+  }
+
+  /// Allows user to manually switch/set their preferred APK flavor
+  static Future<void> setAndroidApkFlavorPreference(String flavor) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('preferred_apk_flavor', flavor);
+    } catch (_) {}
+  }
+
+  /// Lightweight inspection of installed base.apk on Android:
+  /// Reads only the trailing Central Directory (last 128KB) to see if both
+  /// lib/armeabi-v7a and lib/arm64-v8a folders exist (universal), or only arm64-v8a (standard).
+  static Future<String?> _inspectInstalledApkCentralDirectory() async {
+    try {
+      final mapsFile = File('/proc/self/maps');
+      if (!mapsFile.existsSync()) return null;
+      final lines = await mapsFile.readAsLines();
+      for (final line in lines) {
+        if (!line.contains('.apk')) continue;
+        final match = RegExp(r'(/data/app/[^\s]+\.apk)').firstMatch(line);
+        if (match != null) {
+          final apkPath = match.group(1);
+          if (apkPath != null) {
+            final apkFile = File(apkPath);
+            if (apkFile.existsSync()) {
+              final raf = await apkFile.open();
+              final len = await raf.length();
+              final readSize = len < 131072 ? len : 131072;
+              await raf.setPosition(len - readSize);
+              final tailBytes = await raf.read(readSize);
+              await raf.close();
+              final tailStr = String.fromCharCodes(tailBytes);
+              final hasArmeabi = tailStr.contains('lib/armeabi-v7a');
+              final hasArm64 = tailStr.contains('lib/arm64-v8a');
+              if (hasArmeabi && hasArm64) {
+                return 'universal';
+              } else if (hasArm64) {
+                return 'standard';
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   static String _normalizeVersion(String raw) {

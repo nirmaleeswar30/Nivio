@@ -8,7 +8,7 @@
 library;
 
 /// Non-episode special types that should be excluded when resolving the
-/// episode to play (mirrors Hayase's TYPE_EXCLUSIONS).
+/// episode to play (mirrors standard TYPE_EXCLUSIONS).
 const Set<String> kSpecialTypes = {
   'ED', 'ENDING', 'NCED', 'NCOP', 'OP', 'OPENING', 'PREVIEW', 'PV', 'NCE',
 };
