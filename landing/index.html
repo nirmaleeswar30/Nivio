@@ -57,10 +57,12 @@
   /* nav */
   header{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;
     background:transparent;border-bottom:1px solid transparent;
-    transition:background .35s ease,backdrop-filter .35s ease,border-color .35s ease}
+    transition:background .35s ease,backdrop-filter .35s ease,border-color .35s ease,transform .32s cubic-bezier(.16,1,.3,1);
+    will-change:transform}
   header.scrolled{backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4);
-    background:linear-gradient(180deg,rgba(12,9,6,.66),rgba(12,9,6,.34));
+    background:linear-gradient(180deg,rgba(12,9,6,.75),rgba(12,9,6,.4));
     border-bottom:1px solid var(--line)}
+  header.nav-hidden{transform:translateY(-100%)}
   nav{display:flex;align-items:center;justify-content:space-between;height:70px}
   .brand{display:flex;align-items:center;gap:10px;font-family:var(--font-d);font-weight:700;font-size:19px;letter-spacing:-.01em}
   .brand-mark{width:38px;height:38px;display:block;transition:transform .2s,filter .2s}
@@ -137,169 +139,1774 @@
   @keyframes scroll{to{transform:translateX(-50%)}}
 
   /* features */
-  .feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
-  .card{background:linear-gradient(180deg,var(--surface),var(--bg-2));border:1px solid var(--line);
-    border-radius:var(--r);padding:18px;transition:transform .2s,border-color .2s,background .2s;position:relative;overflow:hidden;display:flex;flex-direction:column}
-  .card:hover{transform:translateY(-4px);border-color:var(--line-strong);background:linear-gradient(180deg,var(--surface-2),var(--bg-2))}
-  .card h3{font-size:18px;font-weight:600;margin:0 4px 8px}
-  .card p{color:var(--muted);font-size:14px;margin:0 4px}
-  .card.wide{grid-column:span 2}
-  @media(max-width:860px){.feat-grid{grid-template-columns:repeat(2,1fr)}.card.wide{grid-column:span 2}}
-  @media(max-width:560px){.feat-grid{grid-template-columns:1fr}.card.wide{grid-column:span 1}}
+  .feat-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:18px}
+  .card{
+    grid-column:span 3;
+    background:linear-gradient(180deg,var(--surface),var(--bg-2));
+    border:1px solid var(--line);
+    border-radius:var(--r);
+    padding:20px;
+    position:relative;
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+    cursor:pointer;
+    will-change:transform;
+    transition:transform .38s cubic-bezier(0.16, 1, 0.3, 1),
+               border-color .3s ease,
+               background .3s ease,
+               box-shadow .38s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .card::before{
+    content:"";position:absolute;top:0;left:0;right:0;height:1px;
+    background:linear-gradient(90deg,transparent,rgba(255,138,60,.55),transparent);
+    opacity:0;transition:opacity .35s ease;pointer-events:none;z-index:2;
+  }
+  .card:hover{
+    transform:translateY(-8px);
+    border-color:rgba(255,138,60,.45);
+    background:linear-gradient(180deg,rgba(255,255,255,.07),var(--bg-2));
+    box-shadow:0 24px 60px -15px rgba(0,0,0,.85), 0 0 35px -8px rgba(229,35,26,.24);
+  }
+  .card:hover::before{
+    opacity:1;
+  }
+  .card:active{
+    transform:translateY(-3px);
+    transition-duration:.12s;
+  }
+  .card.card-fit{grid-column:span 4}
+  .card.card-half{grid-column:span 6}
+  .card.card-featured{grid-column:span 8;padding:24px}
+  .card.card-featured h3{font-size:21px}
+  .card.card-featured p{font-size:15px;line-height:1.6}
+  .card.card-featured .demo,
+  .card.card-fit .demo{height:180px}
+  .card.card-half .demo{height:148px}
+  .card h3{
+    font-size:18px;font-weight:600;margin:0 4px 8px;
+    transition:color .25s ease, text-shadow .25s ease;
+  }
+  .card:hover h3{
+    color:#fff;
+    text-shadow:0 0 20px rgba(255,138,60,.28);
+  }
+  .card p{
+    color:var(--muted);font-size:14px;margin:0 4px;line-height:1.55;
+    transition:color .25s ease;
+  }
+  .card:hover p{
+    color:#d8cdc4;
+  }
+  @media(max-width:1040px){
+    .feat-grid{grid-template-columns:repeat(2,1fr)}
+    .card{grid-column:span 1}
+    .card.card-fit{grid-column:span 1}
+    .card.card-half{grid-column:span 1}
+    .card.card-featured{grid-column:span 2}
+  }
+  @media(max-width:680px){
+    .feat-grid{grid-template-columns:1fr}
+    .card,.card.card-fit,.card.card-half,.card.card-featured{grid-column:span 1;padding:18px}
+    .card.card-featured .demo,
+    .card.card-fit .demo,
+    .card.card-half .demo{height:152px}
+    .card.card-featured h3{font-size:18px}
+    .dv-poster{width:82px;height:122px;border-radius:8px}
+  }
 
   /* feature micro-demos — animated showcase per card */
-  .demo{position:relative;height:132px;border-radius:14px;margin-bottom:16px;overflow:hidden;
+  .demo{
+    position:relative;height:132px;border-radius:14px;margin-bottom:16px;overflow:hidden;
     background:radial-gradient(120% 130% at 22% -10%,rgba(229,35,26,.15),transparent 55%),linear-gradient(160deg,#1e1610,#0e0a07);
-    border:1px solid var(--line)}
-  .card:hover .demo{border-color:var(--line-strong)}
+    border:1px solid var(--line);
+    transition:border-color .3s ease, box-shadow .35s ease, transform .35s ease;
+  }
+  .card:hover .demo{
+    border-color:rgba(255,138,60,.38);
+    box-shadow:0 10px 28px -6px rgba(0,0,0,.55), 0 0 20px -5px rgba(229,35,26,.18);
+  }
 
-  /* 1 · player */
-  .demo-player{display:grid;place-items:center;padding:0 26px}
-  .pl-bar{display:flex;align-items:center;gap:14px;width:100%;max-width:440px}
-  .pl-play{width:34px;height:34px;flex:none;border-radius:50%;display:grid;place-items:center;color:#1a0e00;background:var(--grad);box-shadow:0 6px 16px rgba(229,35,26,.4)}
-  .pl-play svg{width:14px;height:14px;fill:#1a0e00}
-  .pl-track{position:relative;flex:1;height:6px;border-radius:99px;background:rgba(255,255,255,.13)}
-  .pl-fill{position:absolute;top:0;bottom:0;left:0;width:40%;border-radius:99px;background:var(--grad);animation:plfill 6s ease-in-out infinite}
-  .pl-knob{position:absolute;top:50%;left:40%;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.55);transform:translate(-50%,-50%);animation:plknob 6s ease-in-out infinite}
-  .pl-speed{font-family:var(--font-d);font-size:12px;font-weight:700;color:var(--amber);flex:none}
-  @keyframes plfill{0%{width:8%}50%{width:92%}100%{width:8%}}
-  @keyframes plknob{0%{left:8%}50%{left:92%}100%{left:8%}}
-  .pl-eq{position:absolute;top:16px;left:26px;display:flex;gap:3px;align-items:flex-end;height:20px}
-  .pl-eq i{width:3px;height:8px;border-radius:2px;background:var(--amber);animation:eq 1s ease-in-out infinite}
-  .pl-eq i:nth-child(2){animation-delay:.2s}.pl-eq i:nth-child(3){animation-delay:.45s}.pl-eq i:nth-child(4){animation-delay:.15s}.pl-eq i:nth-child(5){animation-delay:.35s}
-  @keyframes eq{0%,100%{height:6px}50%{height:20px}}
+  /* ===============================
+     THE NATIVE PLAYER SHOWCASE (DEDICATED SECTION)
+     =============================== */
+  .player-section{padding-top:72px;padding-bottom:56px}
+  .player-section .sec-head{text-align:center;margin-left:auto;margin-right:auto;max-width:860px;margin-bottom:34px}
+  .player-overview-section{
+    position:relative;
+    padding:40px 0 0;
+  }
+  .player-intro-wrap{
+    padding-top:20px;
+    padding-bottom:32px;
+  }
+  .player-intro-wrap .sec-head{
+    max-width:820px;
+  }
+  .player-intro-wrap .sec-head .eyebrow{display:inline-block}
+  .player-intro-wrap .sec-head h2{margin-top:12px}
+  .player-intro-wrap .sec-head p{font-size:17.5px;line-height:1.65;margin-top:18px;color:var(--muted)}
 
-  /* 2 · discover (sliding posters) */
-  .dv-row{position:absolute;top:50%;left:0;transform:translateY(-50%);display:flex;gap:10px;padding-left:16px;width:max-content;animation:dvslide 13s linear infinite}
-  .dv-row i{width:60px;height:86px;border-radius:9px;flex:none;box-shadow:0 8px 16px rgba(0,0,0,.45);position:relative;overflow:hidden}
-  .dv-row i::after{content:"";position:absolute;left:0;right:0;bottom:0;height:26px;background:linear-gradient(transparent,rgba(0,0,0,.55))}
-  .dv-row i:nth-child(4n+1){background:linear-gradient(155deg,#e5231a,#6d0f0a)}
-  .dv-row i:nth-child(4n+2){background:linear-gradient(155deg,#ff8a3c,#8a3a05)}
-  .dv-row i:nth-child(4n+3){background:linear-gradient(155deg,#3b5bdb,#141d4a)}
-  .dv-row i:nth-child(4n+4){background:linear-gradient(155deg,#2f9e6f,#0e3a29)}
-  @keyframes dvslide{to{transform:translate(calc(-50% - 5px),-50%)}}
+  /* Player Mode Tabs (Clean segmented control like the platform switcher) */
+  .player-tabs-bar{
+    display:flex;
+    justify-content:flex-start;
+    margin-top:28px;
+  }
+  .player-tabs-toggle{
+    display:inline-flex;
+    align-items:center;
+    background:rgba(255,255,255,.05);
+    border:1px solid rgba(255,255,255,.13);
+    border-radius:999px;
+    padding:4px;
+    gap:4px;
+    box-shadow:0 8px 24px rgba(0,0,0,.45);
+  }
+  .player-tab-btn{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    padding:9px 24px;
+    border-radius:999px;
+    border:1px solid transparent;
+    background:transparent;
+    color:var(--muted);
+    font-family:var(--font-d);
+    font-size:14px;
+    font-weight:700;
+    cursor:pointer;
+    transition:all .22s cubic-bezier(0.16,1,0.3,1);
+  }
+  .player-tab-btn:hover{
+    color:#fff;
+    background:rgba(255,255,255,.06);
+  }
+  .player-tab-btn svg{width:16px;height:16px;color:currentColor}
+  .player-tab-btn.active{
+    background:linear-gradient(135deg,rgba(255,138,60,.22),rgba(229,35,26,.32));
+    border-color:rgba(255,138,60,.45);
+    color:#fff;
+    box-shadow:0 4px 18px rgba(229,35,26,.35),inset 0 1px 0 rgba(255,255,255,.2);
+  }
 
-  /* 3 · anime quality selector */
-  .demo-anime{display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center}
-  .an-star{font-family:var(--font-d);font-size:13px;color:var(--muted)}
-  .an-star b{color:var(--amber)}.an-star em{color:var(--muted-dim);font-style:normal}
-  .an-q{position:relative;display:flex;background:rgba(255,255,255,.06);border-radius:10px;padding:4px}
-  .an-q span{width:58px;text-align:center;padding:6px 0;font-size:11.5px;font-family:var(--font-d);font-weight:600;color:var(--ink);z-index:1}
-  .an-q em{position:absolute;top:4px;left:4px;width:58px;height:calc(100% - 8px);border-radius:7px;background:var(--grad);box-shadow:0 4px 12px rgba(229,35,26,.4);animation:anq 4.8s cubic-bezier(.6,0,.25,1) infinite}
-  @keyframes anq{0%,14%{transform:translateX(0)}33%,47%{transform:translateX(58px)}66%,80%{transform:translateX(116px)}100%{transform:translateX(0)}}
+  /* Pinned Player Showcase Track */
+  .player-scroll-track{
+    position:relative;
+    height:200vh;
+  }
+  .player-sticky-stage{
+    position:sticky;
+    top:0;
+    height:100vh;
+    max-height:100vh;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    overflow:hidden;
+    background:radial-gradient(ellipse 85% 65% at 50% 50%, rgba(229,35,26,.08), transparent 75%);
+  }
+
+  /* Side Navigation Arrows */
+  .player-arrow{
+    position:absolute;
+    top:50%;
+    transform:translateY(-50%);
+    width:50px;
+    height:50px;
+    border-radius:50%;
+    background:rgba(24,18,14,.82);
+    backdrop-filter:blur(18px);
+    -webkit-backdrop-filter:blur(18px);
+    border:1px solid rgba(255,255,255,.14);
+    color:var(--ink);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    z-index:25;
+    box-shadow:0 10px 28px rgba(0,0,0,.65);
+    transition:all .22s cubic-bezier(0.16,1,0.3,1);
+  }
+  .player-arrow:hover{
+    background:rgba(36,26,19,.95);
+    border-color:rgba(255,138,60,.55);
+    transform:translateY(-50%) scale(1.08);
+    box-shadow:0 14px 32px rgba(0,0,0,.75),0 0 24px rgba(229,35,26,.35);
+    color:#fff;
+  }
+  .player-arrow:active{
+    transform:translateY(-50%) scale(0.95);
+  }
+  .player-arrow.disabled,
+  .player-arrow:disabled{
+    opacity:0.22;
+    cursor:not-allowed;
+    pointer-events:none;
+  }
+  .player-arrow svg{
+    width:22px;
+    height:22px;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+  }
+  .player-arrow-prev{left:clamp(16px, 2.5vw, 36px)}
+  .player-arrow-next{right:clamp(16px, 2.5vw, 36px)}
+
+  /* Viewport and sliding track */
+  .player-viewport{
+    width:100%;
+    overflow:hidden;
+    padding-block:55px 70px;
+    display:flex;
+    align-items:center;
+    -webkit-mask:linear-gradient(90deg,transparent,#000 2%,#000 98%,transparent);
+    mask:linear-gradient(90deg,transparent,#000 2%,#000 98%,transparent);
+    cursor:grab;
+  }
+  .player-viewport.is-dragging{
+    cursor:grabbing;
+    user-select:none;
+  }
+  .player-slider-track{
+    display:flex;
+    align-items:center;
+    gap:34px;
+    width:max-content;
+    will-change:transform;
+    transition:transform .14s cubic-bezier(0,0,0.2,1);
+  }
+
+  /* Player Card */
+  .player-card{
+    flex:0 0 auto;
+    width:min(86vw, 1380px, calc((100vh - 210px) * (1024 / 469)));
+    min-width:520px;
+    margin:0;
+    border-radius:22px;
+    padding:0;
+    overflow:hidden;
+    background:linear-gradient(165deg,#1c140e,#0e0906);
+    border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 24px 60px -12px rgba(0,0,0,.85);
+    transform:scale(0.88);
+    opacity:0.42;
+    filter:brightness(0.68) saturate(0.85);
+    transform-origin:center center;
+    transition:transform .45s cubic-bezier(0.16,1,0.3,1),opacity .4s ease,filter .4s ease,border-color .35s ease,box-shadow .45s ease,background .35s ease;
+    cursor:pointer;
+    display:flex;
+    flex-direction:column;
+    box-sizing:border-box;
+  }
+  .player-card:hover{
+    opacity:0.85;
+    filter:brightness(0.9);
+    transform:scale(0.92);
+    border-color:rgba(255,255,255,.24);
+    box-shadow:0 26px 60px -12px rgba(0,0,0,.85),0 12px 30px -6px rgba(229,35,26,.2);
+  }
+  .player-card.focused{
+    transform:scale(1.05);
+    opacity:1;
+    filter:none;
+    border-color:rgba(255,138,60,.4);
+    box-shadow:0 36px 85px -12px rgba(0,0,0,.92),0 16px 45px -8px rgba(229,35,26,.26);
+    background:radial-gradient(450px circle at 50% 0%,rgba(229,35,26,.1),transparent 75%),#18120d;
+    z-index:10;
+  }
+  .player-card.focused:hover{
+    transform:scale(1.06);
+    border-color:rgba(255,138,60,.55);
+    box-shadow:0 40px 90px -12px rgba(0,0,0,.95),0 18px 48px -8px rgba(229,35,26,.3);
+  }
+  .player-card-frame{
+    width:100%;
+    aspect-ratio:1024 / 469;
+    overflow:hidden;
+    background:#080504;
+    position:relative;
+    flex:none;
+  }
+  .player-card-frame img{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    object-position:center;
+    display:block;
+    transition:transform .4s ease;
+  }
+  .player-card:hover .player-card-frame img{transform:scale(1.02)}
+  .player-card.focused .player-card-frame img{transform:scale(1.01)}
+  .player-card figcaption{
+    padding:14px 20px 14px;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    text-align:center;
+  }
+  .player-card figcaption b{
+    font-family:var(--font-d);
+    font-size:16px;
+    font-weight:700;
+    color:var(--muted);
+    letter-spacing:-.01em;
+    transition:color .3s ease,font-size .3s ease;
+  }
+  .player-card.focused figcaption b{
+    font-size:18px;
+    color:var(--ink);
+  }
+
+  /* Floating stage HUD capsule at bottom */
+  .player-stage-hud{
+    position:absolute;
+    bottom:24px;
+    left:50%;
+    transform:translateX(-50%);
+    width:auto;
+    max-width:540px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:18px;
+    z-index:20;
+    padding:8px 18px;
+    border-radius:999px;
+    background:rgba(20,15,11,.84);
+    backdrop-filter:blur(18px);
+    -webkit-backdrop-filter:blur(18px);
+    border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 12px 30px rgba(0,0,0,.65);
+  }
+  .player-counter{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    font-family:var(--font-d);
+    font-size:12.5px;
+    font-weight:700;
+    color:var(--ink);
+    white-space:nowrap;
+    flex:none;
+  }
+  .player-counter .sc-dot{
+    width:7px;
+    height:7px;
+    border-radius:50%;
+    background:var(--amber);
+    box-shadow:0 0 10px rgba(255,74,54,.8);
+  }
+  .player-dots{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex:none;
+  }
+  .player-dot{
+    width:8px;
+    height:8px;
+    border-radius:99px;
+    background:rgba(255,255,255,.22);
+    border:none;
+    padding:0;
+    cursor:pointer;
+    transition:all .25s cubic-bezier(0.16,1,0.3,1);
+  }
+  .player-dot:hover{
+    background:rgba(255,255,255,.55);
+    transform:scale(1.25);
+  }
+  .player-dot.active{
+    width:24px;
+    background:var(--grad);
+    box-shadow:0 0 12px rgba(255,74,54,.7);
+  }
+
+  /* Redesigned 4-column feature pillar grid under theater with generous gap */
+  .player-grid-wrap{position:relative;z-index:4;margin-top:96px}
+  .player-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:0}
+  .p-feat-card{
+    position:relative;
+    background:radial-gradient(160px circle at 18% 0%,rgba(229,35,26,.12),transparent 75%),linear-gradient(165deg,#211812 0%,#110c08 100%);
+    border:1px solid rgba(255,255,255,.09);
+    border-radius:20px;
+    padding:24px 20px;
+    box-shadow:0 18px 45px -15px rgba(0,0,0,.75),inset 0 1px 0 rgba(255,255,255,.08);
+    overflow:hidden;
+    transition:transform .45s cubic-bezier(0.34, 1.56, 0.64, 1),
+               border-color .3s ease,
+               box-shadow .45s cubic-bezier(0.34, 1.56, 0.64, 1),
+               background .3s ease;
+    display:flex;
+    flex-direction:column;
+    cursor:pointer;
+    will-change:transform;
+  }
+  .p-feat-card::before{
+    content:"";
+    position:absolute;
+    top:0;left:0;right:0;height:1px;
+    background:linear-gradient(90deg,transparent,rgba(255,138,60,.5),transparent);
+    opacity:0;
+    transition:opacity .3s ease;
+  }
+  /* Spring pop hover physics */
+  .p-feat-card:hover{
+    transform:translateY(-12px) scale(1.03);
+    border-color:rgba(255,138,60,.55);
+    background:radial-gradient(220px circle at 25% 0%,rgba(229,35,26,.24),transparent 75%),linear-gradient(165deg,#2b1f16 0%,#150e09 100%);
+    box-shadow:0 30px 68px -12px rgba(229,35,26,.42),0 0 0 1px rgba(255,138,60,.28),inset 0 1px 0 rgba(255,255,255,.22);
+  }
+  .p-feat-card:active{
+    transform:translateY(-4px) scale(0.98);
+    transition-duration:.15s;
+  }
+  .p-feat-card:hover::before{
+    opacity:1;
+  }
+  .p-card-top{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:16px;
+  }
+  .p-feat-icon{
+    width:46px;
+    height:46px;
+    border-radius:12px;
+    display:grid;
+    place-items:center;
+    background:linear-gradient(135deg,rgba(229,35,26,.22),rgba(255,138,60,.12));
+    border:1px solid rgba(255,138,60,.3);
+    color:var(--amber);
+    box-shadow:0 6px 16px rgba(0,0,0,.4);
+    transition:transform .5s cubic-bezier(0.34, 1.56, 0.64, 1),background .3s ease,color .3s ease,box-shadow .35s ease;
+    flex:none;
+    will-change:transform;
+  }
+  .p-feat-icon svg{width:22px;height:22px}
+  .p-feat-card:hover .p-feat-icon{
+    transform:scale(1.22) rotate(-8deg);
+    background:var(--grad);
+    color:#1a0e00;
+    box-shadow:0 10px 26px rgba(229,35,26,.6);
+    border-color:transparent;
+  }
+  .p-card-tag{
+    font-family:var(--font-d);
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.04em;
+    padding:4px 9px;
+    border-radius:999px;
+    background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.1);
+    color:var(--muted);
+    transition:color .2s,background .2s,border-color .2s,transform .45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .p-card-tag.highlight{
+    background:rgba(229,35,26,.15);
+    border-color:rgba(229,35,26,.35);
+    color:#ff9e7d;
+  }
+  .p-feat-card:hover .p-card-tag{
+    color:var(--ink);
+    border-color:rgba(255,138,60,.4);
+    transform:scale(1.06);
+  }
+  .p-feat-card h4{
+    font-family:var(--font-d);
+    font-size:17px;
+    font-weight:700;
+    margin:0 0 10px;
+    color:var(--ink);
+    letter-spacing:-.01em;
+    transition:color .2s ease;
+  }
+  .p-feat-card:hover h4{
+    color:#fff;
+  }
+  .p-feat-card p{
+    color:var(--muted);
+    font-size:13.5px;
+    line-height:1.55;
+    margin:0;
+    flex:1;
+  }
+
+  @media(max-width:960px){
+    .player-grid{grid-template-columns:repeat(2,1fr);gap:14px}
+    .player-grid-wrap{margin-top:72px}
+  }
+  @media(max-height:860px){
+    .player-card{width:min(86vw, 1180px, calc((100vh - 180px) * (1024 / 469)))}
+    .player-viewport{padding-block:30px 55px}
+    .player-stage-hud{bottom:16px}
+  }
+  @media(max-height:740px){
+    .player-card{width:min(86vw, 1020px, calc((100vh - 150px) * (1024 / 469)))}
+    .player-viewport{padding-block:20px 45px}
+    .player-stage-hud{bottom:12px;padding:7px 14px}
+  }
+  @media(max-width:768px){
+    .player-intro-wrap{padding-top:40px;padding-bottom:24px}
+    .player-scroll-track{height:auto}
+    .player-sticky-stage{position:relative;height:auto;max-height:none;padding-top:20px;padding-bottom:30px;background:none}
+    .player-stage-hud{position:relative;bottom:0;left:0;transform:none;width:auto;margin:0 20px 20px;max-width:none}
+    .player-viewport{overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;padding-block:16px;-webkit-mask:none;mask:none;cursor:default}
+    .player-slider-track{padding-left:24px;padding-right:24px;gap:20px;transition:none}
+    .player-card{width:clamp(300px, 88vw, 560px);min-width:0;transform:none!important;opacity:1!important;filter:none!important;scroll-snap-align:center}
+    .player-card.focused{border-color:rgba(255,255,255,.28);box-shadow:0 18px 45px -10px rgba(0,0,0,.8),0 8px 24px -6px rgba(229,35,26,.25)}
+    .player-dots,.player-arrow{display:none}
+    .player-tabs-bar{justify-content:center}
+    .player-tab-btn{padding:8px 18px;font-size:13px}
+    .player-grid-wrap{margin-top:48px}
+    .player-grid{grid-template-columns:1fr;gap:12px}
+    .p-feat-card{padding:18px 16px;border-radius:16px}
+    .p-feat-card h4{font-size:16px;margin-bottom:8px}
+    .p-feat-card p{font-size:13px;margin:0}
+    .p-feat-icon{width:40px;height:40px}
+    .p-feat-icon svg{width:19px;height:19px}
+    .p-card-tag{font-size:10.5px;padding:3px 8px}
+  }
+
+  /* 9 · autoskip demo */
+  .demo-skip{display:flex;align-items:center;justify-content:center;gap:10px}
+  .skip-btn-pill{display:inline-flex;align-items:center;gap:8px;padding:9px 18px;border-radius:999px;
+    background:rgba(229,35,26,.18);border:1px solid rgba(229,35,26,.45);color:var(--amber);
+    font-family:var(--font-d);font-size:12px;font-weight:700;letter-spacing:.05em;
+    animation:skipbtn 2.8s ease-in-out infinite;box-shadow:0 4px 16px rgba(229,35,26,.3);
+    transition:transform .3s cubic-bezier(0.34,1.56,0.64,1),background .25s ease,border-color .25s ease,box-shadow .3s ease;
+  }
+  .skip-btn-pill svg{width:15px;height:15px;fill:currentColor;transition:transform .25s ease}
+  @keyframes skipbtn{0%,100%{transform:scale(1)}50%{transform:scale(1.05);box-shadow:0 6px 22px rgba(229,35,26,.55)}}
+  .card:hover .skip-btn-pill{
+    transform:scale(1.12);
+    background:linear-gradient(135deg,rgba(229,35,26,.32),rgba(255,138,60,.22));
+    border-color:var(--amber);
+    color:#fff;
+    box-shadow:0 10px 30px rgba(229,35,26,.6),0 0 16px rgba(255,138,60,.4);
+  }
+  .card:hover .skip-btn-pill svg{transform:translateX(3px)}
+
+  /* 1 · discover (sliding real posters) */
+  .demo-discover{overflow:hidden;position:relative;
+    -webkit-mask:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent);
+    mask:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent)}
+  .dv-row{position:absolute;top:50%;left:0;transform:translateY(-50%);display:flex;gap:14px;padding-left:14px;width:max-content;animation:dvslide 26s linear infinite;will-change:transform}
+  .card:hover .dv-row{animation-play-state:paused}
+  .dv-poster{
+    width:104px;height:154px;border-radius:11px;flex:none;
+    box-shadow:0 10px 24px rgba(0,0,0,.75);position:relative;overflow:hidden;
+    border:1px solid rgba(255,255,255,.14);background:#18100a;
+    transition:transform .3s cubic-bezier(0.16,1,0.3,1),border-color .25s ease,box-shadow .3s ease;
+  }
+  .card:hover .dv-poster{border-color:rgba(255,255,255,.24);box-shadow:0 14px 30px rgba(0,0,0,.85)}
+  .dv-poster:hover{transform:scale(1.1) translateY(-4px);border-color:var(--amber);box-shadow:0 18px 38px -4px rgba(229,35,26,.5);z-index:5}
+  .dv-poster img{width:100%;height:100%;object-fit:cover;display:block}
+  .dv-poster::after{content:"";position:absolute;left:0;right:0;bottom:0;height:34px;background:linear-gradient(transparent,rgba(0,0,0,.55));pointer-events:none}
+  @keyframes dvslide{to{transform:translate(calc(-50% - 7px),-50%)}}
+
+  /* 2 · providers (multi-source movie & anime chips) */
+  .demo-providers{display:flex;flex-direction:column;justify-content:center;gap:12px;padding:14px 16px;overflow:hidden;position:relative;
+    -webkit-mask:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent);
+    mask:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent)}
+  .pv-tag-row{display:flex;gap:10px;width:max-content;will-change:transform}
+  .pv-row-1{animation:pvslide 22s linear infinite}
+  .pv-row-2{animation:pvslide-rev 24s linear infinite}
+  .card:hover .pv-tag-row{animation-play-state:paused}
+  @keyframes pvslide{to{transform:translateX(calc(-50% - 5px))}}
+  @keyframes pvslide-rev{from{transform:translateX(calc(-50% - 5px))}to{transform:translateX(0)}}
+  .pv-chip{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:7px 14px;border-radius:999px;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+    font-family:var(--font-d);font-size:12.5px;font-weight:600;color:var(--ink);
+    white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.4);
+    transition:background .25s,border-color .25s,transform .25s cubic-bezier(0.34,1.56,0.64,1),box-shadow .25s;
+  }
+  .card:hover .pv-chip{background:rgba(255,255,255,.09);border-color:rgba(255,255,255,.18)}
+  .pv-chip:hover{
+    background:rgba(255,255,255,.18);
+    border-color:var(--amber);
+    box-shadow:0 8px 24px rgba(229,35,26,.38);
+    transform:scale(1.08) translateY(-2px);
+    z-index:4;
+  }
+  .pv-chip b{
+    font-size:10.5px;font-weight:700;letter-spacing:.04em;
+    padding:2px 8px;border-radius:999px;
+    background:rgba(229,35,26,.18);border:1px solid rgba(229,35,26,.35);color:#ff9e7d;
+  }
+  .pv-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+  .pv-dot.online{background:#22c55e;box-shadow:0 0 10px rgba(34,197,94,.8)}
+  .pv-hud-status{
+    display:flex;align-items:center;justify-content:center;gap:16px;
+    margin-top:4px;
+  }
+  .pv-badge{
+    display:inline-flex;align-items:center;gap:6px;
+    font-size:11.5px;font-weight:600;color:var(--muted);
+    font-family:var(--font-d);
+    transition:color .25s ease;
+  }
+  .pv-badge svg{color:var(--amber);width:13px;height:13px;transition:transform .25s ease,filter .25s ease}
+  .card:hover .pv-badge{color:var(--ink)}
+  .card:hover .pv-badge svg{transform:scale(1.18);filter:drop-shadow(0 0 6px rgba(255,138,60,.6))}
 
   /* 4 · download ring */
   .demo-download{display:grid;place-items:center}
-  .dl-wrap{position:relative;width:88px;height:88px}
-  .dl-ring{width:88px;height:88px;transform:rotate(-90deg)}
+  .dl-wrap{
+    position:relative;width:88px;height:88px;border-radius:50%;
+    transition:transform .35s cubic-bezier(0.34,1.56,0.64,1),box-shadow .35s ease;
+  }
+  .dl-wrap::before{
+    content:"";position:absolute;inset:-6px;border-radius:50%;
+    background:radial-gradient(circle,rgba(229,35,26,.32),rgba(255,138,60,.12) 60%,transparent 75%);
+    opacity:0;transition:opacity .35s ease;pointer-events:none;
+  }
+  .card:hover .dl-wrap{
+    transform:scale(1.14);
+    box-shadow:0 0 28px rgba(229,35,26,.45), 0 0 14px rgba(255,138,60,.35);
+  }
+  .card:hover .dl-wrap::before{
+    opacity:1;
+  }
+  .dl-ring{width:88px;height:88px;transform:rotate(-90deg);border-radius:50%;display:block}
   .dl-bg{fill:none;stroke:rgba(255,255,255,.12);stroke-width:8}
-  .dl-fg{fill:none;stroke:#ff5233;stroke-width:8;stroke-linecap:round;stroke-dasharray:251;stroke-dashoffset:70;animation:dlfill 4.4s ease-in-out infinite}
+  .dl-fg{
+    fill:none;stroke:#ff5233;stroke-width:8;stroke-linecap:round;stroke-dasharray:251;stroke-dashoffset:70;
+    animation:dlfill 4.4s ease-in-out infinite;transition:stroke .3s ease;
+  }
+  .card:hover .dl-fg{
+    stroke:var(--amber);
+    animation-duration:2.4s;
+  }
   @keyframes dlfill{0%{stroke-dashoffset:251}55%,100%{stroke-dashoffset:0}}
-  .dl-arrow{position:absolute;inset:0;display:grid;place-items:center}
-  .dl-arrow svg{width:26px;height:26px;stroke:var(--amber);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;animation:dlbob 1.6s ease-in-out infinite}
+  .dl-arrow{position:absolute;inset:0;display:grid;place-items:center;border-radius:50%}
+  .dl-arrow svg{
+    width:26px;height:26px;stroke:var(--amber);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;
+    animation:dlbob 1.6s ease-in-out infinite;transition:stroke .3s ease;
+  }
+  .card:hover .dl-arrow svg{
+    stroke:#fff;
+    animation-duration:1s;
+  }
   @keyframes dlbob{0%,100%{transform:translateY(-2px)}50%{transform:translateY(2px)}}
 
   /* 5 · live iptv */
   .demo-live{display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center}
   .lv-badge{display:inline-flex;align-items:center;gap:7px;background:rgba(229,35,26,.16);color:#ff7a5c;
-    font-family:var(--font-d);font-weight:700;font-size:12px;letter-spacing:.12em;padding:6px 12px;border-radius:6px;border:1px solid rgba(229,35,26,.4)}
+    font-family:var(--font-d);font-weight:700;font-size:12px;letter-spacing:.12em;padding:6px 12px;border-radius:6px;border:1px solid rgba(229,35,26,.4);
+    transition:transform .25s ease,box-shadow .25s ease,border-color .25s ease}
+  .card:hover .lv-badge{transform:scale(1.08);box-shadow:0 0 24px rgba(229,35,26,.65);border-color:rgba(229,35,26,.7)}
   .lv-badge i{width:8px;height:8px;border-radius:50%;background:var(--vermilion);animation:lvpulse 1.3s ease-in-out infinite}
   @keyframes lvpulse{0%,100%{box-shadow:0 0 0 0 rgba(229,35,26,.6)}50%{box-shadow:0 0 0 7px rgba(229,35,26,0)}}
   .lv-wave{display:flex;gap:3px;align-items:center;height:30px}
-  .lv-wave i{width:3px;height:8px;border-radius:2px;background:linear-gradient(var(--amber),var(--vermilion));animation:lvw .95s ease-in-out infinite}
+  .lv-wave i{width:3px;height:8px;border-radius:2px;background:linear-gradient(var(--amber),var(--vermilion));animation:lvw .95s ease-in-out infinite;transition:background .25s,box-shadow .25s}
+  .card:hover .lv-wave i{animation-duration:.65s;background:linear-gradient(var(--orange),#fff);box-shadow:0 0 6px rgba(255,138,60,.6)}
   @keyframes lvw{0%,100%{height:7px}50%{height:28px}}
+  .lv-channel-pill{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:4px 11px;border-radius:999px;
+    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+    font-family:var(--font-d);font-size:11px;color:var(--muted);
+    transition:transform .25s ease,border-color .25s ease,background .25s ease;
+  }
+  .lv-channel-pill b{color:var(--amber);font-weight:600}
+  .card:hover .lv-channel-pill{transform:scale(1.06);border-color:rgba(255,138,60,.45);background:rgba(255,255,255,.1)}
 
-  /* 6 · recommendations */
-  .demo-recs{display:flex;flex-direction:column;gap:11px;justify-content:center;padding:0 22px}
-  .rc-head{font-family:var(--font-d);font-size:12px;color:var(--amber);font-weight:600;display:flex;align-items:center;gap:7px}
-  .rc-head b{font-size:14px}
-  .rc-cards{display:flex;gap:8px}
-  .rc-cards i{flex:1;height:46px;border-radius:8px;background:linear-gradient(160deg,#2a1d16,#140d09);border:1px solid var(--line);animation:rcpop 3.2s ease-in-out infinite}
-  .rc-cards i:nth-child(2){animation-delay:.35s}.rc-cards i:nth-child(3){animation-delay:.7s}
-  @keyframes rcpop{0%,100%{transform:translateY(0);border-color:var(--line)}50%{transform:translateY(-5px);border-color:var(--line-strong)}}
-  .rc-bar{height:6px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden}
-  .rc-bar i{display:block;height:100%;width:96%;background:var(--grad);border-radius:99px;transform-origin:left;animation:rcbar 3.2s ease-in-out infinite}
-  @keyframes rcbar{0%{transform:scaleX(.15)}55%,100%{transform:scaleX(1)}}
+  /* 6 · Real-Time Watch Party (Featured 8-col Card) */
+  .demo-party-featured{
+    display:flex;flex-direction:column;justify-content:space-between;
+    padding:14px 18px;position:relative;overflow:hidden;
+  }
+  .wp-feat-header{
+    display:flex;align-items:center;justify-content:space-between;
+    z-index:2;position:relative;
+  }
+  .wp-code-box{
+    display:inline-flex;align-items:center;gap:7px;
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);
+    border-radius:10px;padding:4px 9px;
+  }
+  .wp-code-tag{
+    font-family:var(--font-d);font-size:9.5px;font-weight:700;color:var(--muted);letter-spacing:.08em;
+  }
+  .wp-code-digits{
+    display:inline-flex;gap:3px;align-items:center;
+  }
+  .wp-code-digits b{
+    font-family:var(--font-d);font-weight:700;font-size:12.5px;
+    width:19px;height:24px;display:grid;place-items:center;
+    border-radius:5px;border:1px solid rgba(255,255,255,.12);
+    background:linear-gradient(180deg,#251a13,#120b07);
+    color:var(--amber);
+    transition:transform .25s ease,border-color .25s ease,box-shadow .25s ease;
+  }
+  .card:hover .wp-code-digits b{
+    border-color:rgba(255,138,60,.5);
+    box-shadow:0 4px 14px rgba(229,35,26,.45);
+    transform:translateY(-2px);
+  }
+  .wp-copy-pill{
+    display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:3px 7px;
+    font-family:var(--font-d);font-size:10px;font-weight:600;color:var(--muted);cursor:pointer;
+    transition:background .2s,color .2s,border-color .2s;
+  }
+  .wp-copy-pill:hover,
+  .card:hover .wp-copy-pill{
+    background:rgba(255,255,255,.14);
+    border-color:rgba(255,138,60,.4);
+    color:var(--ink);
+  }
+  .wp-copy-pill svg{width:11px;height:11px}
+  .wp-sync-status{
+    display:flex;align-items:center;gap:8px;font-family:var(--font-d);
+  }
+  .wp-drift-tag{
+    font-size:10.5px;font-weight:700;letter-spacing:.04em;
+    padding:3px 8px;border-radius:999px;
+    background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.35);color:#4ade80;
+    transition:transform .25s ease,box-shadow .25s ease;
+  }
+  .card:hover .wp-drift-tag{
+    box-shadow:0 0 12px rgba(34,197,94,.5);
+    transform:scale(1.05);
+  }
 
-  /* 7 · cloud sync */
-  .demo-sync{display:flex;align-items:center;justify-content:center;gap:16px}
-  .sy-ico{width:42px;height:42px;color:var(--muted);flex:none}
-  .sy-ico svg{width:100%;height:100%;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-  .sy-spin{width:34px;height:34px;color:var(--amber);animation:spin 3s linear infinite}
-  .sy-spin svg{width:100%;height:100%;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  .sy-ico.pulse{animation:sypulse 2.4s ease-in-out infinite}
-  .sy-ico.pulse.d{animation-delay:1.2s}
-  @keyframes sypulse{0%,100%{color:var(--muted-dim)}50%{color:var(--amber)}}
+  .wp-feat-stage{
+    display:grid;grid-template-columns:220px 1fr;gap:14px;align-items:center;
+    z-index:2;position:relative;margin-top:2px;
+  }
+  .wp-users-panel{
+    display:flex;flex-direction:column;gap:5px;
+    background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.07);
+    border-radius:12px;padding:8px 10px;
+  }
+  .wp-user-row{
+    display:flex;align-items:center;gap:8px;
+    transition:transform .25s ease;
+  }
+  .card:hover .wp-user-row{transform:translateX(3px)}
+  .wp-user-av{
+    width:24px;height:24px;border-radius:50%;font-size:12px;
+    display:grid;place-items:center;background:linear-gradient(135deg,#362419,#1e140d);
+    border:1px solid rgba(255,255,255,.15);flex:none;
+  }
+  .wp-user-row.host .wp-user-av{
+    background:linear-gradient(135deg,rgba(229,35,26,.45),rgba(255,138,60,.3));
+    border-color:var(--amber);
+  }
+  .wp-user-info{
+    display:flex;flex-direction:column;min-width:0;flex:1;
+  }
+  .wp-user-info b{
+    font-size:11.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .wp-user-info span{
+    font-size:9.5px;color:var(--muted);line-height:1.2;
+  }
+  .wp-user-pill{
+    font-family:var(--font-d);font-size:8.5px;font-weight:700;letter-spacing:.05em;
+    padding:2px 6px;border-radius:999px;background:rgba(255,255,255,.08);color:var(--muted);flex:none;
+  }
+  .wp-user-pill.host{
+    background:rgba(229,35,26,.2);border:1px solid rgba(229,35,26,.4);color:#ff9e7d;
+  }
+
+  .wp-player-panel{
+    display:flex;flex-direction:column;gap:9px;
+  }
+  .wp-playback-bar{
+    background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.07);
+    border-radius:12px;padding:8px 12px;display:flex;flex-direction:column;gap:6px;
+  }
+  .wp-bar-meta{
+    display:flex;justify-content:space-between;align-items:center;
+    font-family:var(--font-d);font-size:11px;color:var(--muted);
+  }
+  .wp-bar-meta b.wp-play-icon{color:var(--amber);font-size:12px;margin-right:3px}
+  .wp-time{font-size:11px}
+  .wp-time b{color:var(--ink);font-weight:700}
+  .wp-track{
+    height:5px;border-radius:99px;background:rgba(255,255,255,.1);position:relative;overflow:hidden;
+  }
+  .wp-fill{
+    height:100%;width:58%;background:var(--grad);border-radius:99px;position:relative;
+    animation:partyseek 5.5s ease-in-out infinite;
+  }
+  .card:hover .wp-fill{animation-duration:3.2s}
+  .wp-scrub-dot{
+    position:absolute;right:-2px;top:50%;transform:translateY(-50%);
+    width:9px;height:9px;border-radius:50%;background:#fff;
+    box-shadow:0 0 8px rgba(255,255,255,.9);
+    transition:box-shadow .25s ease;
+  }
+  .card:hover .wp-scrub-dot{
+    box-shadow:0 0 14px rgba(255,255,255,1),0 0 22px rgba(255,138,60,.8);
+  }
+  .wp-controls-row{
+    display:flex;gap:7px;flex-wrap:wrap;
+  }
+  .wp-ctrl-chip{
+    display:inline-flex;align-items:center;gap:5px;
+    padding:4px 9px;border-radius:7px;
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+    font-family:var(--font-d);font-size:10.5px;font-weight:600;color:var(--muted);
+    transition:background .2s,color .2s,border-color .2s;
+  }
+  .wp-ctrl-chip svg{width:11px;height:11px;color:var(--amber)}
+  .wp-ctrl-chip:hover,
+  .card:hover .wp-ctrl-chip{
+    background:rgba(255,255,255,.09);
+    color:var(--ink);
+    border-color:rgba(255,255,255,.16);
+  }
+
+  .party-reaction-stream{
+    position:absolute;right:18px;bottom:8px;pointer-events:none;
+    display:flex;gap:7px;z-index:3;
+  }
+  .party-rx{
+    font-size:17px;filter:drop-shadow(0 4px 8px rgba(0,0,0,.7));
+    animation:rxfloat 3.4s ease-in-out infinite;
+  }
+  .card:hover .party-rx{animation-duration:2.3s}
+  .party-rx:nth-child(2){animation-delay:0.85s}
+  .party-rx:nth-child(3){animation-delay:1.7s}
+  .party-rx:nth-child(4){animation-delay:2.55s}
+  @keyframes rxfloat{
+    0%{transform:translateY(12px) scale(.7);opacity:0}
+    25%{opacity:1;transform:translateY(0) scale(1.08)}
+    70%{opacity:.9;transform:translateY(-14px) scale(1)}
+    100%{opacity:0;transform:translateY(-22px) scale(.8)}
+  }
+
+  .party-steps-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+  .party-step-pill{
+    display:flex;align-items:flex-start;gap:9px;
+    background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);
+    border-radius:12px;padding:10px 12px;
+    transition:background .25s,border-color .25s,transform .25s ease;
+  }
+  .card:hover .party-step-pill{
+    border-color:rgba(255,255,255,.14);
+    background:rgba(255,255,255,.05);
+  }
+  .party-step-pill:hover{
+    transform:translateY(-3px);
+    border-color:rgba(255,138,60,.4);
+    background:rgba(255,255,255,.09);
+  }
+  .party-step-pill b.step-num{
+    font-family:var(--font-d);font-size:11px;font-weight:700;width:20px;height:20px;border-radius:50%;
+    background:var(--grad);color:#1a0e00;display:grid;place-items:center;flex:none;margin-top:1px;
+  }
+  .party-step-pill .step-text{display:flex;flex-direction:column;gap:2px;font-size:11.5px;color:var(--muted);line-height:1.4}
+  .party-step-pill .step-text b{color:var(--ink);font-size:12px;font-weight:600}
+
+  @media(max-width:768px){
+    .wp-feat-stage{grid-template-columns:1fr;gap:8px}
+    .wp-users-panel{display:none}
+    .party-steps-row{grid-template-columns:1fr}
+  }
+
+  /* 7 · Cloud Sync & Library Trackers (Featured 8-col Card) */
+  .demo-sync-featured{
+    display:flex;flex-direction:column;justify-content:center;gap:12px;
+    padding:14px 16px;position:relative;overflow:hidden;
+  }
+  .sync-feat-hub{
+    display:flex;align-items:center;justify-content:space-between;
+    background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);
+    border-radius:12px;padding:8px 14px;
+  }
+  .sfh-left{display:flex;align-items:center;gap:9px;font-family:var(--font-d);font-size:12px;font-weight:600;color:var(--ink)}
+  .sfh-left svg{width:16px;height:16px;stroke:var(--amber);fill:none;stroke-width:2;transition:transform .3s cubic-bezier(0.34,1.56,0.64,1),filter .3s ease}
+  .card:hover .sfh-left svg{transform:scale(1.18) rotate(-6deg);filter:drop-shadow(0 0 8px rgba(255,138,60,.7))}
+  .sfh-right{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--muted);font-family:var(--font-d)}
+  .sync-feat-services{
+    display:grid;grid-template-columns:repeat(3,1fr);gap:10px;
+  }
+  .sync-svc-card{
+    background:linear-gradient(160deg,#241a12,#110b07);
+    border:1px solid rgba(255,255,255,.09);border-radius:14px;
+    padding:11px 12px;display:flex;align-items:center;gap:10px;
+    box-shadow:0 6px 18px rgba(0,0,0,.45);
+    transition:transform .3s cubic-bezier(0.34,1.56,0.64,1),border-color .25s ease,box-shadow .3s ease;
+  }
+  .card:hover .sync-svc-card{border-color:rgba(255,255,255,.18)}
+  .sync-svc-card:hover{transform:translateY(-6px) scale(1.04)}
+  .sync-svc-card.anilist:hover{border-color:rgba(2,169,255,.7);box-shadow:0 12px 28px -4px rgba(2,169,255,.4)}
+  .sync-svc-card.mal:hover{border-color:rgba(46,81,162,.85);box-shadow:0 12px 28px -4px rgba(46,81,162,.45)}
+  .sync-svc-card.simkl:hover{border-color:rgba(10,161,221,.75);box-shadow:0 12px 28px -4px rgba(10,161,221,.4)}
+  .sync-svc-logo{width:32px;height:32px;border-radius:8px;object-fit:cover;flex:none}
+  .sync-svc-info{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+  .sync-svc-info b{font-size:13px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sync-svc-info span{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sync-svc-badge{
+    font-family:var(--font-d);font-size:9.5px;font-weight:700;letter-spacing:.04em;
+    padding:2px 6px;border-radius:999px;white-space:nowrap;align-self:flex-start;margin-top:2px;
+  }
+  .sync-svc-badge.anilist{background:rgba(2,169,255,.15);border:1px solid rgba(2,169,255,.35);color:#52c3ff}
+  .sync-svc-badge.mal{background:rgba(46,81,162,.2);border:1px solid rgba(46,81,162,.45);color:#8ca6e6}
+  .sync-svc-badge.simkl{background:rgba(10,161,221,.18);border:1px solid rgba(10,161,221,.4);color:#5cd0ff}
+
+  .sync-steps-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+  .sync-step-pill{
+    display:flex;align-items:flex-start;gap:9px;
+    background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);
+    border-radius:12px;padding:10px 12px;
+    transition:background .25s,border-color .25s,transform .25s ease;
+  }
+  .card:hover .sync-step-pill{
+    border-color:rgba(255,255,255,.14);
+    background:rgba(255,255,255,.05);
+  }
+  .sync-step-pill:hover{
+    transform:translateY(-3px);
+    border-color:rgba(255,138,60,.4);
+    background:rgba(255,255,255,.09);
+  }
+  .sync-step-pill b.step-num{
+    font-family:var(--font-d);font-size:11px;font-weight:700;width:20px;height:20px;border-radius:50%;
+    background:var(--grad);color:#1a0e00;display:grid;place-items:center;flex:none;margin-top:1px;
+  }
+  .sync-step-pill .step-text{display:flex;flex-direction:column;gap:2px;font-size:11.5px;color:var(--muted);line-height:1.4}
+  .sync-step-pill .step-text b{color:var(--ink);font-size:12px;font-weight:600}
+
+  @media(max-width:768px){
+    .sync-feat-services{grid-template-columns:1fr}
+    .sync-steps-row{grid-template-columns:1fr}
+  }
 
   /* 8 · subtitles */
   .demo-subs{position:relative;display:grid;place-items:center;padding:0 20px}
   .sb-cc{position:absolute;top:14px;right:16px;font-family:var(--font-d);font-size:10px;font-weight:700;letter-spacing:.08em;
-    color:var(--amber);border:1px solid var(--line-strong);border-radius:5px;padding:3px 6px;background:rgba(229,35,26,.1)}
+    color:var(--amber);border:1px solid var(--line-strong);border-radius:5px;padding:3px 6px;background:rgba(229,35,26,.1);
+    transition:transform .25s ease,background .25s,border-color .25s,color .25s,box-shadow .25s;
+  }
+  .card:hover .sb-cc{
+    background:rgba(229,35,26,.3);
+    border-color:var(--amber);
+    transform:scale(1.1);
+    box-shadow:0 0 14px rgba(229,35,26,.45);
+    color:#fff;
+  }
   .sb-cap{position:relative;width:100%;height:46px;display:grid;place-items:center;text-align:center}
-  .sb-cap span{position:absolute;font-size:13px;color:#f6efe8;font-weight:500;background:rgba(0,0,0,.55);padding:5px 11px;border-radius:7px;line-height:1.3;max-width:92%;animation:sbcap 7s ease-in-out infinite}
+  .sb-cap span{
+    position:absolute;font-size:13px;color:#f6efe8;font-weight:500;
+    background:rgba(0,0,0,.55);padding:5px 11px;border-radius:7px;line-height:1.3;max-width:92%;
+    animation:sbcap 7s ease-in-out infinite;
+    transition:transform .25s ease,background .25s,box-shadow .25s,border .25s;
+  }
+  .card:hover .sb-cap span{
+    background:rgba(0,0,0,.78);
+    box-shadow:0 8px 24px rgba(0,0,0,.8);
+    border:1px solid rgba(255,255,255,.15);
+    transform:scale(1.06);
+  }
   .sb-cap span:nth-child(1){opacity:1}
   .sb-cap span:nth-child(2){opacity:0;animation-delay:3.5s}
   @keyframes sbcap{0%,44%{opacity:0}7%,37%{opacity:1}}
 
-  /* watch party split */
-  .split{display:grid;grid-template-columns:.9fr 1.1fr;gap:56px;align-items:center;
-    background:linear-gradient(140deg,rgba(229,35,26,.09),rgba(229,35,26,.05));
-    border:1px solid var(--line-strong);border-radius:28px;padding:48px}
-  .split .phone{position:relative;width:230px;margin:0 auto;animation:float 7s ease-in-out infinite}
-  .split h2{font-size:clamp(28px,4vw,42px);font-weight:700}
-  .split p{color:var(--muted);margin-top:16px;font-size:16.5px}
-  .code-chip{display:inline-flex;gap:8px;margin-top:26px}
-  .code-chip b{font-family:var(--font-d);font-weight:700;font-size:24px;width:44px;height:54px;display:grid;place-items:center;
-    background:var(--surface);border:1px solid var(--line);border-radius:11px;
-    background:linear-gradient(180deg,var(--surface-2),var(--bg))}
-  .code-chip b:nth-child(odd){color:var(--amber)}
-  .code-chip b:nth-child(even){color:var(--vermilion)}
-  @media(max-width:820px){.split{grid-template-columns:1fr;padding:32px;gap:36px}.split .stage-wrap{order:2}}
 
-  /* gallery — auto-scrolling marquee */
-  .gallery{overflow:hidden;
-    -webkit-mask:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent);
-    mask:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent)}
-  .gallery-track{display:flex;gap:20px;width:max-content;padding-block:8px;
-    animation:gscroll 48s linear infinite}
-  .gallery:hover .gallery-track{animation-play-state:paused}
-  .shot{flex:0 0 auto;width:210px;border-radius:24px;padding:7px;
-    background:linear-gradient(160deg,#241b13,#0f0b07);border:1px solid rgba(255,255,255,.08);
-    box-shadow:0 30px 60px -30px rgba(0,0,0,.8);transition:transform .3s}
-  .shot:hover{transform:translateY(-8px)}
-  .shot img{display:block;border-radius:18px;width:100%}
-  .shot figcaption{text-align:center;font-family:var(--font-d);font-size:12.5px;font-weight:500;color:var(--muted);
-    padding:12px 0 5px;letter-spacing:.02em}
-  @keyframes gscroll{to{transform:translateX(-50%)}}
+  /* ===============================
+     SCREENS HORIZONTAL SCROLL GALLERY
+     =============================== */
+  .screens-overview-section{
+    padding-top:20px;
+    padding-bottom:0;
+    position:relative;
+    z-index:2;
+  }
+  .screens-intro-wrap{
+    padding-top:54px;
+    padding-bottom:60px;
+  }
+  .screens-intro-wrap .sec-head{
+    text-align:left;
+    max-width:820px;
+    margin-bottom:0;
+  }
+  .screens-intro-wrap .sec-head h2{
+    font-size:clamp(32px,5vw,52px);
+  }
+  .screens-intro-wrap .sec-head p{
+    font-size:17.5px;
+    margin-top:14px;
+    color:var(--muted);
+    max-width:56ch;
+    line-height:1.6;
+  }
+
+  /* Platform Switcher Bar in intro */
+  .screens-platform-bar{
+    display:flex;
+    justify-content:flex-start;
+    margin-top:28px;
+  }
+  .screens-platform-toggle{
+    display:inline-flex;
+    align-items:center;
+    background:rgba(255,255,255,.05);
+    border:1px solid rgba(255,255,255,.13);
+    border-radius:999px;
+    padding:4px;
+    gap:4px;
+    box-shadow:0 8px 24px rgba(0,0,0,.45);
+  }
+  .spt-btn{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    padding:9px 24px;
+    border-radius:999px;
+    border:1px solid transparent;
+    background:transparent;
+    color:var(--muted);
+    font-family:var(--font-d);
+    font-size:14px;
+    font-weight:700;
+    cursor:pointer;
+    transition:all .22s cubic-bezier(0.16,1,0.3,1);
+  }
+  .spt-btn:hover{
+    color:#fff;
+    background:rgba(255,255,255,.06);
+  }
+  .spt-btn svg{width:16px;height:16px;color:currentColor}
+  .spt-btn.active{
+    background:linear-gradient(135deg,rgba(255,138,60,.22),rgba(229,35,26,.32));
+    border-color:rgba(255,138,60,.45);
+    color:#fff;
+    box-shadow:0 4px 18px rgba(229,35,26,.35),inset 0 1px 0 rgba(255,255,255,.2);
+  }
+
+  /* Floating HUD mini platform toggle */
+  .screens-platform-mini-toggle{
+    display:inline-flex;
+    align-items:center;
+    background:rgba(255,255,255,.05);
+    border:1px solid rgba(255,255,255,.12);
+    border-radius:999px;
+    padding:3px;
+    gap:3px;
+    flex:none;
+  }
+  .spm-btn{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:5px 14px;
+    border-radius:999px;
+    border:1px solid transparent;
+    background:transparent;
+    color:var(--muted);
+    font-family:var(--font-d);
+    font-size:12px;
+    font-weight:700;
+    cursor:pointer;
+    transition:all .18s ease;
+  }
+  .spm-btn:hover{color:#fff}
+  .spm-btn svg{width:13px;height:13px}
+  .spm-btn.active{
+    background:linear-gradient(135deg,rgba(255,138,60,.25),rgba(229,35,26,.35));
+    border-color:rgba(255,138,60,.4);
+    color:#fff;
+    box-shadow:0 2px 10px rgba(229,35,26,.3);
+  }
+
+  /* Pinned track container: locks at top:0 AFTER the intro wrap has scrolled past */
+  .screens-scroll-track{
+    position:relative;
+    height:250vh;
+  }
+  .screens-sticky-stage{
+    position:sticky;
+    top:0;
+    height:100vh;
+    max-height:100vh;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    overflow:hidden;
+    background:radial-gradient(ellipse 85% 65% at 50% 50%, rgba(229,35,26,.08), transparent 75%);
+  }
+
+  /* Side Navigation Arrows */
+  .screens-arrow{
+    position:absolute;
+    top:50%;
+    transform:translateY(-50%);
+    width:50px;
+    height:50px;
+    border-radius:50%;
+    background:rgba(24,18,14,.82);
+    backdrop-filter:blur(18px);
+    -webkit-backdrop-filter:blur(18px);
+    border:1px solid rgba(255,255,255,.14);
+    color:var(--ink);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    z-index:25;
+    box-shadow:0 10px 28px rgba(0,0,0,.65);
+    transition:all .22s cubic-bezier(0.16,1,0.3,1);
+  }
+  .screens-arrow:hover{
+    background:rgba(36,26,19,.95);
+    border-color:rgba(255,138,60,.55);
+    transform:translateY(-50%) scale(1.08);
+    box-shadow:0 14px 32px rgba(0,0,0,.75),0 0 24px rgba(229,35,26,.35);
+    color:#fff;
+  }
+  .screens-arrow:active{
+    transform:translateY(-50%) scale(0.95);
+  }
+  .screens-arrow.disabled,
+  .screens-arrow:disabled{
+    opacity:0.22;
+    cursor:not-allowed;
+    pointer-events:none;
+  }
+  .screens-arrow svg{
+    width:22px;
+    height:22px;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+  }
+  .screens-arrow-prev{left:clamp(16px, 2.5vw, 36px)}
+  .screens-arrow-next{right:clamp(16px, 2.5vw, 36px)}
+
+  /* Viewport and sliding track */
+  .screens-viewport{
+    width:100%;
+    overflow:hidden;
+    padding-block:55px 70px;
+    display:flex;
+    align-items:center;
+    -webkit-mask:linear-gradient(90deg,transparent,#000 2%,#000 98%,transparent);
+    mask:linear-gradient(90deg,transparent,#000 2%,#000 98%,transparent);
+    cursor:grab;
+  }
+  .screens-viewport.is-dragging{
+    cursor:grabbing;
+    user-select:none;
+  }
+  .screens-track{
+    display:flex;
+    align-items:center;
+    gap:34px;
+    width:max-content;
+    will-change:transform;
+    transition:transform .14s cubic-bezier(0,0,0.2,1);
+  }
+  .screens-track[hidden]{
+    display:none !important;
+  }
+
+  /* Inactive base cards: sized generously, dimmed & slightly scaled down */
+  .screens-track .shot{
+    flex:0 0 auto;
+    width:clamp(280px, 31vh, 355px);
+    margin:0;
+    border-radius:26px;
+    padding:4px;
+    background:linear-gradient(165deg,#241c14,#0e0906);
+    border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 22px 50px -12px rgba(0,0,0,.85);
+    transform:scale(0.88);
+    opacity:0.42;
+    filter:brightness(0.68) saturate(0.85);
+    transform-origin:center center;
+    transition:transform .45s cubic-bezier(0.16,1,0.3,1),opacity .4s ease,filter .4s ease,border-color .35s ease,box-shadow .45s ease,background .35s ease;
+    cursor:pointer;
+    z-index:1;
+    display:flex;
+    flex-direction:column;
+    box-sizing:border-box;
+  }
+  .screens-track .shot:hover{
+    opacity:0.85;
+    filter:brightness(0.9);
+    transform:scale(0.93);
+    border-color:rgba(255,255,255,.22);
+    box-shadow:0 24px 50px -12px rgba(0,0,0,.85),0 10px 28px -6px rgba(229,35,26,.2);
+  }
+
+  /* Active focused card: significantly larger, towering spotlight with refined red glow */
+  .screens-track .shot.focused{
+    transform:scale(1.10);
+    opacity:1;
+    filter:none;
+    border-color:rgba(255,255,255,.24);
+    box-shadow:0 30px 65px -12px rgba(0,0,0,.88),0 14px 36px -8px rgba(229,35,26,.25);
+    background:radial-gradient(350px circle at 50% 0%,rgba(229,35,26,.08),transparent 75%),linear-gradient(165deg,#231c15,#0f0a07);
+    z-index:10;
+  }
+  .screens-track .shot.focused:hover{
+    transform:scale(1.11);
+    border-color:rgba(255,255,255,.34);
+    box-shadow:0 34px 72px -12px rgba(0,0,0,.9),0 16px 40px -8px rgba(229,35,26,.3);
+  }
+
+  /* Desktop Widescreen Cards - significantly bigger, full-bleed edge-to-edge frame */
+  .screens-track .shot.shot-desktop{
+    width:min(86vw, 1380px, calc((100vh - 210px) * (1024 / 469)));
+    min-width:520px;
+    border-radius:22px;
+    padding:0;
+    overflow:hidden;
+    background:linear-gradient(165deg,#1c140e,#0e0906);
+    border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 24px 60px -12px rgba(0,0,0,.85);
+    transform:scale(0.88);
+    opacity:0.42;
+    filter:brightness(0.68) saturate(0.85);
+    transform-origin:center center;
+    transition:transform .45s cubic-bezier(0.16,1,0.3,1),opacity .4s ease,filter .4s ease,border-color .35s ease,box-shadow .45s ease,background .35s ease;
+    cursor:pointer;
+    display:flex;
+    flex-direction:column;
+    box-sizing:border-box;
+  }
+  .screens-track .shot.shot-desktop:hover{
+    opacity:0.85;
+    filter:brightness(0.9);
+    transform:scale(0.92);
+    border-color:rgba(255,255,255,.24);
+    box-shadow:0 26px 60px -12px rgba(0,0,0,.85),0 12px 30px -6px rgba(229,35,26,.2);
+  }
+  .screens-track .shot.shot-desktop.focused{
+    transform:scale(1.05);
+    opacity:1;
+    filter:none;
+    border-color:rgba(255,138,60,.4);
+    box-shadow:0 36px 85px -12px rgba(0,0,0,.92),0 16px 45px -8px rgba(229,35,26,.26);
+    background:radial-gradient(450px circle at 50% 0%,rgba(229,35,26,.1),transparent 75%),#18120d;
+    z-index:10;
+  }
+  .screens-track .shot.shot-desktop.focused:hover{
+    transform:scale(1.06);
+    border-color:rgba(255,138,60,.55);
+    box-shadow:0 40px 90px -12px rgba(0,0,0,.95),0 18px 48px -8px rgba(229,35,26,.3);
+  }
+
+  /* Desktop Frame & Aspect Ratio */
+  .shot-frame-desktop{
+    width:100%;
+    aspect-ratio:1024 / 469;
+    overflow:hidden;
+    background:#080504;
+    position:relative;
+    flex:none;
+  }
+  .shot-frame-desktop img{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    object-position:center;
+    display:block;
+    transition:transform .4s ease;
+  }
+  .screens-track .shot:hover .shot-frame-desktop img{transform:scale(1.02)}
+  .screens-track .shot.focused .shot-frame-desktop img{transform:scale(1.01)}
+  .screens-track .shot.shot-desktop figcaption{
+    padding:14px 20px 14px;
+  }
+  .screens-track .shot.shot-desktop figcaption b{
+    font-size:16px;
+  }
+  .screens-track .shot.shot-desktop.focused figcaption b{
+    font-size:18px;
+    color:var(--ink);
+  }
+
+  /* Ultra-slim phone bezel & expansive screen frame */
+  .shot-frame{
+    width:100%;
+    border-radius:22px;
+    overflow:hidden;
+    background:#080504;
+    aspect-ratio:9 / 18.2;
+    position:relative;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.07);
+    flex:none;
+  }
+  .shot-frame img{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    object-position:center top;
+    display:block;
+    transition:transform .4s ease;
+  }
+  .screens-track .shot:hover .shot-frame img{
+    transform:scale(1.02);
+  }
+  .screens-track .shot.focused .shot-frame img{
+    transform:scale(1.01);
+  }
+
+  .screens-track .shot figcaption{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    padding:10px 4px 6px;
+    text-align:center;
+  }
+  .screens-track .shot figcaption b{
+    font-family:var(--font-d);
+    font-size:14.5px;
+    font-weight:700;
+    color:var(--muted);
+    letter-spacing:-.01em;
+    transition:color .3s ease,font-size .3s ease;
+  }
+  .screens-track .shot.focused figcaption b{
+    color:var(--ink);
+    font-size:16.5px;
+  }
+
+  /* Floating stage HUD capsule at bottom */
+  .screens-stage-hud{
+    position:absolute;
+    bottom:24px;
+    left:50%;
+    transform:translateX(-50%);
+    width:auto;
+    max-width:540px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:18px;
+    z-index:20;
+    padding:8px 18px;
+    border-radius:999px;
+    background:rgba(20,15,11,.84);
+    backdrop-filter:blur(18px);
+    -webkit-backdrop-filter:blur(18px);
+    border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 12px 30px rgba(0,0,0,.65);
+  }
+  .screens-counter{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    font-family:var(--font-d);
+    font-size:12.5px;
+    font-weight:700;
+    color:var(--ink);
+    white-space:nowrap;
+    flex:none;
+  }
+  .screens-counter .sc-dot{
+    width:7px;
+    height:7px;
+    border-radius:50%;
+    background:var(--amber);
+    box-shadow:0 0 10px rgba(255,74,54,.8);
+  }
+
+  /* Interactive Pagination Dots */
+  .screens-dots{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex:none;
+  }
+  .screens-dot{
+    width:8px;
+    height:8px;
+    border-radius:99px;
+    background:rgba(255,255,255,.22);
+    border:none;
+    padding:0;
+    cursor:pointer;
+    transition:all .25s cubic-bezier(0.16,1,0.3,1);
+  }
+  .screens-dot:hover{
+    background:rgba(255,255,255,.55);
+    transform:scale(1.25);
+  }
+  .screens-dot.active{
+    width:24px;
+    background:var(--grad);
+    box-shadow:0 0 12px rgba(255,74,54,.7);
+  }
+
+  @media(max-height:860px){
+    .screens-track .shot{width:clamp(255px, 29vh, 320px)}
+    .screens-track .shot.shot-desktop{width:min(86vw, 1180px, calc((100vh - 180px) * (1024 / 469)))}
+    .screens-viewport{padding-block:30px 55px}
+    .screens-stage-hud{bottom:16px}
+  }
+  @media(max-height:740px){
+    .screens-track .shot{width:clamp(215px, 26vh, 270px)}
+    .screens-track .shot.shot-desktop{width:min(86vw, 1020px, calc((100vh - 150px) * (1024 / 469)))}
+    .screens-viewport{padding-block:20px 45px}
+    .screens-stage-hud{bottom:12px;padding:7px 14px}
+  }
+  @media(max-width:680px){
+    .screens-intro-wrap{padding-top:40px;padding-bottom:24px}
+    .screens-scroll-track{height:auto}
+    .screens-sticky-stage{position:relative;height:auto;max-height:none;padding-top:20px;padding-bottom:30px;background:none}
+    .screens-stage-hud{position:relative;bottom:0;left:0;transform:none;width:auto;margin:0 20px 20px;max-width:none}
+    .screens-viewport{overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;padding-block:16px;-webkit-mask:none;mask:none;cursor:default}
+    .screens-track{padding-left:24px;padding-right:24px;gap:20px;transition:none}
+    .screens-track .shot{width:280px;padding:4px;transform:none!important;opacity:1!important;filter:none!important;scroll-snap-align:center}
+    .screens-track .shot.shot-desktop{width:clamp(300px, 88vw, 560px);min-width:0}
+    .screens-track .shot.focused{border-color:rgba(255,255,255,.28);box-shadow:0 18px 45px -10px rgba(0,0,0,.8),0 8px 24px -6px rgba(229,35,26,.25)}
+    .screens-dots,.screens-arrow{display:none}
+    .screens-platform-bar{justify-content:center}
+    .spt-btn{padding:8px 18px;font-size:13px}
+    .screens-platform-mini-toggle{display:none}
+  }
+
+  /* ===============================
+     GITHUB RELEASES & VERSION TIMELINE
+     =============================== */
+  .releases-section{
+    padding-top:88px;
+    padding-bottom:30px;
+    position:relative;
+    z-index:2;
+  }
+  .releases-meta-bar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+    background:rgba(255,255,255,.025);
+    border:1px solid rgba(255,255,255,.07);
+    border-radius:18px;
+    padding:12px 18px;
+    margin-top:28px;
+    margin-bottom:36px;
+  }
+  .rmb-badges{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .rmb-pill{
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    font-family:var(--font-d);
+    font-size:12px;
+    font-weight:600;
+    color:var(--muted);
+    background:rgba(255,255,255,.04);
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:999px;
+    padding:5px 12px;
+  }
+  .rmb-pill svg{width:13px;height:13px;color:var(--amber)}
+  .btn-gh-releases{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    font-family:var(--font-d);
+    font-size:12.5px;
+    font-weight:700;
+    color:var(--ink);
+    padding:7px 15px;
+    border-radius:999px;
+    background:rgba(255,255,255,.08);
+    border:1px solid rgba(255,255,255,.14);
+    transition:background .2s,border-color .2s,transform .2s;
+  }
+  .btn-gh-releases:hover{
+    background:rgba(255,255,255,.16);
+    border-color:rgba(255,138,60,.4);
+    transform:translateY(-2px);
+  }
+  .btn-gh-releases svg{width:15px;height:15px}
+  .btn-gh-releases .arrow-ext{color:var(--amber);font-size:14px}
+
+  .releases-timeline{
+    display:flex;
+    flex-direction:column;
+    gap:20px;
+    position:relative;
+  }
+  .rel-item{
+    display:grid;
+    grid-template-columns:36px 1fr;
+    gap:20px;
+    position:relative;
+  }
+  .rel-spine{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    position:relative;
+  }
+  .rel-dot{
+    width:16px;
+    height:16px;
+    border-radius:50%;
+    background:var(--surface);
+    border:3px solid var(--amber);
+    box-shadow:0 0 14px rgba(255,74,54,.6);
+    flex:none;
+    margin-top:22px;
+    z-index:2;
+  }
+  .rel-item.current .rel-dot{
+    background:var(--grad);
+    border-color:#fff;
+    box-shadow:0 0 20px rgba(255,74,54,.9);
+    animation:relpulse 2s infinite;
+  }
+  @keyframes relpulse{
+    0%,100%{transform:scale(1);box-shadow:0 0 14px rgba(255,74,54,.7)}
+    50%{transform:scale(1.22);box-shadow:0 0 24px rgba(255,74,54,1)}
+  }
+  .rel-line{
+    flex:1;
+    width:2px;
+    background:linear-gradient(180deg,rgba(255,74,54,.4),rgba(255,255,255,.08));
+    margin-top:6px;
+  }
+  .rel-item:last-child .rel-line{display:none}
+
+  .rel-card{
+    background:linear-gradient(165deg,rgba(30,22,16,.9),rgba(15,11,7,.95));
+    border:1px solid rgba(255,255,255,.09);
+    border-radius:20px;
+    padding:24px 28px;
+    box-shadow:0 18px 45px -12px rgba(0,0,0,.7);
+    transition:transform .3s cubic-bezier(0.16,1,0.3,1),border-color .3s,box-shadow .3s;
+    position:relative;
+  }
+  .rel-item.current .rel-card{
+    border-color:rgba(255,138,60,.4);
+    background:radial-gradient(400px circle at 0% 0%,rgba(229,35,26,.12),transparent 70%),linear-gradient(165deg,#241a13,#100b07);
+  }
+  .rel-card:hover{
+    transform:translateX(6px);
+    border-color:rgba(255,138,60,.45);
+    box-shadow:0 24px 60px -15px rgba(229,35,26,.25);
+  }
+  .rel-card-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+    flex-wrap:wrap;
+    margin-bottom:12px;
+  }
+  .rel-badge-group{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .rel-tag{
+    font-family:var(--font-d);
+    font-size:13px;
+    font-weight:800;
+    color:#fff;
+    padding:3px 10px;
+    border-radius:6px;
+    background:rgba(255,255,255,.1);
+    border:1px solid rgba(255,255,255,.16);
+  }
+  .rel-tag.latest{
+    background:var(--grad);
+    color:#1a0e00;
+    border-color:transparent;
+    box-shadow:0 4px 14px rgba(229,35,26,.45);
+  }
+  .rel-tag.desktop{
+    background:linear-gradient(120deg,#0078d4,#005a9e);
+    color:#fff;
+    border-color:transparent;
+  }
+  .rel-tag.sync{
+    background:linear-gradient(120deg,#3ecf8e,#1f8e5b);
+    color:#052414;
+    border-color:transparent;
+  }
+  .rel-tag.core{
+    background:linear-gradient(120deg,#f59e0b,#d97706);
+    color:#1f1300;
+    border-color:transparent;
+  }
+  .rel-status-pill{
+    font-family:var(--font-d);
+    font-size:10.5px;
+    font-weight:700;
+    letter-spacing:.05em;
+    padding:3px 8px;
+    border-radius:999px;
+    background:rgba(34,197,94,.14);
+    border:1px solid rgba(34,197,94,.35);
+    color:#4ade80;
+  }
+  .rel-status-pill.desktop{
+    background:rgba(0,120,212,.16);
+    border-color:rgba(0,120,212,.4);
+    color:#60a5fa;
+  }
+  .rel-plat-pill{
+    font-family:var(--font-d);
+    font-size:10.5px;
+    font-weight:600;
+    color:var(--muted);
+    background:rgba(255,255,255,.05);
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:999px;
+    padding:3px 8px;
+  }
+  .rel-date{
+    font-family:var(--font-d);
+    font-size:12px;
+    color:var(--muted-dim);
+  }
+  .rel-date a{
+    color:var(--amber);
+    font-weight:600;
+    transition:color .2s;
+  }
+  .rel-date a:hover{color:#fff;text-decoration:underline}
+  .rel-card h4{
+    font-family:var(--font-d);
+    font-size:18.5px;
+    font-weight:700;
+    color:var(--ink);
+    margin:0 0 8px;
+  }
+  .rel-card p{
+    color:var(--muted);
+    font-size:14px;
+    line-height:1.6;
+    margin:0 0 14px;
+  }
+  .rel-notes{
+    list-style:none;
+    padding:0;
+    margin:0 0 18px;
+    display:flex;
+    flex-direction:column;
+    gap:7px;
+  }
+  .rel-notes li{
+    position:relative;
+    padding-left:18px;
+    font-size:13px;
+    color:#d4c7bd;
+    line-height:1.5;
+  }
+  .rel-notes li::before{
+    content:"";
+    position:absolute;
+    left:0;
+    top:8px;
+    width:5px;
+    height:5px;
+    border-radius:50%;
+    background:var(--amber);
+  }
+  .rel-notes li b{
+    color:var(--ink);
+    margin-right:4px;
+  }
+  .rel-notes li code{
+    font-family:monospace;
+    font-size:12px;
+    background:rgba(255,255,255,.08);
+    padding:1px 5px;
+    border-radius:4px;
+    color:#ff9e7d;
+  }
+  .rel-actions{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    flex-wrap:wrap;
+    padding-top:10px;
+    border-top:1px solid rgba(255,255,255,.06);
+  }
+  .rel-dl-btn{
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    padding:7px 14px;
+    border-radius:999px;
+    background:var(--grad);
+    color:#1a0e00;
+    font-family:var(--font-d);
+    font-size:12px;
+    font-weight:700;
+    box-shadow:0 4px 14px rgba(229,35,26,.35);
+    transition:transform .2s,box-shadow .2s;
+  }
+  .rel-dl-btn:hover{
+    transform:translateY(-2px);
+    box-shadow:0 6px 18px rgba(229,35,26,.5);
+  }
+  .rel-dl-btn svg{width:13px;height:13px}
+  .rel-sub-btn{
+    font-family:var(--font-d);
+    font-size:12px;
+    font-weight:600;
+    color:var(--muted);
+    transition:color .2s;
+  }
+  .rel-sub-btn:hover{color:var(--ink)}
+
+  @media(max-width:640px){
+    .rel-item{grid-template-columns:1fr;gap:0}
+    .rel-spine{display:none}
+    .rel-card{padding:18px 16px}
+    .rel-card h4{font-size:16.5px}
+  }
 
   /* powered by */
   .powered{text-align:center}
-  .powered .lbl{font-family:var(--font-d);font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted-dim)}
-  .logos{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;margin-top:30px}
-  .logos .pill{display:inline-flex;align-items:center;gap:10px;padding:11px 20px 11px 14px;
+  .powered .lbl{font-family:var(--font-d);font-size:12.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted-dim);font-weight:700}
+  .logos{display:flex;flex-wrap:wrap;gap:16px;justify-content:center;margin-top:34px;max-width:1080px;margin-inline:auto}
+  .logos .pill{display:inline-flex;align-items:center;gap:13px;padding:13px 24px 13px 18px;
     border:1px solid var(--line);border-radius:999px;background:var(--surface);
-    font-family:var(--font-d);font-weight:600;font-size:14.5px;color:var(--muted);
-    transition:color .18s,border-color .18s,transform .18s,background .18s}
-  .logos .pill:hover{color:var(--ink);border-color:var(--line-strong);transform:translateY(-3px);background:var(--surface-2)}
-  .logos .pill svg{width:22px;height:22px;flex:none;display:block}
+    font-family:var(--font-d);font-weight:700;font-size:16px;color:#d1d5db;letter-spacing:-0.01em;
+    box-shadow:0 4px 16px rgba(0,0,0,.35);
+    transition:color .2s,border-color .2s,transform .2s,background .2s,box-shadow .2s;
+    user-select:none;cursor:default}
+  .logos .pill:hover{color:var(--ink);border-color:rgba(255,255,255,.24);transform:translateY(-4px);background:var(--surface-2);box-shadow:0 12px 28px -4px rgba(0,0,0,.55)}
+  .logos .pill svg,.logos .pill img{width:28px;height:28px;flex:none;display:block;border-radius:6px;object-fit:contain}
 
   /* download cta */
   .download{text-align:center;background:
     radial-gradient(circle at 50% 0%,rgba(229,35,26,.16),transparent 60%);
     border:1px solid var(--line-strong);border-radius:30px;padding:70px 32px;overflow:hidden;position:relative}
-  .download img.icon{width:78px;height:78px;border-radius:20px;margin-bottom:26px;
-    box-shadow:0 16px 40px rgba(229,35,26,.35)}
+  .download img.icon{width:120px;height:120px;margin-bottom:22px;
+    display:inline-block;object-fit:contain;border-radius:0;box-shadow:none;filter:none;background:none}
   .download h2{font-size:clamp(30px,5vw,52px);font-weight:800}
   .download p{color:var(--muted);margin-top:16px;font-size:17px;max-width:46ch;margin-inline:auto}
   .note{margin-top:18px;font-size:12.5px;color:var(--muted-dim)}
 
   /* footer */
-  footer{border-top:1px solid var(--line);padding-block:56px 30px;position:relative;z-index:2;
+  footer{border-top:1px solid var(--line);padding-block:60px 32px;position:relative;z-index:2;
     background:linear-gradient(180deg,transparent,rgba(229,35,26,.04))}
-  .foot-top{display:grid;grid-template-columns:1.4fr 1fr;gap:48px;padding-bottom:40px}
-  .foot-brand .brand{margin-bottom:16px}
-  .foot-brand .brand img{width:40px;height:40px}
+  .foot-top{display:grid;grid-template-columns:1.15fr 1.35fr;gap:56px;padding-bottom:44px}
+  .foot-brand .brand{display:inline-flex;align-items:center;gap:14px;margin-bottom:18px;text-decoration:none}
+  .foot-brand .brand-mark{width:54px;height:54px;object-fit:contain;filter:drop-shadow(0 4px 16px rgba(229,35,26,.45));transition:transform .2s ease,filter .2s ease}
+  .foot-brand .brand-word{height:30px;width:auto;display:block;filter:drop-shadow(0 2px 8px rgba(0,0,0,.5));transition:transform .2s ease}
+  .foot-brand .brand:hover .brand-mark{transform:scale(1.06);filter:drop-shadow(0 6px 22px rgba(229,35,26,.65))}
+  .foot-brand .brand:hover .brand-word{transform:translateX(2px)}
   .foot-brand p{color:var(--muted);font-size:14.5px;max-width:38ch;line-height:1.6}
   .foot-social{display:flex;gap:12px;margin-top:22px;flex-wrap:wrap}
   .foot-social a{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border:1px solid var(--line);
@@ -308,15 +1915,16 @@
   .foot-social a:hover{color:var(--ink);border-color:var(--line-strong);background:var(--surface)}
   .foot-social svg{width:16px;height:16px}
   .foot-social .fstar svg{fill:var(--amber);stroke:none}
-  .foot-cols{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
-  .foot-col h4{font-family:var(--font-d);font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  .foot-cols{display:grid;grid-template-columns:repeat(3,1fr);gap:28px}
+  .foot-col h4{font-family:var(--font-d);font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
     color:var(--muted-dim);margin:0 0 16px}
-  .foot-col a,.foot-col span{display:block;color:var(--muted);font-size:14px;padding:5px 0;transition:color .18s}
-  .foot-col a:hover{color:var(--amber)}
+  .foot-col a{display:block;color:var(--muted);font-size:14px;padding:5px 0;transition:color .18s,transform .18s}
+  .foot-col a:hover{color:var(--ink);transform:translateX(2px)}
   .foot-bottom{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;
     padding-top:26px;border-top:1px solid var(--line);color:var(--muted-dim);font-size:13px}
-  @media(max-width:760px){.foot-top{grid-template-columns:1fr;gap:36px}}
-  @media(max-width:440px){.foot-cols{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:880px){.foot-top{grid-template-columns:1fr;gap:40px}}
+  @media(max-width:560px){.foot-cols{grid-template-columns:repeat(2,1fr);gap:28px 16px}}
+  @media(max-width:380px){.foot-cols{grid-template-columns:1fr}}
 
   .reveal{opacity:0;transform:translateY(22px);transition:opacity .7s ease,transform .7s ease}
   .reveal.in{opacity:1;transform:none}
@@ -337,9 +1945,9 @@
         <a class="btn btn-ghost btn-star" href="https://github.com/nirmaleeswar30/Nivio" target="_blank" rel="noopener noreferrer" aria-label="Star Nivio on GitHub">
           <svg class="star" viewBox="0 0 24 24"><path d="M12 2.6l2.9 5.9 6.5.95-4.7 4.6 1.1 6.45L12 17.9l-5.8 3.05 1.1-6.45L2.6 9.45l6.5-.95L12 2.6z"/></svg>
           <span class="hide-sm">Star</span>
-          <span class="count">12</span>
+          <span class="count" data-gh-stars>16</span>
         </a>
-        <a class="btn btn-primary" href="https://github.com/nirmaleeswar30/Nivio/releases/download/v2.2.3/nivio-2.2.3-universal.apk" target="_blank" rel="noopener noreferrer">
+        <a class="btn btn-primary" data-apk-download href="https://github.com/nirmaleeswar30/Nivio/releases/download/v2.2.3/nivio.apk" target="_blank" rel="noopener noreferrer">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>
           <span class="hide-sm">Download</span>
         </a>
@@ -352,15 +1960,15 @@
 <div class="wrap hero">
   <div class="hero-grid">
     <div class="reveal in">
-      <span class="badge"><b>v2.2.3</b> Movies · Shows · Anime · Live TV</span>
-      <h1>Everything you<br>watch. <span class="grad-text">In One&nbsp;app.</span></h1>
+      <span class="badge"><b data-release-tag>v2.2.3</b> Movies · Shows · Anime · Live TV</span>
+      <h1>Everything you<br>watch in <span class="grad-text">One&nbsp;app.</span></h1>
       <p class="lead">A beautiful all-in-one streaming home for Movies, TV, Anime and Live IPTV — with real-time Watch Parties and offline downloads.</p>
       <div class="cta-row">
-        <a class="btn btn-primary" href="https://github.com/nirmaleeswar30/Nivio/releases/download/v2.2.3/nivio-2.2.3-universal.apk" target="_blank" rel="noopener noreferrer">
+        <a class="btn btn-primary" data-apk-download href="https://github.com/nirmaleeswar30/Nivio/releases/download/v2.2.3/nivio.apk" target="_blank" rel="noopener noreferrer">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>
-          Download APK
+          <span data-apk-label>Download APK</span>
         </a>
-        <a class="btn btn-ghost" href="#features">Explore features</a>
+        <a class="btn btn-ghost" href="#player">Explore player</a>
       </div>
       <div class="meta-row">
         <div class="meta"><b class="grad-text">No ads</b><span>no subscriptions</span></div>
@@ -384,41 +1992,186 @@
   </div>
 </div>
 
+<section id="player" class="player-overview-section">
+  <!-- Title, Description & Mode Switcher in page flow: scrolls completely out of view BEFORE scroll lock starts -->
+  <div class="wrap player-intro-wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">Engineered for cinematic performance</span>
+      <h2>The Player. Built from scratch on libmpv.</h2>
+      <p>Not another sluggish web wrapper. Nivio features a custom C-native media engine with GPU hardware decoding, instant P2P swarm streaming, and low-latency synchronized watch parties — complete with custom-built gestures, double-tap seek, timeline scrubber, quick episode switching, and lockable player controls.</p>
+    </div>
+
+    <!-- Mode Tabs Switcher -->
+    <div class="player-tabs-bar reveal">
+      <div class="player-tabs-toggle" role="tablist" aria-label="Player Showcase Modes">
+        <button class="player-tab-btn active" role="tab" aria-selected="true" data-index="0" type="button">
+          <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <span>Direct Stream</span>
+        </button>
+        <button class="player-tab-btn" role="tab" aria-selected="false" data-index="1" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          <span>Nivio P2P Torrents</span>
+        </button>
+        <button class="player-tab-btn" role="tab" aria-selected="false" data-index="2" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span>Watch Party</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pinned Scroll Track: locks at top:0 only after the intro title above has scrolled out of view -->
+  <div class="player-scroll-track" id="player-track">
+    <div class="player-sticky-stage" id="player-demo">
+
+      <!-- Interactive Navigation Arrows -->
+      <button class="player-arrow player-arrow-prev" id="player-arrow-prev" type="button" aria-label="Previous player screen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <button class="player-arrow player-arrow-next" id="player-arrow-next" type="button" aria-label="Next player screen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+
+      <div class="player-viewport" id="player-viewport">
+        <div class="player-slider-track" id="player-slider-track">
+          <!-- Card 0: Direct Stream -->
+          <figure class="player-card" data-index="0">
+            <div class="player-card-frame">
+              <img src="player-direct.jpg" onerror="this.onerror=null;this.src='../assets/images/player-direct.jpg';" alt="Direct Stream Engine">
+            </div>
+            <figcaption>
+              <b>Ultra-HD Hardware Decoded Direct Stream</b>
+            </figcaption>
+          </figure>
+
+          <!-- Card 1: Nivio P2P Torrents -->
+          <figure class="player-card" data-index="1">
+            <div class="player-card-frame">
+              <img src="player-torrent.jpg" onerror="this.onerror=null;this.src='../assets/images/player-torrent.jpg';" alt="Nivio P2P Torrents Player">
+            </div>
+            <figcaption>
+              <b>Instant P2P BitTorrent Swarm Streaming</b>
+            </figcaption>
+          </figure>
+
+          <!-- Card 2: Watch Party -->
+          <figure class="player-card" data-index="2">
+            <div class="player-card-frame">
+              <img src="player-party.jpg" onerror="this.onerror=null;this.src='../assets/images/player-party.jpg';" alt="Watch Party Player">
+            </div>
+            <figcaption>
+              <b>Synchronized Multiplayer Watch Party</b>
+            </figcaption>
+          </figure>
+        </div>
+      </div>
+
+      <!-- Floating Stage HUD at bottom -->
+      <div class="player-stage-hud">
+        <div class="player-dots" id="player-dots" role="tablist" aria-label="Player pagination"></div>
+        <div class="player-counter">
+          <span class="sc-dot"></span>
+          <span class="sc-text" id="player-counter-text">1 / 3</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4 Detailed Feature Pillars below showcase with generous gap -->
+  <div class="wrap player-grid-wrap">
+    <div class="player-grid">
+      <div class="p-feat-card reveal">
+        <div class="p-card-top">
+          <div class="p-feat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          </div>
+          <span class="p-card-tag">GPU Accelerated</span>
+        </div>
+        <h4>Hardware Acceleration</h4>
+        <p>Built on libmpv with zero-overhead GPU decoding. Native playback for 4K HEVC, AV1, VP9, and H.264 with picture-in-picture and granular 0.25× to 3× speed.</p>
+      </div>
+
+      <div class="p-feat-card reveal">
+        <div class="p-card-top">
+          <div class="p-feat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </div>
+          <span class="p-card-tag highlight">Instant P2P</span>
+        </div>
+        <h4>Nivio P2P Torrents</h4>
+        <p>Stream directly from torrent swarms without downloading first. Sequential piece picking delivers instant seeks, active peer counts, and buffer HUD.</p>
+      </div>
+
+      <div class="p-feat-card reveal">
+        <div class="p-card-top">
+          <div class="p-feat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+          <span class="p-card-tag">Realtime Sync</span>
+        </div>
+        <h4>Real-Time Watch Party</h4>
+        <p>Sync playback with friends in real time over Supabase. Host playback controls mirror instantly, with floating emoji reactions and live room chat.</p>
+      </div>
+
+      <div class="p-feat-card reveal">
+        <div class="p-card-top">
+          <div class="p-feat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          </div>
+          <span class="p-card-tag">+20dB Boost</span>
+        </div>
+        <h4>+20dB Audio &amp; Subs</h4>
+        <p>Hear quiet dialogue clearly with a built-in +20dB audio booster. Load local .srt/.vtt files or remote subtitles with custom delay, font size, and styling.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section id="features" class="wrap">
   <div class="sec-head reveal">
     <span class="eyebrow">What's inside</span>
-    <h2>One player for all of it.</h2>
-    <p>One app to watch them all — no more juggling a dozen streaming services.</p>
+    <h2>Everything you need. Zero compromises.</h2>
+    <p>From discovering international cinema to auto-skipping anime theme songs — every screen is crafted for binge watchers.</p>
   </div>
   <div class="feat-grid">
-    <div class="card wide reveal">
-      <div class="demo demo-player">
-        <div class="pl-eq"><i></i><i></i><i></i><i></i><i></i></div>
-        <div class="pl-bar">
-          <span class="pl-play"><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg></span>
-          <div class="pl-track"><div class="pl-fill"></div><div class="pl-knob"></div></div>
-          <span class="pl-speed">1.5×</span>
+    <div class="card card-featured reveal">
+      <div class="demo demo-discover">
+        <div class="dv-row">
+          <div class="dv-poster"><img src="posters/dune2.jpg" onerror="this.onerror=null;this.src='../assets/images/posters/dune2.jpg';" alt="Dune 2"></div>
+          <div class="dv-poster"><img src="posters/breakingbad.jpg" onerror="this.onerror=null;this.src='../assets/images/posters/breakingbad.jpg';" alt="Breaking Bad"></div>
+          <div class="dv-poster"><img src="posters/jjk.jpg" onerror="this.onerror=null;this.src='../assets/images/posters/jjk.jpg';" alt="Jujutsu Kaisen"></div>
+          <div class="dv-poster"><img src="posters/oppenheimer.jpg" onerror="this.onerror=null;this.src='../assets/images/posters/oppenheimer.jpg';" alt="Oppenheimer"></div>
+          <div class="dv-poster"><img src="posters/spiderverse.jpg" onerror="this.onerror=null;this.src='../assets/images/posters/spiderverse.jpg';" alt="Spider-Verse"></div>
+          <div class="dv-poster"><img src="posters/aot.jpg" onerror="this.onerror=null;this.src='../assets/images/posters/aot.jpg';" alt="Attack on Titan"></div>
+          <div class="dv-poster"><img src="posters/interstellar.jpg" onerror="this.onerror=null;this.src='../assets/images/posters/interstellar.jpg';" alt="Interstellar"></div>
+          <div class="dv-poster"><img src="posters/strangerthings.jpg" onerror="this.onerror=null;this.src='../assets/images/posters/strangerthings.jpg';" alt="Stranger Things"></div>
+          <!-- Seamless marquee duplicate -->
+          <div class="dv-poster" aria-hidden="true"><img src="posters/dune2.jpg" onerror="this.onerror=null;this.src='../assets/images/posters/dune2.jpg';" alt=""></div>
+          <div class="dv-poster" aria-hidden="true"><img src="posters/breakingbad.jpg" onerror="this.onerror=null;this.src='../assets/images/posters/breakingbad.jpg';" alt=""></div>
+          <div class="dv-poster" aria-hidden="true"><img src="posters/jjk.jpg" onerror="this.onerror=null;this.src='../assets/images/posters/jjk.jpg';" alt=""></div>
+          <div class="dv-poster" aria-hidden="true"><img src="posters/oppenheimer.jpg" onerror="this.onerror=null;this.src='../assets/images/posters/oppenheimer.jpg';" alt=""></div>
+          <div class="dv-poster" aria-hidden="true"><img src="posters/spiderverse.jpg" onerror="this.onerror=null;this.src='../assets/images/posters/spiderverse.jpg';" alt=""></div>
+          <div class="dv-poster" aria-hidden="true"><img src="posters/aot.jpg" onerror="this.onerror=null;this.src='../assets/images/posters/aot.jpg';" alt=""></div>
+          <div class="dv-poster" aria-hidden="true"><img src="posters/interstellar.jpg" onerror="this.onerror=null;this.src='../assets/images/posters/interstellar.jpg';" alt=""></div>
+          <div class="dv-poster" aria-hidden="true"><img src="posters/strangerthings.jpg" onerror="this.onerror=null;this.src='../assets/images/posters/strangerthings.jpg';" alt=""></div>
         </div>
       </div>
-      <h3>Blazing-fast native player</h3>
-      <p>A custom <code>media_kit</code> player on libmpv delivers hardware-accelerated decoding, picture-in-picture, custom controls, playback speed, audio-track selection and a loudness booster up to +20dB.</p>
-    </div>
-    <div class="card reveal">
-      <div class="demo demo-discover"><div class="dv-row">
-        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-      </div></div>
       <h3>Unified discovery</h3>
-      <p>Trending Movies, Shows and Anime from TMDB, with dedicated Tamil, Telugu, Hindi and Korean rows.</p>
+      <p>Trending Movies and TV Shows from TMDB, and Anime from AniList — with dedicated rows for Tamil, Telugu, Hindi, Korean, and global hits.</p>
     </div>
-    <div class="card reveal">
-      <div class="demo demo-anime">
-        <div class="an-star">★ <b>8.7</b> · <em>AniList</em></div>
-        <div class="an-q"><span>480p</span><span>720p</span><span>1080p</span><em></em></div>
+
+    <div class="card card-fit reveal">
+      <div class="demo demo-skip">
+        <div class="skip-btn-pill">
+          <svg viewBox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg>
+          Skip Intro (85s)
+        </div>
       </div>
-      <h3>Dedicated Anime hub</h3>
-      <p>AniList-powered scraping from high-speed providers with quality selection and Cloudflare bypass.</p>
+      <h3>Auto-Skip Intros &amp; Credits</h3>
+      <p>Powered by AniSkip and TheIntroDB. Automatically detect and jump past theme songs and recaps with one click.</p>
     </div>
-    <div class="card reveal">
+
+    <div class="card card-fit reveal">
       <div class="demo demo-download">
         <div class="dl-wrap">
           <svg class="dl-ring" viewBox="0 0 88 88"><circle class="dl-bg" cx="44" cy="44" r="40"/><circle class="dl-fg" cx="44" cy="44" r="40"/></svg>
@@ -428,33 +2181,109 @@
       <h3>Offline downloads</h3>
       <p>Save episodes and movies to your device and keep watching with no connection.</p>
     </div>
-    <div class="card reveal">
-      <div class="demo demo-live">
-        <div class="lv-badge"><i></i>LIVE</div>
-        <div class="lv-wave"><i style="animation-delay:0s"></i><i style="animation-delay:.22s"></i><i style="animation-delay:.44s"></i><i style="animation-delay:.12s"></i><i style="animation-delay:.6s"></i><i style="animation-delay:.32s"></i><i style="animation-delay:.5s"></i><i style="animation-delay:.08s"></i><i style="animation-delay:.4s"></i><i style="animation-delay:.26s"></i><i style="animation-delay:.55s"></i><i style="animation-delay:.18s"></i><i style="animation-delay:.36s"></i></div>
+
+    <div class="card card-featured reveal">
+      <div class="demo demo-providers">
+        <div class="pv-tag-row pv-row-1">
+          <span class="pv-chip"><i class="pv-dot online"></i>StreamFlix <b>4K HDR</b></span>
+          <span class="pv-chip"><i class="pv-dot online"></i>MovieBox <b>Multi-Server</b></span>
+          <span class="pv-chip"><i class="pv-dot online"></i>CastleTV <b>Fast CDN</b></span>
+          <span class="pv-chip"><i class="pv-dot online"></i>VidRock <b>1080p</b></span>
+          <span class="pv-chip"><i class="pv-dot online"></i>NetMirror <b>HD</b></span>
+          <!-- Duplicate for seamless ticker -->
+          <span class="pv-chip" aria-hidden="true"><i class="pv-dot online"></i>StreamFlix <b>4K HDR</b></span>
+          <span class="pv-chip" aria-hidden="true"><i class="pv-dot online"></i>MovieBox <b>Multi-Server</b></span>
+          <span class="pv-chip" aria-hidden="true"><i class="pv-dot online"></i>CastleTV <b>Fast CDN</b></span>
+          <span class="pv-chip" aria-hidden="true"><i class="pv-dot online"></i>VidRock <b>1080p</b></span>
+          <span class="pv-chip" aria-hidden="true"><i class="pv-dot online"></i>NetMirror <b>HD</b></span>
+        </div>
+        <div class="pv-tag-row pv-row-2">
+          <span class="pv-chip"><i class="pv-dot online"></i>Animetsu <b>Sub/Dub</b></span>
+          <span class="pv-chip"><i class="pv-dot online"></i>Miruro <b>1080p</b></span>
+          <span class="pv-chip"><i class="pv-dot online"></i>Animex <b>Fast</b></span>
+          <span class="pv-chip"><i class="pv-dot online"></i>Torrentio <b>P2P Swarm</b></span>
+          <span class="pv-chip"><i class="pv-dot online"></i>AnimeTosho <b>Nyaa</b></span>
+          <!-- Duplicate for seamless ticker -->
+          <span class="pv-chip" aria-hidden="true"><i class="pv-dot online"></i>Animetsu <b>Sub/Dub</b></span>
+          <span class="pv-chip" aria-hidden="true"><i class="pv-dot online"></i>Miruro <b>1080p</b></span>
+          <span class="pv-chip" aria-hidden="true"><i class="pv-dot online"></i>Animex <b>Fast</b></span>
+          <span class="pv-chip" aria-hidden="true"><i class="pv-dot online"></i>Torrentio <b>P2P Swarm</b></span>
+          <span class="pv-chip" aria-hidden="true"><i class="pv-dot online"></i>AnimeTosho <b>Nyaa</b></span>
+        </div>
+        <div class="pv-hud-status">
+          <span class="pv-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Cloudflare Bypass</span>
+          <span class="pv-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Instant Failover</span>
+        </div>
       </div>
-      <h3>Live IPTV</h3>
-      <p>Stream live television straight from your own M3U / M3U8 playlists inside the app.</p>
+      <h3>Multi-Source Streaming &amp; Anime Providers</h3>
+      <p>High-speed scrapers and P2P swarms for Movies, Shows, and Anime in one unified engine. Automatically bypass Cloudflare, probe redundant server mirrors, toggle Sub &amp; Dub tracks, and stream seamlessly up to 4K with instant failover.</p>
     </div>
-    <div class="card reveal">
-      <div class="demo demo-recs">
-        <div class="rc-head"><b>✦</b> Top Picks for you</div>
-        <div class="rc-cards"><i></i><i></i><i></i></div>
-        <div class="rc-bar"><i></i></div>
+    <div class="card card-featured reveal">
+      <div class="demo demo-sync-featured">
+        <div class="sync-feat-hub">
+          <div class="sfh-left">
+            <svg viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 000-8 5 5 0 00-9.5-1.4A3.5 3.5 0 007 18z"/></svg>
+            <span>Supabase Cloud Sync</span>
+          </div>
+          <div class="sfh-right">
+            <i class="pv-dot online"></i> 2-Way Realtime Sync
+          </div>
+        </div>
+        <div class="sync-feat-services">
+          <div class="sync-svc-card anilist">
+            <img class="sync-svc-logo" src="anilist_logo.svg" onerror="this.onerror=null;this.src='../assets/images/anilist_logo.svg';" alt="AniList">
+            <div class="sync-svc-info">
+              <b>AniList</b>
+              <span>80% Auto-Scrobble</span>
+              <span class="sync-svc-badge anilist">Sub &amp; Dub</span>
+            </div>
+          </div>
+          <div class="sync-svc-card mal">
+            <img class="sync-svc-logo" src="mal_logo.svg" onerror="this.onerror=null;this.src='../assets/images/mal_logo.svg';" alt="MyAnimeList">
+            <div class="sync-svc-info">
+              <b>MyAnimeList</b>
+              <span>PKCE OAuth 2.0</span>
+              <span class="sync-svc-badge mal">Episodes &amp; Scores</span>
+            </div>
+          </div>
+          <div class="sync-svc-card simkl">
+            <img class="sync-svc-logo" src="simkl_logo.png" onerror="this.onerror=null;this.src='../assets/images/simkl_logo.png';" alt="Simkl">
+            <div class="sync-svc-info">
+              <b>Simkl</b>
+              <span>Universal Tracker</span>
+              <span class="sync-svc-badge simkl">Movies · TV · Anime</span>
+            </div>
+          </div>
+        </div>
       </div>
-      <h3>Smart recommendations</h3>
-      <p>A privacy-first engine reads your local history to build a personalized “Top Picks For You.”</p>
-    </div>
-    <div class="card reveal">
-      <div class="demo demo-sync">
-        <span class="sy-ico pulse"><svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.2"/><line x1="10.5" y1="18" x2="13.5" y2="18"/></svg></span>
-        <span class="sy-spin"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0113.7-5.6M20 4v4h-4"/><path d="M20 12a8 8 0 01-13.7 5.6M4 20v-4h4"/></svg></span>
-        <span class="sy-ico pulse d"><svg viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 000-8 5 5 0 00-9.5-1.4A3.5 3.5 0 007 18z"/></svg></span>
+      <h3>Cloud sync &amp; multi-platform tracking</h3>
+      <p>Sign in with Google or stay anonymous — your watch progress, history, and resume points sync across all devices. Connect your accounts to automatically scrobble watched episodes, import your library, and bidirectionally sync watchlists on <b>AniList</b>, <b>MyAnimeList</b>, and <b>Simkl</b>.</p>
+      <div class="sync-steps-row">
+        <div class="sync-step-pill">
+          <b class="step-num">1</b>
+          <div class="step-text">
+            <b>1-Click Connect</b>
+            Connect via OAuth or code in Profile Settings.
+          </div>
+        </div>
+        <div class="sync-step-pill">
+          <b class="step-num">2</b>
+          <div class="step-text">
+            <b>Auto-Scrobble at 80%</b>
+            Episodes &amp; movies auto-mark as watched live.
+          </div>
+        </div>
+        <div class="sync-step-pill">
+          <b class="step-num">3</b>
+          <div class="step-text">
+            <b>2-Way Watchlist Sync</b>
+            Plan-to-Watch, progress &amp; scores mirror everywhere.
+          </div>
+        </div>
       </div>
-      <h3>Cloud sync &amp; history</h3>
-      <p>Sign in with Google or anonymously — progress, history and watchlists sync across every device.</p>
     </div>
-    <div class="card reveal">
+
+    <div class="card card-fit reveal">
       <div class="demo demo-subs">
         <span class="sb-cc">CC · EN</span>
         <div class="sb-cap">
@@ -463,49 +2292,292 @@
         </div>
       </div>
       <h3>Custom subtitles</h3>
-      <p>Load .srt / .vtt files or paste remote URLs — choices are remembered per episode.</p>
+      <p>Hear quiet dialogue clearly with custom delays, size scaling, and local .srt / .vtt file loading or remote subtitle URLs — remembered per episode.</p>
+    </div>
+
+    <div class="card card-fit reveal">
+      <div class="demo demo-live">
+        <div class="lv-badge"><i></i>LIVE IPTV</div>
+        <div class="lv-wave"><i style="animation-delay:0s"></i><i style="animation-delay:.22s"></i><i style="animation-delay:.44s"></i><i style="animation-delay:.12s"></i><i style="animation-delay:.6s"></i><i style="animation-delay:.32s"></i><i style="animation-delay:.5s"></i><i style="animation-delay:.08s"></i><i style="animation-delay:.4s"></i><i style="animation-delay:.26s"></i><i style="animation-delay:.55s"></i><i style="animation-delay:.18s"></i><i style="animation-delay:.36s"></i></div>
+        <div class="lv-channel-pill">
+          <span>M3U8 HLS</span>
+          <b>• 1080p 60fps</b>
+        </div>
+      </div>
+      <h3>Live IPTV</h3>
+      <p>Stream live television straight from your custom M3U and M3U8 playlists with low-latency HLS buffering and instant channel navigation.</p>
+    </div>
+
+    <div id="party" class="card card-featured reveal">
+      <div class="demo demo-party-featured">
+        <div class="wp-feat-header">
+          <div class="wp-code-box">
+            <span class="wp-code-tag">ROOM CODE</span>
+            <div class="wp-code-digits">
+              <b>4</b><b>8</b><b>2</b><b>1</b><b>0</b><b>6</b>
+            </div>
+            <button class="wp-copy-pill" type="button" aria-label="Copy Room Code">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span>Copy</span>
+            </button>
+          </div>
+          <div class="wp-sync-status">
+            <span class="pv-badge"><i class="pv-dot online"></i> Supabase Realtime</span>
+            <span class="wp-drift-tag">&lt;20ms Drift</span>
+          </div>
+        </div>
+
+        <div class="wp-feat-stage">
+          <div class="wp-users-panel">
+            <div class="wp-user-row host">
+              <div class="wp-user-av">👑</div>
+              <div class="wp-user-info">
+                <b>Host (You)</b>
+                <span>Broadcasting</span>
+              </div>
+              <span class="wp-user-pill host">HOST</span>
+            </div>
+            <div class="wp-user-row">
+              <div class="wp-user-av">🦊</div>
+              <div class="wp-user-info">
+                <b>Alex</b>
+                <span>Synced</span>
+              </div>
+              <span class="wp-user-pill">LOCKED</span>
+            </div>
+            <div class="wp-user-row">
+              <div class="wp-user-av">🐼</div>
+              <div class="wp-user-info">
+                <b>Sam</b>
+                <span>Synced</span>
+              </div>
+              <span class="wp-user-pill">LOCKED</span>
+            </div>
+          </div>
+
+          <div class="wp-player-panel">
+            <div class="wp-playback-bar">
+              <div class="wp-bar-meta">
+                <span><b class="wp-play-icon">▶</b> Synced Playback</span>
+                <span class="wp-time"><b>01:24:18</b> / 02:30:00</span>
+              </div>
+              <div class="wp-track">
+                <div class="wp-fill">
+                  <span class="wp-scrub-dot"></span>
+                </div>
+              </div>
+            </div>
+            <div class="wp-controls-row">
+              <span class="wp-ctrl-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Instant Play/Pause</span>
+              <span class="wp-ctrl-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg> Audio Sync</span>
+              <span class="wp-ctrl-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Seek Mirror</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="party-reaction-stream" aria-hidden="true">
+          <span class="party-rx">🍿</span>
+          <span class="party-rx">🔥</span>
+          <span class="party-rx">❤️</span>
+          <span class="party-rx">🎉</span>
+        </div>
+      </div>
+
+      <h3>Real-Time Watch Party</h3>
+      <p>Watch movies, series, and anime together with friends anywhere in the world, perfectly synchronized. Create a private room, share your 6-digit code, and hit play. Host controls — playback status, scrubbing seeks, audio tracks, and custom subtitles — mirror instantly to every viewer with sub-second latency over Supabase Realtime.</p>
+
+      <div class="party-steps-row">
+        <div class="party-step-pill">
+          <b class="step-num">1</b>
+          <div class="step-text">
+            <b>6-Digit Room Code</b>
+            Instant 1-click room creation. No sign-up required for guests.
+          </div>
+        </div>
+        <div class="party-step-pill">
+          <b class="step-num">2</b>
+          <div class="step-text">
+            <b>Sub-Second Host Sync</b>
+            Play, pause, seek &amp; speed lockstep with &lt;20ms network drift.
+          </div>
+        </div>
+        <div class="party-step-pill">
+          <b class="step-num">3</b>
+          <div class="step-text">
+            <b>Floating Live Reactions</b>
+            Send real-time animated emojis &amp; chat during intense scenes.
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
 
-<section id="party" class="wrap">
-  <div class="split reveal">
-    <div class="stage-wrap">
-      <figure class="phone"><img src="../assets/images/watch-party.jpg" alt="Watch Party screen"></figure>
+<section id="screens" class="screens-overview-section">
+  <!-- Title, Description & Platform Switcher in page flow: scrolls completely out of view BEFORE scroll lock starts -->
+  <div class="wrap screens-intro-wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">Interface Tour</span>
+      <h2>Pure cinema. Engineered for every screen.</h2>
+      <p>From seamless catalog exploration to deep playback customization — every interface is sculpted for total immersion, speed, and effortless navigation.</p>
     </div>
-    <div>
-      <span class="eyebrow">Together, in sync</span>
-      <h2>Watch parties that actually stay in&nbsp;sync.</h2>
-      <p>Create a room, share a 6-digit code, and press play. Host controls — pause, seek, skip — mirror to every device instantly over Supabase realtime. No lag, no “are you there yet?”</p>
-      <div class="code-chip"><b>4</b><b>8</b><b>2</b><b>1</b><b>0</b><b>6</b></div>
-    </div>
-  </div>
-</section>
 
-<section id="screens" class="wrap">
-  <div class="sec-head reveal">
-    <span class="eyebrow">Take a look</span>
-    <h2>Designed to disappear.</h2>
-    <p>Every screen puts the content first — dark, cinematic, and out of your way.</p>
+    <!-- Dual Platform Switcher: Desktop vs Mobile (Clean, no OS tags) -->
+    <div class="screens-platform-bar reveal">
+      <div class="screens-platform-toggle" role="tablist" aria-label="Interface Edition">
+        <button class="spt-btn active" data-platform="desktop" type="button" role="tab" aria-selected="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          <span>Desktop</span>
+        </button>
+        <button class="spt-btn" data-platform="mobile" type="button" role="tab" aria-selected="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="3"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+          <span>Mobile</span>
+        </button>
+      </div>
+    </div>
   </div>
-  <div class="gallery reveal">
-    <div class="gallery-track">
-      <figure class="shot"><img src="../assets/images/home-screen.jpg" alt="Home"><figcaption>Home</figcaption></figure>
-      <figure class="shot"><img src="../assets/images/media-screen.jpg" alt="Media details"><figcaption>Media details</figcaption></figure>
-      <figure class="shot"><img src="../assets/images/provider-screen.jpg" alt="Providers"><figcaption>Providers</figcaption></figure>
-      <figure class="shot"><img src="../assets/images/player-screen.jpg" alt="Player"><figcaption>Video player</figcaption></figure>
-      <figure class="shot"><img src="../assets/images/live-tv-screen.jpg" alt="Live TV"><figcaption>Live TV</figcaption></figure>
-      <figure class="shot"><img src="../assets/images/library-screen.jpg" alt="Library"><figcaption>Library</figcaption></figure>
-      <figure class="shot"><img src="../assets/images/settings-screen.jpg" alt="Settings"><figcaption>Settings</figcaption></figure>
-      <figure class="shot"><img src="../assets/images/watch-party.jpg" alt="Watch Party"><figcaption>Watch Party</figcaption></figure>
-      <figure class="shot" aria-hidden="true"><img src="../assets/images/home-screen.jpg" alt=""><figcaption>Home</figcaption></figure>
-      <figure class="shot" aria-hidden="true"><img src="../assets/images/media-screen.jpg" alt=""><figcaption>Media details</figcaption></figure>
-      <figure class="shot" aria-hidden="true"><img src="../assets/images/provider-screen.jpg" alt=""><figcaption>Providers</figcaption></figure>
-      <figure class="shot" aria-hidden="true"><img src="../assets/images/player-screen.jpg" alt=""><figcaption>Video player</figcaption></figure>
-      <figure class="shot" aria-hidden="true"><img src="../assets/images/live-tv-screen.jpg" alt=""><figcaption>Live TV</figcaption></figure>
-      <figure class="shot" aria-hidden="true"><img src="../assets/images/library-screen.jpg" alt=""><figcaption>Library</figcaption></figure>
-      <figure class="shot" aria-hidden="true"><img src="../assets/images/settings-screen.jpg" alt=""><figcaption>Settings</figcaption></figure>
-      <figure class="shot" aria-hidden="true"><img src="../assets/images/watch-party.jpg" alt=""><figcaption>Watch Party</figcaption></figure>
+
+  <!-- Pinned Scroll Track: locks at top:0 only after the intro title above has scrolled out of view -->
+  <div class="screens-scroll-track" id="screens-scroll-track">
+    <div class="screens-sticky-stage">
+
+      <!-- Interactive Navigation Arrows -->
+      <button class="screens-arrow screens-arrow-prev" id="screens-arrow-prev" type="button" aria-label="Previous screen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <button class="screens-arrow screens-arrow-next" id="screens-arrow-next" type="button" aria-label="Next screen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+
+      <div class="screens-viewport">
+
+        <!-- Track 1: Desktop Edition Widescreen Cards (Full-bleed, clean frame) -->
+        <div class="screens-track" id="screens-track-desktop">
+          <figure class="shot shot-desktop">
+            <div class="shot-frame-desktop">
+              <img src="player-direct.jpg" onerror="this.onerror=null;this.src='../assets/images/player-direct.jpg';" alt="Cinema Player Engine">
+            </div>
+            <figcaption>
+              <b>Cinema Player Engine</b>
+            </figcaption>
+          </figure>
+
+          <figure class="shot shot-desktop">
+            <div class="shot-frame-desktop">
+              <img src="player-torrent.jpg" onerror="this.onerror=null;this.src='../assets/images/player-torrent.jpg';" alt="Embedded BitTorrent Streamer">
+            </div>
+            <figcaption>
+              <b>Embedded BitTorrent Engine</b>
+            </figcaption>
+          </figure>
+
+          <figure class="shot shot-desktop">
+            <div class="shot-frame-desktop">
+              <img src="player-party.jpg" onerror="this.onerror=null;this.src='../assets/images/player-party.jpg';" alt="Multiplayer Watch Party">
+            </div>
+            <figcaption>
+              <b>Multiplayer Watch Party</b>
+            </figcaption>
+          </figure>
+
+          <figure class="shot shot-desktop">
+            <div class="shot-frame-desktop">
+              <img src="player-party-hud.jpg" onerror="this.onerror=null;this.src='../assets/images/player-party-hud.jpg';" alt="Cinema HUD &amp; Subtitle Suite">
+            </div>
+            <figcaption>
+              <b>Cinema HUD &amp; Subtitle Suite</b>
+            </figcaption>
+          </figure>
+
+          <figure class="shot shot-desktop">
+            <div class="shot-frame-desktop">
+              <img src="player-screen.jpg" onerror="this.onerror=null;this.src='../assets/images/player-screen.jpg';" alt="Unified Playback &amp; Timeline Controls">
+            </div>
+            <figcaption>
+              <b>Unified Playback &amp; Timeline Controls</b>
+            </figcaption>
+          </figure>
+        </div>
+
+        <!-- Track 2: Mobile Edition Smartphone Cards -->
+        <div class="screens-track" id="screens-track-mobile" hidden>
+          <figure class="shot">
+            <div class="shot-frame">
+              <img src="../assets/images/home-screen.jpg" alt="Home Screen">
+            </div>
+            <figcaption>
+              <b>Home Feed</b>
+            </figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="shot-frame">
+              <img src="../assets/images/media-screen.jpg" alt="Media details">
+            </div>
+            <figcaption>
+              <b>Media Details</b>
+            </figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="shot-frame">
+              <img src="../assets/images/provider-screen.jpg" alt="Provider selector">
+            </div>
+            <figcaption>
+              <b>Select Provider</b>
+            </figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="shot-frame">
+              <img src="../assets/images/live-tv-screen.jpg" alt="Live TV">
+            </div>
+            <figcaption>
+              <b>Live IPTV</b>
+            </figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="shot-frame">
+              <img src="../assets/images/library-screen.jpg" alt="Your Library">
+            </div>
+            <figcaption>
+              <b>Your Library</b>
+            </figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="shot-frame">
+              <img src="../assets/images/settings-screen.jpg" alt="Settings">
+            </div>
+            <figcaption>
+              <b>Settings &amp; Tweaks</b>
+            </figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="shot-frame">
+              <img src="../assets/images/watch-party.jpg" alt="Watch Party">
+            </div>
+            <figcaption>
+              <b>Watch Party</b>
+            </figcaption>
+          </figure>
+        </div>
+      </div>
+
+      <!-- Floating Stage HUD at bottom -->
+      <div class="screens-stage-hud">
+        <div class="screens-platform-mini-toggle hide-sm" role="tablist" aria-label="Switch Platform">
+          <button class="spm-btn active" data-platform="desktop" type="button" aria-label="Desktop Screenshots">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            <span>Desktop</span>
+          </button>
+          <button class="spm-btn" data-platform="mobile" type="button" aria-label="Mobile Screenshots">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="3"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+            <span>Mobile</span>
+          </button>
+        </div>
+        <div class="screens-dots" id="screens-dots" role="tablist" aria-label="Screens pagination"></div>
+        <div class="screens-counter">
+          <span class="sc-dot"></span>
+          <span class="sc-text" id="screens-counter-text">1 / 5</span>
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -526,16 +2598,66 @@
       Supabase
     </span>
     <span class="pill">
-      <svg viewBox="0 0 24 24"><path fill="#00C4B3" d="M3 20c6.2 0 10.4-4.2 12.3-10.3 1.4.5 2.9.2 3.7-1.2-1.9.4-2.8-.5-2.8-1.9 0-1.4-1.1-2.6-2.6-2.6-3 0-6.1 4.1-6.1 9.2L3 20z"/><circle cx="14.3" cy="6.4" r="1" fill="#0c0906"/></svg>
+      <svg viewBox="0 0 129 128" fill="none">
+        <path d="M129 62.481L117.099 50.5798C117.779 52.973 119.42 60.3377 119.514 61.5162L129 62.481Z" fill="#A79772"/>
+        <path fill-rule="evenodd" clip-rule="evenodd" d="M108.33 94.6691L108.429 94.5421L108.517 94.4076C117.857 80.1515 120.985 67.7705 119.786 57.0992C118.586 46.4236 113.126 38.0733 106.488 31.748C93.3843 19.2623 74.9634 13.9684 71.8903 13.1426C71.0367 12.9132 70.0246 12.9363 69.0577 13.3916C68.1202 13.8332 67.4907 14.5556 67.1302 15.2744C66.4356 16.6597 66.5926 18.242 67.3654 19.4356L70.0969 23.6546C69.3204 23.7894 68.528 24.005 67.7239 24.3143C61.7765 26.6017 57.0133 33.3937 53.7609 45.5903C50.0775 59.4031 42.8568 66.4375 35.8976 70.1346C28.7861 73.9126 21.5998 74.3818 17.9235 74.3818C14.7952 74.3818 12.2146 73.4045 10.3862 72.3959C9.47592 71.8937 8.77565 71.3963 8.31874 71.0392C8.09132 70.8615 7.92741 70.721 7.83125 70.6357C7.78326 70.5931 7.75247 70.5646 7.73941 70.5523L7.73478 70.548C6.23564 69.0877 3.85729 69.0428 2.30389 70.4499C0.743713 71.8631 0.559017 74.2488 1.8831 75.8853L4.96691 73.3902C1.8831 75.8853 1.88419 75.8867 1.8855 75.8883L1.88925 75.8929L1.90077 75.9071L1.93983 75.9549C1.97295 75.9954 2.02018 76.0529 2.08124 76.1266C2.20335 76.274 2.38081 76.4865 2.61131 76.7579C3.07224 77.3007 3.74572 78.0797 4.61329 79.0463C6.34748 80.9783 8.86248 83.6652 12.0104 86.7148C18.2849 92.7933 27.1732 100.409 37.4863 106.335C47.7664 112.241 59.7913 116.656 72.2241 115.841C84.8455 115.014 97.3126 108.834 108.33 94.6691ZM12.5593 81.6802C7.75984 76.8417 4.96711 73.39 4.96711 73.39C4.96711 73.39 4.96722 73.3902 4.96743 73.3904C5.30192 73.8029 63.6629 145.634 105.197 92.2321C120.667 68.6201 117.577 51.6925 108.558 39.9402C117.578 51.6926 120.669 68.6206 105.199 92.2335C72.6396 134.095 29.7408 99.0013 12.5593 81.6802Z" fill="url(#sh_g)"/>
+        <path fill-rule="evenodd" clip-rule="evenodd" d="M47.6049 54.9179C50.2914 49.9694 55.5333 46.6099 61.5598 46.6099C69.5381 46.6099 76.1413 52.4979 77.2607 60.1657C80.8499 72.1206 63.8615 86.4641 47.8728 86.4641C33.7907 86.4641 10.577 75.9484 20.1034 66.6288C23.0402 63.7558 26.3186 63.7706 29.832 63.7865C32.4259 63.7983 35.1479 63.8106 37.9551 62.6618C41.3736 61.2628 43.6276 58.9513 45.7935 56.7301C46.3964 56.1118 46.9924 55.5005 47.6049 54.9179Z" fill="#A78F72"/>
+        <path d="M97.1042 57.1438C93.8178 57.1438 91.1536 54.4797 91.1536 51.1933C91.1536 47.9068 93.8178 45.2427 97.1042 45.2427C100.391 45.2427 103.055 47.9068 103.055 51.1933C103.055 54.4797 100.391 57.1438 97.1042 57.1438Z" fill="#161619"/>
+        <defs>
+          <linearGradient id="sh_g" x1="49.5" y1="54.7" x2="103.5" y2="102" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#00D2B8"/>
+            <stop offset="1" stop-color="#01B4E4"/>
+          </linearGradient>
+        </defs>
+      </svg>
       Shorebird
     </span>
     <span class="pill">
-      <svg viewBox="0 0 40 24"><defs><linearGradient id="tg" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#90CEA1"/><stop offset="1" stop-color="#01B4E4"/></linearGradient></defs><rect x="1" y="6" width="38" height="12" rx="3" fill="url(#tg)"/></svg>
+      <svg viewBox="0 0 190.24 81.52">
+        <defs>
+          <linearGradient id="tmdbg" y1="40.76" x2="190.24" y2="40.76" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#90cea1"/>
+            <stop offset="0.56" stop-color="#3cbec9"/>
+            <stop offset="1" stop-color="#00b3e5"/>
+          </linearGradient>
+        </defs>
+        <path fill="url(#tmdbg)" d="M105.67,36.06h66.9A17.67,17.67,0,0,0,190.24,18.4h0A17.67,17.67,0,0,0,172.57.73h-66.9A17.67,17.67,0,0,0,88,18.4h0A17.67,17.67,0,0,0,105.67,36.06Zm-88,45h76.9A17.67,17.67,0,0,0,112.24,63.4h0A17.67,17.67,0,0,0,94.57,45.73H17.67A17.67,17.67,0,0,0,0,63.4H0A17.67,17.67,0,0,0,17.67,81.06ZM10.41,35.42h7.8V6.92h10.1V0H.31v6.9h10.1Zm28.1,0h7.8V8.25h.1l9,27.15h6l9.3-27.15h.1V35.4h7.8V0H66.76l-8.2,23.1h-.1L50.31,0H38.51ZM152.43,55.67a15.07,15.07,0,0,0-4.52-5.52,18.57,18.57,0,0,0-6.68-3.08,33.54,33.54,0,0,0-8.07-1h-11.7v35.4h12.75a24.58,24.58,0,0,0,7.55-1.15A19.34,19.34,0,0,0,148.11,77a16.27,16.27,0,0,0,4.37-5.5,16.91,16.91,0,0,0,1.63-7.58A18.5,18.5,0,0,0,152.43,55.67ZM145,68.6A8.8,8.8,0,0,1,142.36,72a10.7,10.7,0,0,1-4,1.82,21.57,21.57,0,0,1-5,.55h-4.05v-21h4.6a17,17,0,0,1,4.67.63,11.66,11.66,0,0,1,3.88,1.87A9.14,9.14,0,0,1,145,59a9.87,9.87,0,0,1,1,4.52A11.89,11.89,0,0,1,145,68.6Zm44.63-.13a8,8,0,0,0-1.58-2.62A8.38,8.38,0,0,0,185.63,64a10.31,10.31,0,0,0-3.17-1v-.1a9.22,9.22,0,0,0,4.42-2.82,7.43,7.43,0,0,0,1.68-5,8.42,8.42,0,0,0-1.15-4.65,8.09,8.09,0,0,0-3-2.72,12.56,12.56,0,0,0-4.18-1.3,32.84,32.84,0,0,0-4.62-.33h-13.2v35.4h14.5a22.41,22.41,0,0,0,4.72-.5,13.53,13.53,0,0,0,4.28-1.65,9.42,9.42,0,0,0,3.1-3,8.52,8.52,0,0,0,1.2-4.68A9.39,9.39,0,0,0,189.66,68.47ZM170.21,52.72h5.3a10,10,0,0,1,1.85.18,6.18,6.18,0,0,1,1.7.57,3.39,3.39,0,0,1,1.22,1.13,3.22,3.22,0,0,1,.48,1.82,3.63,3.63,0,0,1-.43,1.8,3.4,3.4,0,0,1-1.12,1.2,4.92,4.92,0,0,1-1.58.65,7.51,7.51,0,0,1-1.77.2h-5.65Zm11.72,20a3.9,3.9,0,0,1-1.22,1.3,4.64,4.64,0,0,1-1.68.7,8.18,8.18,0,0,1-1.82.2h-7v-8h5.9a15.35,15.35,0,0,1,2,.15,8.47,8.47,0,0,1,2.05.55,4,4,0,0,1,1.57,1.18,3.11,3.11,0,0,1,.63,2A3.71,3.71,0,0,1,181.93,72.72Z"/>
+      </svg>
       TMDB
     </span>
     <span class="pill">
-      <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="4" fill="#02A9FF"/><path fill="#fff" d="M8.2 8.2H6.4v7.6h1.8v-2h1.5v2h1.8V10c0-1-.6-1.8-1.8-1.8H8.2zm0 1.6h1.3v2.4H8.2zM14 8.2v7.6h3.6v-1.6H15.8V8.2z"/></svg>
+      <svg viewBox="0 0 24 24"><path fill="#F5C518" d="M22.38 0H1.62C.74.06.06.74 0 1.6l-.001 20.78c.06.88.71 1.54 1.56 1.62h20.84c.87-.08 1.56-.83 1.56-1.71V1.71c0-.89-.7-1.64-1.58-1.71zM4.8 15.62H2.89V8.26H4.8v7.36zm6.54 0H9.67v-4.97l-.67 4.97H7.81l-.7-4.86-.01 4.86H5.43V8.26h2.47c.07.45.15.97.23 1.57l.27 1.87.44-3.44h2.5zm2.98-1.58c0 .66-.04 1.1-.1 1.32-.06.22-.17.4-.33.52-.15.13-.34.22-.57.26-.22.05-.57.08-1.02.08h-2.3V8.26h1.42c.92 0 1.45.05 1.77.13.33.09.58.22.75.42.17.19.27.4.31.64.05.24.07.71.07 1.41v2.58zm-1.42-.87V9.52c-.08-.05-.22-.07-.42-.07v4.11c.27 0 .44-.05.5-.17.06-.11.1-.4.1-.9v-1.15zm6.58.67c-.06.22-.2.41-.42.56-.22.16-.48.24-.78.24-.22 0-.5-.05-.68-.14a1.4 1.4 0 0 1-.51-.43l-.12.47h-1.71V8.26h1.83v2.85c.16-.18.33-.31.51-.4.19-.08.47-.13.68-.13.26 0 .47.04.66.12.18.08.33.19.43.33.09.14.15.28.17.42.02.14.03.43.03.87v2.07c0 .44-.03.77-.09.98zm-1.02-.91v-1.89c0-.3-.02-.51-.06-.6-.04-.1-.2-.14-.31-.14-.11 0-.19.04-.22.12-.03.08-.05.29-.05.62v1.95c0 .32.02.53.06.62.03.09.11.14.22.14.12 0 .27-.05.3-.14.04-.1.06-.32.06-.68z"/></svg>
+      IMDb
+    </span>
+    <span class="pill">
+      <svg viewBox="0 0 100 100">
+        <rect width="100" height="100" rx="20" fill="#0B1622"/>
+        <g transform="translate(14, 14) scale(3)">
+          <path fill="#ffffff" fill-rule="evenodd" d="M11.034 2.947 L17.371 21.051 L12.453 21.051 L11.401 17.92 L6.019 17.92 L4.942 21.051 L0 21.051 L6.361 2.948 Z M10.374 13.907 L8.684 8.893 L7.143 13.908 Z"/>
+          <path fill="#02A9FF" d="M24 17.53 L24 19.951 C24 20.661 23.609 21.052 22.9 21.052 L17.9 21.052 L17.843 20.887 L11.84 3.736 C11.946 3.234 12.3 2.948 12.893 2.948 L15.315 2.948 C16.025 2.948 16.415 3.339 16.415 4.048 L16.415 16.428 L22.9 16.428 C23.61 16.428 24 16.82 24 17.53 Z"/>
+        </g>
+      </svg>
       AniList
+    </span>
+    <span class="pill">
+      <svg viewBox="0 0 24 24">
+        <rect width="24" height="24" rx="5" fill="#0c1014"/>
+        <path fill="#00C4B3" d="M3.84 0A3.83 3.83 0 0 0 0 3.84v16.32A3.83 3.83 0 0 0 3.84 24h16.32A3.83 3.83 0 0 0 24 20.16V3.84A3.83 3.83 0 0 0 20.16 0zm8.57 4.11c2.07 0 3.54.06 4.39.19 1.13.17 1.94.46 2.44.88.67.58 1.01 1.61 1.01 3.1 0 .16 0 .42-.01.77h-4.23c-.01-.36-.04-.61-.07-.75-.1-.41-.42-.64-.97-.69-.48-.04-1.66-.07-3.53-.07-1.85 0-2.95.06-3.29.17-.38.13-.58.47-.58 1.02 0 .53.2.85.61.97.34.1 1.89.19 4.63.28 2.49.07 4.07.16 4.76.27.7.11 1.24.28 1.65.5.41.22.74.53.98.94.37.59.56 1.55.56 2.87 0 1.48-.18 2.56-.55 3.25-.36.68-.96 1.15-1.78 1.4-.81.25-3.05.37-6.71.37-2.23 0-3.83-.06-4.82-.19-1.2-.14-2.07-.43-2.59-.86-.57-.45-.9-1.1-1.01-1.93a10.5 10.5 0 0 1-.08-1.43v-.79H7.44c-.01.74.14 1.22.43 1.43.15.1.33.17.53.2.2.04.54.06 1.03.08a166 166 0 0 0 2.4.02c1.87-.01 2.95-.02 3.24-.03.55-.05.92-.12 1.09-.23.25-.16.37-.52.37-1.08 0-.38-.08-.65-.23-.8-.21-.21-.71-.33-1.5-.34-.55 0-1.69-.05-3.43-.13-1.79-.09-2.96-.14-3.49-.16-1.38-.04-2.36-.21-2.93-.5-.73-.37-1.2-1.01-1.43-1.91-.13-.5-.19-1.15-.19-1.96 0-1.7.31-2.9.93-3.59.46-.53 1.16-.87 2.1-1.04.85-.15 2.87-.22 6.05-.22z"/>
+      </svg>
+      Simkl
+    </span>
+    <span class="pill">
+      <svg viewBox="0 0 100 100">
+        <rect width="100" height="100" rx="20" fill="#2E51A2"/>
+        <g transform="translate(14, 14) scale(3)">
+          <path fill="#ffffff" d="M0 6.528 L0 16.152 L2.348 16.152 L2.348 10.312 L4.379 12.976 L6.426 10.324 L6.426 16.152 L8.762 16.152 L8.762 6.528 L6.437 6.528 L4.368 9.474 L2.31 6.528 Z M14.921 6.479 C14.101 6.479 11.238 6.479 9.974 9.635 C9.312 11.287 8.988 14.447 10.85 17.521 L12.784 16.111 C12.017 15.016 11.7 13.921 11.701 12.92 L14.598 12.92 L14.62 16.11 L17.224 16.11 L17.224 8.835 L14.643 8.835 L14.643 10.878 L12.183 10.855 C12.596 8.447 14.647 8.447 15.06 8.519 L17.514 8.519 L16.942 6.479 Z M18.447 6.55 L18.447 16.133 L23.469 16.133 L24 14.09 L20.768 14.09 L20.768 6.55 Z"/>
+        </g>
+      </svg>
+      MyAnimeList
+    </span>
+    <span class="pill">
+      <svg viewBox="0 0 24 24"><path fill="#8A4AF3" d="M12 0C5.37 0 0 5.37 0 12a12 12 0 0 0 1.7 6.16c.03 0 .05-.07.05-.11a.74.74 0 0 0-.03-.13 22.14 22.14 0 0 1-.43-2.29 9.84 9.84 0 0 1 .43-3.87c1.1-3.4 3.33-5.7 6.66-6.94a10.3 10.3 0 0 1 3.4-.6c.55 0 .86.32.86.77 0 .45-.35.73-.85.76a12.85 12.85 0 0 0-1.61.17 8.69 8.69 0 0 0-4.86 2.64C3.35 10.82 2.55 13.46 3.03 16.45a8.68 8.68 0 0 0 2.45 4.79A8.94 8.94 0 0 0 11.85 24h.15a11.95 11.95 0 0 0 5.61-1.39h-5.59a8.4 8.4 0 0 1-1.41-.13c-4.14-.75-6.92-4.67-6.24-8.83.56-3.52 3.47-6.2 7.03-6.48a7.64 7.64 0 0 1 2.16.14.75.75 0 0 1 .62.87.78.78 0 0 1-.96.6 6.08 6.08 0 0 0-.8-.11 6.33 6.33 0 0 0-2.9.5c-2.5 1.08-4.01 3.67-3.7 6.39.35 3.13 3 5.5 6.16 5.51H19.5c.68 0 .84.02 1.14-.24.38-.35.74-.72 1.08-1.12h-9.33a4.35 4.35 0 0 1-2.08-.52c-2.4-1.18-3.4-4.08-2.21-6.49 1.18-2.4 4.08-3.4 6.48-2.21.12.06.24.12.35.19a.75.75 0 0 1 .32 1.04.77.77 0 0 1-1.07.27c-1.6-.91-3.63-.35-4.54 1.24a3.33 3.33 0 0 0-.4 2.18c.24 1.62 1.64 2.81 3.28 2.8 3.36.04 6.72 0 10.08 0 .15 0 .23-.05.28-.14 3.36-5.72 1.45-13.07-4.26-16.43A12 12 0 0 0 12 0z"/></svg>
+      BitTorrent
     </span>
     <span class="pill">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#691F69"/><circle cx="12" cy="12" r="6.5" fill="#e9508a"/><path fill="#fff" d="M10 8.8l5 3.2-5 3.2z"/></svg>
@@ -544,19 +2666,156 @@
   </div>
 </section>
 
+<section id="releases" class="wrap releases-section">
+  <div class="sec-head reveal">
+    <span class="eyebrow">Changelog &amp; Milestones</span>
+    <h2>Shipped with speed. Built in the open.</h2>
+    <p>Every release brings faster decoders, new scrapers, and platform polish. Transparent, open-source, and tracked on GitHub.</p>
+  </div>
+
+  <div class="releases-meta-bar reveal">
+    <div class="rmb-badges">
+      <span class="rmb-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> 170+ Commits</span>
+      <span class="rmb-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> MIT Open Source</span>
+      <span class="rmb-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg> Android APK</span>
+      <span class="rmb-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> Windows x64</span>
+    </div>
+    <a class="btn-gh-releases" href="https://github.com/nirmaleeswar30/Nivio/releases" target="_blank" rel="noopener noreferrer">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2 0 1.9 1.2 1.9 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.2.5-2.3 1.3-3.1-.2-.4-.6-1.6.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.2 2.8.1 3.2.9.8 1.3 1.9 1.3 3.2 0 4.6-2.8 5.6-5.5 5.9.5.4.9 1.1.9 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"/></svg>
+      <span>View all releases on GitHub</span>
+      <span class="arrow-ext">↗</span>
+    </a>
+  </div>
+
+  <div class="releases-timeline">
+    <!-- Timeline Item 1: v2.2.3 Latest -->
+    <div class="rel-item current reveal" id="rel-latest-item">
+      <div class="rel-spine">
+        <div class="rel-dot"></div>
+        <div class="rel-line"></div>
+      </div>
+      <div class="rel-card">
+        <div class="rel-card-header">
+          <div class="rel-badge-group">
+            <span class="rel-tag latest" data-release-tag>v2.2.3</span>
+            <span class="rel-status-pill">Latest Release</span>
+            <span class="rel-plat-pill">Android APK</span>
+          </div>
+          <div class="rel-date" data-release-date>July 2026 · <a href="https://github.com/nirmaleeswar30/Nivio/commit/6104831" target="_blank" rel="noopener noreferrer">#6104831</a></div>
+        </div>
+        <h4 data-release-title>Anime Downloader &amp; Subtitle Persistence Engine</h4>
+        <p data-release-desc>A major reliability release stabilizing media streams, anime segment downloads, and custom subtitle memory across reboots.</p>
+        <ul class="rel-notes" data-release-notes>
+          <li><b>Anime Downloads:</b> Fixed multi-segment merging and stream download stability for Miruro &amp; Animetsu.</li>
+          <li><b>Subtitle Persistence:</b> Saved subtitle delay offset and font styling preferences automatically per show.</li>
+          <li><b>R8 &amp; libmpv:</b> Minification rules optimized for hardware-accelerated playback with zero frame drops.</li>
+        </ul>
+        <div class="rel-actions">
+          <a class="rel-dl-btn" data-apk-download href="https://github.com/nirmaleeswar30/Nivio/releases/download/v2.2.3/nivio.apk" target="_blank" rel="noopener noreferrer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>
+            <span data-apk-label>Download v2.2.3 APK</span>
+          </a>
+          <a class="rel-sub-btn" data-release-notes-link href="https://github.com/nirmaleeswar30/Nivio/releases/tag/v2.2.3" target="_blank" rel="noopener noreferrer">Release Notes ↗</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Timeline Item 2: Desktop Edition v1.0 -->
+    <div class="rel-item reveal">
+      <div class="rel-spine">
+        <div class="rel-dot"></div>
+        <div class="rel-line"></div>
+      </div>
+      <div class="rel-card">
+        <div class="rel-card-header">
+          <div class="rel-badge-group">
+            <span class="rel-tag desktop">Desktop v1.0</span>
+            <span class="rel-status-pill desktop">Desktop Milestone</span>
+            <span class="rel-plat-pill">Windows x64</span>
+          </div>
+          <div class="rel-date">August 2026 · <a href="https://github.com/nirmaleeswar30/Nivio/commit/3f1e957" target="_blank" rel="noopener noreferrer">#3f1e957</a></div>
+        </div>
+        <h4>Native Desktop App &amp; Inno Setup Installer</h4>
+        <p>Expanded Nivio to big screens with an official Windows desktop installer, dedicated desktop shortcuts, and window controls.</p>
+        <ul class="rel-notes">
+          <li><b>Native Inno Setup:</b> Packaged into <code>Nivio-windows-x64-setup.exe</code> installer with desktop and start menu shortcuts.</li>
+          <li><b>Windows Trailer Overlay:</b> Smooth WebView trailer preview with pointer pass-through fix.</li>
+          <li><b>Desktop OAuth Loopback:</b> Local browser loopback login enabling Google auth and cloud sync on desktop.</li>
+        </ul>
+        <div class="rel-actions">
+          <a class="rel-sub-btn" href="https://github.com/nirmaleeswar30/Nivio/tree/desktop-platform" target="_blank" rel="noopener noreferrer">View Desktop Package ↗</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Timeline Item 3: v2.1.0 -->
+    <div class="rel-item reveal">
+      <div class="rel-spine">
+        <div class="rel-dot"></div>
+        <div class="rel-line"></div>
+      </div>
+      <div class="rel-card">
+        <div class="rel-card-header">
+          <div class="rel-badge-group">
+            <span class="rel-tag sync">v2.1.0</span>
+            <span class="rel-plat-pill">Realtime WebSockets</span>
+          </div>
+          <div class="rel-date">July 2026 · <a href="https://github.com/nirmaleeswar30/Nivio/commit/ef369bd" target="_blank" rel="noopener noreferrer">#ef369bd</a></div>
+        </div>
+        <h4>Real-Time Watch Parties &amp; 3-Way Scrobbling</h4>
+        <p>Introduced multiplayer Watch Parties with 6-digit room PINs alongside bidirectional AniList, MAL, and Simkl sync.</p>
+        <ul class="rel-notes">
+          <li><b>Supabase Watch Parties:</b> Sub-second synchronized playback with host scrub control and floating emoji reactions.</li>
+          <li><b>AniList &amp; MyAnimeList:</b> Automated 80% episode completion scrobbler and PKCE OAuth 2.0 authentication.</li>
+          <li><b>Simkl Universal Tracker:</b> Synced movies, TV series, and anime watchlists to a single dashboard.</li>
+        </ul>
+        <div class="rel-actions">
+          <a class="rel-sub-btn" href="https://github.com/nirmaleeswar30/Nivio/releases/tag/v2.1.0" target="_blank" rel="noopener noreferrer">Release Details ↗</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Timeline Item 4: v2.0.0 -->
+    <div class="rel-item reveal">
+      <div class="rel-spine">
+        <div class="rel-dot"></div>
+      </div>
+      <div class="rel-card">
+        <div class="rel-card-header">
+          <div class="rel-badge-group">
+            <span class="rel-tag core">v2.0.0</span>
+            <span class="rel-plat-pill">Major Core Overhaul</span>
+          </div>
+          <div class="rel-date">July 2026 · <a href="https://github.com/nirmaleeswar30/Nivio/commit/e45cc9c" target="_blank" rel="noopener noreferrer">#e45cc9c</a></div>
+        </div>
+        <h4>The MediaKit Engine Port &amp; Architecture Overhaul</h4>
+        <p>Migrated playback to <code>media_kit</code> powered by <code>libmpv</code> for native GPU-accelerated decoding across formats.</p>
+        <ul class="rel-notes">
+          <li><b>GPU Hardware Acceleration:</b> High-performance 4K HEVC, AV1, and VP9 decoding with zero CPU stutter.</li>
+          <li><b>+20dB Loudness Boost:</b> Built-in audio booster to hear quiet movie dialogue clearly.</li>
+          <li><b>Shorebird OTA:</b> Over-the-air code pushes for instant background patch delivery.</li>
+        </ul>
+        <div class="rel-actions">
+          <a class="rel-sub-btn" href="https://github.com/nirmaleeswar30/Nivio/releases/tag/v2.0.0" target="_blank" rel="noopener noreferrer">Release Details ↗</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section class="wrap" id="download">
   <div class="download reveal">
-    <img class="icon" src="../assets/images/app-icon.png" alt="Nivio">
+    <img class="icon" src="nivio.png" onerror="this.onerror=null;this.src='../assets/images/nivio.png';" alt="Nivio">
     <h2>Ready when you are.</h2>
     <p>Grab the latest APK and turn your phone into an all-in-one cinema. Free, open-source, and always up to date over the air.</p>
     <div class="cta-row" style="justify-content:center">
-      <a class="btn btn-primary" href="https://github.com/nirmaleeswar30/Nivio/releases/download/v2.2.3/nivio-2.2.3-universal.apk" target="_blank" rel="noopener noreferrer">
+      <a class="btn btn-primary" data-apk-download href="https://github.com/nirmaleeswar30/Nivio/releases/download/v2.2.3/nivio.apk" target="_blank" rel="noopener noreferrer">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>
-        Download APK
+        <span data-apk-label>Download APK</span>
       </a>
       <a class="btn btn-ghost" href="https://github.com/nirmaleeswar30/Nivio" target="_blank" rel="noopener noreferrer">View on GitHub</a>
     </div>
-    <p class="note">Android · v2.2.3 · MIT licensed · Sign in with Google or stay anonymous</p>
+    <p class="note">Android · <span data-release-tag>v2.2.3</span> · MIT licensed · Sign in with Google or stay anonymous</p>
   </div>
 </section>
 
@@ -564,7 +2823,10 @@
   <div class="wrap">
     <div class="foot-top">
       <div class="foot-brand">
-        <a class="brand" href="#top" aria-label="Nivio"><img src="../assets/images/app-icon.png" alt="Nivio"></a>
+        <a class="brand" href="#top" aria-label="Nivio">
+          <img class="brand-mark" src="../assets/images/nivio.png" onerror="this.onerror=null;this.src='nivio.png';" alt="Nivio">
+          <img class="brand-word" src="../assets/images/nivio-wordmark.png" onerror="this.onerror=null;this.src='wordmark2.png';" alt="Nivio">
+        </a>
         <p>An all-in-one streaming home for Movies, TV, Anime and Live IPTV — with real-time Watch Parties and offline downloads.</p>
         <div class="foot-social">
           <a href="https://github.com/nirmaleeswar30/Nivio" target="_blank" rel="noopener noreferrer" aria-label="Nivio on GitHub">
@@ -573,37 +2835,40 @@
           </a>
           <a href="https://github.com/nirmaleeswar30/Nivio" target="_blank" rel="noopener noreferrer" class="fstar" aria-label="Star Nivio on GitHub">
             <svg viewBox="0 0 24 24"><path d="M12 2.6l2.9 5.9 6.5.95-4.7 4.6 1.1 6.45L12 17.9l-5.8 3.05 1.1-6.45L2.6 9.45l6.5-.95L12 2.6z"/></svg>
-            Star
+            Star (<span data-gh-stars>16</span>)
           </a>
         </div>
       </div>
       <div class="foot-cols">
         <div class="foot-col">
           <h4>Product</h4>
+          <a href="#player">Cinema Player</a>
           <a href="#features">Features</a>
           <a href="#party">Watch Party</a>
-          <a href="#screens">Screens</a>
-          <a href="#download">Download</a>
+          <a href="#screens">Interface Tour</a>
+          <a href="#releases">Changelog &amp; Notes</a>
         </div>
         <div class="foot-col">
-          <h4>Built with</h4>
-          <a href="#stack">Flutter</a>
-          <a href="#stack">Firebase</a>
-          <a href="#stack">Supabase</a>
-          <a href="#stack">Shorebird</a>
+          <h4>Download</h4>
+          <a href="https://github.com/nirmaleeswar30/Nivio/releases/latest" data-apk-download>Android APK (nivio.apk)</a>
+          <a href="https://github.com/nirmaleeswar30/Nivio/releases" target="_blank" rel="noopener noreferrer">Windows Release</a>
+          <a href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">Latest Release Notes</a>
+          <a href="https://github.com/nirmaleeswar30/Nivio/releases" target="_blank" rel="noopener noreferrer">All GitHub Releases</a>
+          <a href="#download">System Requirements</a>
         </div>
         <div class="foot-col">
-          <h4>Content</h4>
-          <span>Movies</span>
-          <span>TV Shows</span>
-          <span>Anime</span>
-          <span>Live IPTV</span>
+          <h4>Open Source</h4>
+          <a href="https://github.com/nirmaleeswar30/Nivio" target="_blank" rel="noopener noreferrer">GitHub Repository</a>
+          <a href="https://github.com/nirmaleeswar30/Nivio/stargazers" target="_blank" rel="noopener noreferrer">Star on GitHub</a>
+          <a href="https://github.com/nirmaleeswar30/Nivio/issues" target="_blank" rel="noopener noreferrer">Issue Tracker &amp; Bugs</a>
+          <a href="https://github.com/nirmaleeswar30/Nivio/issues/new/choose" target="_blank" rel="noopener noreferrer">Feature Requests</a>
+          <a href="https://github.com/nirmaleeswar30/Nivio/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License</a>
         </div>
       </div>
     </div>
     <div class="foot-bottom">
-      <span>© 2026 Nivio · MIT licensed</span>
-      <span>Made with Flutter · libmpv</span>
+      <span>© 2026 Nivio · Free &amp; Open Source</span>
+      <span>Built with Flutter</span>
     </div>
   </div>
 </footer>
@@ -614,11 +2879,689 @@
   },{threshold:.12});
   document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
 
-  // Transparent top bar that frosts once you scroll
-  const header=document.querySelector('header');
-  const onScroll=()=>{header.classList.toggle('scrolled',window.scrollY>18)};
+  // Smart auto-hiding top bar: hides when scrolling down, reappears when scrolling up
+  const header = document.querySelector('header');
+  let lastScrollY = window.scrollY;
+  const onScroll = () => {
+    const currentScrollY = Math.max(0, window.scrollY);
+    const diff = currentScrollY - lastScrollY;
+
+    if (currentScrollY <= 20) {
+      header.classList.remove('nav-hidden');
+      header.classList.remove('scrolled');
+    } else {
+      header.classList.add('scrolled');
+      if (diff > 8 && currentScrollY > 70) {
+        // Scrolling down -> hide nav
+        header.classList.add('nav-hidden');
+      } else if (diff < -8) {
+        // Scrolling up -> show nav
+        header.classList.remove('nav-hidden');
+      }
+    }
+    lastScrollY = currentScrollY;
+  };
   onScroll();
-  window.addEventListener('scroll',onScroll,{passive:true});
+  window.addEventListener('scroll', onScroll, { passive: true });
+
+  // Interactive scroll & click-driven horizontal showcase for The Player
+  const playerScrollTrack = document.getElementById('player-track');
+  const playerSliderTrack = document.getElementById('player-slider-track');
+  const playerViewport = document.getElementById('player-viewport');
+  const playerDots = document.getElementById('player-dots');
+  const playerCounter = document.getElementById('player-counter-text');
+  const playerTabs = document.querySelectorAll('.player-tab-btn');
+  const playerArrowPrev = document.getElementById('player-arrow-prev');
+  const playerArrowNext = document.getElementById('player-arrow-next');
+
+  if (playerScrollTrack && playerSliderTrack && playerViewport) {
+    let ticking = false;
+    let currentPlayerIdx = 0;
+    const cards = playerSliderTrack.querySelectorAll('.player-card');
+
+    function scrollToPlayerCard(idx) {
+      const targetIdx = Math.max(0, Math.min(cards.length - 1, idx));
+
+      if (window.innerWidth <= 768) {
+        const card = cards[targetIdx];
+        if (card) card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        return;
+      }
+
+      const totalScrollable = playerScrollTrack.offsetHeight - window.innerHeight;
+      const secTopInDoc = window.scrollY + playerScrollTrack.getBoundingClientRect().top;
+      const targetProgress = cards.length > 1 ? targetIdx / (cards.length - 1) : 0;
+      const targetScrollY = secTopInDoc + (targetProgress * totalScrollable);
+
+      window.scrollTo({
+        top: targetScrollY,
+        behavior: 'smooth'
+      });
+    }
+
+    function renderPlayerDots() {
+      if (!playerDots) return;
+      playerDots.innerHTML = '';
+      cards.forEach((_, i) => {
+        const dot = document.createElement('button');
+        dot.type = 'button';
+        dot.className = 'player-dot' + (i === currentPlayerIdx ? ' active' : '');
+        dot.setAttribute('aria-label', `Go to player screen ${i + 1}`);
+        dot.addEventListener('click', (e) => {
+          e.preventDefault();
+          scrollToPlayerCard(i);
+        });
+        playerDots.appendChild(dot);
+      });
+    }
+
+    // Bind tab button clicks
+    playerTabs.forEach((tab, idx) => {
+      tab.addEventListener('click', (e) => {
+        e.preventDefault();
+        scrollToPlayerCard(idx);
+      });
+    });
+
+    // Arrow navigation
+    if (playerArrowPrev) {
+      playerArrowPrev.addEventListener('click', (e) => {
+        e.preventDefault();
+        scrollToPlayerCard(currentPlayerIdx - 1);
+      });
+    }
+    if (playerArrowNext) {
+      playerArrowNext.addEventListener('click', (e) => {
+        e.preventDefault();
+        scrollToPlayerCard(currentPlayerIdx + 1);
+      });
+    }
+
+    // Drag to scrub slider support on desktop
+    let isDragging = false;
+    let startX = 0;
+    let startScrollY = 0;
+
+    playerViewport.addEventListener('mousedown', (e) => {
+      if (window.innerWidth <= 768) return;
+      isDragging = true;
+      startX = e.clientX;
+      startScrollY = window.scrollY;
+      playerViewport.classList.add('is-dragging');
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const deltaX = e.clientX - startX;
+      const totalScrollable = playerScrollTrack.offsetHeight - window.innerHeight;
+      const step = totalScrollable / (cards.length * 280);
+      window.scrollTo({
+        top: startScrollY - (deltaX * step),
+        behavior: 'auto'
+      });
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        playerViewport.classList.remove('is-dragging');
+      }
+    });
+
+    function updatePlayerShowcase() {
+      ticking = false;
+      if (cards.length === 0) return;
+
+      const isMobileViewport = window.innerWidth <= 768;
+
+      if (isMobileViewport) {
+        playerSliderTrack.style.transform = '';
+        const scrollLeft = playerViewport.scrollLeft;
+        const totalScroll = playerViewport.scrollWidth - playerViewport.clientWidth;
+        if (totalScroll > 0) {
+          const ratio = Math.max(0, Math.min(1, scrollLeft / totalScroll));
+          const idx = Math.min(cards.length, Math.floor(ratio * (cards.length - 0.001)) + 1);
+          if (playerCounter) playerCounter.textContent = `${idx} / ${cards.length}`;
+        }
+        return;
+      }
+
+      const rect = playerScrollTrack.getBoundingClientRect();
+      const totalScrollable = playerScrollTrack.offsetHeight - window.innerHeight;
+      if (totalScrollable <= 0) return;
+
+      const scrolled = -rect.top;
+      const progress = Math.max(0, Math.min(1, scrolled / totalScrollable));
+
+      // Center translation calculation
+      const firstCard = cards[0];
+      const lastCard = cards[cards.length - 1];
+      const card0Center = firstCard.offsetLeft + (firstCard.offsetWidth / 2);
+      const cardLastCenter = lastCard.offsetLeft + (lastCard.offsetWidth / 2);
+
+      const translateStart = (window.innerWidth / 2) - card0Center;
+      const translateEnd = (window.innerWidth / 2) - cardLastCenter;
+      const currentTranslate = translateStart + (progress * (translateEnd - translateStart));
+
+      playerSliderTrack.style.transform = `translate3d(${currentTranslate.toFixed(1)}px, 0, 0)`;
+
+      // Active spotlight index
+      const viewportCenter = window.innerWidth / 2;
+      let activeIdx = 0;
+      let minDistance = Infinity;
+
+      cards.forEach((card, i) => {
+        const cardRect = card.getBoundingClientRect();
+        const cardCenter = cardRect.left + (cardRect.width / 2);
+        const dist = Math.abs(viewportCenter - cardCenter);
+        if (dist < minDistance) {
+          minDistance = dist;
+          activeIdx = i;
+        }
+      });
+
+      currentPlayerIdx = activeIdx;
+
+      // Update counter
+      if (playerCounter) {
+        playerCounter.textContent = `${activeIdx + 1} / ${cards.length}`;
+      }
+
+      // Update tabs active state
+      playerTabs.forEach((tab, i) => {
+        const isActive = i === activeIdx;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
+
+      // Update dots
+      if (playerDots) {
+        const dots = playerDots.querySelectorAll('.player-dot');
+        dots.forEach((dot, i) => {
+          dot.classList.toggle('active', i === activeIdx);
+        });
+      }
+
+      // Update arrows
+      if (playerArrowPrev) {
+        playerArrowPrev.classList.toggle('disabled', activeIdx <= 0);
+      }
+      if (playerArrowNext) {
+        playerArrowNext.classList.toggle('disabled', activeIdx >= cards.length - 1);
+      }
+
+      cards.forEach((card, i) => {
+        card.classList.toggle('focused', i === activeIdx);
+      });
+    }
+
+    function requestPlayerUpdate() {
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(updatePlayerShowcase);
+      }
+    }
+
+    window.addEventListener('scroll', requestPlayerUpdate, { passive: true });
+    window.addEventListener('resize', () => {
+      renderPlayerDots();
+      requestPlayerUpdate();
+    }, { passive: true });
+    playerViewport.addEventListener('scroll', requestPlayerUpdate, { passive: true });
+
+    // Clicking any card centers it
+    cards.forEach((card, idx) => {
+      card.addEventListener('click', () => {
+        scrollToPlayerCard(idx);
+      });
+    });
+
+    // Horizontal wheel/trackpad swipe
+    playerViewport.addEventListener('wheel', (e) => {
+      if (window.innerWidth > 768 && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        window.scrollBy({ top: e.deltaX * 0.8, behavior: 'auto' });
+      }
+    }, { passive: true });
+
+    renderPlayerDots();
+    requestPlayerUpdate();
+  }
+
+  // Watch Party room code copy handler
+  const copyBtn = document.querySelector('.wp-copy-pill');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText('482106').then(() => {
+        const span = copyBtn.querySelector('span');
+        if (span) {
+          const orig = span.textContent;
+          span.textContent = 'Copied!';
+          setTimeout(() => { span.textContent = orig; }, 1800);
+        }
+      }).catch(() => {});
+    });
+  }
+
+  // Interactive scroll & click-driven horizontal gallery for Screens
+  const screensScrollTrack = document.getElementById('screens-scroll-track');
+  const trackDesktop = document.getElementById('screens-track-desktop');
+  const trackMobile = document.getElementById('screens-track-mobile');
+  const screensViewport = screensScrollTrack ? screensScrollTrack.querySelector('.screens-viewport') : null;
+  const screensDots = document.getElementById('screens-dots');
+  const screensCounter = document.getElementById('screens-counter-text');
+  const platformButtons = document.querySelectorAll('.spt-btn, .spm-btn');
+  const prevArrow = document.getElementById('screens-arrow-prev');
+  const nextArrow = document.getElementById('screens-arrow-next');
+
+  if (screensScrollTrack && trackDesktop && trackMobile && screensViewport) {
+    let ticking = false;
+    let currentFocusedIdx = 0;
+    // Auto-detect initial platform based on viewport width (>= 1024 defaults to desktop)
+    let currentPlatform = window.innerWidth >= 1024 ? 'desktop' : 'mobile';
+
+    function getActiveTrack() {
+      return currentPlatform === 'desktop' ? trackDesktop : trackMobile;
+    }
+
+    function getActiveShots() {
+      return getActiveTrack().querySelectorAll('.shot');
+    }
+
+    function scrollToCard(idx) {
+      const activeShots = getActiveShots();
+      const targetIdx = Math.max(0, Math.min(activeShots.length - 1, idx));
+
+      if (window.innerWidth <= 680) {
+        const shot = activeShots[targetIdx];
+        if (shot) shot.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        return;
+      }
+
+      const totalScrollable = screensScrollTrack.offsetHeight - window.innerHeight;
+      const secTopInDoc = window.scrollY + screensScrollTrack.getBoundingClientRect().top;
+      const targetProgress = activeShots.length > 1 ? targetIdx / (activeShots.length - 1) : 0;
+      const targetScrollY = secTopInDoc + (targetProgress * totalScrollable);
+
+      window.scrollTo({
+        top: targetScrollY,
+        behavior: 'smooth'
+      });
+    }
+
+    function renderDots() {
+      if (!screensDots) return;
+      screensDots.innerHTML = '';
+      const activeShots = getActiveShots();
+      activeShots.forEach((_, i) => {
+        const dot = document.createElement('button');
+        dot.type = 'button';
+        dot.className = 'screens-dot' + (i === currentFocusedIdx ? ' active' : '');
+        dot.setAttribute('aria-label', `Go to screen ${i + 1}`);
+        dot.addEventListener('click', (e) => {
+          e.preventDefault();
+          scrollToCard(i);
+        });
+        screensDots.appendChild(dot);
+      });
+    }
+
+    function setScreensPlatform(platform) {
+      if (platform !== 'desktop' && platform !== 'mobile') return;
+      currentPlatform = platform;
+      currentFocusedIdx = 0;
+
+      // Synchronize button states across intro bar and mini HUD
+      platformButtons.forEach((btn) => {
+        const isActive = btn.getAttribute('data-platform') === platform;
+        btn.classList.toggle('active', isActive);
+        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
+
+      // Toggle tracks visibility
+      if (platform === 'desktop') {
+        trackDesktop.removeAttribute('hidden');
+        trackMobile.setAttribute('hidden', '');
+      } else {
+        trackMobile.removeAttribute('hidden');
+        trackDesktop.setAttribute('hidden', '');
+      }
+
+      // If mobile width, reset horizontal scroll
+      if (window.innerWidth <= 680) {
+        screensViewport.scrollLeft = 0;
+      }
+
+      renderDots();
+      requestScreensUpdate();
+    }
+
+    // Bind platform button clicks
+    platformButtons.forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const p = btn.getAttribute('data-platform');
+        if (p) setScreensPlatform(p);
+      });
+    });
+
+    // Arrow navigation
+    if (prevArrow) {
+      prevArrow.addEventListener('click', (e) => {
+        e.preventDefault();
+        scrollToCard(currentFocusedIdx - 1);
+      });
+    }
+    if (nextArrow) {
+      nextArrow.addEventListener('click', (e) => {
+        e.preventDefault();
+        scrollToCard(currentFocusedIdx + 1);
+      });
+    }
+
+    // Keyboard arrow navigation when screens section is in view
+    window.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      const rect = screensScrollTrack.getBoundingClientRect();
+      if (rect.top <= window.innerHeight * 0.4 && rect.bottom >= window.innerHeight * 0.4) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          scrollToCard(currentFocusedIdx - 1);
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          scrollToCard(currentFocusedIdx + 1);
+        }
+      }
+    });
+
+    // Drag to scrub slider support on desktop
+    let isDragging = false;
+    let startX = 0;
+    let startScrollY = 0;
+
+    screensViewport.addEventListener('mousedown', (e) => {
+      if (window.innerWidth <= 680) return;
+      isDragging = true;
+      startX = e.clientX;
+      startScrollY = window.scrollY;
+      screensViewport.classList.add('is-dragging');
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const deltaX = e.clientX - startX;
+      const totalScrollable = screensScrollTrack.offsetHeight - window.innerHeight;
+      const activeShots = getActiveShots();
+      const step = totalScrollable / (activeShots.length * 280);
+      window.scrollTo({
+        top: startScrollY - (deltaX * step),
+        behavior: 'auto'
+      });
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        screensViewport.classList.remove('is-dragging');
+      }
+    });
+
+    function updateScreensGallery() {
+      ticking = false;
+      const activeTrack = getActiveTrack();
+      const activeShots = getActiveShots();
+      if (!activeTrack || activeShots.length === 0) return;
+
+      const isMobileViewport = window.innerWidth <= 680;
+
+      if (isMobileViewport) {
+        activeTrack.style.transform = '';
+        const scrollLeft = screensViewport.scrollLeft;
+        const totalScroll = screensViewport.scrollWidth - screensViewport.clientWidth;
+        if (totalScroll > 0) {
+          const ratio = Math.max(0, Math.min(1, scrollLeft / totalScroll));
+          const idx = Math.min(activeShots.length, Math.floor(ratio * (activeShots.length - 0.001)) + 1);
+          if (screensCounter) screensCounter.textContent = `${idx} / ${activeShots.length}`;
+        }
+        return;
+      }
+
+      const rect = screensScrollTrack.getBoundingClientRect();
+      const totalScrollable = screensScrollTrack.offsetHeight - window.innerHeight;
+      if (totalScrollable <= 0) return;
+
+      const scrolled = -rect.top;
+      const progress = Math.max(0, Math.min(1, scrolled / totalScrollable));
+
+      // Calculate translation so each card centers perfectly at window.innerWidth / 2
+      const firstShot = activeShots[0];
+      const lastShot = activeShots[activeShots.length - 1];
+      const card0Center = firstShot.offsetLeft + (firstShot.offsetWidth / 2);
+      const cardLastCenter = lastShot.offsetLeft + (lastShot.offsetWidth / 2);
+
+      const translateStart = (window.innerWidth / 2) - card0Center;
+      const translateEnd = (window.innerWidth / 2) - cardLastCenter;
+      const currentTranslate = translateStart + (progress * (translateEnd - translateStart));
+
+      activeTrack.style.transform = `translate3d(${currentTranslate.toFixed(1)}px, 0, 0)`;
+
+      // Determine which card is closest to center of screen for active spotlight state
+      const viewportCenter = window.innerWidth / 2;
+      let activeIdx = 0;
+      let minDistance = Infinity;
+
+      activeShots.forEach((shot, i) => {
+        const shotRect = shot.getBoundingClientRect();
+        const shotCenter = shotRect.left + (shotRect.width / 2);
+        const dist = Math.abs(viewportCenter - shotCenter);
+        if (dist < minDistance) {
+          minDistance = dist;
+          activeIdx = i;
+        }
+      });
+
+      currentFocusedIdx = activeIdx;
+
+      // Update counter
+      if (screensCounter) {
+        screensCounter.textContent = `${activeIdx + 1} / ${activeShots.length}`;
+      }
+
+      // Update interactive dots
+      if (screensDots) {
+        const dots = screensDots.querySelectorAll('.screens-dot');
+        dots.forEach((dot, i) => {
+          dot.classList.toggle('active', i === activeIdx);
+        });
+      }
+
+      // Update arrows enabled/disabled state
+      if (prevArrow) {
+        prevArrow.classList.toggle('disabled', activeIdx <= 0);
+      }
+      if (nextArrow) {
+        nextArrow.classList.toggle('disabled', activeIdx >= activeShots.length - 1);
+      }
+
+      activeShots.forEach((shot, i) => {
+        if (i === activeIdx) {
+          shot.classList.add('focused');
+        } else {
+          shot.classList.remove('focused');
+        }
+      });
+    }
+
+    function requestScreensUpdate() {
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(updateScreensGallery);
+      }
+    }
+
+    window.addEventListener('scroll', requestScreensUpdate, { passive: true });
+    window.addEventListener('resize', () => {
+      renderDots();
+      requestScreensUpdate();
+    }, { passive: true });
+    screensViewport.addEventListener('scroll', requestScreensUpdate, { passive: true });
+
+    // Clicking any screen shot smoothly aligns the horizontal gallery to it
+    const allShots = document.querySelectorAll('#screens-scroll-track .shot');
+    allShots.forEach((shot) => {
+      shot.addEventListener('click', () => {
+        const activeShots = Array.from(getActiveShots());
+        const idx = activeShots.indexOf(shot);
+        if (idx !== -1) scrollToCard(idx);
+      });
+    });
+
+    // Support horizontal wheel/trackpad swiping within the gallery
+    screensViewport.addEventListener('wheel', (e) => {
+      if (window.innerWidth > 680 && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        window.scrollBy({ top: e.deltaX * 0.8, behavior: 'auto' });
+      }
+    }, { passive: true });
+
+    // Initialize platform based on screen size
+    setScreensPlatform(currentPlatform);
+  }
+
+  // ==========================================
+  // AUTOMATIC GITHUB RELEASES & REPO UPDATER
+  // ==========================================
+  (function initGitHubReleasesUpdater() {
+    const REPO_OWNER = 'nirmaleeswar30';
+    const REPO_NAME = 'Nivio';
+    const CACHE_KEY = 'nivio_gh_releases_cache_v3';
+    const CACHE_TTL_MS = 15 * 60 * 1000; // 15-minute cache to respect GitHub rate limits
+
+    function applyReleaseData(release, repoInfo) {
+      if (!release || !release.tag_name) return;
+
+      const tagName = release.tag_name;
+      const releaseUrl = release.html_url || `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/tag/${tagName}`;
+
+      // Find standard nivio.apk asset, strictly prioritizing non-universal build
+      let apkUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${tagName}/nivio.apk`;
+      if (Array.isArray(release.assets) && release.assets.length > 0) {
+        const exactApk = release.assets.find(a => a.name && a.name.toLowerCase() === 'nivio.apk');
+        const nonUniversalApk = release.assets.find(a => a.name && a.name.toLowerCase().endsWith('.apk') && !a.name.toLowerCase().includes('universal'));
+        const anyApk = release.assets.find(a => a.name && a.name.toLowerCase().endsWith('.apk'));
+        const chosenAsset = exactApk || nonUniversalApk || anyApk;
+        if (chosenAsset && chosenAsset.browser_download_url) {
+          apkUrl = chosenAsset.browser_download_url;
+        }
+      }
+
+      // 1. Update all version tags across the page
+      document.querySelectorAll('[data-release-tag]').forEach(el => {
+        el.textContent = tagName;
+      });
+
+      // 2. Update all APK download links across the page
+      document.querySelectorAll('[data-apk-download]').forEach(el => {
+        el.href = apkUrl;
+      });
+
+      // 3. Update download labels
+      document.querySelectorAll('[data-apk-label]').forEach(el => {
+        if (el.closest('.rel-dl-btn')) {
+          el.textContent = `Download ${tagName} APK`;
+        } else {
+          el.textContent = 'Download APK';
+        }
+      });
+
+      // 4. Update release notes links
+      document.querySelectorAll('[data-release-notes-link]').forEach(el => {
+        el.href = releaseUrl;
+      });
+
+      // 5. Update formatted date & release link in Timeline Item 1
+      const dateEl = document.querySelector('[data-release-date]');
+      if (dateEl && release.published_at) {
+        try {
+          const d = new Date(release.published_at);
+          const month = d.toLocaleDateString('en-US', { month: 'long' });
+          const year = d.getFullYear();
+          dateEl.innerHTML = `${month} ${year} · <a href="${releaseUrl}" target="_blank" rel="noopener noreferrer">${tagName}</a>`;
+        } catch (_) {}
+      }
+
+      // 6. Update release title if custom title exists
+      const titleEl = document.querySelector('[data-release-title]');
+      if (titleEl && release.name && release.name.trim() !== '' && release.name !== tagName) {
+        const cleanName = release.name.replace(/^Nivio[- ]*(v\d+(\.\d+)*)?[:\- ]*/i, '').trim();
+        if (cleanName) titleEl.textContent = cleanName;
+      }
+
+      // 7. Update release highlights from release body
+      const notesEl = document.querySelector('[data-release-notes]');
+      if (notesEl && release.body) {
+        const highlights = [];
+        const lines = release.body.split(/\r?\n/);
+        for (const raw of lines) {
+          const l = raw.trim();
+          if (/^[\*\-]\s+/.test(l)) {
+            let item = l.replace(/^[\*\-]\s+/, '');
+            item = item.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+            item = item.replace(/`([^`]+)`/g, '<code>$1</code>');
+            item = item.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+            highlights.push(item);
+            if (highlights.length >= 3) break;
+          }
+        }
+        if (highlights.length >= 2) {
+          notesEl.innerHTML = highlights.map(h => `<li>${h}</li>`).join('');
+        }
+      }
+
+      // 8. Update repo stargazers count if fetched
+      if (repoInfo && typeof repoInfo.stargazers_count === 'number') {
+        document.querySelectorAll('[data-gh-stars]').forEach(el => {
+          el.textContent = repoInfo.stargazers_count;
+        });
+      }
+    }
+
+    // Try reading from cache first for instant update
+    let cacheValid = false;
+    try {
+      const cachedStr = localStorage.getItem(CACHE_KEY);
+      if (cachedStr) {
+        const parsed = JSON.parse(cachedStr);
+        if (parsed && parsed.timestamp && (Date.now() - parsed.timestamp < CACHE_TTL_MS) && parsed.release) {
+          applyReleaseData(parsed.release, parsed.repo);
+          cacheValid = true;
+        }
+      }
+    } catch (_) {}
+
+    // If cache is missing or older than 15 minutes, fetch fresh data in background
+    if (!cacheValid) {
+      Promise.all([
+        fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`, {
+          headers: { 'Accept': 'application/vnd.github.v3+json' }
+        }).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}`, {
+          headers: { 'Accept': 'application/vnd.github.v3+json' }
+        }).then(r => r.ok ? r.json() : null).catch(() => null)
+      ]).then(([latestRelease, repoData]) => {
+        if (latestRelease && latestRelease.tag_name) {
+          applyReleaseData(latestRelease, repoData);
+          try {
+            localStorage.setItem(CACHE_KEY, JSON.stringify({
+              timestamp: Date.now(),
+              release: latestRelease,
+              repo: repoData
+            }));
+          } catch (_) {}
+        }
+      }).catch(() => {
+        // Silently maintain static fallback
+      });
+    }
+  })();
 </script>
 </body>
 </html>
