@@ -294,8 +294,11 @@
   /* Player Mode Tabs (Clean segmented control like the platform switcher) */
   .player-tabs-bar{
     display:flex;
-    justify-content:flex-start;
-    margin-top:28px;
+    justify-content:center;
+    align-items:center;
+    margin-bottom:16px;
+    z-index:20;
+    position:relative;
   }
   .player-tabs-toggle{
     display:inline-flex;
@@ -402,7 +405,7 @@
   .player-viewport{
     width:100%;
     overflow:hidden;
-    padding-block:55px 70px;
+    padding-block:20px 65px;
     display:flex;
     align-items:center;
     -webkit-mask:linear-gradient(90deg,transparent,#000 2%,#000 98%,transparent);
@@ -1674,7 +1677,7 @@
 
   /* Desktop Widescreen Cards - significantly bigger, full-bleed edge-to-edge frame */
   .screens-track .shot.shot-desktop{
-    width:min(86vw, 1380px, calc((100vh - 210px) * (1024 / 469)));
+    width:min(86vw, 1380px, calc((100vh - 210px) * (16 / 9)));
     min-width:520px;
     border-radius:22px;
     padding:0;
@@ -1717,7 +1720,7 @@
   /* Desktop Frame & Aspect Ratio */
   .shot-frame-desktop{
     width:100%;
-    aspect-ratio:1024 / 469;
+    aspect-ratio:16 / 9;
     overflow:hidden;
     background:#080504;
     position:relative;
@@ -1750,7 +1753,7 @@
     border-radius:22px;
     overflow:hidden;
     background:#080504;
-    aspect-ratio:9 / 18.2;
+    aspect-ratio:1272 / 2772;
     position:relative;
     box-shadow:inset 0 0 0 1px rgba(255,255,255,.07);
     flex:none;
@@ -1859,13 +1862,13 @@
 
   @media(max-height:860px){
     .screens-track .shot{width:clamp(255px, 29vh, 320px)}
-    .screens-track .shot.shot-desktop{width:min(86vw, 1180px, calc((100vh - 180px) * (1024 / 469)))}
+    .screens-track .shot.shot-desktop{width:min(86vw, 1180px, calc((100vh - 180px) * (16 / 9)))}
     .screens-viewport{padding-block:30px 55px}
     .screens-stage-hud{bottom:16px}
   }
   @media(max-height:740px){
     .screens-track .shot{width:clamp(215px, 26vh, 270px)}
-    .screens-track .shot.shot-desktop{width:min(86vw, 1020px, calc((100vh - 150px) * (1024 / 469)))}
+    .screens-track .shot.shot-desktop{width:min(86vw, 1020px, calc((100vh - 150px) * (16 / 9)))}
     .screens-viewport{padding-block:20px 45px}
     .screens-stage-hud{bottom:12px;padding:7px 14px}
   }
@@ -2531,31 +2534,30 @@
       <h2>The Player. Built from scratch on libmpv.</h2>
       <p>Not another sluggish web wrapper. Nivio features a custom C-native media engine with GPU hardware decoding, instant P2P swarm streaming, and low-latency synchronized watch parties — complete with custom-built gestures, double-tap seek, timeline scrubber, quick episode switching, and lockable player controls.</p>
     </div>
-
-    <!-- Mode Tabs Switcher -->
-    <div class="player-tabs-bar reveal">
-      <div class="player-tabs-toggle" role="tablist" aria-label="Player Showcase Modes">
-        <button class="player-tab-btn active" role="tab" aria-selected="true" data-index="0" type="button">
-          <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          <span>Direct Stream</span>
-        </button>
-        <button class="player-tab-btn" role="tab" aria-selected="false" data-index="1" type="button">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-          <span>Nivio P2P Torrents</span>
-        </button>
-        <button class="player-tab-btn" role="tab" aria-selected="false" data-index="2" type="button">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          <span>Watch Party</span>
-        </button>
-      </div>
-    </div>
   </div>
 
   <!-- Pinned Scroll Track: locks at top:0 only after the intro title above has scrolled out of view -->
   <div class="player-scroll-track" id="player-track">
     <div class="player-sticky-stage" id="player-demo">
 
-      <!-- Interactive Navigation Arrows -->
+      <!-- Mode Tabs Switcher -->
+      <div class="player-tabs-bar">
+        <div class="player-tabs-toggle" role="tablist" aria-label="Player Showcase Modes">
+          <button class="player-tab-btn active" role="tab" aria-selected="true" data-index="0" type="button">
+            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            <span>Direct Stream</span>
+          </button>
+          <button class="player-tab-btn" role="tab" aria-selected="false" data-index="1" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            <span>Nivio P2P Torrents</span>
+          </button>
+          <button class="player-tab-btn" role="tab" aria-selected="false" data-index="2" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>Watch Party</span>
+          </button>
+        </div>
+      </div>
+<!-- Interactive Navigation Arrows -->
       <button class="player-arrow player-arrow-prev" id="player-arrow-prev" type="button" aria-label="Previous player screen">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
       </button>
@@ -2986,6 +2988,42 @@
         <div class="screens-track" id="screens-track-desktop">
           <figure class="shot shot-desktop">
             <div class="shot-frame-desktop">
+              <img src="homescreen-desktop.png" onerror="this.onerror=null;this.src='../assets/images/homescreen-desktop.png';" alt="Desktop Home Feed">
+            </div>
+            <figcaption>
+              <b>Home Feed</b>
+            </figcaption>
+          </figure>
+
+          <figure class="shot shot-desktop">
+            <div class="shot-frame-desktop">
+              <img src="provider-screen.png" onerror="this.onerror=null;this.src='../assets/images/provider-screen.png';" alt="Provider Selection &amp; Stream Sources">
+            </div>
+            <figcaption>
+              <b>Provider Selection &amp; Stream Sources</b>
+            </figcaption>
+          </figure>
+
+          <figure class="shot shot-desktop">
+            <div class="shot-frame-desktop">
+              <img src="settings-screen-desktop.png" onerror="this.onerror=null;this.src='../assets/images/settings-screen-desktop.png';" alt="Desktop Settings &amp; Preferences">
+            </div>
+            <figcaption>
+              <b>Desktop Settings &amp; Preferences</b>
+            </figcaption>
+          </figure>
+
+          <figure class="shot shot-desktop">
+            <div class="shot-frame-desktop">
+              <img src="media-detail-screen-desktop.png" onerror="this.onerror=null;this.src='../assets/images/media-detail-screen-desktop.png';" alt="Media Details &amp; Cast Overview">
+            </div>
+            <figcaption>
+              <b>Media Details &amp; Cast Overview</b>
+            </figcaption>
+          </figure>
+
+          <figure class="shot shot-desktop">
+            <div class="shot-frame-desktop">
               <img src="player-direct.jpg" onerror="this.onerror=null;this.src='../assets/images/player-direct.jpg';" alt="Cinema Player Engine">
             </div>
             <figcaption>
@@ -3010,31 +3048,13 @@
               <b>Multiplayer Watch Party</b>
             </figcaption>
           </figure>
-
-          <figure class="shot shot-desktop">
-            <div class="shot-frame-desktop">
-              <img src="player-party-hud.jpg" onerror="this.onerror=null;this.src='../assets/images/player-party-hud.jpg';" alt="Cinema HUD &amp; Subtitle Suite">
-            </div>
-            <figcaption>
-              <b>Cinema HUD &amp; Subtitle Suite</b>
-            </figcaption>
-          </figure>
-
-          <figure class="shot shot-desktop">
-            <div class="shot-frame-desktop">
-              <img src="player-screen.jpg" onerror="this.onerror=null;this.src='../assets/images/player-screen.jpg';" alt="Unified Playback &amp; Timeline Controls">
-            </div>
-            <figcaption>
-              <b>Unified Playback &amp; Timeline Controls</b>
-            </figcaption>
-          </figure>
         </div>
 
         <!-- Track 2: Mobile Edition Smartphone Cards -->
         <div class="screens-track" id="screens-track-mobile" hidden>
           <figure class="shot">
             <div class="shot-frame">
-              <img src="../assets/images/home-screen.jpg" alt="Home Screen">
+              <img src="home-screen.jpg" onerror="this.onerror=null;this.src='../assets/images/home-screen.jpg';" alt="Home Feed">
             </div>
             <figcaption>
               <b>Home Feed</b>
@@ -3042,7 +3062,7 @@
           </figure>
           <figure class="shot">
             <div class="shot-frame">
-              <img src="../assets/images/media-screen.jpg" alt="Media details">
+              <img src="media-screen.jpg" onerror="this.onerror=null;this.src='../assets/images/media-screen.jpg';" alt="Media Details">
             </div>
             <figcaption>
               <b>Media Details</b>
@@ -3050,7 +3070,7 @@
           </figure>
           <figure class="shot">
             <div class="shot-frame">
-              <img src="../assets/images/provider-screen.jpg" alt="Provider selector">
+              <img src="provider-screen.jpg" onerror="this.onerror=null;this.src='../assets/images/provider-screen.jpg';" alt="Select Provider">
             </div>
             <figcaption>
               <b>Select Provider</b>
@@ -3058,7 +3078,7 @@
           </figure>
           <figure class="shot">
             <div class="shot-frame">
-              <img src="../assets/images/live-tv-screen.jpg" alt="Live TV">
+              <img src="live-tv-screen.jpg" onerror="this.onerror=null;this.src='../assets/images/live-tv-screen.jpg';" alt="Live IPTV">
             </div>
             <figcaption>
               <b>Live IPTV</b>
@@ -3066,7 +3086,15 @@
           </figure>
           <figure class="shot">
             <div class="shot-frame">
-              <img src="../assets/images/library-screen.jpg" alt="Your Library">
+              <img src="sports-tv-screen.jpg" onerror="this.onerror=null;this.src='../assets/images/sports-tv-screen.jpg';" alt="Sports TV">
+            </div>
+            <figcaption>
+              <b>Sports TV</b>
+            </figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="shot-frame">
+              <img src="library-screen.jpg" onerror="this.onerror=null;this.src='../assets/images/library-screen.jpg';" alt="Your Library">
             </div>
             <figcaption>
               <b>Your Library</b>
@@ -3074,7 +3102,7 @@
           </figure>
           <figure class="shot">
             <div class="shot-frame">
-              <img src="../assets/images/settings-screen.jpg" alt="Settings">
+              <img src="settings-screen.jpg" onerror="this.onerror=null;this.src='../assets/images/settings-screen.jpg';" alt="Settings &amp; Tweaks">
             </div>
             <figcaption>
               <b>Settings &amp; Tweaks</b>
@@ -3082,7 +3110,7 @@
           </figure>
           <figure class="shot">
             <div class="shot-frame">
-              <img src="../assets/images/watch-party.jpg" alt="Watch Party">
+              <img src="watch-party.jpg" onerror="this.onerror=null;this.src='../assets/images/watch-party.jpg';" alt="Watch Party">
             </div>
             <figcaption>
               <b>Watch Party</b>
@@ -3587,6 +3615,32 @@
 
     function scrollToPlayerCard(idx) {
       const targetIdx = Math.max(0, Math.min(cards.length - 1, idx));
+      currentPlayerIdx = targetIdx;
+
+      // Immediately highlight active tab
+      playerTabs.forEach((tab, i) => {
+        const isActive = i === targetIdx;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
+
+      // Immediately highlight active dot
+      if (playerDots) {
+        const dots = playerDots.querySelectorAll('.player-dot');
+        dots.forEach((dot, i) => {
+          dot.classList.toggle('active', i === targetIdx);
+        });
+      }
+
+      // Update counter
+      if (playerCounter) {
+        playerCounter.textContent = `${targetIdx + 1} / ${cards.length}`;
+      }
+
+      // Update focused card
+      cards.forEach((card, i) => {
+        card.classList.toggle('focused', i === targetIdx);
+      });
 
       if (window.innerWidth <= 768) {
         const card = cards[targetIdx];
@@ -3679,52 +3733,57 @@
       if (cards.length === 0) return;
 
       const isMobileViewport = window.innerWidth <= 768;
+      let activeIdx = 0;
 
       if (isMobileViewport) {
         playerSliderTrack.style.transform = '';
-        const scrollLeft = playerViewport.scrollLeft;
-        const totalScroll = playerViewport.scrollWidth - playerViewport.clientWidth;
-        if (totalScroll > 0) {
-          const ratio = Math.max(0, Math.min(1, scrollLeft / totalScroll));
-          const idx = Math.min(cards.length, Math.floor(ratio * (cards.length - 0.001)) + 1);
-          if (playerCounter) playerCounter.textContent = `${idx} / ${cards.length}`;
-        }
-        return;
+        // Find which card is closest to viewport center on mobile
+        const viewportCenter = playerViewport.getBoundingClientRect().left + (playerViewport.clientWidth / 2);
+        let minDistance = Infinity;
+
+        cards.forEach((card, i) => {
+          const cardRect = card.getBoundingClientRect();
+          const cardCenter = cardRect.left + (cardRect.width / 2);
+          const dist = Math.abs(viewportCenter - cardCenter);
+          if (dist < minDistance) {
+            minDistance = dist;
+            activeIdx = i;
+          }
+        });
+      } else {
+        const rect = playerScrollTrack.getBoundingClientRect();
+        const totalScrollable = playerScrollTrack.offsetHeight - window.innerHeight;
+        if (totalScrollable <= 0) return;
+
+        const scrolled = -rect.top;
+        const progress = Math.max(0, Math.min(1, scrolled / totalScrollable));
+
+        // Center translation calculation
+        const firstCard = cards[0];
+        const lastCard = cards[cards.length - 1];
+        const card0Center = firstCard.offsetLeft + (firstCard.offsetWidth / 2);
+        const cardLastCenter = lastCard.offsetLeft + (lastCard.offsetWidth / 2);
+
+        const translateStart = (window.innerWidth / 2) - card0Center;
+        const translateEnd = (window.innerWidth / 2) - cardLastCenter;
+        const currentTranslate = translateStart + (progress * (translateEnd - translateStart));
+
+        playerSliderTrack.style.transform = `translate3d(${currentTranslate.toFixed(1)}px, 0, 0)`;
+
+        // Active spotlight index
+        const viewportCenter = window.innerWidth / 2;
+        let minDistance = Infinity;
+
+        cards.forEach((card, i) => {
+          const cardRect = card.getBoundingClientRect();
+          const cardCenter = cardRect.left + (cardRect.width / 2);
+          const dist = Math.abs(viewportCenter - cardCenter);
+          if (dist < minDistance) {
+            minDistance = dist;
+            activeIdx = i;
+          }
+        });
       }
-
-      const rect = playerScrollTrack.getBoundingClientRect();
-      const totalScrollable = playerScrollTrack.offsetHeight - window.innerHeight;
-      if (totalScrollable <= 0) return;
-
-      const scrolled = -rect.top;
-      const progress = Math.max(0, Math.min(1, scrolled / totalScrollable));
-
-      // Center translation calculation
-      const firstCard = cards[0];
-      const lastCard = cards[cards.length - 1];
-      const card0Center = firstCard.offsetLeft + (firstCard.offsetWidth / 2);
-      const cardLastCenter = lastCard.offsetLeft + (lastCard.offsetWidth / 2);
-
-      const translateStart = (window.innerWidth / 2) - card0Center;
-      const translateEnd = (window.innerWidth / 2) - cardLastCenter;
-      const currentTranslate = translateStart + (progress * (translateEnd - translateStart));
-
-      playerSliderTrack.style.transform = `translate3d(${currentTranslate.toFixed(1)}px, 0, 0)`;
-
-      // Active spotlight index
-      const viewportCenter = window.innerWidth / 2;
-      let activeIdx = 0;
-      let minDistance = Infinity;
-
-      cards.forEach((card, i) => {
-        const cardRect = card.getBoundingClientRect();
-        const cardCenter = cardRect.left + (cardRect.width / 2);
-        const dist = Math.abs(viewportCenter - cardCenter);
-        if (dist < minDistance) {
-          minDistance = dist;
-          activeIdx = i;
-        }
-      });
 
       currentPlayerIdx = activeIdx;
 
@@ -3733,7 +3792,7 @@
         playerCounter.textContent = `${activeIdx + 1} / ${cards.length}`;
       }
 
-      // Update tabs active state
+      // Update tabs active state (WORKS FOR BOTH MOBILE AND DESKTOP!)
       playerTabs.forEach((tab, i) => {
         const isActive = i === activeIdx;
         tab.classList.toggle('active', isActive);

@@ -1,15 +1,10 @@
-import 'dart:async';
 import 'dart:io';
-import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/constants.dart';
 import 'package:nivio/models/search_result.dart';
-import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
-import 'package:nivio/widgets/hover_preview_card.dart';
 import 'package:nivio/widgets/skeleton.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
@@ -112,13 +107,6 @@ class LatestReleasesShelf extends StatelessWidget {
                             colors: badgeGradient,
                           ),
                           borderRadius: BorderRadius.circular(2),
-                          boxShadow: [
-                            BoxShadow(
-                              color: badgeGradient.first.withValues(alpha: 0.6),
-                              blurRadius: 8,
-                              spreadRadius: 1,
-                            ),
-                          ],
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -158,31 +146,9 @@ class LatestReleasesShelf extends StatelessWidget {
                   ),
                 ),
                 if (onSeeAll != null)
-                  InkWell(
-                    onTap: onSeeAll,
-                    borderRadius: BorderRadius.circular(6),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'More',
-                            style: TextStyle(
-                              color: badgeGradient.first,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.arrow_forward_ios_rounded,
-                            size: 11,
-                            color: badgeGradient.first,
-                          ),
-                        ],
-                      ),
-                    ),
+                  _ShelfMoreButton(
+                    accentColor: badgeGradient.first,
+                    onTap: onSeeAll!,
                   ),
               ],
             ),
@@ -190,25 +156,27 @@ class LatestReleasesShelf extends StatelessWidget {
 
           // Horizontal Shelf Cards
           SizedBox(
-            height: cardHeight + 8,
+            height: cardHeight + 16,
             child: AppListView.builder(
               scrollDirection: Axis.horizontal,
               padding: EdgeInsets.only(
                 left: isDesktop ? 64 : 12,
                 right: 12,
-                top: 4,
-                bottom: 4,
+                top: 8,
+                bottom: 8,
               ),
               itemCount: sortedItems.length,
-              cacheExtent: 350,
+              cacheExtent: isDesktop ? 800 : 350,
               scrollSpeed: 2.0,
               silkyScrollDuration: const Duration(milliseconds: 500),
               animationCurve: Curves.easeOutQuart,
               itemBuilder: (context, index) {
                 final item = sortedItems[index];
+                final id = item is Map ? item['id'] : (item is SearchResult ? item.id : index);
                 return Padding(
                   padding: EdgeInsets.symmetric(horizontal: isDesktop ? 8 : 4),
                   child: LatestReleaseCard(
+                    key: ValueKey('shelf_${badgeText}_${id}_$index'),
                     item: item,
                     width: cardWidth,
                     height: cardHeight,
@@ -227,7 +195,78 @@ class LatestReleasesShelf extends StatelessWidget {
   }
 }
 
-class LatestReleaseCard extends ConsumerStatefulWidget {
+class _ShelfMoreButton extends StatefulWidget {
+  final Color accentColor;
+  final VoidCallback onTap;
+
+  const _ShelfMoreButton({
+    required this.accentColor,
+    required this.onTap,
+  });
+
+  @override
+  State<_ShelfMoreButton> createState() => _ShelfMoreButtonState();
+}
+
+class _ShelfMoreButtonState extends State<_ShelfMoreButton> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+          decoration: BoxDecoration(
+            color: _isHovered
+                ? widget.accentColor.withValues(alpha: 0.14)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: _isHovered
+                  ? widget.accentColor.withValues(alpha: 0.35)
+                  : Colors.transparent,
+              width: 1.0,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'More',
+                style: TextStyle(
+                  color: widget.accentColor,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.1,
+                ),
+              ),
+              const SizedBox(width: 4),
+              AnimatedSlide(
+                offset: _isHovered ? const Offset(0.25, 0) : Offset.zero,
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOutCubic,
+                child: Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 11,
+                  color: widget.accentColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class LatestReleaseCard extends StatefulWidget {
   final dynamic item;
   final double? width;
   final double? height;
@@ -248,51 +287,11 @@ class LatestReleaseCard extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<LatestReleaseCard> createState() => _LatestReleaseCardState();
+  State<LatestReleaseCard> createState() => _LatestReleaseCardState();
 }
 
-class _LatestReleaseCardState extends ConsumerState<LatestReleaseCard> {
+class _LatestReleaseCardState extends State<LatestReleaseCard> {
   bool _isHovered = false;
-  String? _resolvedDigitalDate;
-
-  @override
-  void initState() {
-    super.initState();
-    _resolveDigitalDateIfNeeded();
-  }
-
-  @override
-  void didUpdateWidget(covariant LatestReleaseCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.item != widget.item) {
-      _resolveDigitalDateIfNeeded();
-    }
-  }
-
-  void _resolveDigitalDateIfNeeded() {
-    if (widget.isAnime) return;
-    final item = widget.item;
-    int? id;
-    String? mediaType;
-    String? existingDigital;
-
-    if (item is Map) {
-      id = item['id'] as int?;
-      mediaType = (item['media_type'] ?? (item['name'] != null ? 'tv' : 'movie')).toString();
-      existingDigital = item['digital_release_date']?.toString();
-    } else if (item is SearchResult) {
-      id = item.id;
-      mediaType = item.mediaType;
-    }
-
-    if (mediaType == 'movie' && (existingDigital == null || existingDigital.isEmpty) && id != null && id > 0) {
-      ref.read(tmdbServiceProvider).getMovieDigitalReleaseDate(id).then((resolved) {
-        if (resolved != null && mounted) {
-          setState(() => _resolvedDigitalDate = resolved);
-        }
-      });
-    }
-  }
 
   String _formatReleaseTag(dynamic rawDate, dynamic digitalDate, dynamic airingAtSec) {
     DateTime? date;
@@ -372,69 +371,65 @@ class _LatestReleaseCardState extends ConsumerState<LatestReleaseCard> {
             ? (posterPath.startsWith('http') ? posterPath : '$tmdbImageBaseUrl/w500$posterPath')
             : null;
 
-    final effectiveDigitalDate = digitalDate ?? _resolvedDigitalDate;
-    final releaseTag = _formatReleaseTag(rawDate, effectiveDigitalDate, airingAtSec);
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final releaseTag = _formatReleaseTag(rawDate, digitalDate, airingAtSec);
 
     void handleTap() {
       if (id == 0) return;
       GoRouter.of(context).push('/media/$id?type=$mediaType');
     }
 
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) {
-        setState(() => _isHovered = true);
-        if (isDesktop && id > 0) {
-          unawaited(HoverPreviewCard.prefetch(ref, id, mediaType, title));
-        }
-      },
-      onExit: (_) {
-        setState(() => _isHovered = false);
-      },
-      child: GestureDetector(
-        onTap: handleTap,
-        child: AnimatedScale(
-          scale: _isHovered ? 1.03 : 1.0,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutCubic,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: widget.width,
-            height: widget.height,
-            decoration: BoxDecoration(
-              color: const Color(0xFF14171F),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: _isHovered
-                    ? widget.badgeGradient.first.withValues(alpha: 0.7)
-                    : Colors.white.withValues(alpha: 0.08),
-                width: _isHovered ? 1.5 : 1.0,
-              ),
-              boxShadow: [
-                BoxShadow(
+    return RepaintBoundary(
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: GestureDetector(
+          onTap: handleTap,
+          child: AnimatedScale(
+            scale: _isHovered ? 1.025 : 1.0,
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOutCubic,
+            child: Container(
+              width: widget.width,
+              height: widget.height,
+              decoration: BoxDecoration(
+                color: const Color(0xFF14171F),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
                   color: _isHovered
-                      ? widget.badgeGradient.first.withValues(alpha: 0.22)
-                      : Colors.black.withValues(alpha: 0.4),
-                  blurRadius: _isHovered ? 18 : 8,
-                  offset: const Offset(0, 4),
+                      ? widget.badgeGradient.first
+                      : const Color(0x1AFFFFFF),
+                  width: 1.2,
                 ),
-              ],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // Backdrop Image
-                if (imageUrl != null)
-                  CachedNetworkImage(
-                    imageUrl: imageUrl,
-                    fit: BoxFit.cover,
-                    memCacheWidth: 600,
-                    placeholder: (context, url) => Container(
-                      color: const Color(0xFF1B1E28),
-                    ),
-                    errorWidget: (context, url, error) => Container(
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(11),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                  // Backdrop Image
+                  if (imageUrl != null)
+                    CachedNetworkImage(
+                      imageUrl: imageUrl,
+                      fit: BoxFit.cover,
+                      memCacheWidth: 600,
+                      filterQuality: FilterQuality.low,
+                      placeholder: (context, url) => const DecoratedBox(
+                        decoration: BoxDecoration(color: Color(0xFF1B1E28)),
+                      ),
+                      errorWidget: (context, url, error) => Container(
+                        color: const Color(0xFF1B1E28),
+                        child: Center(
+                          child: Icon(
+                            widget.badgeIcon,
+                            color: Colors.white24,
+                            size: 32,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    Container(
                       color: const Color(0xFF1B1E28),
                       child: Center(
                         child: Icon(
@@ -444,244 +439,165 @@ class _LatestReleaseCardState extends ConsumerState<LatestReleaseCard> {
                         ),
                       ),
                     ),
-                  )
-                else
-                  Container(
-                    color: const Color(0xFF1B1E28),
-                    child: Center(
-                      child: Icon(
-                        widget.badgeIcon,
-                        color: Colors.white24,
-                        size: 32,
-                      ),
-                    ),
-                  ),
 
-                // Top Vignette (for badge legibility)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: 50,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.black.withValues(alpha: 0.65),
-                          Colors.transparent,
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Deep Bottom Gradient Vignette (for text legibility)
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  height: widget.height != null ? widget.height! * 0.68 : 110,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        stops: const [0.0, 0.45, 1.0],
-                        colors: [
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.65),
-                          const Color(0xFF090B10).withValues(alpha: 0.96),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Top-Left Floating Frosted Badge (only for items with an episode number)
-                if (episodeNumber != null)
-                  Positioned(
-                    top: 9,
-                    left: 9,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                widget.badgeGradient.first.withValues(alpha: 0.85),
-                                widget.badgeGradient.last.withValues(alpha: 0.75),
-                              ],
-                            ),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.25),
-                              width: 0.8,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                PhosphorIconsFill.playCircle,
-                                size: 11,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'EP $episodeNumber',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                // Top-Right Glassmorphic Rating Chip
-                if (voteAverage != null && voteAverage > 0)
-                  Positioned(
-                    top: 9,
-                    right: 9,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.55),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.15),
-                              width: 0.8,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.star_rounded,
-                                size: 12,
-                                color: Color(0xFFFFC107),
-                              ),
-                              const SizedBox(width: 3),
-                              Text(
-                                voteAverage.toStringAsFixed(1),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                // Center Play Button (revealed on hover)
-                Center(
-                  child: AnimatedOpacity(
-                    opacity: _isHovered ? 1.0 : 0.0,
-                    duration: const Duration(milliseconds: 180),
-                    child: Container(
-                      width: 42,
-                      height: 42,
+                  // Seamless bottom gradient scrim anchored to the bottom border edge
+                  const Positioned(
+                    bottom: -2,
+                    left: 0,
+                    right: 0,
+                    height: 72,
+                    child: DecoratedBox(
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.black.withValues(alpha: 0.6),
-                        border: Border.all(
-                          color: widget.badgeGradient.first.withValues(alpha: 0.8),
-                          width: 1.5,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: widget.badgeGradient.first.withValues(alpha: 0.4),
-                            blurRadius: 12,
-                          ),
-                        ],
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.play_arrow_rounded,
-                          color: Colors.white,
-                          size: 26,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Bottom Metadata & Title
-                Positioned(
-                  left: 10,
-                  right: 10,
-                  bottom: 9,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Title
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: -0.2,
-                          shadows: [
-                            Shadow(
-                              color: Colors.black,
-                              blurRadius: 6,
-                            ),
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          stops: [0.0, 0.4, 0.75, 1.0],
+                          colors: [
+                            Colors.transparent,
+                            Color(0x66000000),
+                            Color(0xCC000000),
+                            Colors.black,
                           ],
                         ),
                       ),
-                      const SizedBox(height: 3),
+                    ),
+                  ),
 
-                      // Meta details row
-                      if (releaseTag.isNotEmpty)
-                        Row(
+                  // Top-Left Badge (only for items with an episode number)
+                  if (episodeNumber != null)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xB8000000),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: widget.badgeGradient.first.withValues(alpha: 0.6),
+                            width: 0.8,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              PhosphorIconsRegular.clock,
+                              PhosphorIconsFill.playCircle,
                               size: 11,
-                              color: Colors.white.withValues(alpha: 0.7),
+                              color: widget.badgeGradient.first,
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              releaseTag,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.75),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
+                              'EP $episodeNumber',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.4,
                               ),
                             ),
                           ],
                         ),
-                    ],
+                      ),
+                    ),
+
+                  // Top-Right Rating Chip
+                  if (voteAverage != null && voteAverage > 0)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xB8000000),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: const Color(0x26FFFFFF),
+                            width: 0.8,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.star_rounded,
+                              size: 12,
+                              color: Color(0xFFFFC107),
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              voteAverage.toStringAsFixed(1),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                  // Bottom Metadata & Title
+                  Positioned(
+                    left: 10,
+                    right: 10,
+                    bottom: 9,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Title
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: -0.2,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black,
+                                blurRadius: 4,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+
+                        // Meta details row
+                        if (releaseTag.isNotEmpty)
+                          Row(
+                            children: [
+                              Icon(
+                                PhosphorIconsRegular.clock,
+                                size: 11,
+                                color: Colors.white.withValues(alpha: 0.7),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                releaseTag,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.75),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 }
 
@@ -730,15 +646,15 @@ class LatestReleasesShelfSkeleton extends StatelessWidget {
             ),
           ),
           SizedBox(
-            height: cardHeight + 8,
+            height: cardHeight + 16,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               physics: const NeverScrollableScrollPhysics(),
               padding: EdgeInsets.only(
                 left: isDesktop ? 64 : 12,
                 right: 12,
-                top: 4,
-                bottom: 4,
+                top: 8,
+                bottom: 8,
               ),
               itemCount: 5,
               itemBuilder: (_, __) => Padding(
@@ -748,7 +664,7 @@ class LatestReleasesShelfSkeleton extends StatelessWidget {
                   height: cardHeight,
                   decoration: BoxDecoration(
                     color: const Color(0xFF14171F),
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: Colors.white.withValues(alpha: 0.05),
                     ),

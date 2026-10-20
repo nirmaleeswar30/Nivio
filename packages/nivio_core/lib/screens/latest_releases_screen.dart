@@ -147,7 +147,6 @@ class _LatestReleasesScreenState extends ConsumerState<LatestReleasesScreen> {
               _hasMore = false;
             } else {
               _items.addAll(unique);
-              _items.sort(compareReleaseDates);
             }
           }
           _isLoadingMore = false;
@@ -200,88 +199,53 @@ class _LatestReleasesScreenState extends ConsumerState<LatestReleasesScreen> {
   Widget build(BuildContext context) {
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
 
-    return Scaffold(
-      backgroundColor: NivioTheme.netflixBlack,
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF141720),
-              NivioTheme.netflixBlack,
-            ],
-          ),
-        ),
-        child: SafeArea(
-          top: true,
-          bottom: false,
-          child: RefreshIndicator(
-            color: _categoryGradient.first,
-            backgroundColor: const Color(0xFF1A1D26),
-            onRefresh: _fetchInitialData,
-            child: AppCustomScrollView(
-              controller: _scrollController,
-              scrollSpeed: 2.0,
-              silkyScrollDuration: const Duration(milliseconds: 500),
-              animationCurve: Curves.easeOutQuart,
-              slivers: [
-                // Top Header: Back button on Desktop only, glowing accent, title, and optional Schedule button
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      isDesktop ? 68 : 16,
-                      isDesktop ? 16 : 14,
-                      isDesktop ? 68 : 16,
-                      14,
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // Back button ONLY on desktop; removed on mobile as requested
-                        if (isDesktop) ...[
-                          IconButton(
-                            icon: const PhosphorIcon(
-                              PhosphorIconsRegular.caretLeft,
-                              color: Colors.white,
-                              size: 24,
-                            ),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            onPressed: () {
-                              if (context.canPop()) {
-                                context.pop();
-                              } else {
-                                context.go('/home');
-                              }
-                            },
-                          ),
-                          const SizedBox(width: 14),
-                        ],
+    final scrollView = AppCustomScrollView(
+      controller: _scrollController,
+      cacheExtent: isDesktop ? 1200 : 400,
+      scrollSpeed: 2.0,
+      silkyScrollDuration: const Duration(milliseconds: 500),
+      animationCurve: Curves.easeOutQuart,
+      slivers: [
+        // Top Header: Back button on Desktop only, glowing accent, title, and optional Schedule button
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              isDesktop ? 68 : 16,
+              isDesktop ? 16 : 14,
+              isDesktop ? 68 : 16,
+              14,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Back button ONLY on desktop; removed on mobile as requested
+                if (isDesktop) ...[
+                  _DesktopBackButton(
+                    onTap: () {
+                      if (context.canPop()) {
+                        context.pop();
+                      } else {
+                        context.go('/home');
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 14),
+                ],
 
-                        // Glowing accent bar
-                        Container(
-                          width: 4,
-                          height: 24,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: _categoryGradient,
-                            ),
-                            borderRadius: BorderRadius.circular(2),
-                            boxShadow: [
-                              BoxShadow(
-                                color: _categoryGradient.first.withValues(alpha: 0.6),
-                                blurRadius: 8,
-                                spreadRadius: 1,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 10),
+                // Accent bar
+                Container(
+                  width: 4,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: _categoryGradient,
+                    ),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 10),
 
                         // Title and Subtitle
                         Expanded(
@@ -318,7 +282,8 @@ class _LatestReleasesScreenState extends ConsumerState<LatestReleasesScreen> {
                         if (_category == 'anime')
                           Padding(
                             padding: const EdgeInsets.only(left: 8),
-                            child: InkWell(
+                            child: _DesktopScheduleButton(
+                              accentColor: _categoryGradient.first,
                               onTap: () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(
@@ -328,37 +293,6 @@ class _LatestReleasesScreenState extends ConsumerState<LatestReleasesScreen> {
                                   ),
                                 );
                               },
-                              borderRadius: BorderRadius.circular(20),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6.5),
-                                decoration: BoxDecoration(
-                                  color: _categoryGradient.first.withValues(alpha: 0.16),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: _categoryGradient.first.withValues(alpha: 0.4),
-                                    width: 1.0,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      PhosphorIconsRegular.calendarBlank,
-                                      color: _categoryGradient.first,
-                                      size: 14,
-                                    ),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      'Schedule',
-                                      style: TextStyle(
-                                        color: _categoryGradient.first,
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
                             ),
                           ),
                       ],
@@ -390,7 +324,38 @@ class _LatestReleasesScreenState extends ConsumerState<LatestReleasesScreen> {
                             border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
                           ),
                           clipBehavior: Clip.antiAlias,
-                          child: const SkeletonBox(width: double.infinity, height: double.infinity),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              const SkeletonBox(
+                                width: double.infinity,
+                                height: double.infinity,
+                                borderRadius: BorderRadius.zero,
+                              ),
+                              Positioned(
+                                bottom: 10,
+                                left: 8,
+                                right: 8,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    SkeletonBox(
+                                      width: 105,
+                                      height: 12,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    const SizedBox(height: 5),
+                                    SkeletonBox(
+                                      width: 60,
+                                      height: 9,
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         childCount: isDesktop ? 14 : 6,
                       ),
@@ -438,7 +403,9 @@ class _LatestReleasesScreenState extends ConsumerState<LatestReleasesScreen> {
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
                           final item = _items[index];
+                          final id = item is Map ? item['id'] : (item is SearchResult ? item.id : index);
                           return _OptimizedReleaseCard(
+                            key: ValueKey('rel_${_category}_${id}_$index'),
                             item: item,
                             isAnime: _category == 'anime',
                             accentGradient: _categoryGradient,
@@ -473,6 +440,157 @@ class _LatestReleasesScreenState extends ConsumerState<LatestReleasesScreen> {
                   ),
                 ],
               ],
+            );
+
+    return Scaffold(
+      backgroundColor: NivioTheme.netflixBlack,
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF141720),
+              NivioTheme.netflixBlack,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          top: true,
+          bottom: false,
+          child: isDesktop
+              ? scrollView
+              : RefreshIndicator(
+                  color: _categoryGradient.first,
+                  backgroundColor: const Color(0xFF1A1D26),
+                  onRefresh: _fetchInitialData,
+                  child: scrollView,
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopBackButton extends StatefulWidget {
+  final VoidCallback onTap;
+
+  const _DesktopBackButton({required this.onTap});
+
+  @override
+  State<_DesktopBackButton> createState() => _DesktopBackButtonState();
+}
+
+class _DesktopBackButtonState extends State<_DesktopBackButton> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: _isHovered
+                ? Colors.white.withValues(alpha: 0.14)
+                : Colors.white.withValues(alpha: 0.04),
+            border: Border.all(
+              color: _isHovered
+                  ? Colors.white.withValues(alpha: 0.35)
+                  : Colors.white.withValues(alpha: 0.08),
+              width: 1.0,
+            ),
+          ),
+          child: Center(
+            child: AnimatedSlide(
+              offset: _isHovered ? const Offset(-0.08, 0) : Offset.zero,
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOutCubic,
+              child: PhosphorIcon(
+                PhosphorIconsRegular.caretLeft,
+                color: _isHovered ? Colors.white : Colors.white.withValues(alpha: 0.8),
+                size: 20,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopScheduleButton extends StatefulWidget {
+  final Color accentColor;
+  final VoidCallback onTap;
+
+  const _DesktopScheduleButton({
+    required this.accentColor,
+    required this.onTap,
+  });
+
+  @override
+  State<_DesktopScheduleButton> createState() => _DesktopScheduleButtonState();
+}
+
+class _DesktopScheduleButtonState extends State<_DesktopScheduleButton> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedScale(
+          scale: _isHovered ? 1.04 : 1.0,
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6.5),
+            decoration: BoxDecoration(
+              color: _isHovered
+                  ? widget.accentColor.withValues(alpha: 0.26)
+                  : widget.accentColor.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: _isHovered
+                    ? widget.accentColor.withValues(alpha: 0.75)
+                    : widget.accentColor.withValues(alpha: 0.4),
+                width: 1.0,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  PhosphorIconsRegular.calendarBlank,
+                  color: widget.accentColor,
+                  size: 14,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  'Schedule',
+                  style: TextStyle(
+                    color: widget.accentColor,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -486,63 +604,24 @@ class _LatestReleasesScreenState extends ConsumerState<LatestReleasesScreen> {
 /// - Downsampled cached images (memCacheWidth: 340) for minimal RAM usage
 /// - Native RepaintBoundary layer caching
 /// - Vertical poster aspect ratio matching industry-standard streaming catalogs
-class _OptimizedReleaseCard extends ConsumerStatefulWidget {
+class _OptimizedReleaseCard extends StatefulWidget {
   final dynamic item;
   final bool isAnime;
   final List<Color> accentGradient;
 
   const _OptimizedReleaseCard({
+    super.key,
     required this.item,
     required this.isAnime,
     required this.accentGradient,
   });
 
   @override
-  ConsumerState<_OptimizedReleaseCard> createState() => _OptimizedReleaseCardState();
+  State<_OptimizedReleaseCard> createState() => _OptimizedReleaseCardState();
 }
 
-class _OptimizedReleaseCardState extends ConsumerState<_OptimizedReleaseCard> {
+class _OptimizedReleaseCardState extends State<_OptimizedReleaseCard> {
   bool _isHovered = false;
-  String? _resolvedDigitalDate;
-
-  @override
-  void initState() {
-    super.initState();
-    _resolveDigitalDateIfNeeded();
-  }
-
-  @override
-  void didUpdateWidget(covariant _OptimizedReleaseCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.item != widget.item) {
-      _resolveDigitalDateIfNeeded();
-    }
-  }
-
-  void _resolveDigitalDateIfNeeded() {
-    if (widget.isAnime) return;
-    final item = widget.item;
-    int? id;
-    String? mediaType;
-    String? existingDigital;
-
-    if (item is Map) {
-      id = item['id'] as int?;
-      mediaType = (item['media_type'] ?? (item['name'] != null ? 'tv' : 'movie')).toString();
-      existingDigital = item['digital_release_date']?.toString();
-    } else if (item is SearchResult) {
-      id = item.id;
-      mediaType = item.mediaType;
-    }
-
-    if (mediaType == 'movie' && (existingDigital == null || existingDigital.isEmpty) && id != null && id > 0) {
-      ref.read(tmdbServiceProvider).getMovieDigitalReleaseDate(id).then((resolved) {
-        if (resolved != null && mounted) {
-          setState(() => _resolvedDigitalDate = resolved);
-        }
-      });
-    }
-  }
 
   String _formatReleaseTag(dynamic rawDate, dynamic digitalDate, dynamic airingAtSec) {
     DateTime? date;
@@ -616,8 +695,7 @@ class _OptimizedReleaseCardState extends ConsumerState<_OptimizedReleaseCard> {
       airingAtSec = item['airing_at'];
     }
 
-    final effectiveDigitalDate = digitalDate ?? _resolvedDigitalDate;
-    final releaseTag = _formatReleaseTag(rawDate, effectiveDigitalDate, airingAtSec);
+    final releaseTag = _formatReleaseTag(rawDate, digitalDate, airingAtSec);
 
     // Prefer poster for vertical card format; fallback to backdrop if poster unavailable
     final imagePath = (posterPath != null && posterPath.isNotEmpty)
@@ -635,21 +713,23 @@ class _OptimizedReleaseCardState extends ConsumerState<_OptimizedReleaseCard> {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: _isHovered
-              ? widget.accentGradient.first.withValues(alpha: 0.75)
-              : Colors.white.withValues(alpha: 0.07),
-          width: _isHovered ? 1.4 : 0.9,
+              ? widget.accentGradient.first
+              : const Color(0x14FFFFFF),
+          width: 1.2,
         ),
       ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(9),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
           // Cached Poster Image
           if (imageUrl != null)
             CachedNetworkImage(
               imageUrl: imageUrl,
               fit: BoxFit.cover,
               memCacheWidth: 340,
+              filterQuality: FilterQuality.low,
               placeholder: (context, url) => const DecoratedBox(
                 decoration: BoxDecoration(color: Color(0xFF1B1E28)),
               ),
@@ -668,23 +748,24 @@ class _OptimizedReleaseCardState extends ConsumerState<_OptimizedReleaseCard> {
               ),
             ),
 
-          // High-efficiency bottom gradient for contrast
-          Positioned(
+          // Seamless bottom gradient scrim anchored to the bottom border edge
+          const Positioned(
             left: 0,
             right: 0,
-            bottom: 0,
-            height: 110,
-            child: const DecoratedBox(
+            bottom: -2,
+            height: 75,
+            child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
+                  stops: [0.0, 0.4, 0.75, 1.0],
                   colors: [
                     Colors.transparent,
-                    Color(0xB8000000), // ~72% black
-                    Color(0xF5090C12), // ~96% dark
+                    Color(0x66000000),
+                    Color(0xCC000000),
+                    Colors.black,
                   ],
-                  stops: [0.0, 0.42, 1.0],
                 ),
               ),
             ),
@@ -700,9 +781,6 @@ class _OptimizedReleaseCardState extends ConsumerState<_OptimizedReleaseCard> {
                 decoration: BoxDecoration(
                   gradient: LinearGradient(colors: widget.accentGradient),
                   borderRadius: BorderRadius.circular(5),
-                  boxShadow: const [
-                    BoxShadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 1)),
-                  ],
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -731,9 +809,9 @@ class _OptimizedReleaseCardState extends ConsumerState<_OptimizedReleaseCard> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5.5, vertical: 2.5),
                 decoration: BoxDecoration(
-                  color: const Color(0xCC000000),
+                  color: const Color(0xB8000000),
                   borderRadius: BorderRadius.circular(5),
-                  border: Border.all(color: Colors.white24, width: 0.7),
+                  border: Border.all(color: const Color(0x26FFFFFF), width: 0.7),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -802,7 +880,8 @@ class _OptimizedReleaseCardState extends ConsumerState<_OptimizedReleaseCard> {
           ),
         ],
       ),
-    );
+    ),
+  );
 
     if (isDesktop) {
       cardBody = MouseRegion(
@@ -810,8 +889,8 @@ class _OptimizedReleaseCardState extends ConsumerState<_OptimizedReleaseCard> {
         onEnter: (_) => setState(() => _isHovered = true),
         onExit: (_) => setState(() => _isHovered = false),
         child: AnimatedScale(
-          scale: _isHovered ? 1.035 : 1.0,
-          duration: const Duration(milliseconds: 160),
+          scale: _isHovered ? 1.03 : 1.0,
+          duration: const Duration(milliseconds: 140),
           curve: Curves.easeOutCubic,
           child: cardBody,
         ),
