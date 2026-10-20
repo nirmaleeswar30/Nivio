@@ -130,6 +130,7 @@ export XDG_DATA_DIRS="$HERE/share:/usr/share:${XDG_DATA_DIRS:-}"
 
 # Disable WebKit sandbox inside AppImage container
 export WEBKIT_DISABLE_SANDBOX=1
+export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
 
 # Ensure /tmp/wpe-webkit-2.0 points to the bundled helper processes
 rm -f /tmp/wpe-webkit-2.0 2>/dev/null || true

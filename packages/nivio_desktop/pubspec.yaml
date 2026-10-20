@@ -75,6 +75,10 @@ flutter_launcher_icons:
     image_path: "../../assets/images/nivio.png"
 
 dependency_overrides:
+  flutter_inappwebview_linux:
+    git:
+      url: https://github.com/nirmaleeswar30/flutter_inappwebview.git
+      path: flutter_inappwebview_linux
   freezed_annotation: ^3.1.0
   firebase_core:
     path: ../../packages/stubs/firebase_core

@@ -21,12 +21,12 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
 
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
-  // WORKAROUND for flutter_inappwebview on Linux:
-  // Force WPE WebKit to use SHM (Shared Memory) buffers instead of DMA-BUF for software rendering.
-  // Fixes the issue where WPE sends DMA-BUFs that are not read back into RAM when DISABLE_GL=1.
-  // See: https://github.com/pichillilorenzo/flutter_inappwebview/issues/2861
-  g_setenv("LIBGL_ALWAYS_SOFTWARE", "1", TRUE);
-  g_setenv("FLUTTER_INAPPWEBVIEW_LINUX_DISABLE_GL", "1", TRUE);
+  // Prevent WPE WebKit auxiliary process (WPEWebProcess) crashes caused by
+  // bubblewrap sandbox restrictions and namespace incompatibilities with GPU drivers.
+  g_setenv("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1", TRUE);
+  if (g_file_test("/dev/dri/card2", G_FILE_TEST_EXISTS)) {
+    g_setenv("WPE_DRM_DEVICE", "/dev/dri/card2", FALSE);
+  }
   
   MyApplication* self = MY_APPLICATION(application);
   GtkWindow* window =
@@ -64,6 +64,8 @@ static void my_application_activate(GApplication* application) {
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
+  // Disable experimental Impeller backend on Linux to prevent SEGV crashes with FlTextureGL
+  fl_dart_project_set_enable_impeller(project, FALSE);
 
   FlView* view = fl_view_new(project);
   GdkRGBA background_color;
