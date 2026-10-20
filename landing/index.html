@@ -10,7 +10,11 @@
   }
   window.scrollTo(0, 0);
 </script>
-<link rel="icon" type="image/png" href="../assets/images/nivio.png">
+<link rel="icon" type="image/png" href="nivio.png">
+<link rel="preload" as="image" href="preloader_orange.png" fetchpriority="high">
+<link rel="preload" as="image" href="preloader_red.png" fetchpriority="high">
+<link rel="preload" as="image" href="nivio-wordmark.png" fetchpriority="high">
+<link rel="preload" as="image" href="nivio.png" fetchpriority="high">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap">
@@ -2484,15 +2488,15 @@
       <div class="preloader-impact-glow" id="preloaderImpactGlow"></div>
 
       <!-- Amber Top-Left Ribbon -->
-      <img id="preloaderOrangePiece" class="preloader-piece preloader-orange" src="preloader_orange.png" onerror="this.onerror=null;this.src='../assets/images/preloader_orange.png';" alt="Nivio Amber Ribbon">
+      <img id="preloaderOrangePiece" class="preloader-piece preloader-orange" src="preloader_orange.png" alt="Nivio Amber Ribbon" loading="eager" decoding="sync">
 
       <!-- Crimson Bottom-Right Ribbon -->
-      <img id="preloaderRedPiece" class="preloader-piece preloader-red" src="preloader_red.png" onerror="this.onerror=null;this.src='../assets/images/preloader_red.png';" alt="Nivio Crimson Ribbon">
+      <img id="preloaderRedPiece" class="preloader-piece preloader-red" src="preloader_red.png" alt="Nivio Crimson Ribbon" loading="eager" decoding="sync">
     </div>
 
     <!-- Official Nivio Wordmark Elevation -->
     <div class="preloader-wordmark-wrap" id="preloaderWordmarkWrap">
-      <img id="preloaderWordmarkImg" class="preloader-wordmark" src="nivio-wordmark.png" onerror="this.onerror=null;this.src='../assets/images/nivio-wordmark.png';" alt="Nivio">
+      <img id="preloaderWordmarkImg" class="preloader-wordmark" src="nivio-wordmark.png" alt="Nivio" loading="eager" decoding="sync">
     </div>
   </div>
   <button type="button" class="preloader-skip-btn" id="preloaderSkipBtn" aria-label="Skip preloader animation">Skip</button>
@@ -2504,7 +2508,7 @@
 <header>
   <div class="wrap">
     <nav>
-      <a class="brand" href="#top" aria-label="Nivio home"><img class="brand-mark" src="../assets/images/nivio.png" alt=""><img class="brand-word" src="../assets/images/nivio-wordmark.png" alt="Nivio"></a>
+      <a class="brand" href="#top" aria-label="Nivio home"><img class="brand-mark" src="nivio.png" alt="Nivio"><img class="brand-word" src="nivio-wordmark.png" alt="Nivio"></a>
       <div class="nav-actions">
         <a class="btn btn-ghost btn-star" href="https://github.com/nirmaleeswar30/Nivio" target="_blank" rel="noopener noreferrer" aria-label="Star Nivio on GitHub">
           <svg class="star" viewBox="0 0 24 24"><path d="M12 2.6l2.9 5.9 6.5.95-4.7 4.6 1.1 6.45L12 17.9l-5.8 3.05 1.1-6.45L2.6 9.45l6.5-.95L12 2.6z"/></svg>
@@ -2544,7 +2548,7 @@
       </div>
     </div>
     <div class="stage reveal in" id="heroStage" data-view="desktop">
-      <img class="glow-n" src="nivio.png" onerror="this.onerror=null;this.src='../assets/images/nivio.png';" alt="">
+      <img class="glow-n" src="nivio.png" alt="">
 
       <!-- DESKTOP SHOWCASE (Clean Cinema Screenshot, Zero Artificial Frame) -->
       <div class="stage-view stage-desktop-view">
@@ -3546,8 +3550,8 @@
     <div class="foot-top">
       <div class="foot-brand">
         <a class="brand" href="#top" aria-label="Nivio">
-          <img class="brand-mark" src="../assets/images/nivio.png" onerror="this.onerror=null;this.src='nivio.png';" alt="Nivio">
-          <img class="brand-word" src="../assets/images/nivio-wordmark.png" onerror="this.onerror=null;this.src='wordmark2.png';" alt="Nivio">
+          <img class="brand-mark" src="nivio.png" alt="Nivio">
+          <img class="brand-word" src="nivio-wordmark.png" alt="Nivio">
         </a>
         <p>An all-in-one streaming home for Movies, TV, Anime and Live IPTV — with real-time Watch Parties and offline downloads.</p>
         <div class="foot-social">

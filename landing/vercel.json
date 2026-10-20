@@ -1,0 +1,8 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/watch", "destination": "/api/redirect" },
+    { "source": "/party", "destination": "/api/redirect" },
+    { "source": "/redirect", "destination": "/api/redirect" }
+  ]
+}
