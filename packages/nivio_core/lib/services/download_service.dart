@@ -360,7 +360,7 @@ class DownloadService {
   }
 
   static String generateFileName(DownloadItem item) {
-    String cleanTitle = item.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
+    String cleanTitle = item.seriesOrMovieTitle.replaceAll(RegExp(r'[\\/:*?"<>|]'), '').trim();
     if (item.season != null && item.episode != null) {
       return '${cleanTitle}_S${item.season}E${item.episode}.mkv';
     }
@@ -1515,10 +1515,7 @@ class DownloadService {
         ? (item.progress * 100).toInt()
         : 0;
 
-    String title = item.title;
-    if (item.season != null && item.episode != null) {
-      title += ' S${item.season} E${item.episode}';
-    }
+    final title = item.formattedDisplayTitle;
 
     final androidDetails = AndroidNotificationDetails(
       'download_channel',
@@ -1604,10 +1601,7 @@ class DownloadService {
   /// Replaces the ongoing progress notification with a dismissible
   /// "Download Complete" notification. Reused by direct/HLS and torrent paths.
   static Future<void> _showCompletedNotification(DownloadItem item) async {
-    String title = item.title;
-    if (item.season != null && item.episode != null) {
-      title += ' S${item.season} E${item.episode}';
-    }
+    final title = item.formattedDisplayTitle;
 
     const androidDetails = AndroidNotificationDetails(
       'download_channel',

@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/watch", "destination": "/api/redirect" },
+    { "source": "/party", "destination": "/api/redirect" },
+    { "source": "/redirect.html", "destination": "/api/redirect" },
+    { "source": "/redirect", "destination": "/api/redirect" },
+    { "source": "/assets/(.*)", "destination": "/landing/assets/$1" },
+    { "source": "/posters/(.*)", "destination": "/landing/posters/$1" },
+    { "source": "/(.*\\.(?:png|jpg|jpeg|svg|webp|ico|gif|css|js|woff2|woff|ttf|json|txt|apk|exe|deb|AppImage))", "destination": "/landing/$1" },
+    { "source": "/", "destination": "/landing/index.html" },
+    { "source": "/(.*)", "destination": "/landing/index.html" }
+  ]
+}

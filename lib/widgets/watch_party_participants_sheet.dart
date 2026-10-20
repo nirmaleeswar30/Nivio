@@ -1,9 +1,12 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/core/theme.dart';
+import 'package:share_plus/share_plus.dart';
 
 class WatchPartyParticipantsSheet extends ConsumerWidget {
   const WatchPartyParticipantsSheet({super.key});
@@ -82,6 +85,25 @@ class WatchPartyParticipantsSheet extends ConsumerWidget {
                                 );
                               },
                               child: const Icon(Icons.copy, color: NivioTheme.netflixLightGrey, size: 16),
+                            ),
+                            const SizedBox(width: 16),
+                            InkWell(
+                              onTap: () => _sharePartyLink(context, session.sessionCode),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.share, color: NivioTheme.netflixLightGrey, size: 15),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'Share',
+                                    style: TextStyle(
+                                      color: NivioTheme.netflixLightGrey,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
@@ -193,5 +215,36 @@ class WatchPartyParticipantsSheet extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _sharePartyLink(BuildContext context, String code) async {
+    final baseUrl = dotenv.env['SHARE_REDIRECT_URL'] ??
+        'https://nivio.nirmaleeswar.dev/watch';
+    final uri = Uri.parse(baseUrl);
+    final partyUrl = uri.replace(
+      path: '/party',
+      queryParameters: {
+        'code': code.toUpperCase(),
+      },
+    ).toString();
+
+    final shareText =
+        'Join my Nivio Watch Party!\n\nRoom Code: ${code.toUpperCase()}\n\nWatch together here: $partyUrl';
+
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    if (isDesktop) {
+      await Clipboard.setData(ClipboardData(text: shareText));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Watch Party invite link copied to clipboard!'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    await Share.share(shareText, subject: 'Join Nivio Watch Party ($code)');
   }
 }

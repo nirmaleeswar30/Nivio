@@ -3,17 +3,20 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/services/watch_party/watch_party_models.dart';
 import 'package:nivio/services/watch_party/watch_party_service_supabase.dart';
+import 'package:share_plus/share_plus.dart';
 
 class WatchPartyScreen extends ConsumerStatefulWidget {
   const WatchPartyScreen({
     super.key,
     this.embedded = false,
+    this.autoJoinCode,
     this.preselectedMediaId,
     this.preselectedMediaType,
     this.preselectedSeason = 1,
@@ -21,6 +24,7 @@ class WatchPartyScreen extends ConsumerStatefulWidget {
   });
 
   final bool embedded;
+  final String? autoJoinCode;
   final int? preselectedMediaId;
   final String? preselectedMediaType;
   final int preselectedSeason;
@@ -55,6 +59,17 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
         _handlePlaybackSync,
       );
     }
+
+    // Auto-join if a room code was passed via deep link
+    final initialCode = widget.autoJoinCode?.trim();
+    if (initialCode != null && initialCode.isNotEmpty) {
+      _codeController.text = initialCode.toUpperCase();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _joinParty();
+        }
+      });
+    }
   }
 
   @override
@@ -77,6 +92,18 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
         _selectedMediaType = widget.preselectedMediaType;
         _selectedSeason = widget.preselectedSeason;
         _selectedMediaTitle = widget.preselectedMediaTitle;
+      });
+    }
+
+    // Auto-join if a new code arrives while the widget is active
+    if (widget.autoJoinCode != null &&
+        widget.autoJoinCode != oldWidget.autoJoinCode &&
+        widget.autoJoinCode!.trim().isNotEmpty) {
+      _codeController.text = widget.autoJoinCode!.trim().toUpperCase();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _joinParty();
+        }
       });
     }
   }
@@ -257,6 +284,33 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
     _showMessage('Code copied');
   }
 
+  Future<void> _sharePartyLink(String code) async {
+    final title = _selectedMediaTitle;
+    final baseUrl = dotenv.env['SHARE_REDIRECT_URL'] ??
+        'https://nivio.nirmaleeswar.dev/watch';
+    final uri = Uri.parse(baseUrl);
+    final partyUrl = uri.replace(
+      path: '/party',
+      queryParameters: {
+        'code': code.toUpperCase(),
+        if (title != null && title.isNotEmpty) 'title': title,
+      },
+    ).toString();
+
+    final shareText = title != null && title.isNotEmpty
+        ? 'Join my Nivio Watch Party for "$title"!\n\nRoom Code: ${code.toUpperCase()}\n\nWatch together here: $partyUrl'
+        : 'Join my Nivio Watch Party!\n\nRoom Code: ${code.toUpperCase()}\n\nJoin here: $partyUrl';
+
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    if (isDesktop) {
+      await Clipboard.setData(ClipboardData(text: shareText));
+      _showMessage('Invite link copied to clipboard!');
+      return;
+    }
+
+    await Share.share(shareText, subject: 'Join Nivio Watch Party ($code)');
+  }
+
   Future<void> _setPlaybackController(
     WatchPartyServiceSupabase service, {
     required String? participantId,
@@ -359,9 +413,22 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
                   ),
                 ),
               ),
-              TextButton(
+              IconButton(
+                tooltip: 'Copy Code',
+                visualDensity: VisualDensity.compact,
                 onPressed: () => _copyCode(session.sessionCode),
-                child: const Text('Copy Code'),
+                icon: const Icon(Icons.copy, size: 18, color: Colors.white70),
+              ),
+              const SizedBox(width: 4),
+              FilledButton.icon(
+                onPressed: () => _sharePartyLink(session.sessionCode),
+                icon: const Icon(Icons.share, size: 15),
+                label: const Text('Share Link'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: NivioTheme.netflixRed,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                ),
               ),
             ],
           ),

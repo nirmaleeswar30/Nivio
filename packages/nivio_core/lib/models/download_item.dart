@@ -105,4 +105,58 @@ class DownloadItem extends HiveObject {
     this.torrentId,
     this.fileIndex,
   });
+
+  /// Returns the clean series or movie title without the internal '|||' delimiter.
+  String get seriesOrMovieTitle {
+    final parts = title.split('|||');
+    return parts.first.trim();
+  }
+
+  /// Returns the episode or secondary subtitle name if stored after '|||'.
+  String? get episodeSubtitle {
+    final parts = title.split('|||');
+    if (parts.length > 1) {
+      final sub = parts.last.trim();
+      return sub.isNotEmpty ? sub : null;
+    }
+    return null;
+  }
+
+  /// Returns a clean, human-readable display title for notifications and UI.
+  String get formattedDisplayTitle {
+    final main = seriesOrMovieTitle;
+    final sub = episodeSubtitle;
+
+    if (season != null && episode != null) {
+      final epTag = 'S${season} E${episode}';
+      if (sub != null &&
+          sub.toLowerCase() != 'episode $episode' &&
+          sub.toLowerCase() != 'season batch') {
+        return '$main - $epTag: $sub';
+      } else if (sub == 'Season Batch') {
+        return '$main - Season $season Batch';
+      }
+      return '$main - $epTag';
+    }
+
+    if (sub != null && sub.isNotEmpty) {
+      return '$main - $sub';
+    }
+
+    return main;
+  }
+
+  /// Returns the series/movie main poster without '|||'.
+  String? get mainPosterPath {
+    if (posterPath == null) return null;
+    final parts = posterPath!.split('|||');
+    return parts.isNotEmpty ? parts.first : null;
+  }
+
+  /// Returns the episode still image if available after '|||'.
+  String? get episodeStillPath {
+    if (posterPath == null) return null;
+    final parts = posterPath!.split('|||');
+    return parts.length > 1 ? parts.last : (parts.isNotEmpty ? parts.first : null);
+  }
 }

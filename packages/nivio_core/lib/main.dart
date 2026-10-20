@@ -428,8 +428,14 @@ void _handleDeepLink(Uri uri) {
   }
 
   // URI format: nivio://open/media/123?type=movie
-  // GoRouter path:       /media/123?type=movie
-  final path = uri.path; // e.g. "/media/123"
+  //             nivio://open/party?code=123456
+  //             nivio://party?code=123456
+  var path = uri.path;
+  if (path.isEmpty && (uri.host == 'party' || uri.host == 'watch-party')) {
+    path = '/party';
+  } else if (path.isEmpty && uri.host.isNotEmpty && uri.host != 'open') {
+    path = '/${uri.host}';
+  }
   final query = uri.query.isNotEmpty ? '?${uri.query}' : '';
   final routePath = '$path$query';
   debugPrint('🔗 Deep link routing to: $routePath');
@@ -549,6 +555,8 @@ final appRouter = GoRouter(
             GoRoute(
               path: '/party',
               builder: (context, state) {
+                final autoJoinCode = state.uri.queryParameters['code'] ??
+                    state.uri.queryParameters['partyCode'];
                 final preselectedMediaId = int.tryParse(
                   state.uri.queryParameters['mediaId'] ?? '',
                 );
@@ -556,6 +564,7 @@ final appRouter = GoRouter(
                     int.tryParse(state.uri.queryParameters['season'] ?? '') ??
                     1;
                 return WatchPartyScreen(
+                  autoJoinCode: autoJoinCode,
                   preselectedMediaId: preselectedMediaId,
                   preselectedMediaType: state.uri.queryParameters['type'],
                   preselectedSeason: preselectedSeason,

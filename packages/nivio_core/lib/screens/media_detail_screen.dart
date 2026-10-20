@@ -1415,11 +1415,28 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     final bytes = utf8.encode(deepLink);
     final base64DeepLink = base64.encode(bytes);
 
-    // Build the redirect URL using our hosted HTML file
+    // Resolve poster URL (TMDB w780 or anime poster)
+    String? posterUrl;
+    if (media.posterPath != null && media.posterPath!.isNotEmpty) {
+      posterUrl = media.posterPath!.startsWith('http')
+          ? media.posterPath
+          : 'https://image.tmdb.org/t/p/w780${media.posterPath}';
+    }
+
+    // Build the redirect URL with metadata for social embeds
     final baseUrl =
         dotenv.env['SHARE_REDIRECT_URL'] ??
-        'https://nirmaleeswar30.github.io/Nivio/redirect.html';
-    final redirectUrl = '$baseUrl?url=$base64DeepLink';
+        'https://nivio.nirmaleeswar.dev/watch';
+    final uri = Uri.parse(baseUrl).replace(
+      queryParameters: {
+        'url': base64DeepLink,
+        if (title.isNotEmpty) 'title': title,
+        if (posterUrl != null) 'poster': posterUrl,
+        if (media.overview != null && media.overview!.isNotEmpty)
+          'desc': media.overview,
+      },
+    );
+    final redirectUrl = uri.toString();
 
     final overview = media.overview != null && media.overview!.isNotEmpty
         ? '\n\n${media.overview}'
