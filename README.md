@@ -1,14 +1,28 @@
 <div align="center">
-  <img src="assets/images/app-icon.png" alt="Nivio Logo" width="150" />
+  <img src="assets/images/app-icon.png" alt="Nivio Logo" width="330" />
 
   **A beautiful, all-in-one streaming application for Movies, TV Shows, Anime, and Live IPTV, featuring real-time Watch Parties and offline downloads.**
 
   [![Flutter](https://img.shields.io/badge/Built_with-Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev/)
+  [![Rust](https://img.shields.io/badge/P2P_Engine-Rust-DEA584?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+  [![MPV](https://img.shields.io/badge/Playback-MPV%20%2F%20libmpv-8C1D40?style=for-the-badge)](https://mpv.io/)
   [![Firebase](https://img.shields.io/badge/Powered_by-Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com/)
   [![Supabase](https://img.shields.io/badge/Realtime-Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
+
+  [![TMDB](https://img.shields.io/badge/Metadata-TMDB-01B4E4?style=for-the-badge&logo=themoviedatabase&logoColor=white)](https://www.themoviedb.org/)
+  [![AniList](https://img.shields.io/badge/Anime-AniList-02A9FF?style=for-the-badge&logo=anilist&logoColor=white)](https://anilist.co/)
+  [![Platforms](https://img.shields.io/badge/Platforms-Android%20%7C%20Windows%20%7C%20Linux-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
 </div>
+
+---
+
+## ⚠️ Disclaimer - DMCA
+
+> [!IMPORTANT]
+> **Nivio does not host any media content.**  
+> This application acts strictly as an aggregator, scraping metadata and streaming links from publicly available third-party sources on the internet. The developers of Nivio are not affiliated with these sources. You are solely responsible for complying with your local laws, platform terms of service, and digital content rights policies when using this application.
 
 ---
 
@@ -16,57 +30,111 @@
 
 
 <div align="center">
+
+  <h3>📱 Mobile Edition</h3>
+
   <table border="0">
     <tr>
-      <td align="center"><img src="assets/images/home-screen.jpg" alt="Home Screen" /><br><b>Home Screen</b></td>
-      <td align="center"><img src="assets/images/media-screen.jpg" alt="Media Details" /><br><b>Media Details</b></td>
-      <td align="center"><img src="assets/images/provider-screen.jpg" alt="Provider Screen" /><br><b>Select Provider</b></td>
+      <td align="center"><img src="assets/images/home-screen.jpg" alt="Home Screen" width="200" /><br><b>Home Screen</b></td>
+      <td align="center"><img src="assets/images/media-screen.jpg" alt="Media Details" width="200" /><br><b>Media Details</b></td>
+      <td align="center"><img src="assets/images/provider-screen.jpg" alt="Provider Screen" width="200" /><br><b>Select Provider</b></td>
+      <td align="center"><img src="assets/images/watch-party.jpg" alt="Watch Party" width="200" /><br><b>Watch Party</b></td>
+    </tr>
+    <tr>
+      <td align="center"><img src="assets/images/live-tv-screen.jpg" alt="Live TV" width="200" /><br><b>Live TV</b></td>
+      <td align="center"><img src="assets/images/sports-tv-screen.jpg" alt="Sports TV" width="200" /><br><b>Sports TV</b></td>
+      <td align="center"><img src="assets/images/library-screen.jpg" alt="Library" width="200" /><br><b>Your Library</b></td>
+      <td align="center"><img src="assets/images/settings-screen.jpg" alt="Settings" width="200" /><br><b>Settings</b></td>
     </tr>
   </table>
+  <br>
   <table border="0">
     <tr>
-      <td align="center"><img src="assets/images/watch-party.jpg" alt="Watch Party" /><br><b>Watch Party</b></td>
-      <td align="center"><img src="assets/images/live-tv-screen.jpg" alt="Live TV" /><br><b>Live TV</b></td>
-      <td align="center"><img src="assets/images/library-screen.jpg" alt="Library" /><br><b>Your Library</b></td>
-      <td align="center"><img src="assets/images/settings-screen.jpg" alt="Settings" /><br><b>Settings</b></td>
+      <td align="center"><img src="assets/images/player-direct.jpg" alt="Video Player" width="600" /><br><b>Cinema Player</b></td>
     </tr>
   </table>
+
+  <br><br>
+
+  <h3>🖥️ Desktop Edition</h3>
+
   <table border="0">
     <tr>
-      <td align="center"><img src="assets/images/player-screen.jpg" alt="Video Player" /><br><b>Video Player</b></td>
+      <td align="center"><img src="assets/images/homescreen-desktop.png" alt="Desktop Home Dashboard" width="410" /><br><b>Home Dashboard</b></td>
+      <td align="center"><img src="assets/images/provider-screen.png" alt="Desktop Provider Selection" width="410" /><br><b>Stream Providers</b></td>
+    </tr>
+    <tr>
+      <td align="center"><img src="assets/images/media-detail-screen-desktop.png" alt="Desktop Media Details" width="410" /><br><b>Media Details &amp; Cast</b></td>
+      <td align="center"><img src="assets/images/settings-screen-desktop.png" alt="Desktop Settings" width="410" /><br><b>Settings &amp; Preferences</b></td>
+    </tr>
+    <tr>
+      <td align="center"><img src="assets/images/player-direct.jpg" alt="Cinema Player Engine" width="410" /><br><b>Cinema Player Engine</b></td>
+      <td align="center"><img src="assets/images/player-torrent.jpg" alt="BitTorrent Streaming Engine" width="410" /><br><b>BitTorrent Streaming Engine</b></td>
     </tr>
   </table>
+
+</div>
+
+---
+
+## ✨ Highlights
+
+* **🎉 Real-Time Watch Parties** — Stream together with friends in perfect sync, with shared playback controls.
+* **🧲 Instant Torrent Streaming** — Watch magnet links directly on the fly without waiting for downloads, powered by an embedded Rust engine.
+* **🎌 Dedicated Anime Hub** — Fast multi-source scraping, one-tap skip intro, filler episode tagging, and AniList sync.
+* **⚽ Live Sports & IPTV** — Live sports match streams, schedules, and global TV channels.
+* **⚡ Native MPV Playback** — Hardware-accelerated decoding, 200% software volume boost, and Picture-in-Picture.
+* **🧠 Smart Recommendations** — Private, local recommendations shaped around what you actually watch.
+
+---
+
+## 💖 Support Nivio
+
+Nivio is free and open source. If it makes your day a little better, consider supporting development — it keeps the project alive and actively maintained.
+
+<div align="center">
+  <a href="https://github.com/sponsors/nirmaleeswar30">
+    <img src="https://img.shields.io/badge/GITHUB%20SPONSORS-%E2%99%A5-ea4aaa?style=for-the-badge&logo=github&color=ea4aaa&labelColor=30363d" alt="GitHub Sponsors" />
+  </a>
+
+  <br><br>
+  <b>— or scan to pay via UPI —</b>
+  <br><br>
+
+  <img src="assets/images/upi.jpeg" alt="Slice UPI QR" width="280" />
 </div>
 
 ---
 
 ## 🚀 Features
 
-*   **🎬 Unified Discovery**: Browse trending Movies, TV Shows, and Anime directly from TMDB. Includes dedicated sections for regional content (Tamil, Telugu, Hindi, Korean).
-*   **🎌 Dedicated Anime Hub**: Integrated with **AniList** for dedicated Anime scraping from high-speed providers (`Animetsu`, `Animex`, `Miruro`), complete with Miruro Cloudflare bypass and custom quality selection.
-*   **🧠 Smart Recommendations**: An intelligent, privacy-first engine that analyzes your local watch history to curate a highly personalized "Top Picks For You" list by interleaving recommendations from your top 5 most recently watched titles.
-*   **⚡ Blazing Fast Playback**: Custom native video player (`media_kit`) powered by `libmpv`/MPV for hardware-accelerated decoding, picture-in-picture, and custom controls.
-*   **🔊 Loudness Enhancer (Volume Boost)**: Supports software volume boost up to 200% (+20dB gain) via screen swiping or TV arrow keys.
-*   **📂 Custom Subtitles & Persistence**: Load subtitle files (.srt, .vtt) locally from your device or paste remote URLs directly. Custom subtitle choices are remembered and auto-mapped for that episode on next play.
-*   **📡 Live IPTV**: Stream live television channels using M3U/M3U8 playlists directly from the app.
-*   **🎉 Real-Time Watch Parties**: Create a room, share a 6-digit code, and watch movies perfectly synced with your friends. Host playback controls are synchronized across all devices instantly via Supabase.
-*   **⬇️ Offline Downloads**: Download your favorite episodes for offline viewing.
-*   **🚀 OTA Updates**: Powered by Shorebird, receive instant over-the-air app updates in the background without needing to download a new APK or visit an app store.
-*   **💾 Cloud Sync & History**: Sign in with Google or anonymously. Watch progress, history, and watchlists are automatically synced across devices via Firebase Firestore.
-*   **🔔 Smart Episode Alerts**: Background push notifications alert you the moment a new episode of your favorite show drops.
-*   **🎛️ Total Control**: Change playback speeds, select custom audio tracks, customize subtitle styling, and tweak default video resolutions globally.
+* **Two-Way Scrobbling & Tracking** (Simkl, AniList, MyAnimeList)
+* **Cloud Sync & Watch History** (Google Sign-In / Firebase)
+* **Offline Downloads**
+* **Curated Release Shelves** (Theatrical, OTT Premiere & Weekly Anime)
+* **Custom Subtitles & Persistence** (Local .srt/.vtt or remote URLs)
+* **Native Desktop & Mobile Apps** (Windows, Linux, Android)
+* **Background Episode Alerts**
+* **Over-the-Air App Updates** (Shorebird CodePush)
 
 ---
 
 ## 🛠️ Tech Stack
 
-*   **Frontend**: Flutter (Dart `^3.10.0`)
-*   **State Management**: Riverpod
-*   **Routing**: GoRouter
-*   **Backend & Auth**: Firebase (Auth, Firestore)
-*   **Realtime Sockets**: Supabase (For Watch Parties)
-*   **Local Storage**: Hive & SharedPreferences
+*   **Architecture**: Modular Monorepo (`nivio_core`, `nivio_desktop`, `nivio_mobile`, `rqbit_ffi`)
+*   **UI & Framework**: Flutter (Dart `^3.10.0`)
+*   **Native P2P Engine**: Rust (`rqbit_ffi` / C-FFI bindings)
 *   **Media Playback**: `media_kit` (high-performance playback engine utilizing `libmpv` / MPV for hardware-accelerated rendering and extensive format decoding)
+*   **State Management**: Riverpod (`flutter_riverpod ^2.6.1`)
+*   **Networking**: Dio & Google Cronet HTTP engine
+*   **Routing & Navigation**: GoRouter (`go_router ^17.3.0`)
+*   **Backend & Authentication**: Firebase (Firebase Auth, Cloud Firestore)
+*   **Realtime Sockets**: Supabase (WebSockets for synchronized Watch Parties)
+*   **Local Storage**: Hive & SharedPreferences
+*   **Social & Presence**: Discord Rich Presence (RPC)
+*   **Metadata & Tracking APIs**: TMDB, AniList (GraphQL), Simkl, MyAnimeList
+*   **Background Tasks**: WorkManager & Local Notifications
+*   **Over-the-Air Updates**: Shorebird CodePush
 
 ---
 
@@ -175,7 +243,7 @@ Please make sure you run `flutter analyze` before opening a PR to ensure code qu
 
 ## ❤️ Acknowledgements
 
-A massive thank you to the creators of [NetMirror-Extension](https://github.com/Sushan64/NetMirror-Extension) for their incredible work. Their repository was a huge inspiration and help in building some of the core scraping and provider logic for this app!
+* **[Hayase](https://github.com/hayase-app)** — Inspiration for the P2P torrent streaming experience.
 
 ---
 
@@ -194,10 +262,3 @@ A massive thank you to the creators of [NetMirror-Extension](https://github.com/
 ## 📜 License
 
 Distributed under the MIT License. See `LICENSE` for more information.
-
----
-
-## ⚠️ Disclaimer - DMCA
-
-**Nivio does not host any media content.** 
-This application acts strictly as an aggregator, scraping metadata and streaming links from publicly available third-party sources on the internet. The developers of Nivio are not affiliated with these sources. You are solely responsible for complying with your local laws, platform terms of service, and digital content rights policies when using this application.

@@ -2397,6 +2397,50 @@
     font-family:var(--font-s);font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
     cursor:pointer;transition:all .2s ease;z-index:9999999}
   .preloader-skip-btn:hover{background:rgba(255,255,255,.15);color:#fff}
+
+  /* sponsor section */
+  .sponsor-section{margin-top:60px;margin-bottom:20px}
+  .sponsor-card{text-align:center;background:
+    radial-gradient(circle at 50% 0%,rgba(235,72,153,.14),transparent 70%),
+    rgba(23,17,12,.75);
+    border:1px solid rgba(255,255,255,.1);border-radius:30px;padding:60px 28px;overflow:hidden;position:relative}
+  .sponsor-badge{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:6px 16px;border-radius:999px;
+    background:rgba(235,72,153,.1);border:1px solid rgba(235,72,153,.3);
+    font-size:13px;font-family:var(--font-d);font-weight:700;color:#f472b6;
+    margin-bottom:18px}
+  .sponsor-card h2{font-size:clamp(28px,4.5vw,46px);font-weight:800;color:var(--ink);letter-spacing:-0.02em}
+  .sponsor-desc{color:var(--muted);margin:14px auto 28px;font-size:16.5px;max-width:52ch;line-height:1.6}
+  .sponsor-gh-btn{
+    display:inline-flex;align-items:center;border-radius:8px;overflow:hidden;
+    background:#21262d;border:1px solid #30363d;text-decoration:none;
+    box-shadow:0 4px 16px rgba(0,0,0,.3);transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease}
+  .sponsor-gh-btn:hover{
+    transform:translateY(-3px);border-color:#ea4aaa;
+    box-shadow:0 12px 28px -4px rgba(234,74,170,.45)}
+  .sponsor-gh-btn .gh-main{
+    display:inline-flex;align-items:center;gap:8px;padding:8px 16px;
+    color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    font-size:12.5px;font-weight:700;letter-spacing:.05em}
+  .sponsor-gh-btn .gh-main svg{width:16px;height:16px;fill:currentColor}
+  .sponsor-gh-btn .gh-heart{
+    background:#ea4aaa;color:#fff;padding:8px 14px;
+    font-size:13px;display:inline-flex;align-items:center;justify-content:center}
+  .sponsor-divider{
+    display:flex;align-items:center;text-align:center;margin:34px auto 26px;max-width:440px;
+    color:var(--muted-dim);font-family:var(--font-d);font-size:12.5px;font-weight:700;letter-spacing:.08em}
+  .sponsor-divider::before,.sponsor-divider::after{
+    content:'';flex:1;border-bottom:1px solid var(--line)}
+  .sponsor-divider span{padding:0 16px}
+  .sponsor-qr-frame{
+    display:inline-block;padding:12px;background:#fff;border-radius:18px;
+    box-shadow:0 14px 36px rgba(0,0,0,.5);max-width:280px;
+    transition:transform .25s ease,box-shadow .25s ease}
+  .sponsor-qr-frame:hover{
+    transform:scale(1.02);box-shadow:0 18px 44px rgba(234,74,170,.3)}
+  .sponsor-qr-frame img{
+    width:100%;height:auto;display:block;border-radius:10px}
 </style>
 </head>
 <body id="top" class="preloader-active">
@@ -3465,6 +3509,38 @@
   </div>
 </section>
 
+<section class="wrap sponsor-section" id="sponsor">
+  <div class="sponsor-card reveal">
+    <div class="sponsor-badge">
+      <svg viewBox="0 0 24 24" fill="currentColor" style="width:14px;height:14px"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+      Support Development
+    </div>
+    <h2>Support Nivio</h2>
+    <p class="sponsor-desc">Nivio is free and open source. If it makes your day a little better, consider supporting development — it keeps the project alive and actively maintained.</p>
+
+    <!-- GitHub Sponsors Button -->
+    <div style="margin-top:22px">
+      <a class="sponsor-gh-btn" href="https://github.com/sponsors/nirmaleeswar30" target="_blank" rel="noopener noreferrer" aria-label="Sponsor on GitHub">
+        <span class="gh-main">
+          <svg viewBox="0 0 24 24"><path d="M12 2C6.5 2 2 6.6 2 12.3c0 4.5 2.9 8.3 6.8 9.7.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.4-3.4-1.4-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .9.1-.7.4-1.1.6-1.4-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.5-1.3.1-2.7 0 0 .8-.3 2.7 1a9.3 9.3 0 015 0c1.9-1.3 2.7-1 2.7-1 .6 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.3 4.7-4.6 5 .4.3.7 1 .7 2v3c0 .3.2.6.7.5A10 10 0 0022 12.3C22 6.6 17.5 2 12 2z"/></svg>
+          GITHUB SPONSORS
+        </span>
+        <span class="gh-heart">&#10084;</span>
+      </a>
+    </div>
+
+    <!-- Divider -->
+    <div class="sponsor-divider">
+      <span>— or scan to pay via UPI —</span>
+    </div>
+
+    <!-- Slice UPI QR Card -->
+    <div class="sponsor-qr-frame">
+      <img src="upi.jpeg" onerror="this.onerror=null;this.src='../assets/images/upi.jpeg';" alt="Slice UPI QR Code">
+    </div>
+  </div>
+</section>
+
 <footer>
   <div class="wrap">
     <div class="foot-top">
@@ -3505,6 +3581,7 @@
         <div class="foot-col">
           <h4>Open Source</h4>
           <a href="https://github.com/nirmaleeswar30/Nivio" target="_blank" rel="noopener noreferrer">GitHub Repository</a>
+          <a href="#sponsor">💖 Sponsor Development</a>
           <a href="https://github.com/nirmaleeswar30/Nivio/stargazers" target="_blank" rel="noopener noreferrer">Star on GitHub</a>
           <a href="https://github.com/nirmaleeswar30/Nivio/issues" target="_blank" rel="noopener noreferrer">Issue Tracker &amp; Bugs</a>
           <a href="https://github.com/nirmaleeswar30/Nivio/issues/new/choose" target="_blank" rel="noopener noreferrer">Feature Requests</a>
