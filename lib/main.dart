@@ -29,6 +29,7 @@ import 'package:nivio/services/auth_service.dart';
 import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/github_release_update_service.dart';
 import 'package:nivio/services/shorebird_update_service.dart';
+import 'package:nivio/services/webview_environment_service.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/screens/home_screen.dart';
@@ -168,6 +169,9 @@ void main([List<String> args = const []]) async {
         }
         return false;
       };
+    }
+    if (Platform.isWindows) {
+      await AppWebViewEnvironment.initialize();
     }
     initDebugLogFile();
     MediaKit.ensureInitialized();

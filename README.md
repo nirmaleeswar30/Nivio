@@ -1,20 +1,43 @@
 <div align="center">
-  <img src="assets/images/app-icon.png" alt="Nivio Logo" width="330" />
+  <img src="assets/images/appicon.png" alt="Nivio Logo" width="330" />
 
   **A beautiful, all-in-one streaming application for Movies, TV Shows, Anime, and Live IPTV, featuring real-time Watch Parties and offline downloads.**
 
   [![Flutter](https://img.shields.io/badge/Built_with-Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev/)
   [![Rust](https://img.shields.io/badge/P2P_Engine-Rust-DEA584?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
   [![MPV](https://img.shields.io/badge/Playback-MPV%20%2F%20libmpv-8C1D40?style=for-the-badge)](https://mpv.io/)
-  [![Firebase](https://img.shields.io/badge/Powered_by-Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com/)
   [![Supabase](https://img.shields.io/badge/Realtime-Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
 
+  [![Firebase](https://img.shields.io/badge/Powered_by-Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com/)
   [![TMDB](https://img.shields.io/badge/Metadata-TMDB-01B4E4?style=for-the-badge&logo=themoviedatabase&logoColor=white)](https://www.themoviedb.org/)
   [![AniList](https://img.shields.io/badge/Anime-AniList-02A9FF?style=for-the-badge&logo=anilist&logoColor=white)](https://anilist.co/)
   [![Platforms](https://img.shields.io/badge/Platforms-Android%20%7C%20Windows%20%7C%20Linux-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
 </div>
+
+---
+
+<div align="center">
+
+[Features](#features) • [Screenshots](#screenshots) • [Installation](#installation) • [Build from Source](#build-from-source) • [Contributing](#contributing)
+
+</div>
+
+<br>
+
+> [!WARNING]
+> Nivio is only available on the platforms listed in this README. It is not on the Play Store or any other site claiming to offer official releases. If we ever publish to additional platforms, it will be announced here. Please avoid unofficial or modified builds for your safety.
+
+<p align="center">
+  <a href="https://github.com/nirmaleeswar30/Nivio/releases/latest">
+    <img src="assets/images/badge-github.png" alt="Get it on GitHub" height="48" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.nirmal.nivio%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fnirmaleeswar30%2FNivio%22%2C%22author%22%3A%22nirmaleeswar30%22%2C%22name%22%3A%22Nivio%22%7D">
+    <img src="assets/images/badge-obtainium.png" alt="Get it on Obtainium" height="48" />
+  </a>
+</p>
 
 ---
 
@@ -25,6 +48,8 @@
 > This application acts strictly as an aggregator, scraping metadata and streaming links from publicly available third-party sources on the internet. The developers of Nivio are not affiliated with these sources. You are solely responsible for complying with your local laws, platform terms of service, and digital content rights policies when using this application.
 
 ---
+
+<a id="screenshots"></a>
 
 ## 📸 Screenshots
 
@@ -106,6 +131,8 @@ Nivio is free and open source. If it makes your day a little better, consider su
 
 ---
 
+<a id="features"></a>
+
 ## 🚀 Features
 
 * **Two-Way Scrobbling & Tracking** (Simkl, AniList, MyAnimeList)
@@ -137,6 +164,8 @@ Nivio is free and open source. If it makes your day a little better, consider su
 *   **Over-the-Air Updates**: Shorebird CodePush
 
 ---
+
+<a id="installation"></a>
 
 ## ⚙️ Installation & Setup
 
@@ -192,6 +221,8 @@ flutter run
 
 ---
 
+<a id="build-from-source"></a>
+
 ## 📦 Building for Release
 
 To compile a highly-optimized release APK (with R8 minification configured for the video player):
@@ -209,24 +240,42 @@ Or run the included bash script to build a Universal APK:
 
 ### 🖥️ Windows Desktop (installer)
 
-> **Important:** the Windows app **must** be built from `packages/nivio_desktop`, **not** the repo root. The desktop package swaps `google_sign_in` / `firebase_*` for local stubs (browser‑OAuth loopback login that works on Windows); the root build uses the real `google_sign_in`, which has no Windows implementation and fails at runtime with `UnimplementedError`.
+> [!IMPORTANT]
+> The Windows app **must** be built from `packages/nivio_desktop`, **not** the repo root. The desktop package swaps `google_sign_in` / `firebase_*` for local stubs (browser‑OAuth loopback login that works on Windows); the root build uses the real `google_sign_in`, which has no Windows implementation and fails at runtime with `UnimplementedError`.
 
-Build the release and package the installer in one step:
+#### One-Step Release & Installer Packaging
+The packaging scripts automatically read the application version from the root `pubspec.yaml`, compile the desktop release, and produce the Inno Setup installer.
+
+**Using PowerShell (recommended on Windows):**
+```powershell
+# Interactive prompt (choose between Normal Release or Shorebird OTA Release):
+.\scripts\package_windows_installer.ps1
+
+# Or specify build type directly via parameters:
+.\scripts\package_windows_installer.ps1 -BuildType normal
+.\scripts\package_windows_installer.ps1 -BuildType shorebird
+
+# Or package existing build without recompiling:
+.\scripts\package_windows_installer.ps1 -SkipBuild
+```
+
+**Using Bash (Git Bash / WSL):**
 ```bash
 ./scripts/build_windows_installer.sh
 ```
 
-Or run the steps manually:
-```bash
-# 1. Build the desktop app (from the desktop package, not root)
-cd packages/nivio_desktop && flutter build windows --release && cd ../..
+The resulting setup wizard executable is saved to:
+`packages/nivio_desktop/dist/windows/Nivio-Setup-<version>.exe`
 
-# 2. Compile the Inno Setup installer (needs Inno Setup 6 / ISCC.exe)
-"$LOCALAPPDATA/Programs/Inno Setup 6/ISCC.exe" installer/nivio.iss
-```
-The installer is written to `dist/Nivio-<version>-windows-x64-setup.exe`.
+#### 🌐 Windows WebView2 & Permissions Architecture
+Trailer players and hover card preview players on Windows utilize Microsoft Edge WebView2 via `flutter_inappwebview`:
+* **User Data Isolation:** Nivio configures `WebViewEnvironment` with `userDataFolder` pointing to `%LOCALAPPDATA%\Nivio\webview2_data`.
+* **Standard User Compatibility:** Because Edge WebView2 defaults to writing next to the executable, apps installed in `C:\Program Files` would otherwise trigger permission errors (*"We couldn't create the data directory"* / `E_ACCESSDENIED`). Isolating data in `%LOCALAPPDATA%` guarantees full read/write functionality for standard user accounts without requiring administrative elevation.
+* **Prerequisites:** Windows 10 and 11 come with Edge WebView2 pre-installed. If running on minimal or LTSC Windows editions, ensure the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) is installed.
 
 ---
+
+<a id="contributing"></a>
 
 ## 🤝 Contributing
 

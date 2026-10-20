@@ -50,7 +50,15 @@ if [[ -z "$ISCC" || ! -f "$ISCC" ]]; then
   exit 1
 fi
 
-echo "📦 Compiling installer ($ISS) ..."
-"$ISCC" "$ISS"
+# Extract version dynamically from root pubspec.yaml or desktop pubspec.yaml
+APP_VERSION="1.0.0"
+if [[ -f "$PROJECT_ROOT/pubspec.yaml" ]]; then
+  APP_VERSION=$(grep -E '^version:\s*(.+)$' "$PROJECT_ROOT/pubspec.yaml" | head -n 1 | sed -E 's/^version:\s*(.+)$/\1/' | cut -d'+' -f1 | tr -d '\r' | tr -d ' ')
+elif [[ -f "$DESKTOP_DIR/pubspec.yaml" ]]; then
+  APP_VERSION=$(grep -E '^version:\s*(.+)$' "$DESKTOP_DIR/pubspec.yaml" | head -n 1 | sed -E 's/^version:\s*(.+)$/\1/' | cut -d'+' -f1 | tr -d '\r' | tr -d ' ')
+fi
+
+echo "📦 Compiling installer ($ISS) for version $APP_VERSION ..."
+"$ISCC" "/DMyAppVersion=$APP_VERSION" "$ISS"
 
 echo "✅ Done. Installer is in $PROJECT_ROOT/dist/"

@@ -74,9 +74,11 @@ fi
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 
-# Extract Version
+# Extract Version (prefer root pubspec.yaml if present)
 VERSION="unknown"
-if [ -f "$PUBSPEC_PATH" ]; then
+if [ -f "$REPO_ROOT/pubspec.yaml" ]; then
+    VERSION=$(grep -E '^version:\s*(.+)$' "$REPO_ROOT/pubspec.yaml" | head -n 1 | sed -E 's/^version:\s*(.+)$/\1/' | tr -d '\r' | tr -d ' ')
+elif [ -f "$PUBSPEC_PATH" ]; then
     VERSION=$(grep -E '^version:\s*(.+)$' "$PUBSPEC_PATH" | head -n 1 | sed -E 's/^version:\s*(.+)$/\1/' | tr -d '\r' | tr -d ' ')
 fi
 VERSION_SAFE=$(echo "$VERSION" | sed -E 's/[^a-zA-Z0-9.\+-]/_/g')

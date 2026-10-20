@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:nivio/services/hls_proxy_service.dart';
+import 'package:nivio/services/webview_environment_service.dart';
 
 /// A lightweight YouTube player built on top of flutter_inappwebview.
 /// Works on all platforms that flutter_inappwebview supports (Android, iOS,
@@ -270,6 +271,7 @@ class YouTubeWebViewPlayerState extends State<YouTubeWebViewPlayer> {
               baseUrl: WebUri('https://www.youtube-nocookie.com'),
             ),
       initialUserScripts: UnmodifiableListView([]),
+      webViewEnvironment: AppWebViewEnvironment.instance,
       initialSettings: InAppWebViewSettings(
         javaScriptEnabled: true,
         mediaPlaybackRequiresUserGesture: false,

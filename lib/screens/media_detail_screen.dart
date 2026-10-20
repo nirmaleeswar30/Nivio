@@ -10,6 +10,7 @@ import '../widgets/download_prompt.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:nivio/widgets/youtube_webview_player.dart';
+import 'package:nivio/services/webview_environment_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:nivio/widgets/skeleton.dart';
@@ -2708,6 +2709,7 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
 
     return InAppWebView(
       key: ValueKey('wv_${widget.source.embedUrl}'),
+      webViewEnvironment: AppWebViewEnvironment.instance,
       initialUrlRequest: URLRequest(url: WebUri(trailerUrl)),
       initialSettings: InAppWebViewSettings(
         mediaPlaybackRequiresUserGesture: false,

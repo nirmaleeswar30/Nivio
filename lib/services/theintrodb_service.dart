@@ -8,6 +8,10 @@ class TheIntroDBService {
       baseUrl: 'https://api.theintrodb.org/v4',
       connectTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(seconds: 10),
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Nivio/2.2.4 (https://github.com/nirmaleeswar30/Nivio)',
+      },
     ),
   );
 

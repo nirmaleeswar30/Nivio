@@ -44,6 +44,8 @@
   html, body{
     margin:0;
     padding:0;
+    overflow-x:clip;
+    max-width:100%;
   }
   html.preloader-active, body.preloader-active{
     overflow:hidden !important;
@@ -58,7 +60,8 @@
     font-family:var(--font-b);
     line-height:1.6;
     -webkit-font-smoothing:antialiased;
-    overflow-x:hidden;
+    overflow-x:clip;
+    max-width:100vw;
   }
   /* ambient warm field */
   .field{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
@@ -2329,9 +2332,18 @@
     header .wrap,
     .hero{padding-inline:20px}
     .hero-grid{grid-template-columns:1fr;gap:20px}
-    .stage{height:480px;order:2}
+    .stage{height:420px;order:2;width:100%;max-width:100%;overflow:hidden}
     .hero p.lead{max-width:none}
     .desktop-frame{max-width:92vw}
+    .p-main{width:min(210px, 54vw)}
+    .p-left{width:min(160px, 42vw);left:-2%;top:20%}
+    .p-right{width:min(160px, 42vw);right:-2%;top:16%}
+  }
+  @media(max-width:480px){
+    .stage{height:360px}
+    .p-main{width:180px}
+    .p-left{width:140px;left:-6%;top:22%}
+    .p-right{width:140px;right:-6%;top:18%}
   }
   @media(prefers-reduced-motion:reduce){*{animation:none!important}.reveal{opacity:1;transform:none;transition:none}}
 

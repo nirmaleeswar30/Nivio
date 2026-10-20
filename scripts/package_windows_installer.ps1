@@ -1,5 +1,7 @@
 param(
-  [switch]$SkipBuild
+  [switch]$SkipBuild,
+  [ValidateSet("normal", "shorebird")]
+  [string]$BuildType = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,8 +20,12 @@ if (-not (Test-Path $DesktopDir)) {
 Set-Location $DesktopDir
 
 $TargetScript = Join-Path $DesktopDir "scripts\package_windows_installer.ps1"
+$scriptParams = @{}
 if ($SkipBuild) {
-  & $TargetScript -SkipBuild
-} else {
-  & $TargetScript
+  $scriptParams["SkipBuild"] = $true
 }
+if (-not [string]::IsNullOrWhiteSpace($BuildType)) {
+  $scriptParams["BuildType"] = $BuildType
+}
+
+& $TargetScript @scriptParams

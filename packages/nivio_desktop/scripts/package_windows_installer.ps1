@@ -1,5 +1,7 @@
 param(
-  [switch]$SkipBuild
+  [switch]$SkipBuild,
+  [ValidateSet("normal", "shorebird")]
+  [string]$BuildType = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,18 +35,33 @@ function Find-Iscc {
 }
 
 function Read-AppVersion {
-  $Pubspec = Join-Path $RootDir "pubspec.yaml"
-  $VersionLine = Select-String -Path $Pubspec -Pattern "^version:\s*(.+)$" | Select-Object -First 1
-  if (-not $VersionLine) {
-    return "1.0.0"
+  # Prefer root pubspec.yaml if present, otherwise fall back to package pubspec
+  $ProjectRoot = Split-Path -Parent (Split-Path -Parent $RootDir)
+  $CandidatePaths = @(
+    (Join-Path $ProjectRoot "pubspec.yaml"),
+    (Join-Path $RootDir "pubspec.yaml")
+  )
+
+  foreach ($Pubspec in $CandidatePaths) {
+    if (Test-Path $Pubspec) {
+      $VersionLine = Select-String -Path $Pubspec -Pattern "^version:\s*(.+)$" | Select-Object -First 1
+      if ($VersionLine -and $VersionLine.Matches.Count -gt 0) {
+        $Version = $VersionLine.Matches[0].Groups[1].Value.Trim()
+        return ($Version -split "\+")[0]
+      }
+    }
   }
 
-  $Version = $VersionLine.Matches[0].Groups[1].Value.Trim()
-  return ($Version -split "\+")[0]
+  return "1.0.0"
 }
 
 if (-not $SkipBuild) {
-  & (Join-Path $RootDir "scripts\build_windows_release.ps1")
+  $buildScript = Join-Path $RootDir "scripts\build_windows_release.ps1"
+  if ([string]::IsNullOrWhiteSpace($BuildType)) {
+    & $buildScript
+  } else {
+    & $buildScript -BuildType $BuildType
+  }
 }
 
 $SourceDir = Join-Path $RootDir "build\windows\x64\runner\Release"

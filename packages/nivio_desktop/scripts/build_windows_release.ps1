@@ -1,3 +1,8 @@
+param(
+  [ValidateSet("normal", "shorebird")]
+  [string]$BuildType = ""
+)
+
 $ErrorActionPreference = "Stop"
 
 $RootDir = Split-Path -Parent $PSScriptRoot
@@ -123,14 +128,80 @@ if ($env:DESKTOP_UPDATE_REPO_OWNER) { $Defines += "--dart-define=DESKTOP_UPDATE_
 if ($env:DESKTOP_UPDATE_REPO_NAME) { $Defines += "--dart-define=DESKTOP_UPDATE_REPO_NAME=$env:DESKTOP_UPDATE_REPO_NAME" }
 if ($env:DESKTOP_UPDATE_ASSET_PATTERN) { $Defines += "--dart-define=DESKTOP_UPDATE_ASSET_PATTERN=$env:DESKTOP_UPDATE_ASSET_PATTERN" }
 
+# Interactive Prompt for Build Type if not passed via parameter
+if ([string]::IsNullOrWhiteSpace($BuildType)) {
+  Write-Host ""
+  Write-Host "Select Windows Release Type:" -ForegroundColor Cyan
+  Write-Host "  [1] Normal Release (Standard Flutter AOT build)" -ForegroundColor Yellow
+  Write-Host "  [2] Shorebird Release (Enables Over-the-Air Dart code pushes)" -ForegroundColor Green
+  $selection = Read-Host "Enter choice [1 or 2] (Default: 1)"
+  if ($selection -eq "2") {
+    $BuildType = "shorebird"
+  } else {
+    $BuildType = "normal"
+  }
+}
+
+if ($BuildType -eq "shorebird") {
+  Write-Host ""
+  Write-Host "Checking Shorebird CLI..." -ForegroundColor Yellow
+  $ShorebirdCmd = Get-Command shorebird -ErrorAction SilentlyContinue
+  if (-not $ShorebirdCmd) {
+    $ShorebirdCandidates = @(
+      "$env:USERPROFILE\.shorebird\bin\shorebird.ps1",
+      "$env:USERPROFILE\.shorebird\bin\shorebird.bat"
+    )
+    foreach ($cand in $ShorebirdCandidates) {
+      if (Test-Path $cand) {
+        $ShorebirdCmd = $cand
+        break
+      }
+    }
+  }
+
+  if (-not $ShorebirdCmd) {
+    throw "Shorebird CLI was not found. Please install Shorebird (https://docs.shorebird.dev) to build Shorebird releases."
+  }
+
+  # Verify if logged in to Shorebird
+  Write-Host "Verifying Shorebird credentials..." -ForegroundColor Yellow
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = "cmd.exe"
+  $psi.Arguments = "/c shorebird apps list"
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.UseShellExecute = $false
+  $proc = [System.Diagnostics.Process]::Start($psi)
+  $proc.WaitForExit()
+  $appsOutput = $proc.StandardOutput.ReadToEnd() + " " + $proc.StandardError.ReadToEnd()
+
+  if ($appsOutput -match "shorebird login" -or $appsOutput -match "rejected your stored credentials" -or $appsOutput -match "Failed to refresh credentials") {
+    Write-Host ""
+    Write-Host "Shorebird is not logged in or credentials have expired." -ForegroundColor Yellow
+    Write-Host "Launching 'shorebird login'..." -ForegroundColor Cyan
+    & cmd.exe /c shorebird login
+    if ($LASTEXITCODE -ne 0) {
+      throw "Shorebird login was unsuccessful. Cannot proceed with Shorebird release."
+    }
+  }
+}
+
 Write-Host "Running plugin C++ compatibility patch..."
 & $DartCmd run tool/patch_window_manager_windows.dart
 if ($LASTEXITCODE -ne 0) {
   Write-Warning "Plugin patch returned non-zero code ($LASTEXITCODE), continuing..."
 }
 
-Write-Host "Building Flutter Windows Release..."
-& $FlutterCmd build windows --release @Defines
-if ($LASTEXITCODE -ne 0) {
-  exit $LASTEXITCODE
+if ($BuildType -eq "shorebird") {
+  Write-Host "Building Shorebird Windows Release (OTA-enabled)..." -ForegroundColor Green
+  & shorebird release windows @Defines
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
+} else {
+  Write-Host "Building Standard Flutter Windows Release..." -ForegroundColor Cyan
+  & $FlutterCmd build windows --release @Defines
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
 }

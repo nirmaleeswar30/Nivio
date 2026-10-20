@@ -117,12 +117,19 @@ if (Test-Path $keystorePath) {
     exit 1
 }
 
-# Extract version
+# Extract version (check root pubspec first, then fallback to mobile package pubspec)
 $version = "unknown"
-if (Test-Path $pubspecPath) {
-    $versionLine = Select-String -Path $pubspecPath -Pattern "^version:\s*(.+)$" | Select-Object -First 1
-    if ($versionLine -and $versionLine.Matches.Count -gt 0) {
-        $version = $versionLine.Matches[0].Groups[1].Value.Trim()
+$candidatePubspecs = @(
+    "$PSScriptRoot\pubspec.yaml",
+    $pubspecPath
+)
+foreach ($p in $candidatePubspecs) {
+    if (Test-Path $p) {
+        $versionLine = Select-String -Path $p -Pattern "^version:\s*(.+)$" | Select-Object -First 1
+        if ($versionLine -and $versionLine.Matches.Count -gt 0) {
+            $version = $versionLine.Matches[0].Groups[1].Value.Trim()
+            break
+        }
     }
 }
 $versionSafe = $version -replace "[^0-9A-Za-z\.\+\-]", "_"

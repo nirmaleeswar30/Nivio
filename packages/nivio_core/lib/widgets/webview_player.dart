@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:nivio/core/theme.dart';
+import 'package:nivio/services/webview_environment_service.dart';
 // unused
 
 /// WebView-based player for embedding streams using flutter_inappwebview
@@ -44,6 +45,7 @@ class _WebViewPlayerState extends State<WebViewPlayer> {
     return Stack(
       children: [
         InAppWebView(
+          webViewEnvironment: AppWebViewEnvironment.instance,
           initialUrlRequest: URLRequest(
             url: WebUri(widget.streamUrl),
             headers: widget.headers,
