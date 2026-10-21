@@ -11,7 +11,11 @@ set(rust_manifest "${CMAKE_CURRENT_SOURCE_DIR}/../rust/Cargo.toml")
 # Cargo profile for the bundled native lib. Debug builds fast (reuses cached
 # artifacts) and is fine for development; switch to "release" for shipping.
 if(NOT DEFINED RQBIT_CARGO_PROFILE)
-  set(RQBIT_CARGO_PROFILE "debug")
+  if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "Profile")
+    set(RQBIT_CARGO_PROFILE "release")
+  else()
+    set(RQBIT_CARGO_PROFILE "debug")
+  endif()
 endif()
 set(rust_out "${CMAKE_CURRENT_SOURCE_DIR}/../rust/target/${RQBIT_CARGO_PROFILE}/rqbit_ffi.dll")
 

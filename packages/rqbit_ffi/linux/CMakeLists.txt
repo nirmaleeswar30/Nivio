@@ -8,7 +8,11 @@ project(${PROJECT_NAME} LANGUAGES CXX)
 set(rust_manifest "${CMAKE_CURRENT_SOURCE_DIR}/../rust/Cargo.toml")
 
 if(NOT DEFINED RQBIT_CARGO_PROFILE)
-  set(RQBIT_CARGO_PROFILE "debug")
+  if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "Profile")
+    set(RQBIT_CARGO_PROFILE "release")
+  else()
+    set(RQBIT_CARGO_PROFILE "debug")
+  endif()
 endif()
 set(rust_out "${CMAKE_CURRENT_SOURCE_DIR}/../rust/target/${RQBIT_CARGO_PROFILE}/librqbit_ffi.so")
 

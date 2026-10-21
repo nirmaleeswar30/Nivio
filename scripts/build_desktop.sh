@@ -23,6 +23,10 @@ flutter pub get
 # Apply Linux compatibility patches if target is linux
 TARGET_PLATFORM="${1:-linux}"
 ACTION="${2:-build}"
+if [[ $# -gt 0 ]]; then
+  shift 2 2>/dev/null || shift $#
+fi
+EXTRA_ARGS=("$@")
 
 if [ "$TARGET_PLATFORM" = "linux" ]; then
   echo "🔧 Applying Linux compatibility patches..."
@@ -31,10 +35,10 @@ fi
 
 if [ "$ACTION" = "run" ]; then
   echo "🚀 Running application on $TARGET_PLATFORM..."
-  flutter run -d "$TARGET_PLATFORM"
+  flutter run -d "$TARGET_PLATFORM" "${EXTRA_ARGS[@]}"
 elif [ "$ACTION" = "run_profile" ]; then
   echo "🚀 Running application on $TARGET_PLATFORM in Profile Mode..."
-  flutter run --profile -d "$TARGET_PLATFORM"
+  flutter run --profile -d "$TARGET_PLATFORM" "${EXTRA_ARGS[@]}"
 elif [ "$ACTION" = "shorebird_release" ] || [ "$ACTION" = "shorebird_patch" ]; then
   if ! command -v shorebird &>/dev/null; then
     echo "❌ Shorebird CLI was not found. Please install Shorebird (https://docs.shorebird.dev)."
@@ -53,13 +57,34 @@ elif [ "$ACTION" = "shorebird_release" ] || [ "$ACTION" = "shorebird_patch" ]; t
   fi
 
   if [ "$ACTION" = "shorebird_release" ]; then
+    FLUTTER_VER_ARG=""
+    # Check if --flutter-version was passed in EXTRA_ARGS
+    has_custom_flutter=0
+    for arg in "${EXTRA_ARGS[@]}"; do
+      if [[ "$arg" == --flutter-version* ]]; then
+        has_custom_flutter=1
+        break
+      fi
+    done
+
+    if [ "$has_custom_flutter" -eq 0 ]; then
+      APP_VERSION=$(grep "^version:" pubspec.yaml | awk '{print $2}' | tr -d '\r')
+      if [ -n "$APP_VERSION" ]; then
+        EXISTING_VER=$(shorebird releases list 2>/dev/null | grep -E "\b${APP_VERSION//+/\\+}\b" | awk '{print $NF}' | head -n 1)
+        if [ -n "$EXISTING_VER" ]; then
+          echo "ℹ️ Existing Shorebird release found for $APP_VERSION (Flutter $EXISTING_VER). Matching Flutter revision..."
+          FLUTTER_VER_ARG="--flutter-version=$EXISTING_VER"
+        fi
+      fi
+    fi
+
     echo "🦅 Building Shorebird release for $TARGET_PLATFORM..."
-    shorebird release "$TARGET_PLATFORM"
+    shorebird release "$TARGET_PLATFORM" ${FLUTTER_VER_ARG:+"$FLUTTER_VER_ARG"} "${EXTRA_ARGS[@]}"
   else
     echo "🦅 Building Shorebird patch for $TARGET_PLATFORM..."
-    shorebird patch "$TARGET_PLATFORM"
+    shorebird patch "$TARGET_PLATFORM" "${EXTRA_ARGS[@]}"
   fi
 else
   echo "🏗️ Building application for $TARGET_PLATFORM in Release mode..."
-  flutter build "$TARGET_PLATFORM" --release
+  flutter build "$TARGET_PLATFORM" --release "${EXTRA_ARGS[@]}"
 fi

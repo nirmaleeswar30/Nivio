@@ -2,6 +2,67 @@
 
 All notable changes to this project will be documented in this file.
 
+# 🚀 Nivio v2.2.4 — Desktop Launch, Torrent Streaming, Discord RPC & More!
+
+We are thrilled to bring you **Nivio v2.2.4**! This massive milestone introduces official **Windows & Linux Desktop support**, integrated **P2P Torrent streaming**, real-time **Discord Rich Presence**, and a host of performance and playback upgrades.
+
+---
+
+### 🖥️ Native Desktop Support (Windows & Linux)
+* **First-Class Desktop Experience:** Nivio is now officially available for **Windows** and **Linux (AppImage)**!
+* **Hardware-Accelerated Playback:** Powered by `media_kit` (MPV/libmpv) for high-framerate, multi-format 4K playback.
+* **Desktop PiP & Window Controls:** Picture-in-Picture mode, dedicated window management, and native mouse/keyboard shortcuts.
+* **Embed & WebView Fallback:** Full webview stream embedding with custom hardware-acceleration safety fallbacks for Linux desktop environments.
+* **Pure-Dart REST Polyfills:** Seamless Firebase sync without requiring platform-native Google Services.
+
+---
+
+### ⚡ P2P Torrent Streaming & Downloads
+* **High-Speed Rust Engine:** Integrated custom `rqbit_ffi` Rust torrent engine for ultra-fast peer discovery and streaming.
+* **Stream While Downloading:** Start watching torrents immediately while segments buffer seamlessly in the background.
+* **Nyaa & PirateBay Support:** Deep scraping and search integration for anime (Nyaa) and movies/shows (PirateBay) with automated source fallback.
+* **Embedded Subtitle Parsing:** Extract and play embedded MKV/MP4 subtitle tracks directly from torrent files.
+
+---
+
+### 🎮 Discord Rich Presence (Desktop & Mobile)
+* **Show What You're Watching:** Automatically broadcasts your current movie, series episode, or anime to your Discord status with rich poster artwork, episode titles, and real-time playback progress.
+
+---
+
+### 🌐 Social Sharing & Dynamic Deep Links
+* **Compact Share Links:** Reduced movie and anime share links from ~470 characters down to clean, readable URLs (`https://nivio.nirmaleeswar.dev/watch?id=...&type=movie`).
+* **Dynamic Open Graph Previews:** Links shared on WhatsApp, Discord, Telegram, or Twitter automatically pull high-resolution cover artwork and descriptions directly from **TMDB** (Movies/TV) and **AniList** (Anime).
+* **Watch Party Cards:** Watch Party share previews now feature the official Nivio brand banner.
+* **Instant In-App Redirection:** Clicking shared links instantly opens the media or watch party room inside the app.
+
+---
+
+### 📺 New Providers & Playback Enhancements
+* **Expanded Provider Library:** Added and updated stream providers including **StreamFlix**, **MovieBox**, **CastleTV**, **XON**, **Animetsu**, and **Miruro**.
+* **DNS-over-HTTPS (DoH):** Built-in DNS resolver bypassing ISP-level domain blocks and throttling.
+* **Anime Filler Detection:** Highlights and flags filler episodes in anime seasons automatically.
+* **Anime Sync:** Synchronize watch history and tracking seamlessly across **AniList**, **MyAnimeList (MAL)**, and **SIMKL**.
+
+---
+
+### 🎨 UI & Performance Polishing
+* **New App Preloader:** Fresh startup animation and transition screens.
+* **Overhauled Settings UI:** Re-architected settings screens with cleaner categorization and quick toggles.
+* **Continue Watching & Download Cards:** Redesigned horizontal cards with faster state restoration.
+* **Miniplayer & Navigation Fixes:** Resolved edge-case crashes when closing the miniplayer or switching tabs rapidly.
+
+---
+
+### 📦 Which APK Should I Download?
+
+| Asset | Architecture | Recommended For |
+|---|---|---|
+| **`nivio-2.2.4.apk`** | **`arm64-v8a`** | **Most Users (Recommended)** — 99% of modern Android phones & tablets (~105 MB). |
+| `nivio-2.2.4-universal.apk` | Universal | Contains all architectures in one package (~330 MB). |
+| `Nivio-2.2.4.AppImage` | Linux x86_64 | Linux distributions (Ubuntu, Fedora, Arch, etc.). |
+| `Nivio-Setup-2.2.4.exe` | Windows x64 | Windows 10 & 11 (64-bit). |
+
 ## Nivio-v2.2.3
 
 ### 🚀 New Features & Enhancements
