@@ -1,22 +1,178 @@
 # Build Universal APK from AAB using bundletool
-# Usage: .\build_universal_apk.ps1
+# Usage: .\build_universal_apk.ps1 [-BuildType shorebird|normal] [-SkipBuild] [-Force]
+
+param(
+    [switch]$SkipBuild,
+    [ValidateSet("shorebird", "normal")]
+    [string]$BuildType = "",
+    [switch]$Force
+)
 
 $ErrorActionPreference = "Stop"
 
 # Resolve repo root from script location so it works from any working directory.
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+if (-not $repoRoot) {
+    $repoRoot = $PSScriptRoot
+}
 
 # Configuration
+$mobileDir = Join-Path $repoRoot "packages\nivio_mobile"
+$aabPath = Join-Path $mobileDir "build\app\outputs\bundle\release\app-release.aab"
+$outputDir = Join-Path $mobileDir "build\app\outputs\bundle\release\apks"
+$pubspecPath = Join-Path $mobileDir "pubspec.yaml"
 $bundletoolPath = "C:\tools\bundletool.jar"
-$aabPath = "$PSScriptRoot\packages\nivio_mobile\build\app\outputs\bundle\release\app-release.aab"
-$outputDir = "$PSScriptRoot\packages\nivio_mobile\build\app\outputs\bundle\release\apks"
-$pubspecPath = "$PSScriptRoot\packages\nivio_mobile\pubspec.yaml"
 
 # Debug keystore (default Android debug signing)
 $keystorePath = "$env:USERPROFILE\.android\debug.keystore"
 $keyAlias = "androiddebugkey"
 $keystorePassword = "android"
 $keyPassword = "android"
+
+Write-Host "=== Nivio Universal APK Builder ===" -ForegroundColor Cyan
+Write-Host ""
+
+# Prompt for build type if not provided and not skipping build
+if (-not $SkipBuild -and [string]::IsNullOrWhiteSpace($BuildType)) {
+    Write-Host "Select Android Release Type:" -ForegroundColor Cyan
+    Write-Host "  [1] Shorebird Release (Enables Over-the-Air Dart code pushes)"
+    Write-Host "  [2] Normal Release (Standard Flutter AAB build)"
+    Write-Host "  [3] Skip Build (Only bundle APKs from existing AAB)"
+    $choice = Read-Host "Enter choice [1, 2, or 3] (Default: 1)"
+    if ($choice -eq "2") {
+        $BuildType = "normal"
+    } elseif ($choice -eq "3") {
+        $SkipBuild = $true
+    } else {
+        $BuildType = "shorebird"
+    }
+}
+
+# Step 1: Build the AAB release bundle if not skipping
+if (-not $SkipBuild) {
+    if (-not (Test-Path $mobileDir)) {
+        throw "Mobile package directory not found at $mobileDir."
+    }
+
+    if ($BuildType -eq "shorebird") {
+        Write-Host ""
+        Write-Host "Checking Shorebird CLI..." -ForegroundColor Yellow
+        $ShorebirdCmd = Get-Command shorebird -ErrorAction SilentlyContinue
+        if (-not $ShorebirdCmd) {
+            $ShorebirdCandidates = @(
+                "$env:USERPROFILE\.shorebird\bin\shorebird.ps1",
+                "$env:USERPROFILE\.shorebird\bin\shorebird.bat",
+                "$env:USERPROFILE\.shorebird\bin\shorebird.cmd"
+            )
+            foreach ($cand in $ShorebirdCandidates) {
+                if (Test-Path $cand) {
+                    $ShorebirdCmd = $cand
+                    break
+                }
+            }
+        }
+
+        if (-not $ShorebirdCmd) {
+            throw "Shorebird CLI was not found. Please install Shorebird (https://docs.shorebird.dev) to build Shorebird releases."
+        }
+
+        # Verify if logged in to Shorebird
+        Write-Host "Verifying Shorebird credentials..." -ForegroundColor Yellow
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = "cmd.exe"
+        $psi.Arguments = "/c shorebird apps list"
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.UseShellExecute = $false
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $proc.WaitForExit()
+        $appsOutput = $proc.StandardOutput.ReadToEnd() + " " + $proc.StandardError.ReadToEnd()
+
+        if ($appsOutput -match "shorebird login" -or $appsOutput -match "rejected your stored credentials" -or $appsOutput -match "Failed to refresh credentials") {
+            Write-Host ""
+            Write-Host "Shorebird is not logged in or credentials have expired." -ForegroundColor Yellow
+            Write-Host "Launching 'shorebird login'..." -ForegroundColor Cyan
+            & cmd.exe /c shorebird login
+            if ($LASTEXITCODE -ne 0) {
+                throw "Shorebird login was unsuccessful. Cannot proceed with Shorebird release."
+            }
+        }
+
+        Write-Host "Building Shorebird Android Release (AAB + OTA)..." -ForegroundColor Green
+        Push-Location $mobileDir
+        try {
+            $shorebirdArgs = @("release", "android", "--artifact=aab")
+            if ($Force) { $shorebirdArgs += "--force" }
+            & cmd.exe /c shorebird @shorebirdArgs
+            if ($LASTEXITCODE -ne 0) {
+                throw "Shorebird release android failed with exit code $LASTEXITCODE."
+            }
+        } finally {
+            Pop-Location
+        }
+    } else {
+        Write-Host "Building Standard Flutter Android Release (AAB)..." -ForegroundColor Cyan
+        Push-Location $mobileDir
+        try {
+            & flutter build appbundle --release
+            if ($LASTEXITCODE -ne 0) {
+                throw "flutter build appbundle failed with exit code $LASTEXITCODE."
+            }
+        } finally {
+            Pop-Location
+        }
+    }
+}
+
+function Resolve-PythonPath {
+    $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($pythonCmd -and $pythonCmd.Source -and (Test-Path $pythonCmd.Source)) { return $pythonCmd.Source }
+    $pyCmd = Get-Command py -ErrorAction SilentlyContinue
+    if ($pyCmd -and $pyCmd.Source -and (Test-Path $pyCmd.Source)) { return $pyCmd.Source }
+
+    $candidates = @(
+        (Join-Path $env:LOCALAPPDATA 'Python\pythoncore-3.14-64\python.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Python\bin\python.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python311\python.exe'),
+        'C:\Python312\python.exe',
+        'C:\Python311\python.exe'
+    )
+    foreach ($c in $candidates) {
+        if (Test-Path $c) { return $c }
+    }
+    $found = Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'Python') -Filter 'python.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($found) { return $found.FullName }
+    return $null
+}
+
+function Resolve-AndroidBuildTools {
+    $sdkRoots = @(
+        $env:ANDROID_HOME,
+        $env:ANDROID_SDK_ROOT,
+        (Join-Path $env:LOCALAPPDATA 'Android\Sdk'),
+        (Join-Path $env:USERPROFILE 'AppData\Local\Android\Sdk')
+    ) | Where-Object { $_ -and (Test-Path $_) }
+
+    foreach ($sdk in $sdkRoots) {
+        $buildToolsDir = Join-Path $sdk "build-tools"
+        if (Test-Path $buildToolsDir) {
+            $latestTools = Get-ChildItem -Directory $buildToolsDir | Sort-Object Name -Descending | Select-Object -First 1
+            if ($latestTools) {
+                $zipalign = Join-Path $latestTools.FullName "zipalign.exe"
+                $apksigner = Join-Path $latestTools.FullName "apksigner.bat"
+                if ((Test-Path $zipalign) -and (Test-Path $apksigner)) {
+                    return @{
+                        Zipalign = $zipalign
+                        Apksigner = $apksigner
+                        Dir = $latestTools.FullName
+                    }
+                }
+            }
+        }
+    }
+    return $null
+}
 
 function Resolve-JavaPath {
     if ($env:JAVA_HOME) {
@@ -46,10 +202,8 @@ function Resolve-JavaPath {
     return $null
 }
 
-Write-Host "=== Nivio Universal APK Builder ===" -ForegroundColor Cyan
-Write-Host ""
-
 # Check Java
+Write-Host ""
 Write-Host "Checking Java..." -ForegroundColor Yellow
 $javaExe = Resolve-JavaPath
 if (-not $javaExe) {
@@ -104,7 +258,7 @@ if (Test-Path $aabPath) {
     Write-Host "  Found: $aabPath ($aabSize MB)" -ForegroundColor Green
 } else {
     Write-Host "  ERROR: AAB not found at $aabPath" -ForegroundColor Red
-    Write-Host "  Run 'shorebird release android' first." -ForegroundColor Red
+    Write-Host "  Run without -SkipBuild to compile the AAB first." -ForegroundColor Red
     exit 1
 }
 
@@ -120,7 +274,7 @@ if (Test-Path $keystorePath) {
 # Extract version (check root pubspec first, then fallback to mobile package pubspec)
 $version = "unknown"
 $candidatePubspecs = @(
-    "$PSScriptRoot\pubspec.yaml",
+    (Join-Path $repoRoot "pubspec.yaml"),
     $pubspecPath
 )
 foreach ($p in $candidatePubspecs) {
@@ -159,33 +313,68 @@ function Run-Bundletool {
 Write-Host "`nBuilding APK set (universal mode)..." -ForegroundColor Yellow
 Run-Bundletool -mode "universal" -outFile "$outputDir\universal.apks"
 
-# Build Split APK set
-Write-Host "`nBuilding APK set (split mode)..." -ForegroundColor Yellow
-Run-Bundletool -mode "" -outFile "$outputDir\split.apks"
-
 # Extract Universal APK
 Write-Host "`nExtracting Universal APK..." -ForegroundColor Yellow
-Expand-Archive -Path "$outputDir\universal.apks" -DestinationPath "$outputDir\universal_temp" -Force
-Copy-Item "$outputDir\universal_temp\universal.apk" "$outputDir\nivio-$versionSafe-universal.apk" -Force
-Remove-Item "$outputDir\universal_temp" -Recurse -Force
-Remove-Item "$outputDir\universal.apks" -Force
-
-# Extract Split APKs
-Write-Host "Extracting Standalone Split APKs..." -ForegroundColor Yellow
-Expand-Archive -Path "$outputDir\split.apks" -DestinationPath "$outputDir\split_temp" -Force
-
-$splits = Get-ChildItem "$outputDir\split_temp\standalones\*.apk"
-foreach ($split in $splits) {
-    if ($split.Name -match "arm64_v8a") {
-        Copy-Item $split.FullName "$outputDir\nivio-$versionSafe.apk" -Force
-    } elseif ($split.Name -match "armeabi_v7a") {
-        Copy-Item $split.FullName "$outputDir\nivio-$versionSafe-armeabi-v7a.apk" -Force
-    } elseif ($split.Name -match "x86_64") {
-        Copy-Item $split.FullName "$outputDir\nivio-$versionSafe-x86_64.apk" -Force
-    }
+$universalZip = "$outputDir\universal.zip"
+if (Test-Path "$outputDir\universal.apks") {
+    Rename-Item -Path "$outputDir\universal.apks" -NewName "universal.zip" -Force
 }
-Remove-Item "$outputDir\split_temp" -Recurse -Force
-Remove-Item "$outputDir\split.apks" -Force
+if (Test-Path "$outputDir\universal_temp") {
+    Remove-Item -Path "$outputDir\universal_temp" -Recurse -Force
+}
+Expand-Archive -Path $universalZip -DestinationPath "$outputDir\universal_temp" -Force
+$universalApkPath = "$outputDir\nivio-$versionSafe-universal.apk"
+Copy-Item "$outputDir\universal_temp\universal.apk" $universalApkPath -Force
+Remove-Item "$outputDir\universal_temp" -Recurse -Force
+if (Test-Path $universalZip) { Remove-Item $universalZip -Force }
+
+# Build Architecture-Specific Split APKs using Python stripper
+Write-Host "`nBuilding Architecture-Specific Split APKs (Shorebird compatible)..." -ForegroundColor Yellow
+$pythonExe = Resolve-PythonPath
+$buildTools = Resolve-AndroidBuildTools
+$stripScript = Join-Path $repoRoot "scripts\strip_apk.py"
+
+if ($pythonExe -and $buildTools -and (Test-Path $stripScript)) {
+    Write-Host "  Using Python: $pythonExe" -ForegroundColor Green
+    Write-Host "  Using Build Tools: $($buildTools.Dir)" -ForegroundColor Green
+
+    $abiTargets = @(
+        @{ Abi = "arm64-v8a"; Output = "$outputDir\nivio-$versionSafe.apk" },
+        @{ Abi = "armeabi-v7a"; Output = "$outputDir\nivio-$versionSafe-armeabi-v7a.apk" },
+        @{ Abi = "x86_64"; Output = "$outputDir\nivio-$versionSafe-x86_64.apk" }
+    )
+
+    foreach ($target in $abiTargets) {
+        $abi = $target.Abi
+        $finalApk = $target.Output
+        $unalignedApk = [System.IO.Path]::ChangeExtension($finalApk, ".unaligned.apk")
+
+        Write-Host "  Processing $abi..." -ForegroundColor Yellow
+        & $pythonExe $stripScript $universalApkPath $unalignedApk $abi
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $unalignedApk)) {
+            Write-Host "    WARNING: Failed to strip APK for $abi" -ForegroundColor Red
+            continue
+        }
+
+        # Align
+        if (Test-Path $finalApk) { Remove-Item $finalApk -Force }
+        & $buildTools.Zipalign -f -p 4 $unalignedApk $finalApk
+        Remove-Item $unalignedApk -Force -ErrorAction SilentlyContinue
+
+        # Sign
+        & $buildTools.Apksigner sign --ks $keystorePath --ks-key-alias $keyAlias --ks-pass "pass:$keystorePassword" --key-pass "pass:$keyPassword" $finalApk
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "    WARNING: Failed to sign APK for $abi" -ForegroundColor Red
+        } else {
+            $createdSize = [math]::Round((Get-Item $finalApk).Length / 1MB, 2)
+            Write-Host "    Created: $(Split-Path -Leaf $finalApk) ($createdSize MB)" -ForegroundColor Green
+        }
+    }
+    Remove-Item "$outputDir\*.idsig" -Force -ErrorAction SilentlyContinue
+} else {
+    if (-not $pythonExe) { Write-Host "  Notice: Python was not found; skipping architecture-specific split APKs." -ForegroundColor Yellow }
+    if (-not $buildTools) { Write-Host "  Notice: Android SDK build-tools (zipalign/apksigner) not found; skipping architecture-specific split APKs." -ForegroundColor Yellow }
+}
 
 Write-Host "`n=== SUCCESS ===" -ForegroundColor Green
 Write-Host "Generated APKs in: $outputDir" -ForegroundColor Cyan
@@ -193,4 +382,4 @@ Get-ChildItem $outputDir -Filter "*.apk" | ForEach-Object {
     $size = [math]::Round($_.Length / 1MB, 2)
     Write-Host "  $($_.Name) ($size MB)"
 }
-Write-Host "`nUpload the APKs to GitHub Releases for Shorebird distribution." -ForegroundColor White
+Write-Host "`nUpload the APKs to GitHub Releases for distribution." -ForegroundColor White

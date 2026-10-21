@@ -14,7 +14,7 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
   const {
     url,
     code,
@@ -22,11 +22,14 @@ export default function handler(req, res) {
     title,
     poster,
     desc,
-    type
+    type,
+    id
   } = req.query;
 
   const partyCode = (code || party || '').trim().toUpperCase();
   const isParty = Boolean(partyCode);
+  const mediaId = (id || '').trim();
+  const mediaType = (type || 'movie').trim();
 
   // Decode or construct the deep link
   let deepLink = '';
@@ -38,6 +41,8 @@ export default function handler(req, res) {
     }
   } else if (isParty) {
     deepLink = `nivio://open/party?code=${encodeURIComponent(partyCode)}`;
+  } else if (mediaId) {
+    deepLink = `nivio://open/media/${encodeURIComponent(mediaId)}?type=${encodeURIComponent(mediaType)}`;
   } else {
     deepLink = 'nivio://open/home';
   }
@@ -57,22 +62,97 @@ export default function handler(req, res) {
   // Build metadata
   let pageTitle = '';
   let pageDesc = '';
-  let pageImage = fullPosterUrl;
 
   if (isParty) {
     pageTitle = title
       ? `🍿 Watch Party: ${title} • Room ${partyCode}`
       : `🍿 Join Nivio Watch Party • Room ${partyCode}`;
     pageDesc = desc || `Join my watch party on Nivio! Perfectly synced playback with sub-20ms latency. Room code: ${partyCode}`;
-    if (!pageImage) {
-      pageImage = 'https://nivio.nirmaleeswar.dev/watch-party.jpg';
-    }
   } else {
     pageTitle = title ? `${title} • Watch on Nivio` : 'Nivio • Stream Movies, Shows & Anime';
     pageDesc = desc || 'Stream movies, series, and anime with multi-source failover, zero ads, and real-time watch parties.';
-    if (!pageImage) {
-      pageImage = 'https://nivio.nirmaleeswar.dev/nivio.png';
+  }
+
+  // Fetch metadata for short media links to enrich social cards
+  if (!isParty && mediaId && (!fullPosterUrl || !desc)) {
+    if (mediaType === 'anime') {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1800);
+        const anilistRes = await fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'NivioApp/1.0'
+          },
+          body: JSON.stringify({
+            query: `query ($id: Int) {
+              Media (id: $id, type: ANIME) {
+                title { english romaji }
+                description(asHtml: false)
+                coverImage { extraLarge large }
+              }
+            }`,
+            variables: { id: parseInt(mediaId, 10) }
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (anilistRes.ok) {
+          const json = await anilistRes.json();
+          const animeData = json?.data?.Media;
+          if (animeData) {
+            const resolvedTitle = animeData.title?.english || animeData.title?.romaji;
+            if (resolvedTitle && !title) {
+              pageTitle = `${resolvedTitle} • Watch on Nivio`;
+            }
+            if (animeData.description && !desc) {
+              pageDesc = animeData.description.replace(/<[^>]*>?/gm, '').trim();
+            }
+            const cover = animeData.coverImage?.extraLarge || animeData.coverImage?.large;
+            if (cover && !fullPosterUrl) {
+              fullPosterUrl = cover;
+            }
+          }
+        }
+      } catch (_) {
+        // Gracefully fall back to query params or defaults
+      }
+    } else if (/^\d+$/.test(mediaId)) {
+      try {
+        const tmdbType = mediaType === 'tv' ? 'tv' : 'movie';
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1500);
+        const tmdbRes = await fetch(
+          `https://api.themoviedb.org/3/${tmdbType}/${encodeURIComponent(mediaId)}?api_key=d39245e111947eb92b947e3a8aacc89f`,
+          { signal: controller.signal }
+        );
+        clearTimeout(timeoutId);
+        if (tmdbRes.ok) {
+          const tmdbData = await tmdbRes.json();
+          const resolvedTitle = tmdbData.title || tmdbData.name;
+          if (resolvedTitle && !title) {
+            pageTitle = `${resolvedTitle} • Watch on Nivio`;
+          }
+          if (tmdbData.overview && !desc) {
+            pageDesc = tmdbData.overview;
+          }
+          if (tmdbData.poster_path && !fullPosterUrl) {
+            fullPosterUrl = `https://image.tmdb.org/t/p/w780${tmdbData.poster_path}`;
+          }
+        }
+      } catch (_) {
+        // Gracefully fall back to query params or defaults
+      }
     }
+  }
+
+  let pageImage = fullPosterUrl;
+  if (isParty) {
+    pageImage = 'https://nivio.nirmaleeswar.dev/appicon.png';
+  } else if (!pageImage) {
+    pageImage = 'https://nivio.nirmaleeswar.dev/appicon.png';
   }
 
   const safeTitle = escapeHtml(pageTitle);

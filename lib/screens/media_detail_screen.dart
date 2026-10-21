@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -1407,34 +1406,17 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 
   void _shareMedia(SearchResult media) {
     final title = media.title ?? media.name ?? 'this title';
-
-    // Create the deep link URL
     final mediaType = media.mediaType;
-    final deepLink = 'nivio://open/media/${media.id}?type=$mediaType';
 
-    // Encode the deep link into Base64
-    final bytes = utf8.encode(deepLink);
-    final base64DeepLink = base64.encode(bytes);
-
-    // Resolve poster URL (TMDB w780 or anime poster)
-    String? posterUrl;
-    if (media.posterPath != null && media.posterPath!.isNotEmpty) {
-      posterUrl = media.posterPath!.startsWith('http')
-          ? media.posterPath
-          : 'https://image.tmdb.org/t/p/w780${media.posterPath}';
-    }
-
-    // Build the redirect URL with metadata for social embeds
-    final baseUrl =
-        dotenv.env['SHARE_REDIRECT_URL'] ??
-        'https://nivio.nirmaleeswar.dev/watch';
-    final uri = Uri.parse(baseUrl).replace(
+    // Build the short redirect URL (e.g. https://nivio.nirmaleeswar.dev/watch?id=123&type=movie&title=...)
+    final baseUrl = dotenv.env['SHARE_REDIRECT_URL']?.trim() ?? '';
+    final baseUri = Uri.tryParse(baseUrl) ?? Uri();
+    final uri = baseUri.replace(
+      path: baseUri.path.isEmpty || baseUri.path == '/' ? '/watch' : baseUri.path,
       queryParameters: {
-        'url': base64DeepLink,
+        'id': media.id.toString(),
+        if (mediaType.isNotEmpty) 'type': mediaType,
         if (title.isNotEmpty) 'title': title,
-        if (posterUrl != null) 'poster': posterUrl,
-        if (media.overview != null && media.overview!.isNotEmpty)
-          'desc': media.overview,
       },
     );
     final redirectUrl = uri.toString();

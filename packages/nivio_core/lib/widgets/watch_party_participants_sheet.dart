@@ -218,9 +218,8 @@ class WatchPartyParticipantsSheet extends ConsumerWidget {
   }
 
   Future<void> _sharePartyLink(BuildContext context, String code) async {
-    final baseUrl = dotenv.env['SHARE_REDIRECT_URL'] ??
-        'https://nivio.nirmaleeswar.dev/watch';
-    final uri = Uri.parse(baseUrl);
+    final baseUrl = dotenv.env['SHARE_REDIRECT_URL']?.trim() ?? '';
+    final uri = Uri.tryParse(baseUrl) ?? Uri();
     final partyUrl = uri.replace(
       path: '/party',
       queryParameters: {

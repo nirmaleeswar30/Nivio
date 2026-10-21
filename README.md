@@ -225,18 +225,26 @@ flutter run
 
 ## 📦 Building for Release
 
-To compile a highly-optimized release APK (with R8 minification configured for the video player):
+### 📱 Android (Universal & Architecture Split APKs)
 
-```bash
-flutter build apk --release
+Use the automated builder scripts to compile either a Shorebird OTA release or a standard Flutter release, then bundle Universal (`universal.apk`) and architecture-specific split APKs (`arm64-v8a`, `armeabi-v7a`, `x86_64`):
+
+**Using PowerShell (Windows):**
+```powershell
+# Interactive prompt (Shorebird Release vs Normal Release vs Skip Build):
+.\build_universal_apk.ps1
+
+# Or specify build type via parameters:
+.\build_universal_apk.ps1 -BuildType shorebird
+.\build_universal_apk.ps1 -BuildType normal
+.\build_universal_apk.ps1 -SkipBuild
 ```
 
-Or run the included bash script to build a Universal APK:
+**Using Bash (Linux / macOS / WSL):**
 ```bash
 ./build_universal_apk.sh
+# Or with flags: ./build_universal_apk.sh --shorebird | --normal | --skip-build
 ```
-
-*(Note: Nivio also supports Shorebird for over-the-air (OTA) code pushes without requiring a full app update).*
 
 ### 🖥️ Windows Desktop (installer)
 
