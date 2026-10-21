@@ -13,7 +13,10 @@ OUTPUT_DIR="$REPO_ROOT/packages/nivio_mobile/build/app/outputs/bundle/release/ap
 PUBSPEC_PATH="$REPO_ROOT/packages/nivio_mobile/pubspec.yaml"
 
 # Debug keystore
-KEYSTORE_PATH="/home/nirmal/.config/.android/debug.keystore"
+KEYSTORE_PATH="$HOME/.android/debug.keystore"
+if [ ! -f "$KEYSTORE_PATH" ]; then
+    KEYSTORE_PATH="$HOME/.config/.android/debug.keystore"
+fi
 KEY_ALIAS="androiddebugkey"
 KEYSTORE_PASSWORD="android"
 KEY_PASSWORD="android"
@@ -26,6 +29,8 @@ if type -p java > /dev/null; then
     JAVA_EXE="java"
 elif [[ -n "$JAVA_HOME" ]] && [[ -x "$JAVA_HOME/bin/java" ]];  then
     JAVA_EXE="$JAVA_HOME/bin/java"
+elif [[ -x "/opt/android-studio/jbr/bin/java" ]]; then
+    JAVA_EXE="/opt/android-studio/jbr/bin/java"
 else
     echo -e "\033[0;31m  ERROR: Java not found.\033[0m"
     echo -e "\033[0;31m  Install JDK 17 or set JAVA_HOME to your JDK path.\033[0m"

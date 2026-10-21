@@ -13,9 +13,45 @@ BUNDLE_DIR="$PROJECT_ROOT/packages/nivio_desktop/build/linux/x64/release/bundle"
 APPIMAGETOOL="${APPIMAGETOOL:-/tmp/appimagetool-x86_64.AppImage}"
 APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
 
+# Build type selection (normal vs shorebird)
+BUILD_TYPE="${1:-}"
+
+if [[ -z "$BUILD_TYPE" ]]; then
+  if [ -t 0 ]; then
+    echo ""
+    echo "=============================================="
+    echo "       Select Linux AppImage Build Type       "
+    echo "=============================================="
+    echo "  1) Standard Flutter Release (no Shorebird)"
+    echo "  2) Shorebird Release (OTA-enabled)"
+    echo "=============================================="
+    read -r -p "Enter choice [1 or 2, default: 1]: " choice
+    case "${choice:-1}" in
+      2|shorebird)
+        BUILD_TYPE="shorebird"
+        ;;
+      *)
+        BUILD_TYPE="normal"
+        ;;
+    esac
+  else
+    BUILD_TYPE="normal"
+  fi
+fi
+
+if [[ "$BUILD_TYPE" == "shorebird" ]]; then
+  echo "🦅 Target: Shorebird Linux AppImage (OTA-enabled)"
+else
+  echo "🏗️ Target: Standard Flutter Linux AppImage"
+fi
+
 echo "🏗️ Step 1: Building Linux release bundle..."
 if [[ "${SKIP_FLUTTER_BUILD:-0}" != "1" ]]; then
-  "$PROJECT_ROOT/scripts/build_desktop.sh" linux build
+  if [[ "$BUILD_TYPE" == "shorebird" ]]; then
+    "$PROJECT_ROOT/scripts/build_desktop.sh" linux shorebird_release
+  else
+    "$PROJECT_ROOT/scripts/build_desktop.sh" linux build
+  fi
 fi
 
 if [ ! -d "$BUNDLE_DIR" ]; then
@@ -53,14 +89,92 @@ for fdo_lib in /usr/lib/libWPEBackend-fdo-1.0.so*; do
   fi
 done
 
-# 3. Bundle ICU, XML, and WebKit dependencies if available in /usr/lib
-for dep_pattern in "libicui18n.so*" "libicuuc.so*" "libicudata.so*" "libxml2.so*" "libxslt.so*" "libjpeg.so*"; do
-  for src in /usr/lib/$dep_pattern; do
-    if [ -e "$src" ]; then
-      cp -d "$src" "$APPDIR/lib/" 2>/dev/null || true
-    fi
-  done
-done
+# 3. Bundle GStreamer plugins and scanner for HTML5 video/audio playback (YouTube, trailers)
+GST_SYSTEM_DIR="/usr/lib/gstreamer-1.0"
+if [ -d "$GST_SYSTEM_DIR" ]; then
+  mkdir -p "$APPDIR/lib/gstreamer-1.0"
+  cp -a "$GST_SYSTEM_DIR/." "$APPDIR/lib/gstreamer-1.0/"
+  echo "  ✓ Bundled GStreamer 1.0 plugins (appsink, codecs, demuxers) from $GST_SYSTEM_DIR"
+fi
+
+# 4. Automatically resolve and bundle all required runtime dependencies (HarfBuzz, ICU, XML, codecs, GStreamer, etc.)
+python3 - << 'PY'
+import os, subprocess, re, shutil
+
+appdir = os.environ.get("APPDIR", "build/appimage/Nivio.AppDir")
+libdir = os.path.join(appdir, "lib")
+
+# Fundamental host / graphics driver / desktop libraries that MUST come from host OS
+SYSTEM_EXCLUDES = (
+    # glibc
+    "libc.so", "libm.so", "libpthread.so", "libdl.so", "librt.so", "ld-linux",
+    # GPU / DRM / Display hardware drivers
+    "libGL.so", "libGLX.so", "libEGL.so", "libGLdispatch.so", "libdrm.so", "libgbm.so", "libvulkan.so",
+    # Low-level system & audio hardware daemons
+    "libsystemd.so", "libudev.so", "libdbus-1.so", "libasound.so",
+    # X11 / Wayland core client protocols
+    "libX11.so", "libX11-xcb.so", "libXau.so", "libXdmcp.so", "libXext.so", "libXfixes.so", "libXi.so", "libXrender.so",
+    "libxcb", "libwayland-client.so", "libwayland-server.so", "libwayland-cursor.so", "libwayland-egl.so",
+    # GTK / GLib core runtime (host themes & desktop settings)
+    "libgtk-3.so", "libgdk-3.so", "libgdk_pixbuf-2.0.so",
+    "libgio-2.0.so", "libglib-2.0.so", "libgobject-2.0.so", "libgmodule-2.0.so",
+    "libpango-1.0.so", "libpangocairo-1.0.so", "libpangoft2-1.0.so", "libcairo.so", "libcairo-gobject.so"
+)
+
+def is_excluded(soname):
+    return any(soname.startswith(prefix) for prefix in SYSTEM_EXCLUDES)
+
+targets = []
+# Find all ELF binaries and libraries in AppDir
+for root, dirs, files in os.walk(appdir):
+    for f in files:
+        p = os.path.join(root, f)
+        if not os.path.islink(p):
+            try:
+                with open(p, "rb") as fp:
+                    if fp.read(4) == b"\x7fELF":
+                        targets.append(p)
+            except:
+                pass
+
+to_copy = {}
+to_inspect = list(targets)
+visited = set()
+
+while to_inspect:
+    curr = to_inspect.pop(0)
+    if curr in visited:
+        continue
+    visited.add(curr)
+    try:
+        out = subprocess.check_output(["ldd", curr], stderr=subprocess.DEVNULL).decode()
+        for line in out.splitlines():
+            m = re.search(r'^\s*([^\s]+)\s+=>\s+([^\s]+)\s+\(', line)
+            if m:
+                soname, realpath = m.group(1), m.group(2)
+                if is_excluded(soname):
+                    continue
+                if not os.path.isfile(realpath):
+                    continue
+                if realpath.startswith("/usr/lib") or realpath.startswith("/lib"):
+                    dest = os.path.join(libdir, soname)
+                    if not os.path.exists(dest) and soname not in to_copy:
+                        to_copy[soname] = realpath
+                        to_inspect.append(realpath)
+    except Exception as e:
+        pass
+
+copied_count = 0
+for soname, realpath in to_copy.items():
+    dest = os.path.join(libdir, soname)
+    try:
+        shutil.copy2(realpath, dest)
+        copied_count += 1
+    except Exception as e:
+        print(f"  ⚠️ Could not copy {soname}: {e}")
+
+print(f"  ✓ Bundled {copied_count} runtime shared libraries (including HarfBuzz-ICU, codecs, GStreamer)")
+PY
 
 # 4. Ensure soname symlinks are present in AppDir/lib
 cd "$APPDIR/lib"
@@ -128,6 +242,10 @@ HERE="$(dirname "$(readlink -f "${0}")")"
 export LD_LIBRARY_PATH="$HERE/lib:$HERE/lib/wpe-webkit-2.0:${LD_LIBRARY_PATH:-}"
 export XDG_DATA_DIRS="$HERE/share:/usr/share:${XDG_DATA_DIRS:-}"
 
+# Configure GStreamer to use bundled plugins (appsink, playbin, ffmpeg/libav, etc.)
+export GST_PLUGIN_SYSTEM_PATH_1_0="$HERE/lib/gstreamer-1.0:${GST_PLUGIN_SYSTEM_PATH_1_0:-}"
+export GST_PLUGIN_SCANNER_1_0="$HERE/lib/gstreamer-1.0/gst-plugin-scanner"
+
 # Disable WebKit sandbox inside AppImage container
 export WEBKIT_DISABLE_SANDBOX=1
 export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
@@ -149,9 +267,16 @@ elif [ -f "$PROJECT_ROOT/packages/nivio_desktop/pubspec.yaml" ]; then
 fi
 APP_VERSION="${APP_VERSION:-1.0.0}"
 
-echo "📦 Step 7: Generating AppImage with appimagetool (Version: $APP_VERSION)..."
-VERSIONED_APPIMAGE="$DIST_DIR/Nivio-Linux-$APP_VERSION-x86_64.AppImage"
-GENERIC_APPIMAGE="$DIST_DIR/Nivio-Linux-x86_64.AppImage"
+echo "📦 Step 7: Generating AppImage with appimagetool (Version: $APP_VERSION, Type: $BUILD_TYPE)..."
+if [[ "$BUILD_TYPE" == "shorebird" ]]; then
+  VERSIONED_APPIMAGE="$DIST_DIR/Nivio-Linux-Shorebird-$APP_VERSION-x86_64.AppImage"
+  GENERIC_APPIMAGE="$DIST_DIR/Nivio-Linux-Shorebird-x86_64.AppImage"
+else
+  VERSIONED_APPIMAGE="$DIST_DIR/Nivio-Linux-$APP_VERSION-x86_64.AppImage"
+  GENERIC_APPIMAGE="$DIST_DIR/Nivio-Linux-x86_64.AppImage"
+fi
+
+rm -f "$VERSIONED_APPIMAGE" "$GENERIC_APPIMAGE" 2>/dev/null || true
 
 ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL" \
   "$APPDIR" "$VERSIONED_APPIMAGE"
