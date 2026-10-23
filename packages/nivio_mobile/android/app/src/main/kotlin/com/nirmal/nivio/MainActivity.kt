@@ -14,6 +14,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : PipCallbackHelperActivityWrapper() {
     private val CHANNEL = "com.nivio/gesture_exclusion"
     private val MEDIA_SESSION_CHANNEL = "com.nivio/media_session"
+    private val WATCH_PARTY_CHANNEL = "com.nivio/watch_party_keepalive"
     private var methodChannel: MethodChannel? = null
     private var mediaSessionChannel: MethodChannel? = null
     private var mediaSession: MediaSession? = null
@@ -78,6 +79,32 @@ class MainActivity : PipCallbackHelperActivityWrapper() {
                 else -> result.notImplemented()
             }
         }
+
+        // Foreground service that keeps a watch party connected in the
+        // background. Driven by WatchPartyKeepAlive on the Dart side.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WATCH_PARTY_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "start" -> {
+                        try {
+                            WatchPartyKeepAliveService.start(
+                                applicationContext,
+                                call.argument<String>("text") ?: "Watch party in progress"
+                            )
+                            result.success(true)
+                        } catch (e: Exception) {
+                            // e.g. ForegroundServiceStartNotAllowedException
+                            // when asked while the app is in the background.
+                            result.success(false)
+                        }
+                    }
+                    "stop" -> {
+                        WatchPartyKeepAliveService.stop(applicationContext)
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     private fun sendMediaCommand(command: String, positionMs: Long? = null) {
@@ -172,6 +199,9 @@ class MainActivity : PipCallbackHelperActivityWrapper() {
 
     override fun onDestroy() {
         releaseMediaSession()
+        // The Flutter engine (and the party connection in it) goes away with
+        // this activity, so there is nothing left for the service to keep alive.
+        WatchPartyKeepAliveService.stop(applicationContext)
         super.onDestroy()
     }
 }

@@ -1,7 +1,7 @@
 name: nivio_mobile
 description: "Mobile target application for Nivio (Android & iOS)."
 publish_to: 'none'
-version: 2.2.4
+version: 2.2.5
 
 environment:
   sdk: ^3.10.0

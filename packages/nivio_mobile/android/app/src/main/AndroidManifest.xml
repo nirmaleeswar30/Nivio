@@ -86,6 +86,14 @@
         
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver" />
 
+        <!-- Keeps the app alive while in a watch party so the realtime
+             connection survives switching to another app (e.g. to share
+             the invite link). -->
+        <service
+            android:name=".WatchPartyKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

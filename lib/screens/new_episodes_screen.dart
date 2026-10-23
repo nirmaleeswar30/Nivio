@@ -97,7 +97,13 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
           animationCurve: Curves.easeOutQuart,
           slivers: [
             if (!widget.embedded) SliverToBoxAdapter(child: _buildHeader()),
-            SliverToBoxAdapter(child: _buildCalendar()),
+            // On desktop the 56px nav rail overlays the page's left edge;
+            // inset the calendar so the previous-week arrow clears it (the
+            // day row then lines up with the grid's 68px inset below).
+            SliverPadding(
+              padding: EdgeInsets.only(left: isDesktop ? 52 : 0),
+              sliver: SliverToBoxAdapter(child: _buildCalendar()),
+            ),
             SliverToBoxAdapter(child: _buildFilters()),
             if (_isLoading)
               const SliverFillRemaining(

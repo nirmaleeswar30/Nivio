@@ -103,6 +103,10 @@ if (-not $SkipBuild) {
         try {
             $shorebirdArgs = @("release", "android", "--artifact=aab")
             if ($Force) { $shorebirdArgs += "--force" }
+            # All platforms of one Shorebird release must use the same Flutter revision.
+            if (-not [string]::IsNullOrWhiteSpace($env:SHOREBIRD_FLUTTER_VERSION)) {
+                $shorebirdArgs += "--flutter-version=$($env:SHOREBIRD_FLUTTER_VERSION)"
+            }
             & cmd.exe /c shorebird @shorebirdArgs
             if ($LASTEXITCODE -ne 0) {
                 throw "Shorebird release android failed with exit code $LASTEXITCODE."

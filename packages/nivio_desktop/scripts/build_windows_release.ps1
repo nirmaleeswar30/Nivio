@@ -194,7 +194,13 @@ if ($LASTEXITCODE -ne 0) {
 
 if ($BuildType -eq "shorebird") {
   Write-Host "Building Shorebird Windows Release (OTA-enabled)..." -ForegroundColor Green
-  & shorebird release windows @Defines
+  # All platforms of one Shorebird release must use the same Flutter revision.
+  # Set SHOREBIRD_FLUTTER_VERSION to the revision the release was created with.
+  $ShorebirdArgs = @()
+  if (-not [string]::IsNullOrWhiteSpace($env:SHOREBIRD_FLUTTER_VERSION)) {
+    $ShorebirdArgs += "--flutter-version=$($env:SHOREBIRD_FLUTTER_VERSION)"
+  }
+  & shorebird release windows @ShorebirdArgs @Defines
   if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
   }

@@ -36,6 +36,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   // Frosted mobile nav: hides when scrolling down, reappears when scrolling up
   // or when the view is back at the top.
   bool _navVisible = true;
+  bool _keyboardWasOpen = false;
 
   @override
   void initState() {
@@ -137,6 +138,21 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
       } else if (delta < -6 && !_navVisible) {
         setState(() => _navVisible = true);
       }
+    }
+    return false;
+  }
+
+  // A page that can't scroll (or was clamped back to the top, e.g. when the
+  // keyboard closes) offers no way to scroll up and reveal the bar, so show it.
+  // Only the page's outermost scrollable counts; nested non-scrolling lists
+  // are laid out all the time while the page itself scrolls.
+  bool _handleMobileScrollMetrics(ScrollMetricsNotification notification) {
+    final metrics = notification.metrics;
+    if (notification.depth != 0 || metrics.axis != Axis.vertical) return false;
+    if (_navVisible) return false;
+    final notScrollable = metrics.maxScrollExtent <= metrics.minScrollExtent;
+    if (notScrollable || metrics.pixels <= 24) {
+      setState(() => _navVisible = true);
     }
     return false;
   }
@@ -477,9 +493,16 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     }
 
     // Space the floating bar occupies, so page content can scroll clear of it.
-    final bottomSafe = MediaQuery.of(context).padding.bottom;
-    final navReserve = 64.0 + 12.0 + bottomSafe;
     final mq = MediaQuery.of(context);
+    final navReserve = 64.0 + 12.0 + mq.padding.bottom;
+
+    // The keyboard covers the bar, so hide it while the keyboard is up and
+    // bring it back once the keyboard closes (scrolling a focused field into
+    // view may have hidden it, and the page may no longer be scrollable).
+    final keyboardOpen = mq.viewInsets.bottom > 0;
+    if (_keyboardWasOpen && !keyboardOpen) _navVisible = true;
+    _keyboardWasOpen = keyboardOpen;
+    final showNav = _navVisible && !keyboardOpen;
 
     return WillPopScope(
       onWillPop: _onWillPop,
@@ -489,13 +512,22 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
           children: [
             // Foreground UI. Reserve bottom space via MediaQuery padding so
             // SafeArea/scroll-aware pages don't hide content behind the bar.
+            // This Scaffold already shrinks its body above the keyboard, and
+            // `mq` comes from above it, so drop the keyboard inset here or
+            // every page Scaffold below shrinks by it a second time (leaving
+            // a keyboard-sized black gap).
             MediaQuery(
-              data: mq.copyWith(
-                padding: mq.padding.copyWith(bottom: navReserve),
+              data: mq.removeViewInsets(removeBottom: true).copyWith(
+                padding: mq.padding.copyWith(
+                  bottom: keyboardOpen ? 0 : navReserve,
+                ),
               ),
-              child: NotificationListener<ScrollNotification>(
-                onNotification: _handleMobileScroll,
-                child: widget.navigationShell,
+              child: NotificationListener<ScrollMetricsNotification>(
+                onNotification: _handleMobileScrollMetrics,
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: _handleMobileScroll,
+                  child: widget.navigationShell,
+                ),
               ),
             ),
             // Background physical WebView for Cloudflare Turnstile bypass (drawn on top when needed)
@@ -506,13 +538,13 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
               right: 0,
               bottom: 0,
               child: IgnorePointer(
-                ignoring: !_navVisible,
+                ignoring: !showNav,
                 child: AnimatedSlide(
-                  offset: _navVisible ? Offset.zero : const Offset(0, 1.4),
+                  offset: showNav ? Offset.zero : const Offset(0, 1.4),
                   duration: const Duration(milliseconds: 520),
                   curve: Curves.easeInOutCubicEmphasized,
                   child: AnimatedOpacity(
-                    opacity: _navVisible ? 1 : 0,
+                    opacity: showNav ? 1 : 0,
                     duration: const Duration(milliseconds: 420),
                     curve: Curves.easeOutCubic,
                     child: _NivioFloatingNav(

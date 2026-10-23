@@ -62,6 +62,10 @@ if (-not $SkipBuild) {
   } else {
     & $buildScript -BuildType $BuildType
   }
+  # Don't package a stale/unreleased build when the release step failed.
+  if ($LASTEXITCODE -ne 0) {
+    throw "Windows build failed (exit code $LASTEXITCODE); installer not created."
+  }
 }
 
 $SourceDir = Join-Path $RootDir "build\windows\x64\runner\Release"

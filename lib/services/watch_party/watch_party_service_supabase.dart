@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'watch_party_keep_alive.dart';
 import 'watch_party_models.dart';
 import 'watch_party_supabase_config.dart';
 
@@ -12,11 +14,19 @@ class WatchPartyServiceSupabase {
     required this.userId,
     required this.userName,
     this.userPhotoUrl,
-  });
+  }) {
+    _lifecycleListener = AppLifecycleListener(
+      onStateChange: _handleLifecycleChange,
+    );
+  }
 
   final String userId;
   final String userName;
   final String? userPhotoUrl;
+
+  late final AppLifecycleListener _lifecycleListener;
+  Timer? _backgroundReconnectTimer;
+  bool _isBackgroundReconnecting = false;
 
   RealtimeChannel? _channel;
   String? _sessionCode;
@@ -82,6 +92,9 @@ class WatchPartyServiceSupabase {
     try {
       await _joinChannel(_sessionCode!);
       _emitSessionUpdate();
+      unawaited(
+        WatchPartyKeepAlive.start(sessionCode: _sessionCode!, isHost: true),
+      );
       return _sessionCode;
     } catch (e) {
       _emitError('Failed to create watch party: $e');
@@ -120,6 +133,9 @@ class WatchPartyServiceSupabase {
 
       await requestStateSync(reason: 'join');
       _emitSessionUpdate();
+      unawaited(
+        WatchPartyKeepAlive.start(sessionCode: _sessionCode!, isHost: false),
+      );
       return true;
     } catch (e) {
       _emitError('Failed to join watch party: $e');
@@ -310,6 +326,11 @@ class WatchPartyServiceSupabase {
   Future<void> leaveSession() async {
     final oldChannel = _channel;
     _channel = null;
+    _backgroundReconnectTimer?.cancel();
+    _backgroundReconnectTimer = null;
+    if (oldChannel != null || _sessionCode != null) {
+      unawaited(WatchPartyKeepAlive.stop());
+    }
 
     if (oldChannel != null) {
       try {
@@ -675,7 +696,70 @@ class WatchPartyServiceSupabase {
     );
   }
 
+  // supabase_flutter disconnects the Realtime socket whenever the app is
+  // paused (e.g. the host switching to WhatsApp to share the invite), which
+  // drops our presence and makes the room look gone to anyone joining. While
+  // in a party, reconnect and rejoin right after that disconnect; Android's
+  // foreground service (WatchPartyKeepAlive) keeps the process running.
+  // On resume supabase_flutter finds the socket connected and leaves it be.
+  void _handleLifecycleChange(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.paused:
+        _backgroundReconnectTimer?.cancel();
+        _backgroundReconnectTimer = null;
+        if (!isInSession) return;
+        _backgroundReconnectTimer = Timer.periodic(
+          const Duration(seconds: 1),
+          (_) => unawaited(_reconnectAfterLifecycleDisconnect()),
+        );
+      case AppLifecycleState.resumed:
+      case AppLifecycleState.detached:
+        _backgroundReconnectTimer?.cancel();
+        _backgroundReconnectTimer = null;
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+        break;
+    }
+  }
+
+  Future<void> _reconnectAfterLifecycleDisconnect() async {
+    final channel = _channel;
+    if (channel == null || _sessionCode == null) {
+      _backgroundReconnectTimer?.cancel();
+      _backgroundReconnectTimer = null;
+      return;
+    }
+    if (_isBackgroundReconnecting) return;
+
+    final realtime = Supabase.instance.client.realtime;
+    // Only a deliberate disconnect leaves the socket `disconnected`;
+    // unexpected drops end up `closed` and realtime retries those itself.
+    if (realtime.connState != SocketStates.disconnected) return;
+
+    _isBackgroundReconnecting = true;
+    try {
+      // Same internal calls supabase_flutter uses to reconnect on resume.
+      // ignore: invalid_use_of_internal_member
+      await realtime.connect();
+      // ignore: invalid_use_of_internal_member
+      if (_channel == channel && channel.isJoined) {
+        // Rejoining fires the subscribe callback again, which re-tracks
+        // our presence.
+        // ignore: invalid_use_of_internal_member
+        channel.forceRejoin();
+      }
+      if (kDebugMode) {
+        debugPrint('WatchParty: reconnected realtime while in background');
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('WatchParty: background reconnect failed: $e');
+    } finally {
+      _isBackgroundReconnecting = false;
+    }
+  }
+
   void dispose() {
+    _lifecycleListener.dispose();
     unawaited(leaveSession());
     _sessionController.close();
     _playbackController.close();
