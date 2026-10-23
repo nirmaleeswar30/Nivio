@@ -77,6 +77,8 @@ dependencies:
   # Mobile Discord Rich Presence (OAuth2 over the Gateway)
   flutter_secure_storage: ^11.2.0
   app_links: any
+  # MPRIS (Linux media keys / Bluetooth headset controls)
+  dbus: ^0.7.11
   crypto: any
 
 dev_dependencies:

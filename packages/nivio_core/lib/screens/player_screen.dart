@@ -53,6 +53,7 @@ import 'package:nivio/models/anime_tracking_models.dart';
 import 'package:nivio/models/watchlist_item.dart';
 import 'package:nivio/widgets/anime_brand_logos.dart';
 import 'dart:math' as math;
+import 'package:nivio/services/media_session_service.dart';
 
 class PlayerScreen extends ConsumerStatefulWidget {
   final int mediaId;
@@ -500,7 +501,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     // Register event listeners via stream subscriptions
     _setupPlayerStreams();
-    
+
+    // Hardware / Bluetooth media buttons and OS media overlay controls.
+    MediaSessionService.instance.attach(
+      owner: this,
+      player: _player,
+      metadata: _mediaSessionMetadata(),
+      seekStep: Duration(seconds: ref.read(seekDurationProvider)),
+    );
+
     if (Platform.isAndroid) {
       const MethodChannel('com.nivio/gesture_exclusion').invokeMethod('setCanEnterPip', {'value': true});
       try {
@@ -1392,6 +1401,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         } else {
           await np.setProperty('hwdec', 'auto-safe');
         }
+        if (Platform.isLinux) {
+          // Never shell out to the host's yt-dlp from mpv's ytdl hook; streams
+          // are resolved by Nivio itself.
+          await np.setProperty('ytdl', 'no');
+        }
         
         final debandEnabled = ref.read(videoDebandingProvider);
         appDebugLog('🔧 Video debanding filter status during player initialization: $debandEnabled');
@@ -1877,6 +1891,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         unawaited(_broadcastWatchPartyPlayback(force: true));
         _updateDiscordActivity(isPlaying: playing, force: true);
         _syncPipPlayingState(playing);
+        MediaSessionService.instance.updateMetadata(this, _mediaSessionMetadata());
       }),
     );
 
@@ -1982,6 +1997,36 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         }
       }),
     );
+  }
+
+  /// Title/artwork for the OS media session (headset & media-key controls).
+  MediaSessionMetadata _mediaSessionMetadata() {
+    final media = ref.read(selectedMediaProvider);
+    final title = widget.directStreamTitle ?? media?.title ?? media?.name ?? 'Nivio';
+
+    String? subtitle;
+    if (widget.directStreamTitle != null) {
+      subtitle = widget.isLive ? 'Live Stream' : null;
+    } else if (widget.mediaType == 'tv' ||
+        widget.mediaType == 'anime' ||
+        (media?.mediaType == 'tv')) {
+      subtitle = 'Season ${widget.season} · Episode $_currentEpisode';
+    }
+
+    String? artUrl;
+    final posterPath = widget.directStreamTitle != null
+        ? null
+        : (media?.posterPath ?? media?.backdropPath);
+    if (posterPath != null && posterPath.isNotEmpty) {
+      if (posterPath.startsWith('http')) {
+        artUrl = posterPath;
+      } else {
+        final path = posterPath.startsWith('/') ? posterPath : '/$posterPath';
+        artUrl = 'https://image.tmdb.org/t/p/w500$path';
+      }
+    }
+
+    return MediaSessionMetadata(title: title, subtitle: subtitle, artUrl: artUrl);
   }
 
   void _updateDiscordActivity({bool? isPlaying, bool force = false}) {
@@ -3989,6 +4034,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     appDebugLog('🧪 [CW_DEBUG] PlayerScreen#$_sid dispose() — $zombieMs after deactivate(), player=${_hash(_player)}');
     appDebugLog('🔴 [DISPOSE] Step 0: dispose() CALLED — mounted=$mounted, _transferredToMiniPlayer=$_transferredToMiniPlayer, _isDirectStream=$_isDirectStream');
     _isDisposing = true;
+
+    // Keep media buttons working while the mini player owns the player.
+    if (_transferredToMiniPlayer) {
+      MediaSessionService.instance.releaseOwner(this);
+    } else {
+      MediaSessionService.instance.detach(this);
+    }
 
     try {
       if (!Platform.isAndroid && !Platform.isIOS) {

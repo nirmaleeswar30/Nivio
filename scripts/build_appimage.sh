@@ -102,6 +102,55 @@ if [ -d "$GST_SYSTEM_DIR" ]; then
   echo "  ✓ Bundled GStreamer 1.0 plugins (appsink, codecs, demuxers) from $GST_SYSTEM_DIR"
 fi
 
+echo "🎬 Bundling libmpv (Nivio must never load the host's mpv)..."
+# Bundle libmpv.so.2 explicitly instead of relying on it being pulled in as a
+# plugin dependency: media_kit dlopen()s "libmpv.so" first, which on many
+# distros resolves to the *host* library (different mpv/FFmpeg build, mixed
+# with the bundled one) and breaks playback whenever the host updates mpv.
+# Its own dependencies (FFmpeg, libass, libplacebo, ...) are collected by the
+# dependency scan below. Override the source with LIBMPV_SOURCE=/path/libmpv.so.2.
+find_libmpv() {
+  if [[ -n "${LIBMPV_SOURCE:-}" ]]; then
+    echo "$LIBMPV_SOURCE"
+    return
+  fi
+  local candidate
+  candidate="$(ldconfig -p 2>/dev/null | awk '/libmpv\.so\.2 .*x86-64/ {print $NF; exit}')"
+  if [[ -n "$candidate" && -e "$candidate" ]]; then
+    echo "$candidate"
+    return
+  fi
+  local pkg_libdir
+  pkg_libdir="$(pkg-config --variable=libdir mpv 2>/dev/null || true)"
+  for dir in "$pkg_libdir" /usr/lib/x86_64-linux-gnu /usr/lib64 /usr/lib /usr/local/lib; do
+    if [[ -n "$dir" && -e "$dir/libmpv.so.2" ]]; then
+      echo "$dir/libmpv.so.2"
+      return
+    fi
+  done
+}
+
+LIBMPV_SRC="$(find_libmpv || true)"
+if [[ -z "$LIBMPV_SRC" || ! -e "$LIBMPV_SRC" ]]; then
+  echo "❌ libmpv.so.2 not found on the build machine."
+  echo "   Install it (Debian/Ubuntu: libmpv-dev, Fedora: mpv-devel, Arch: mpv) or set LIBMPV_SOURCE=/path/to/libmpv.so.2"
+  exit 1
+fi
+LIBMPV_REAL="$(readlink -f "$LIBMPV_SRC")"
+LIBMPV_REAL_NAME="$(basename "$LIBMPV_REAL")"
+mkdir -p "$APPDIR/lib"
+rm -f "$APPDIR/lib/libmpv.so" "$APPDIR/lib/libmpv.so.2"
+cp -f "$LIBMPV_REAL" "$APPDIR/lib/$LIBMPV_REAL_NAME"
+if [[ "$LIBMPV_REAL_NAME" != "libmpv.so.2" ]]; then
+  ln -s "$LIBMPV_REAL_NAME" "$APPDIR/lib/libmpv.so.2"
+fi
+# media_kit tries "libmpv.so" before "libmpv.so.2" — make that name hit the bundle too.
+ln -s "libmpv.so.2" "$APPDIR/lib/libmpv.so"
+echo "  ✓ Bundled $LIBMPV_REAL as lib/$LIBMPV_REAL_NAME (+ libmpv.so.2, libmpv.so symlinks)"
+
+# Empty, read-only mpv config dir inside the image (see MPV_HOME in AppRun).
+mkdir -p "$APPDIR/etc/mpv"
+
 # 4. Automatically resolve and bundle all required runtime dependencies (HarfBuzz, ICU, XML, codecs, GStreamer, etc.)
 python3 - << 'PY'
 import os, subprocess, re, shutil
@@ -161,7 +210,7 @@ while to_inspect:
                     continue
                 if not os.path.isfile(realpath):
                     continue
-                if realpath.startswith("/usr/lib") or realpath.startswith("/lib"):
+                if realpath.startswith(("/usr/lib", "/lib", "/usr/local/lib")):
                     dest = os.path.join(libdir, soname)
                     if not os.path.exists(dest) and soname not in to_copy:
                         to_copy[soname] = realpath
@@ -193,6 +242,24 @@ for soname in libwpe-1.0.so.1 libWPEWebKit-2.0.so.1 libWPEBackend-fdo-1.0.so.1; 
   fi
 done
 cd "$PROJECT_ROOT"
+
+# Verify the bundled libmpv resolves entirely from the AppDir (plus the
+# host-provided driver/system libs excluded above), so a host mpv/FFmpeg
+# update can't change what Nivio plays with.
+MPV_LDD="$(LD_LIBRARY_PATH="$APPDIR/lib" ldd "$APPDIR/lib/libmpv.so.2" 2>&1 || true)"
+if grep -q "not found" <<< "$MPV_LDD"; then
+  echo "❌ Bundled libmpv has unresolved dependencies:"
+  grep "not found" <<< "$MPV_LDD"
+  exit 1
+fi
+for dep in libavcodec libavformat libavutil libswscale libswresample libass; do
+  dep_path="$(awk -v d="$dep" '$1 ~ "^"d"\\.so" {print $3; exit}' <<< "$MPV_LDD")"
+  if [[ -n "$dep_path" && "$dep_path" != "$APPDIR/lib/"* ]]; then
+    echo "❌ libmpv dependency $dep resolves outside the AppDir ($dep_path)"
+    exit 1
+  fi
+done
+echo "  ✓ libmpv and its FFmpeg/libass dependencies resolve from the AppDir"
 
 # 5. Patch hardcoded PKGLIBEXECDIR in bundled libWPEWebKit so it redirects subprocess lookup to /tmp/wpe-webkit-2.0
 python3 - << 'PY'
@@ -251,13 +318,38 @@ export XDG_DATA_DIRS="$HERE/share:/usr/share:${XDG_DATA_DIRS:-}"
 export GST_PLUGIN_SYSTEM_PATH_1_0="$HERE/lib/gstreamer-1.0:${GST_PLUGIN_SYSTEM_PATH_1_0:-}"
 export GST_PLUGIN_SCANNER_1_0="$HERE/lib/gstreamer-1.0/gst-plugin-scanner"
 
+# --- mpv isolation ---
+# Playback must only depend on what ships in this AppImage:
+#  * LIBMPV_LIBRARY_PATH pins media_kit to the bundled libmpv (a value the user
+#    exported for their own mpv setup is overridden on purpose).
+#  * MPV_HOME points at an empty, read-only dir inside the image so a user's
+#    ~/.config/mpv (mpv.conf, input.conf, scripts, script-opts, fonts) can never
+#    be picked up. libmpv also runs with config=no, which skips /etc/mpv.
+export LIBMPV_LIBRARY_PATH="$HERE/lib/libmpv.so.2"
+export MPV_HOME="$HERE/etc/mpv"
+
 # Disable WebKit sandbox inside AppImage container
 export WEBKIT_DISABLE_SANDBOX=1
 export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
 
-# Ensure /tmp/wpe-webkit-2.0 points to the bundled helper processes
-rm -f /tmp/wpe-webkit-2.0 2>/dev/null || true
-ln -sfn "$HERE/lib/wpe-webkit-2.0" /tmp/wpe-webkit-2.0 2>/dev/null || true
+# A launch carrying a nivio:// link (OAuth redirect from AniList / MAL / Simkl,
+# shared links) is usually a short-lived second instance that only forwards the
+# link to the running Nivio and exits, so it must not touch shared state or
+# show dialogs.
+URL_LAUNCH=0
+for arg in "$@"; do
+  case "$arg" in
+    nivio://*) URL_LAUNCH=1 ;;
+  esac
+done
+
+# Ensure /tmp/wpe-webkit-2.0 points to the bundled helper processes. Skipped for
+# link launches: this mount disappears when the forwarder exits, which would
+# leave the running instance's WebKit helpers pointing at a dead path.
+if [ "$URL_LAUNCH" = "0" ] || [ ! -d /tmp/wpe-webkit-2.0 ]; then
+  rm -f /tmp/wpe-webkit-2.0 2>/dev/null || true
+  ln -sfn "$HERE/lib/wpe-webkit-2.0" /tmp/wpe-webkit-2.0 2>/dev/null || true
+fi
 
 # --- Desktop Integration & CLI Options ---
 XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
@@ -345,7 +437,7 @@ for arg in "$@"; do
 done
 
 # First-run prompt if running as an AppImage and not yet integrated
-if [ -n "${APPIMAGE:-}" ] && [ ! -f "$DESKTOP_FILE" ] && [ ! -f "$NO_INTEGRATE_FLAG" ]; then
+if [ "$URL_LAUNCH" = "0" ] && [ -n "${APPIMAGE:-}" ] && [ ! -f "$DESKTOP_FILE" ] && [ ! -f "$NO_INTEGRATE_FLAG" ]; then
   # If already placed in ~/Applications, integrate automatically
   if [ "$(readlink -f "$(dirname "$APPIMAGE")")" = "$(readlink -f "$APPLICATIONS_DIR")" ]; then
     install_desktop

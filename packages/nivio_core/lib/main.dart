@@ -65,6 +65,10 @@ import 'package:window_manager/window_manager.dart';
 
 const int _desktopIpcPort = 45328;
 
+/// Process arguments, kept so a Linux cold start launched by the browser
+/// (`nivio nivio://auth/...`) can still handle its link.
+List<String> _launchArgs = const [];
+
 Future<bool> _handleDesktopSingleInstance(List<String> args) async {
   if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) {
     return false;
@@ -130,6 +134,7 @@ Future<bool> _handleDesktopSingleInstance(List<String> args) async {
 }
 
 void main([List<String> args = const []]) async {
+  _launchArgs = args;
   try {
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       final handled = await _handleDesktopSingleInstance(args);
@@ -174,7 +179,7 @@ void main([List<String> args = const []]) async {
       await AppWebViewEnvironment.initialize();
     }
     initDebugLogFile();
-    MediaKit.ensureInitialized();
+    MediaKit.ensureInitialized(libmpv: _bundledLibmpvPath());
 
     if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
       await windowManager.ensureInitialized();
@@ -299,6 +304,79 @@ Future<void> _initHive() async {
   await WatchlistService.init();
 }
 
+/// Path of the libmpv shipped next to the executable (Linux AppImage), so the
+/// host's libmpv is never picked up. Null when nothing is bundled (e.g. a
+/// `flutter run` dev build), which falls back to media_kit's normal lookup.
+String? _bundledLibmpvPath() {
+  if (!Platform.isLinux) return null;
+  final libDir = '${File(Platform.resolvedExecutable).parent.path}/lib';
+  for (final name in const ['libmpv.so.2', 'libmpv.so']) {
+    final lib = File('$libDir/$name');
+    if (lib.existsSync()) return lib.path;
+  }
+  return null;
+}
+
+/// Registers this executable as the `nivio://` handler for the current user.
+///
+/// AppImages (and plain bundles) are never "installed", so without this the
+/// browser has nothing to hand `nivio://auth/...` OAuth redirects to and
+/// AniList / MAL / Simkl sign-in silently goes nowhere. Re-run on every launch
+/// so the handler follows the AppImage if it is moved or updated.
+Future<void> _registerLinuxUrlScheme() async {
+  if (!Platform.isLinux) return;
+  try {
+    final env = Platform.environment;
+    final home = env['HOME'];
+    if (home == null || home.isEmpty) return;
+    final xdgDataHome = env['XDG_DATA_HOME'];
+    final dataHome = (xdgDataHome != null && xdgDataHome.isNotEmpty)
+        ? xdgDataHome
+        : '$home/.local/share';
+    final appImage = env['APPIMAGE'];
+    final exec = (appImage != null && appImage.isNotEmpty && File(appImage).existsSync())
+        ? appImage
+        : Platform.resolvedExecutable;
+
+    // Desktop Entry quoting: string-level escape first, then quoted-arg escape.
+    final quotedExec = exec
+        .replaceAll(r'\', r'\\\\')
+        .replaceAll('"', r'\\"')
+        .replaceAll('`', r'\\`')
+        .replaceAll(r'$', r'\\$')
+        .replaceAll('%', '%%');
+
+    const fileName = 'nivio-url-handler.desktop';
+    final appsDir = Directory('$dataHome/applications');
+    final file = File('${appsDir.path}/$fileName');
+    final content = '[Desktop Entry]\n'
+        'Type=Application\n'
+        'Name=Nivio\n'
+        'Comment=Opens nivio:// links (account sign-in, shared links)\n'
+        'Exec="$quotedExec" %u\n'
+        'Icon=nivio\n'
+        'Terminal=false\n'
+        'NoDisplay=true\n'
+        'MimeType=x-scheme-handler/nivio;\n';
+
+    final current = await file.exists() ? await file.readAsString() : null;
+    if (current != content) {
+      await appsDir.create(recursive: true);
+      await file.writeAsString(content, flush: true);
+      try {
+        await Process.run('update-desktop-database', [appsDir.path]);
+      } catch (_) {}
+    }
+
+    final query = await Process.run('xdg-mime', ['query', 'default', 'x-scheme-handler/nivio']);
+    if (query.stdout.toString().trim() != fileName) {
+      await Process.run('xdg-mime', ['default', fileName, 'x-scheme-handler/nivio']);
+    }
+  } catch (e) {
+    debugPrint('Error registering Linux nivio:// handler: $e');
+  }
+}
+
 Future<void> _registerWindowsCustomProtocol() async {
   if (!Platform.isWindows) return;
   try {
@@ -338,6 +416,19 @@ void _initDeepLinks() {
   if (Platform.isWindows) {
     _registerWindowsCustomProtocol();
   }
+  if (Platform.isLinux) {
+    unawaited(_registerLinuxUrlScheme());
+    // The Linux runner doesn't emit GApplication::command-line, so app_links
+    // never sees the launch URI; take it from the process args instead.
+    for (final arg in _launchArgs) {
+      if (arg.startsWith('nivio://')) {
+        final uri = Uri.tryParse(arg);
+        // Defer like getInitialLink() so runApp() has mounted the router.
+        if (uri != null) Future(() => _handleDeepLink(uri));
+        break;
+      }
+    }
+  }
   try {
     final appLinks = AppLinks();
 
@@ -355,7 +446,22 @@ void _initDeepLinks() {
   }
 }
 
+String? _lastDeepLink;
+DateTime _lastDeepLinkAt = DateTime.fromMillisecondsSinceEpoch(0);
+
 void _handleDeepLink(Uri uri) {
+  // The same link can arrive twice (app_links initial link + launch args /
+  // single-instance forward). OAuth codes are single-use, so a second
+  // exchange would fail — drop exact repeats that arrive close together.
+  final link = uri.toString();
+  final now = DateTime.now();
+  if (link == _lastDeepLink &&
+      now.difference(_lastDeepLinkAt) < const Duration(seconds: 30)) {
+    debugPrint('🔗 Ignoring duplicate deep link: $uri');
+    return;
+  }
+  _lastDeepLink = link;
+  _lastDeepLinkAt = now;
   debugPrint('🔗 Deep link received: $uri');
 
   // Handle OAuth authentication callbacks:

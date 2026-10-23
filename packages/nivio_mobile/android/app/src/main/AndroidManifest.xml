@@ -46,6 +46,10 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- Deep links are routed by app_links in Dart (_handleDeepLink).
+                 Flutter's built-in deep linking would also push the URI path
+                 (e.g. /simkl?code=...) into go_router, so keep it off. -->
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -57,6 +61,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <!-- Accepts URIs like: nivio://open/media/123 -->
                 <data android:scheme="nivio" android:host="open" />
+            </intent-filter>
+            <!-- Tracker OAuth redirects: nivio://auth/anilist, nivio://auth/mal,
+                 nivio://auth/simkl (must match *_REDIRECT_URL in .env) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nivio" android:host="auth" />
             </intent-filter>
             <!-- Discord OAuth2 redirect: niviodiscord://oauth2/callback -->
             <intent-filter>
@@ -84,6 +96,13 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Lets url_launcher open the AniList / MAL / Simkl sign-in pages in
+             the user's browser on Android 11+ (package visibility). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <category android:name="android.intent.category.BROWSABLE"/>
+            <data android:scheme="https"/>
         </intent>
     </queries>
 </manifest>

@@ -6,6 +6,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/services/discord_rpc_service.dart';
+import 'package:nivio/services/media_session_service.dart';
 
 /// Metadata about the media currently playing in the mini player.
 class MiniPlayerMediaInfo {
@@ -83,6 +84,7 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
     // If there's already an active mini player with a different player instance,
     // dispose the old one first.
     if (state.isActive && state.player != null && state.player != player) {
+      MediaSessionService.instance.detachPlayer(state.player!);
       state.player!.dispose();
     }
 
@@ -125,6 +127,7 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
       torrentService.stopActive();
     } catch (_) {}
 
+    if (player != null) MediaSessionService.instance.detachPlayer(player);
     state = const MiniPlayerState();
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       DiscordRpcService.instance.setBrowsing();
@@ -154,6 +157,8 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
 
   @override
   void dispose() {
+    final player = state.player;
+    if (player != null) MediaSessionService.instance.detachPlayer(player);
     state.player?.dispose();
     super.dispose();
   }
