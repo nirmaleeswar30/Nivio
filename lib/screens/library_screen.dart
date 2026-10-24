@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:nivio/core/app_platform.dart';
 import 'package:flutter/material.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/screens/new_episodes_screen.dart';
@@ -45,7 +45,7 @@ class _LibraryScreenState extends State<LibraryScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
 
     return Scaffold(
       backgroundColor: NivioTheme.netflixBlack,
@@ -93,7 +93,12 @@ class _LibraryScreenState extends State<LibraryScreen>
                       return TabBar(
                         controller: _tabController,
                         splashFactory: NoSplash.splashFactory,
-                        overlayColor: WidgetStateProperty.all(Colors.transparent),
+                        // TV: show which tab the remote is on.
+                        overlayColor: WidgetStateProperty.resolveWith(
+                          (states) => AppPlatform.isTv && states.contains(WidgetState.focused)
+                              ? Colors.white.withValues(alpha: 0.22)
+                              : Colors.transparent,
+                        ),
                         indicatorSize: TabBarIndicatorSize.tab,
                         indicator: BoxDecoration(
                           color: NivioTheme.accentColorOf(

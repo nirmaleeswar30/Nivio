@@ -12,6 +12,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
+import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
@@ -905,7 +907,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
   }
 
   Widget _buildSearchField() {
-    return TextField(
+    return TvTextFieldGate(builder: (context, focusNode) => TextField(focusNode: focusNode,
       controller: _searchController,
       onChanged: (value) => setState(() => _query = value.trim()),
       style: TextStyle(color: NivioTheme.netflixWhite, fontSize: 14),
@@ -942,6 +944,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           borderSide: BorderSide(color: NivioTheme.accentColorOf(context)),
         ),
       ),
+    ),
     );
   }
 
@@ -1741,11 +1744,12 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           height: 122,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
+              clipBehavior: AppPlatform.isTv ? Clip.none : Clip.hardEdge,
             itemCount: preview.length,
             separatorBuilder: (context, index) => const SizedBox(width: 8),
             itemBuilder: (context, index) {
               final item = preview[index];
-              return GestureDetector(
+              return FocusableTap(
                 onTap: () =>
                     context.push('/media/${item.id}?type=${item.mediaType}'),
                 child: ClipRRect(
@@ -5441,7 +5445,8 @@ class _SidebarCategoryTileState extends State<_SidebarCategoryTile> {
         onEnter: (_) => setState(() => _isHovered = true),
         onExit: (_) => setState(() => _isHovered = false),
         cursor: SystemMouseCursors.click,
-        child: GestureDetector(
+        child: FocusableTap(
+          style: DpadFocusStyle.subtle,
           onTap: widget.onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
@@ -5947,7 +5952,7 @@ class _DesktopThemeCardState extends State<_DesktopThemeCard> {
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
-      child: GestureDetector(
+      child: FocusableTap(
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),

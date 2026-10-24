@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'dart:io';
+import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -234,7 +235,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     final allWatchlist = ref.watch(watchlistProvider);
     if (allWatchlist.isNotEmpty && _isInitialLoading) {
       _isInitialLoading = false;
@@ -678,7 +679,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                     child: Row(
                       children: [
                         Expanded(
-                          child: TextField(
+                          child: TvTextFieldGate(builder: (context, focusNode) => TextField(focusNode: focusNode,
                             controller: _searchController,
                             decoration: InputDecoration(
                               hintText: 'Search watchlist...',
@@ -697,6 +698,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                               ),
                               contentPadding: const EdgeInsets.symmetric(vertical: 0),
                             ),
+                          ),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -960,7 +962,9 @@ class _WatchlistHoverCardState extends State<_WatchlistHoverCard> {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
+    return DpadFocusable(
+      onActivate: widget.onTap,
+      child: MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
@@ -991,6 +995,7 @@ class _WatchlistHoverCardState extends State<_WatchlistHoverCard> {
           ),
         ),
       ),
+    ),
     );
   }
 }

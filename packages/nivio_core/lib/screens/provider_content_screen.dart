@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:ui';
+import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:flutter/material.dart';
 import 'package:nivio/providers/home_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -73,7 +74,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
   @override
   void initState() {
     super.initState();
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     _pageController = PageController(viewportFraction: isDesktop ? 1.0 : 0.92);
     _fetchContent();
 
@@ -292,7 +293,9 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
 
   Widget _desktopOutlineButton({required Widget icon, required VoidCallback onTap}) {
     return _AnimatedHoverScale(
-      child: GestureDetector(
+      child: FocusableTap(
+        style: DpadFocusStyle.highlight,
+        borderRadius: BorderRadius.circular(999),
         onTap: onTap,
         child: Container(
           width: 44,
@@ -421,13 +424,13 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
 
 @override
   Widget build(BuildContext context) {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     if (isDesktop) return _buildDesktopLayout(context);
     return _buildMobileLayout(context);
   }
 
   Widget _buildFeaturedBanner() {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     if (isDesktop) return _buildDesktopFeaturedBanner();
     return _buildMobileFeaturedBanner();
   }
@@ -473,7 +476,8 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                           elevation: 0,
                           pinned: true,
                           leadingWidth: 240,
-                          leading: GestureDetector(
+                          leading: FocusableTap(
+                            style: DpadFocusStyle.highlight,
                             onTap: () => context.pop(),
                             child: Padding(
                               padding: const EdgeInsets.only(left: 24.0),
@@ -694,7 +698,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                     ),
                   );
                 },
-                child: GestureDetector(
+                child: FocusableTap(
                   onTap: () {
                     context.push('/media/$tmdbId?type=$_mediaType');
                   },
@@ -884,7 +888,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
 
   Widget _buildDesktopLayout(BuildContext context) {
     final logoPath = _getProviderLogo();
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     final activeBgColor = Color.lerp(const Color(0xFF0D0F14), _currentAmbientColor, 0.15)!;
 
     return PopScope(
@@ -1130,7 +1134,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
   Widget _buildDesktopFeaturedBanner() {
     final bannerItems = _trending.take(5).toList();
     if (bannerItems.isEmpty) return const SizedBox.shrink();
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     final bannerHeight = isDesktop ? MediaQuery.sizeOf(context).height * 0.8 : 600.0;
     final watchlistIds = ref.watch(watchlistProvider).map((item) => item.id).toSet();
 
@@ -1208,7 +1212,11 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
               // 2. Vignette Asset Overlay
               Positioned.fill(
                 child: Image.asset(
-                  'assets/images/vignette.png',
+                  // TV ships the desktop vignette (the mobile package's
+                  // vignette.png is an older, different image).
+                  AppPlatform.isTv
+                      ? 'assets/images/vignette_tv.png'
+                      : 'assets/images/vignette.png',
                   fit: BoxFit.fill,
                 ),
               ),
@@ -1250,7 +1258,10 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                                 if (logoUrl != null && logoUrl.isNotEmpty)
                                   GestureDetector(
                                     onTap: () => context.push('/media/$tmdbId?type=$_mediaType'),
-                                    child: MouseRegion(
+                                    child: DpadFocusable(
+                                      style: DpadFocusStyle.grow,
+                                      onActivate: () => context.push('/media/$tmdbId?type=$_mediaType'),
+                                      child: MouseRegion(
                                       cursor: SystemMouseCursors.click,
                                       child: CachedNetworkImage(
                                         imageUrl: logoUrl,
@@ -1263,13 +1274,18 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                                         errorWidget: (_, __, ___) => _buildTitleText(title),
                                       ),
                                     ),
+                                    ),
                                   )
                                 else
                                   GestureDetector(
                                     onTap: () => context.push('/media/$tmdbId?type=$_mediaType'),
-                                    child: MouseRegion(
+                                    child: DpadFocusable(
+                                      style: DpadFocusStyle.grow,
+                                      onActivate: () => context.push('/media/$tmdbId?type=$_mediaType'),
+                                      child: MouseRegion(
                                       cursor: SystemMouseCursors.click,
                                       child: _buildTitleText(title),
+                                    ),
                                     ),
                                   ),
                                 const SizedBox(height: 16),
@@ -1446,9 +1462,10 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
 
   Widget _buildTab(String title, String type) {
     final isSelected = _mediaType == type;
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     
-    Widget child = GestureDetector(
+    Widget child = FocusableTap(
+      style: DpadFocusStyle.subtle,
       onTap: () {
         if (!isSelected) {
           setState(() {
@@ -1588,7 +1605,9 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
   }) {
     return Align(
       alignment: isActive ? Alignment.centerLeft : Alignment.center,
-      child: InkWell(
+      child: FocusableInkWell(
+        style: DpadFocusStyle.subtle,
+        focusScale: 1.15,
         onTap: () {
           context.go(route);
         },

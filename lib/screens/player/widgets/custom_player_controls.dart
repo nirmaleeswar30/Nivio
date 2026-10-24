@@ -15,6 +15,8 @@ import 'gesture_layer.dart';
 import 'package:nivio/widgets/torrent_stats_overlay.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
+import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 
 class CustomPlayerControls extends ConsumerStatefulWidget {
   final Player controller;
@@ -46,10 +48,10 @@ class CustomPlayerControls extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<CustomPlayerControls> createState() => _CustomPlayerControlsState();
+  ConsumerState<CustomPlayerControls> createState() => CustomPlayerControlsState();
 }
 
-class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
+class CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
   bool _isPlaying = false;
   bool _showControls = true;
   bool _showChatOnly = false;
@@ -60,6 +62,12 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
   StreamSubscription<bool>? _bufferingSubscription;
   bool _isWindowFullScreen = false;
   bool _isBuffering = false;
+
+  // TV remote: key events land on [_tvKeyNode] (wrapping the whole controls
+  // layer) whenever no control button is focused.
+  final FocusNode _tvKeyNode = FocusNode(debugLabel: 'tvPlayerKeys');
+  final FocusNode _playPauseNode = FocusNode(debugLabel: 'tvPlayPause');
+  final FocusNode _backNode = FocusNode(debugLabel: 'tvPlayerBack');
 
   void _toggleWindowFullScreen() async {
     _startHideTimer();
@@ -110,6 +118,9 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
       });
     }
     _startHideTimer();
+    if (AppPlatform.isTv) {
+      FocusManager.instance.addListener(_onPrimaryFocusChanged);
+    }
   }
 
   @override
@@ -117,12 +128,176 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
     _playingSubscription?.cancel();
     _bufferingSubscription?.cancel();
     _hideControlsTimer?.cancel();
+    if (AppPlatform.isTv) {
+      FocusManager.instance.removeListener(_onPrimaryFocusChanged);
+    }
+    _tvKeyNode.dispose();
+    _playPauseNode.dispose();
+    _backNode.dispose();
     super.dispose();
+  }
+
+  /// Back on a TV remote first hides the controls; returns whether it did.
+  bool hideControlsForBack() {
+    if (!AppPlatform.isTv || !_showControls || _isLocked) return false;
+    _setControlsVisible(false);
+    return true;
+  }
+
+  void _setControlsVisible(bool visible) {
+    setState(() {
+      _showControls = visible;
+      _showChatOnly = false;
+    });
+    widget.onPlayerVisibilityChanged(visible);
+    if (visible) {
+      _startHideTimer();
+    } else {
+      _hideControlsTimer?.cancel();
+    }
+  }
+
+  void _showControlsFocused() {
+    if (!_showControls) _setControlsVisible(true);
+    _startHideTimer();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _playPauseNode.context != null) {
+        _playPauseNode.requestFocus();
+      }
+    });
+  }
+
+  void _seekBy(int seconds) {
+    final pos = widget.controller.state.position;
+    final dur = widget.controller.state.duration;
+    var target = pos + Duration(seconds: seconds);
+    if (target < Duration.zero) target = Duration.zero;
+    if (dur > Duration.zero && target > dur) target = dur;
+    widget.controller.seek(target);
+  }
+
+  // Keeps key events flowing to [_tvKeyNode]: when the focused button goes
+  // away (controls hidden, Skip Intro gone) focus falls back to the route's
+  // scope, and the player screen itself grabs focus on open, both of which
+  // would skip this widget. A focused leaf elsewhere on the page (e.g. Skip
+  // Intro) and panels/dialogs on top are left alone.
+  void _ensureTvFocus() {
+    if (!mounted || _tvKeyNode.context == null) return;
+    if (ModalRoute.of(context)?.isCurrent == false) return;
+    final primary = FocusManager.instance.primaryFocus;
+    final lost = primary == null ||
+        primary is FocusScopeNode ||
+        _tvKeyNode.ancestors.contains(primary);
+    if (lost) _tvKeyNode.requestFocus();
+  }
+
+  void _onPrimaryFocusChanged() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _ensureTvFocus());
+  }
+
+  /// D-pad remote handling (TV only). Also called by the player screen for
+  /// keys that arrive while focus is outside the controls (e.g. on Skip
+  /// Intro), so the remote can still seek and bring the controls up.
+  ///  * Controls hidden: left/right seek, OK plays/pauses, up/down shows them.
+  ///  * Controls shown: arrows move between buttons and OK presses the
+  ///    focused one; left/right still seek while play/pause is focused;
+  ///    Back hides them (see [hideControlsForBack]).
+  KeyEventResult handleTvKey(KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    // Still loading (or failed): nothing to play/pause or seek yet, but the
+    // remote must still reach the controls, so the back arrow works.
+    final ready =
+        widget.controller.state.duration > Duration.zero || widget.isLive;
+    final key = event.logicalKey;
+    final controlsVisible = _showControls && !_isLocked;
+    final primary = FocusManager.instance.primaryFocus;
+    final onSelf = primary == _tvKeyNode;
+    final onPlayPause = primary == _playPauseNode;
+    if (controlsVisible) _startHideTimer();
+
+    if (!ready) {
+      final arrow = key == LogicalKeyboardKey.arrowUp ||
+          key == LogicalKeyboardKey.arrowDown ||
+          key == LogicalKeyboardKey.arrowLeft ||
+          key == LogicalKeyboardKey.arrowRight;
+      if (arrow && (!controlsVisible || onSelf)) {
+        if (!controlsVisible) _setControlsVisible(true);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _backNode.context != null) _backNode.requestFocus();
+        });
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
+    // Up from play/pause goes to the back arrow (top-left), like other TV
+    // players; the default would pick whichever top button is nearest.
+    if (key == LogicalKeyboardKey.arrowUp &&
+        onPlayPause &&
+        controlsVisible &&
+        _backNode.context != null) {
+      _backNode.requestFocus();
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.select ||
+        key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter ||
+        key == LogicalKeyboardKey.space ||
+        key == LogicalKeyboardKey.gameButtonA) {
+      if (event is KeyRepeatEvent) return KeyEventResult.handled;
+      if (!controlsVisible) {
+        widget.controller.playOrPause();
+        _showControlsFocused();
+        return KeyEventResult.handled;
+      }
+      if (onSelf) {
+        _showControlsFocused();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
+    if (key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowRight) {
+      if (widget.isLive) {
+        if (!controlsVisible || onSelf) _showControlsFocused();
+        return controlsVisible && !onSelf
+            ? KeyEventResult.ignored
+            : KeyEventResult.handled;
+      }
+      if (!controlsVisible || onSelf || onPlayPause) {
+        final step = ref.read(seekDurationProvider);
+        _seekBy(key == LogicalKeyboardKey.arrowLeft ? -step : step);
+        if (!controlsVisible) _showControlsFocused();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
+    if (key == LogicalKeyboardKey.arrowUp ||
+        key == LogicalKeyboardKey.arrowDown) {
+      if (!controlsVisible || onSelf) {
+        _showControlsFocused();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
+    // Back is not handled here: Android delivers it as a key event *and* as
+    // a system back, so it is handled once, via the player's PopScope
+    // (_handleBackNavigation -> hideControlsForBack).
+    return KeyEventResult.ignored;
   }
 
   void _startHideTimer() {
     _hideControlsTimer?.cancel();
-    _hideControlsTimer = Timer(const Duration(seconds: 3), () {
+    // TV: longer, so the controls don't vanish while moving between buttons
+    // with the remote.
+    _hideControlsTimer =
+        Timer(Duration(seconds: AppPlatform.isTv ? 6 : 3), () {
       final isDesktop = !Platform.isAndroid && !Platform.isIOS;
       if (mounted && (_isPlaying || isDesktop)) {
         setState(() {
@@ -411,6 +586,7 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                       child: Row(
                         children: [
                           IconButton(
+                            focusNode: AppPlatform.isTv ? _backNode : null,
                             icon: const Icon(Icons.arrow_back, color: Colors.white, size: 30),
                             onPressed: widget.onBack ?? () => Navigator.of(context).pop(),
                           ),
@@ -479,7 +655,8 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                             ),
                           ),
                           if (ref.watch(watchPartySessionProvider).value != null)
-                            GestureDetector(
+                            FocusableTap(
+                              style: DpadFocusStyle.highlight,
                               onTap: _showParticipantsPanel,
                               child: Container(
                                 margin: const EdgeInsets.symmetric(horizontal: 8),
@@ -537,6 +714,7 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                   // Center Play/Pause
                   Center(
                     child: IconButton(
+                      focusNode: AppPlatform.isTv ? _playPauseNode : null,
                       iconSize: 72,
                       color: Colors.white,
                       icon: Icon(_isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled),
@@ -583,6 +761,10 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                                     ),
                                     const SizedBox(width: 16),
                                     Expanded(
+                                      // On TV, left/right seek directly, so
+                                      // keep the slider out of D-pad focus.
+                                      child: ExcludeFocus(
+                                      excluding: AppPlatform.isTv,
                                       child: SliderTheme(
                                         data: SliderThemeData(
                                           trackHeight: 4.0,
@@ -611,6 +793,7 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                                             _startHideTimer();
                                           },
                                         ),
+                                      ),
                                       ),
                                     ),
                                     const SizedBox(width: 16),
@@ -666,6 +849,15 @@ class _CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
         ],
       ),
     );
+
+    if (AppPlatform.isTv) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _ensureTvFocus());
+      return Focus(
+        focusNode: _tvKeyNode,
+        onKeyEvent: (_, event) => handleTvKey(event),
+        child: content,
+      );
+    }
 
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     if (isDesktop) {

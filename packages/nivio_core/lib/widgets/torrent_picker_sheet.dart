@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/services/torrent/torrent_models.dart';
 import 'package:nivio/services/torrent/media_torrent_models.dart';
@@ -922,7 +923,8 @@ class _HoverTorrentCardState extends State<_HoverTorrentCard> {
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
-      child: GestureDetector(
+      child: FocusableTap(
+        style: DpadFocusStyle.subtle,
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),

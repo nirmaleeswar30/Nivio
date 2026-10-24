@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'dart:io';
+import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -462,7 +463,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       );
     }
 
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     final tmdbService = ref.read(tmdbServiceProvider);
     final fallbackBackdropUrl = tmdbService.getBackdropUrl(media.backdropPath, size: 'original');
     final fallbackPosterUrl = tmdbService.getPosterUrl(media.posterPath, size: 'original');
@@ -649,7 +650,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                               ),
                             const SizedBox(width: 24),
                             Expanded(
-                              child: Column(
+                              // TV: a little smaller, so the title, overview and
+                              // buttons sit comfortably on the narrower TV screen.
+                              child: TvShrink(factor: 0.8, child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -882,7 +885,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                     ],
                                   ),
                                 ],
-                              ),
+                              )),
                             ),
                           ],
                         ),
@@ -1242,7 +1245,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     return _AnimatedHoverScale(
       child: Material(
         color: Colors.transparent,
-        child: InkWell(
+        // On TV the page opens with Play focused, ready for OK.
+        child: FocusableInkWell(
+          autofocus: true,
           onTap: onTap,
           borderRadius: BorderRadius.circular(999),
           child: Container(
@@ -1298,6 +1303,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
             height: 190,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
+              clipBehavior: AppPlatform.isTv ? Clip.none : Clip.hardEdge,
               itemCount: _cast.length > 20 ? 20 : _cast.length,
               separatorBuilder: (_, __) => const SizedBox(width: 12),
               itemBuilder: (context, index) {
@@ -1427,8 +1433,8 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     final shareText =
         'Check out "$title"!$overview\n\nWatch here: $redirectUrl';
 
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
-    if (isDesktop) {
+    // No share sheet on desktop OSes; copy the link instead.
+    if (AppPlatform.isDesktopOS) {
       Clipboard.setData(ClipboardData(text: shareText));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2339,7 +2345,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   }) {
     return Align(
       alignment: Alignment.center,
-      child: InkWell(
+      child: FocusableInkWell(
+        style: DpadFocusStyle.subtle,
+        focusScale: 1.15,
         onTap: () {
           context.go(route);
         },
@@ -2408,7 +2416,8 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
   }
 
   void _initPlayer() {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    // The native YouTube player plugin is Android/iOS only (TV included).
+    final isDesktop = AppPlatform.isDesktopOS;
     if (widget.source.site.toLowerCase() == 'youtube' && !isDesktop) {
       _initYoutubePlayer();
     } else {
@@ -2584,7 +2593,7 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
   }
 
   Widget _buildYoutubePlayer() {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.isDesktopOS;
     if (isDesktop) {
       return YouTubeWebViewPlayer(
         key: ValueKey('yt_${widget.source.key}'),
@@ -2895,7 +2904,10 @@ class _HoverGlowButtonState extends State<_HoverGlowButton> {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
+    return DpadFocusable(
+      style: DpadFocusStyle.highlight,
+      onActivate: widget.onTap,
+      child: MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
@@ -2940,6 +2952,7 @@ class _HoverGlowButtonState extends State<_HoverGlowButton> {
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -2959,7 +2972,11 @@ class _HoverSlideIconButtonState extends State<_HoverSlideIconButton> {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
+    return DpadFocusable(
+      style: DpadFocusStyle.highlight,
+      borderRadius: BorderRadius.circular(999),
+      onActivate: widget.onTap,
+      child: MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
@@ -2977,6 +2994,7 @@ class _HoverSlideIconButtonState extends State<_HoverSlideIconButton> {
           child: widget.icon,
         ),
       ),
+    ),
     );
   }
 }
@@ -2997,7 +3015,10 @@ class _HoverGlassButtonState extends State<_HoverGlassButton> {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
+    return DpadFocusable(
+      style: DpadFocusStyle.highlight,
+      onActivate: widget.onTap,
+      child: MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
@@ -3019,6 +3040,7 @@ class _HoverGlassButtonState extends State<_HoverGlassButton> {
           child: Center(child: widget.icon),
         ),
       ),
+    ),
     );
   }
 }

@@ -1,9 +1,12 @@
 import 'dart:io';
 import 'dart:ui';
+import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/core/tv_focus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/theme.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -38,9 +41,59 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   bool _navVisible = true;
   bool _keyboardWasOpen = false;
 
+  // TV: the side rail, so Back can jump to it (see _onWillPop).
+  final FocusNode _railGroupNode = FocusNode(debugLabel: 'tvRail');
+  final List<FocusNode> _railNodes =
+      List.generate(4, (i) => FocusNode(debugLabel: 'tvRail$i'));
+
+  // Android (phones and TV): Android 14+ predictive back ignores
+  // WillPopScope, so with nothing to pop the system just closed the app
+  // instead of showing "Press back again to exit". PopScope makes Back reach
+  // _onWillPop. Desktop keeps WillPopScope alone, as before.
+  Widget _androidBackScope(Widget child) {
+    if (!Platform.isAndroid) return child;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _onWillPop();
+      },
+      child: child,
+    );
+  }
+
+  /// TV: moves focus onto the rail's current tab, if the shell is on screen
+  /// and focus isn't already in the rail.
+  bool _enterRail() {
+    if (!mounted || ModalRoute.of(context)?.isCurrent == false) return false;
+    if (_railGroupNode.hasFocus) return false;
+    _railNodes[widget.navigationShell.currentIndex].requestFocus();
+    return true;
+  }
+
+  bool _isRailNode(FocusNode node) =>
+      node == _railGroupNode || node.ancestors.contains(_railGroupNode);
+
+  @override
+  void dispose() {
+    if (TvRail.enter == _enterRail) {
+      TvRail.enter = null;
+      TvRail.contains = null;
+      TvRail.returnTo = null;
+    }
+    _railGroupNode.dispose();
+    for (final node in _railNodes) {
+      node.dispose();
+    }
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
+    if (AppPlatform.isTv) {
+      TvRail.enter = _enterRail;
+      TvRail.contains = _isRailNode;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForUpdatesOnStartup();
       _syncWatchlistFromCloud();
@@ -188,6 +241,13 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
       return false;
     }
     _lastBackHandledAt = now;
+
+    // TV: Back first jumps to the side rail (like Netflix), so the rail is
+    // always one press away; once there, Back carries on as below.
+    if (AppPlatform.isTv &&
+        TvRail.enterFrom(FocusManager.instance.primaryFocus)) {
+      return false;
+    }
 
     // If not on home tab, navigate to home first
     if (widget.navigationShell.currentIndex != 0) {
@@ -338,7 +398,10 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   }) {
     return Align(
       alignment: isActive ? Alignment.centerLeft : Alignment.center,
-      child: InkWell(
+      child: FocusableInkWell(
+        style: DpadFocusStyle.subtle,
+        focusScale: 1.15,
+        focusNode: AppPlatform.isTv ? _railNodes[index] : null,
         onTap: () => _onTap(index),
         borderRadius: isActive
             ? const BorderRadius.only(
@@ -384,7 +447,9 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   }) {
     return Align(
       alignment: isActive ? Alignment.centerLeft : Alignment.center,
-      child: InkWell(
+      child: FocusableInkWell(
+        style: DpadFocusStyle.subtle,
+        focusScale: 1.15,
         onTap: () {
           if (GoRouterState.of(context).matchedLocation.startsWith(route)) {
             context.go('/home');
@@ -434,7 +499,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   @override
   Widget build(BuildContext context) {
     final accentColor = Theme.of(context).colorScheme.primary;
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     final location = GoRouterState.of(context).matchedLocation;
 
     if (_lastLocation != location) {
@@ -448,7 +513,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     if (isDesktop) {
       return WillPopScope(
         onWillPop: _onWillPop,
-        child: Scaffold(
+        child: _androidBackScope(Scaffold(
           body: NotificationListener<ScrollNotification>(
             onNotification: (notification) {
               if (notification is ScrollUpdateNotification) {
@@ -483,12 +548,17 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
                   bottom: 0,
                   left: 0,
                   width: 56,
-                  child: _buildSidebar(context),
+                  child: Focus(
+                    focusNode: _railGroupNode,
+                    canRequestFocus: false,
+                    skipTraversal: true,
+                    child: _buildSidebar(context),
+                  ),
                 ),
               ],
             ),
           ),
-        ),
+        )),
       );
     }
 
@@ -506,7 +576,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
 
     return WillPopScope(
       onWillPop: _onWillPop,
-      child: Scaffold(
+      child: _androidBackScope(Scaffold(
         extendBody: true,
         body: Stack(
           children: [
@@ -558,7 +628,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 

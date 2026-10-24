@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../core/constants.dart';
 import '../core/providers_data.dart';
+import '../widgets/dpad_focusable.dart';
 
 class AllProvidersScreen extends StatelessWidget {
   const AllProvidersScreen({super.key});
@@ -27,7 +28,7 @@ class AllProvidersScreen extends StatelessWidget {
         itemCount: allProviders.length,
         itemBuilder: (context, index) {
           final provider = allProviders[index];
-          return GestureDetector(
+          return FocusableTap(
             onTap: () {
               context.push('/provider/${provider['id']}?name=${Uri.encodeComponent(provider['name'] as String)}');
             },

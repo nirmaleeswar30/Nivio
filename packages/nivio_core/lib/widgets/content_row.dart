@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'dart:io';
+import 'package:nivio/widgets/dpad_focusable.dart';
+import 'package:nivio/core/app_platform.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
@@ -31,7 +32,7 @@ class ContentRow extends StatelessWidget {
   Widget build(BuildContext context) {
     if (items.isEmpty) return const SizedBox.shrink();
 
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 30),
@@ -99,12 +100,24 @@ class ContentRow extends StatelessWidget {
                     : (isDesktop ? 64 : 12), 
                 right: 12,
               ),
-              itemCount: items.length,
+              // TV: a trailing "View all" tile, see TvSeeAllTile.
+              itemCount: items.length +
+                  (AppPlatform.isTv && onSeeAll != null ? 1 : 0),
               cacheExtent: 250,
               scrollSpeed: 2.0,
               silkyScrollDuration: const Duration(milliseconds: 500),
               animationCurve: Curves.easeOutQuart,
               itemBuilder: (context, index) {
+                if (index == items.length) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: TvSeeAllTile(
+                      onTap: onSeeAll!,
+                      width: 140,
+                      height: 210,
+                    ),
+                  );
+                }
                 final item = items[index];
                 String? posterPath;
                 String? backdropPath;
@@ -273,7 +286,7 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard> {
   @override
   Widget build(BuildContext context) {
     final isInWatchlist = ref.watch(isInWatchlistProvider(widget.tmdbId));
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
 
     final activePath = widget.posterPath;
     final sizeSegment = isDesktop ? 'original' : posterSize;
@@ -365,7 +378,13 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard> {
 
     return CompositedTransformTarget(
       link: _layerLink,
-      child: MouseRegion(
+      child: DpadFocusable(
+        onActivate: () {
+          _dismissActiveOverlay();
+          action();
+        },
+        borderRadius: BorderRadius.circular(6),
+        child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) {
           setState(() => _isHovered = true);
@@ -472,6 +491,7 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

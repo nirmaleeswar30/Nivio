@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:nivio/core/app_platform.dart';
 
 /// Representation of an entire app theme palette
 class NivioAppTheme {
@@ -448,7 +449,7 @@ class NivioTheme {
             borderRadius: BorderRadius.circular(999),
           ),
           textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-        ),
+        ).merge(AppPlatform.isTv ? _tvFocusButtonStyle() : null),
       ),
       cardTheme: CardThemeData(
         color: appTheme.surface,
@@ -478,6 +479,51 @@ class NivioTheme {
       ),
       progressIndicatorTheme:
           ProgressIndicatorThemeData(color: appTheme.primary),
+      // TV renders the desktop layout, so match desktop's sizing: Flutter
+      // defaults Android to standard density and padded tap targets, which
+      // make every button (e.g. the hero's Watch Now) visibly bigger than on
+      // desktop. null keeps each platform's default elsewhere.
+      visualDensity: AppPlatform.isTv ? VisualDensity.compact : null,
+      materialTapTargetSize:
+          AppPlatform.isTv ? MaterialTapTargetSize.shrinkWrap : null,
+      // On a TV everything is driven by D-pad focus, and the default focus
+      // overlay is too faint to see from the couch.
+      focusColor: AppPlatform.isTv ? Colors.white.withOpacity(0.16) : null,
+      iconButtonTheme: AppPlatform.isTv
+          ? IconButtonThemeData(style: _tvFocusButtonStyle(circle: true))
+          : null,
+      filledButtonTheme: AppPlatform.isTv
+          ? FilledButtonThemeData(style: _tvFocusButtonStyle())
+          : null,
+      outlinedButtonTheme: AppPlatform.isTv
+          ? OutlinedButtonThemeData(style: _tvFocusButtonStyle())
+          : null,
+      textButtonTheme: AppPlatform.isTv
+          ? TextButtonThemeData(style: _tvFocusButtonStyle())
+          : null,
+    );
+  }
+
+  /// TV only: the focused button fills solid white with dark content, like
+  /// Netflix. Done with the background/foreground builders because, unlike
+  /// colours, a button's own `styleFrom` never sets them, so this also
+  /// covers buttons with custom colours (e.g. the hero's Watch Now).
+  static ButtonStyle _tvFocusButtonStyle({bool circle = false}) {
+    return ButtonStyle(
+      backgroundBuilder: (context, states, child) => AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        color: states.contains(WidgetState.focused)
+            ? Colors.white
+            : Colors.transparent,
+        child: child,
+      ),
+      foregroundBuilder: (context, states, child) => ColorFiltered(
+        colorFilter: states.contains(WidgetState.focused)
+            ? const ColorFilter.mode(Color(0xFF121212), BlendMode.srcIn)
+            : const ColorFilter.mode(Colors.transparent, BlendMode.dst),
+        child: child,
+      ),
+      shape: circle ? const WidgetStatePropertyAll(CircleBorder()) : null,
     );
   }
 

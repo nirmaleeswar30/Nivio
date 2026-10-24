@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'dart:io';
 
+import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -300,7 +301,7 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
         ? 'Join my Nivio Watch Party for "$title"!\n\nRoom Code: ${code.toUpperCase()}\n\nWatch together here: $partyUrl'
         : 'Join my Nivio Watch Party!\n\nRoom Code: ${code.toUpperCase()}\n\nJoin here: $partyUrl';
 
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.isDesktopOS;
     if (isDesktop) {
       await Clipboard.setData(ClipboardData(text: shareText));
       _showMessage('Invite link copied to clipboard!');
@@ -575,7 +576,7 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
   Widget build(BuildContext context) {
     final service = ref.watch(watchPartyServiceProvider);
     final session = ref.watch(watchPartySessionProvider).valueOrNull;
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     final content = service == null
         ? Center(
             child: Padding(
@@ -645,7 +646,7 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
                   label: const Text('Start Watch Party'),
                 ),
                 const SizedBox(height: 10),
-                TextField(
+                TvTextFieldGate(builder: (context, focusNode) => TextField(focusNode: focusNode,
                   controller: _codeController,
                   maxLength: 6,
                   textCapitalization: TextCapitalization.characters,
@@ -663,6 +664,7 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
                       borderSide: BorderSide.none,
                     ),
                   ),
+                ),
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton(

@@ -1,9 +1,12 @@
 import 'dart:io';
 import 'dart:ui';
+import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/core/tv_focus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/theme.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -36,10 +39,61 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   // Frosted mobile nav: hides when scrolling down, reappears when scrolling up
   // or when the view is back at the top.
   bool _navVisible = true;
+  bool _keyboardWasOpen = false;
+
+  // TV: the side rail, so Back can jump to it (see _onWillPop).
+  final FocusNode _railGroupNode = FocusNode(debugLabel: 'tvRail');
+  final List<FocusNode> _railNodes =
+      List.generate(4, (i) => FocusNode(debugLabel: 'tvRail$i'));
+
+  // Android (phones and TV): Android 14+ predictive back ignores
+  // WillPopScope, so with nothing to pop the system just closed the app
+  // instead of showing "Press back again to exit". PopScope makes Back reach
+  // _onWillPop. Desktop keeps WillPopScope alone, as before.
+  Widget _androidBackScope(Widget child) {
+    if (!Platform.isAndroid) return child;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _onWillPop();
+      },
+      child: child,
+    );
+  }
+
+  /// TV: moves focus onto the rail's current tab, if the shell is on screen
+  /// and focus isn't already in the rail.
+  bool _enterRail() {
+    if (!mounted || ModalRoute.of(context)?.isCurrent == false) return false;
+    if (_railGroupNode.hasFocus) return false;
+    _railNodes[widget.navigationShell.currentIndex].requestFocus();
+    return true;
+  }
+
+  bool _isRailNode(FocusNode node) =>
+      node == _railGroupNode || node.ancestors.contains(_railGroupNode);
+
+  @override
+  void dispose() {
+    if (TvRail.enter == _enterRail) {
+      TvRail.enter = null;
+      TvRail.contains = null;
+      TvRail.returnTo = null;
+    }
+    _railGroupNode.dispose();
+    for (final node in _railNodes) {
+      node.dispose();
+    }
+    super.dispose();
+  }
 
   @override
   void initState() {
     super.initState();
+    if (AppPlatform.isTv) {
+      TvRail.enter = _enterRail;
+      TvRail.contains = _isRailNode;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForUpdatesOnStartup();
       _syncWatchlistFromCloud();
@@ -141,6 +195,21 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     return false;
   }
 
+  // A page that can't scroll (or was clamped back to the top, e.g. when the
+  // keyboard closes) offers no way to scroll up and reveal the bar, so show it.
+  // Only the page's outermost scrollable counts; nested non-scrolling lists
+  // are laid out all the time while the page itself scrolls.
+  bool _handleMobileScrollMetrics(ScrollMetricsNotification notification) {
+    final metrics = notification.metrics;
+    if (notification.depth != 0 || metrics.axis != Axis.vertical) return false;
+    if (_navVisible) return false;
+    final notScrollable = metrics.maxScrollExtent <= metrics.minScrollExtent;
+    if (notScrollable || metrics.pixels <= 24) {
+      setState(() => _navVisible = true);
+    }
+    return false;
+  }
+
   void _onTap(int index) {
     if (index == widget.navigationShell.currentIndex) {
       // Pop native modal routes (like OpenContainer) for the current branch
@@ -172,6 +241,13 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
       return false;
     }
     _lastBackHandledAt = now;
+
+    // TV: Back first jumps to the side rail (like Netflix), so the rail is
+    // always one press away; once there, Back carries on as below.
+    if (AppPlatform.isTv &&
+        TvRail.enterFrom(FocusManager.instance.primaryFocus)) {
+      return false;
+    }
 
     // If not on home tab, navigate to home first
     if (widget.navigationShell.currentIndex != 0) {
@@ -322,7 +398,10 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   }) {
     return Align(
       alignment: isActive ? Alignment.centerLeft : Alignment.center,
-      child: InkWell(
+      child: FocusableInkWell(
+        style: DpadFocusStyle.subtle,
+        focusScale: 1.15,
+        focusNode: AppPlatform.isTv ? _railNodes[index] : null,
         onTap: () => _onTap(index),
         borderRadius: isActive
             ? const BorderRadius.only(
@@ -368,7 +447,9 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   }) {
     return Align(
       alignment: isActive ? Alignment.centerLeft : Alignment.center,
-      child: InkWell(
+      child: FocusableInkWell(
+        style: DpadFocusStyle.subtle,
+        focusScale: 1.15,
         onTap: () {
           if (GoRouterState.of(context).matchedLocation.startsWith(route)) {
             context.go('/home');
@@ -418,7 +499,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   @override
   Widget build(BuildContext context) {
     final accentColor = Theme.of(context).colorScheme.primary;
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     final location = GoRouterState.of(context).matchedLocation;
 
     if (_lastLocation != location) {
@@ -432,7 +513,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     if (isDesktop) {
       return WillPopScope(
         onWillPop: _onWillPop,
-        child: Scaffold(
+        child: _androidBackScope(Scaffold(
           body: NotificationListener<ScrollNotification>(
             onNotification: (notification) {
               if (notification is ScrollUpdateNotification) {
@@ -467,35 +548,56 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
                   bottom: 0,
                   left: 0,
                   width: 56,
-                  child: _buildSidebar(context),
+                  child: Focus(
+                    focusNode: _railGroupNode,
+                    canRequestFocus: false,
+                    skipTraversal: true,
+                    child: _buildSidebar(context),
+                  ),
                 ),
               ],
             ),
           ),
-        ),
+        )),
       );
     }
 
     // Space the floating bar occupies, so page content can scroll clear of it.
-    final bottomSafe = MediaQuery.of(context).padding.bottom;
-    final navReserve = 64.0 + 12.0 + bottomSafe;
     final mq = MediaQuery.of(context);
+    final navReserve = 64.0 + 12.0 + mq.padding.bottom;
+
+    // The keyboard covers the bar, so hide it while the keyboard is up and
+    // bring it back once the keyboard closes (scrolling a focused field into
+    // view may have hidden it, and the page may no longer be scrollable).
+    final keyboardOpen = mq.viewInsets.bottom > 0;
+    if (_keyboardWasOpen && !keyboardOpen) _navVisible = true;
+    _keyboardWasOpen = keyboardOpen;
+    final showNav = _navVisible && !keyboardOpen;
 
     return WillPopScope(
       onWillPop: _onWillPop,
-      child: Scaffold(
+      child: _androidBackScope(Scaffold(
         extendBody: true,
         body: Stack(
           children: [
             // Foreground UI. Reserve bottom space via MediaQuery padding so
             // SafeArea/scroll-aware pages don't hide content behind the bar.
+            // This Scaffold already shrinks its body above the keyboard, and
+            // `mq` comes from above it, so drop the keyboard inset here or
+            // every page Scaffold below shrinks by it a second time (leaving
+            // a keyboard-sized black gap).
             MediaQuery(
-              data: mq.copyWith(
-                padding: mq.padding.copyWith(bottom: navReserve),
+              data: mq.removeViewInsets(removeBottom: true).copyWith(
+                padding: mq.padding.copyWith(
+                  bottom: keyboardOpen ? 0 : navReserve,
+                ),
               ),
-              child: NotificationListener<ScrollNotification>(
-                onNotification: _handleMobileScroll,
-                child: widget.navigationShell,
+              child: NotificationListener<ScrollMetricsNotification>(
+                onNotification: _handleMobileScrollMetrics,
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: _handleMobileScroll,
+                  child: widget.navigationShell,
+                ),
               ),
             ),
             // Background physical WebView for Cloudflare Turnstile bypass (drawn on top when needed)
@@ -506,13 +608,13 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
               right: 0,
               bottom: 0,
               child: IgnorePointer(
-                ignoring: !_navVisible,
+                ignoring: !showNav,
                 child: AnimatedSlide(
-                  offset: _navVisible ? Offset.zero : const Offset(0, 1.4),
+                  offset: showNav ? Offset.zero : const Offset(0, 1.4),
                   duration: const Duration(milliseconds: 520),
                   curve: Curves.easeInOutCubicEmphasized,
                   child: AnimatedOpacity(
-                    opacity: _navVisible ? 1 : 0,
+                    opacity: showNav ? 1 : 0,
                     duration: const Duration(milliseconds: 420),
                     curve: Curves.easeOutCubic,
                     child: _NivioFloatingNav(
@@ -526,7 +628,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 

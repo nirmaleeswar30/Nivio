@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:nivio/core/app_platform.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -43,7 +43,7 @@ class _SimilarContentScreenState extends ConsumerState<SimilarContentScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
 
     return Scaffold(
       backgroundColor: NivioTheme.netflixBlack,

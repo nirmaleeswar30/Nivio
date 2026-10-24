@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:nivio/core/app_platform.dart';
 import 'package:flutter/services.dart';
 
 /// App-wide platform-optimized scroll views.
@@ -76,6 +77,10 @@ class AppListView {
       addSemanticIndexes: addSemanticIndexes,
       cacheExtent: cacheExtent,
       semanticChildCount: semanticChildCount,
+      // TV: let the D-pad focused card grow past the row's edges.
+      clipBehavior: AppPlatform.isTv && scrollDirection == Axis.horizontal
+          ? Clip.none
+          : Clip.hardEdge,
     );
   }
 }

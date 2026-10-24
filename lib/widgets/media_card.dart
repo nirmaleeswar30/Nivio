@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/models/watch_history.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/providers/service_providers.dart';
@@ -87,7 +88,7 @@ class _MediaCardState extends ConsumerState<MediaCard>
     return MouseRegion(
       onEnter: (_) => _animationController.forward(),
       onExit: (_) => _animationController.reverse(),
-      child: GestureDetector(
+      child: FocusableTap(
         onTap: () {
           context.push(
             '/player/${widget.history.tmdbId}'

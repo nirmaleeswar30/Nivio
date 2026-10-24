@@ -1,5 +1,6 @@
-import 'dart:io';
 
+import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -98,7 +99,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     final allHistory = ref.watch(watchHistoryProvider).valueOrNull ?? [];
     final mediaHistory = allHistory.cast<WatchHistory?>().firstWhere(
       (h) => h?.tmdbId == widget.media.id,
@@ -141,7 +142,11 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
             Row(
               children: [
                 Expanded(
-                  child: TextField(
+                  // TV: moving down the page doesn't stop inside the search
+                  // field (and pop the keyboard); OK on it starts typing.
+                  child: TvTextFieldGate(
+                    builder: (context, focusNode) => TextField(
+                    focusNode: focusNode,
                     controller: _searchController,
                     onChanged: (value) => setState(() {
                       _searchQuery = value;
@@ -195,6 +200,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                         ),
                       ),
                     ),
+                  ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -323,7 +329,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
     WatchHistory? mediaHistory,
     AnimeFillerData fillerData = const AnimeFillerData(),
   }) {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     final stillPath = episode.stillPath ?? widget.media.backdropPath ?? widget.media.posterPath;
     final stillUrl = stillPath == null || stillPath.isEmpty
         ? ''

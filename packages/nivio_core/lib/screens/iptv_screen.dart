@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
@@ -130,7 +131,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
     final playlists = await service.getPlaylists();
     
     if (!mounted) return;
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     
     showModalBottomSheet(
       context: context,
@@ -246,7 +247,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
 
     final body = Container(
       decoration: const BoxDecoration(
@@ -335,7 +336,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
           ),
         ),
         const SizedBox(height: 28),
-        TextField(
+        TvTextFieldGate(builder: (context, focusNode) => TextField(focusNode: focusNode,
           controller: _urlController,
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
@@ -361,6 +362,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
             ),
           ),
           onSubmitted: _fetchPlaylist,
+        ),
         ),
         if (_error != null) ...[
           const SizedBox(height: 12),
@@ -487,7 +489,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
               Expanded(
                 child: Container(
                   constraints: BoxConstraints(maxWidth: isDesktop ? 600 : double.infinity),
-                  child: TextField(
+                  child: TvTextFieldGate(builder: (context, focusNode) => TextField(focusNode: focusNode,
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
                       hintText: 'Search channels...',
@@ -517,6 +519,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                       _searchQuery = val;
                       _filterChannels();
                     },
+                  ),
                   ),
                 ),
               ),
@@ -697,7 +700,9 @@ class _ChannelCardState extends State<_ChannelCard> {
     final accent = NivioTheme.accentColorOf(context);
 
     return RepaintBoundary(
-      child: MouseRegion(
+      child: DpadFocusable(
+        onActivate: widget.onPlay,
+        child: MouseRegion(
         onEnter: (_) => setState(() => _isHovered = true),
         onExit: (_) => setState(() => _isHovered = false),
         cursor: SystemMouseCursors.click,
@@ -832,6 +837,7 @@ class _ChannelCardState extends State<_ChannelCard> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

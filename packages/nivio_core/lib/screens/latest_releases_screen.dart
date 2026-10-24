@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -197,7 +198,7 @@ class _LatestReleasesScreenState extends ConsumerState<LatestReleasesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
 
     final scrollView = AppCustomScrollView(
       controller: _scrollController,
@@ -488,7 +489,10 @@ class _DesktopBackButtonState extends State<_DesktopBackButton> {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
+    return DpadFocusable(
+      style: DpadFocusStyle.highlight,
+      onActivate: widget.onTap,
+      child: MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
@@ -525,6 +529,7 @@ class _DesktopBackButtonState extends State<_DesktopBackButton> {
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -547,7 +552,10 @@ class _DesktopScheduleButtonState extends State<_DesktopScheduleButton> {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
+    return DpadFocusable(
+      style: DpadFocusStyle.highlight,
+      onActivate: widget.onTap,
+      child: MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
@@ -595,6 +603,7 @@ class _DesktopScheduleButtonState extends State<_DesktopScheduleButton> {
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -705,7 +714,7 @@ class _OptimizedReleaseCardState extends State<_OptimizedReleaseCard> {
         ? (imagePath.startsWith('http') ? imagePath : '$tmdbImageBaseUrl/w500$imagePath')
         : null;
 
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
 
     Widget cardBody = Container(
       decoration: BoxDecoration(
@@ -898,7 +907,7 @@ class _OptimizedReleaseCardState extends State<_OptimizedReleaseCard> {
     }
 
     return RepaintBoundary(
-      child: GestureDetector(
+      child: FocusableTap(
         onTap: () {
           if (id == 0) return;
           GoRouter.of(context).push('/media/$id?type=$mediaType');

@@ -16,6 +16,8 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/core/tv_focus.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/firebase_options.dart';
 import 'package:nivio/widgets/mini_player_overlay.dart';
@@ -201,6 +203,9 @@ void main([List<String> args = const []]) async {
     if (Platform.isAndroid || Platform.isIOS) {
       FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
     }
+
+    // Layout decisions read this synchronously, so resolve it before any UI.
+    await AppPlatform.init();
 
     // Load .env first so downstream services (e.g. watch party Supabase)
     // can read credentials during initialization.
@@ -863,7 +868,7 @@ class _NivioAppState extends ConsumerState<NivioApp> {
       darkTheme: appTheme,
       routerConfig: appRouter,
       builder: (context, child) {
-        final content = _GitHubReleasePromptGate(
+        final Widget gate = _GitHubReleasePromptGate(
           child: Stack(
             children: [
               child ?? const SizedBox.shrink(),
@@ -872,6 +877,12 @@ class _NivioAppState extends ConsumerState<NivioApp> {
             ],
           ),
         );
+        final content = AppPlatform.isTv
+            ? FocusTraversalGroup(
+                policy: TvTraversalPolicy(),
+                child: gate,
+              )
+            : gate;
 
         Widget scaledContent;
         if (uiScale == 1.0) {

@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:nivio/core/app_platform.dart';
 import 'package:flutter/material.dart';
 
 /// Lightweight skeleton placeholders — a low-cost replacement for spinners.
@@ -107,7 +107,7 @@ class ContentRowSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     final cardW = isDesktop ? 140.0 : 120.0;
     final cardH = isDesktop ? 210.0 : 170.0;
     final rowH = isDesktop ? 210.0 : 180.0;

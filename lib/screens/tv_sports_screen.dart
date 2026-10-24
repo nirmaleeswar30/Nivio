@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -23,7 +24,7 @@ class _TvSportsScreenState extends ConsumerState<TvSportsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     return Scaffold(
       backgroundColor: NivioTheme.netflixBlack,
       body: Container(
@@ -140,7 +141,10 @@ class _TabItemState extends State<_TabItem> {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
+    return DpadFocusable(
+      style: DpadFocusStyle.subtle,
+      onActivate: widget.onTap,
+      child: MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       cursor: SystemMouseCursors.click,
@@ -192,6 +196,7 @@ class _TabItemState extends State<_TabItem> {
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -299,7 +304,7 @@ class _SportsViewState extends ConsumerState<SportsView>
   }
 
   void _showStreamPicker(SportsMatch match, List<SportsStream> streams) {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     showModalBottomSheet(
       context: context,
       backgroundColor: NivioTheme.netflixDarkGrey,
@@ -349,7 +354,7 @@ class _SportsViewState extends ConsumerState<SportsView>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     final leftPad = isDesktop ? 68.0 : 16.0;
 
     if (_loading) {
@@ -557,7 +562,10 @@ class _SportsCategoryChipState extends State<_SportsCategoryChip> {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
+    return DpadFocusable(
+      style: DpadFocusStyle.subtle,
+      onActivate: widget.onTap,
+      child: MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       cursor: SystemMouseCursors.click,
@@ -595,6 +603,7 @@ class _SportsCategoryChipState extends State<_SportsCategoryChip> {
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -624,7 +633,9 @@ class _SportsMatchCardState extends State<_SportsMatchCard> {
     final time = match.startTime;
 
     return RepaintBoundary(
-      child: MouseRegion(
+      child: DpadFocusable(
+        onActivate: widget.onOpen,
+        child: MouseRegion(
         onEnter: (_) => setState(() => _isHovered = true),
         onExit: (_) => setState(() => _isHovered = false),
         cursor: SystemMouseCursors.click,
@@ -835,6 +846,7 @@ class _SportsMatchCardState extends State<_SportsMatchCard> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

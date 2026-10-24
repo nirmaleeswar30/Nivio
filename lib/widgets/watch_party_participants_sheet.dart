@@ -1,5 +1,5 @@
-import 'dart:io';
 import 'dart:ui';
+import 'package:nivio/core/app_platform.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -230,7 +230,7 @@ class WatchPartyParticipantsSheet extends ConsumerWidget {
     final shareText =
         'Join my Nivio Watch Party!\n\nRoom Code: ${code.toUpperCase()}\n\nWatch together here: $partyUrl';
 
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     if (isDesktop) {
       await Clipboard.setData(ClipboardData(text: shareText));
       if (context.mounted) {

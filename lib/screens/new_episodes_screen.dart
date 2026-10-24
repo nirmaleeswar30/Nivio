@@ -1,5 +1,6 @@
+import 'package:nivio/widgets/dpad_focusable.dart';
+import 'package:nivio/core/app_platform.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -78,7 +79,7 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -326,7 +327,9 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                     if (isSelected) bgColor = NivioTheme.accentColorOf(context);
                     else if (isToday) bgColor = NivioTheme.accentColorOf(context).withValues(alpha: 0.3);
 
-                    return GestureDetector(
+                    return FocusableTap(
+                      style: DpadFocusStyle.subtle,
+                      borderRadius: BorderRadius.circular(999),
                       onTap: () {
                         setState(() {
                           _selectedDay = date;

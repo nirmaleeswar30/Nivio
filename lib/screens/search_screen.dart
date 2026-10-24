@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
@@ -395,7 +396,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _buildFilterChip(String label, bool isSelected, VoidCallback onTap) {
-    return GestureDetector(
+    return FocusableTap(
+      style: DpadFocusStyle.subtle,
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -508,7 +510,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
       ),
-      child: TextField(
+      // TV: Up/Down while typing leave the field (see TvTextFieldGate).
+      child: TvTextFieldGate(
+        borderRadius: BorderRadius.circular(14),
+        builder: (context, focusNode) => TextField(
+        focusNode: focusNode,
         controller: _controller,
         autofocus: true,
         textInputAction: TextInputAction.search,
@@ -570,7 +576,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ),
         onChanged: _onQueryChanged,
         onSubmitted: _onSearch,
-      ),
+      )),
     );
   }
 

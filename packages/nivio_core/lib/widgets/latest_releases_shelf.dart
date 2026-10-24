@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -73,7 +74,7 @@ class LatestReleasesShelf extends StatelessWidget {
     // Order items so the latest release is first, followed by previous releases
     final sortedItems = List<dynamic>.from(items)..sort(compareReleaseDates);
 
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     final cardWidth = isDesktop ? 280.0 : 240.0;
     final cardHeight = isDesktop ? 160.0 : 142.0;
 
@@ -165,12 +166,24 @@ class LatestReleasesShelf extends StatelessWidget {
                 top: 8,
                 bottom: 8,
               ),
-              itemCount: sortedItems.length,
+              // TV: a trailing "View all" tile, see TvSeeAllTile.
+              itemCount: sortedItems.length +
+                  (AppPlatform.isTv && onSeeAll != null ? 1 : 0),
               cacheExtent: isDesktop ? 800 : 350,
               scrollSpeed: 2.0,
               silkyScrollDuration: const Duration(milliseconds: 500),
               animationCurve: Curves.easeOutQuart,
               itemBuilder: (context, index) {
+                if (index == sortedItems.length) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: TvSeeAllTile(
+                      onTap: onSeeAll!,
+                      width: 180,
+                      height: cardHeight,
+                    ),
+                  );
+                }
                 final item = sortedItems[index];
                 final id = item is Map ? item['id'] : (item is SearchResult ? item.id : index);
                 return Padding(
@@ -213,7 +226,10 @@ class _ShelfMoreButtonState extends State<_ShelfMoreButton> {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
+    return DpadFocusable(
+      style: DpadFocusStyle.highlight,
+      onActivate: widget.onTap,
+      child: MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
@@ -262,6 +278,7 @@ class _ShelfMoreButtonState extends State<_ShelfMoreButton> {
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -379,7 +396,10 @@ class _LatestReleaseCardState extends State<LatestReleaseCard> {
     }
 
     return RepaintBoundary(
-      child: MouseRegion(
+      child: DpadFocusable(
+        onActivate: handleTap,
+        borderRadius: BorderRadius.circular(12),
+        child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _isHovered = true),
         onExit: (_) => setState(() => _isHovered = false),
@@ -597,6 +617,7 @@ class _LatestReleaseCardState extends State<LatestReleaseCard> {
         ),
       ),
     ),
+      ),
   );
   }
 }
@@ -608,7 +629,7 @@ class LatestReleasesShelfSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     final cardWidth = isDesktop ? 280.0 : 240.0;
     final cardHeight = isDesktop ? 160.0 : 142.0;
 

@@ -1,5 +1,9 @@
 package com.nirmal.nivio
 
+import android.app.UiModeManager
+import android.content.Context
+import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -15,6 +19,7 @@ class MainActivity : PipCallbackHelperActivityWrapper() {
     private val CHANNEL = "com.nivio/gesture_exclusion"
     private val MEDIA_SESSION_CHANNEL = "com.nivio/media_session"
     private val WATCH_PARTY_CHANNEL = "com.nivio/watch_party_keepalive"
+    private val DEVICE_CHANNEL = "com.nivio/device"
     private var methodChannel: MethodChannel? = null
     private var mediaSessionChannel: MethodChannel? = null
     private var mediaSession: MediaSession? = null
@@ -80,6 +85,15 @@ class MainActivity : PipCallbackHelperActivityWrapper() {
             }
         }
 
+        // Lets Dart pick the TV (desktop-style, D-pad driven) layout.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, DEVICE_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "isTv" -> result.success(isTelevision())
+                    else -> result.notImplemented()
+                }
+            }
+
         // Foreground service that keeps a watch party connected in the
         // background. Driven by WatchPartyKeepAlive on the Dart side.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WATCH_PARTY_CHANNEL)
@@ -105,6 +119,20 @@ class MainActivity : PipCallbackHelperActivityWrapper() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    // The player locks phones to landscape and back to portrait on exit; on a
+    // TV a portrait lock squeezes the whole app into a letterboxed column, so
+    // orientation requests are ignored there (TVs are always landscape).
+    override fun setRequestedOrientation(requestedOrientation: Int) {
+        if (isTelevision()) return
+        super.setRequestedOrientation(requestedOrientation)
+    }
+
+    private fun isTelevision(): Boolean {
+        val uiModeManager = getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
+        if (uiModeManager?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION) return true
+        return packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
     }
 
     private fun sendMediaCommand(command: String, positionMs: Long? = null) {

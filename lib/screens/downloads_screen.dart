@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'package:nivio/widgets/dpad_focusable.dart';
+import 'package:nivio/core/app_platform.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
@@ -20,7 +22,7 @@ class DownloadsScreen extends StatefulWidget {
 class _DownloadsScreenState extends State<DownloadsScreen> {
   @override
   Widget build(BuildContext context) {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
 
     return ValueListenableBuilder(
       valueListenable: DownloadService.box.listenable(),
@@ -550,7 +552,8 @@ class _StreamWhileDownloadingButtonState extends State<_StreamWhileDownloadingBu
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
-      child: GestureDetector(
+      child: FocusableTap(
+        style: DpadFocusStyle.highlight,
         onTap: widget.onTap,
         child: AnimatedScale(
           scale: _isHovered ? 1.04 : 1.0,
@@ -639,7 +642,8 @@ class _DownloadActionButtonState extends State<_DownloadActionButton> {
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
-      child: GestureDetector(
+      child: FocusableTap(
+        style: DpadFocusStyle.highlight,
         onTap: widget.onTap,
         child: AnimatedScale(
           scale: _isHovered ? 1.05 : 1.0,
@@ -717,7 +721,8 @@ class _DownloadDeleteButtonState extends State<_DownloadDeleteButton> {
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
-      child: GestureDetector(
+      child: FocusableTap(
+        style: DpadFocusStyle.highlight,
         onTap: widget.onTap,
         child: AnimatedScale(
           scale: _isHovered ? 1.08 : 1.0,

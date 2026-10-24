@@ -13,6 +13,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/theme.dart';
+import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/screens/player/widgets/custom_player_controls.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -176,6 +178,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   int _currentProviderIndex = 0;
   static const int _maxRetries = 3;
   final FocusNode _focusNode = FocusNode();
+  final GlobalKey<CustomPlayerControlsState> _controlsKey = GlobalKey<CustomPlayerControlsState>();
   bool _showNextEpisodeButton = false;
   bool _nextEpisodeDismissed = false;
   Timer? _nextEpisodeTimer;
@@ -675,6 +678,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // ────────────────── Keyboard shortcuts ──────────────────
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    // On TV the D-pad is handled by CustomPlayerControls. Keys only get here
+    // when focus is outside the controls (e.g. on Skip Intro), so hand them
+    // over: arrows there seek / show the controls instead of doing nothing.
+    if (AppPlatform.isTv) {
+      final controls = _controlsKey.currentState;
+      if (controls != null) return controls.handleTvKey(event);
+      // No controls yet (loading / error screen): the first arrow press
+      // moves onto that screen's buttons, starting with the back arrow.
+      final arrow = event.logicalKey == LogicalKeyboardKey.arrowUp ||
+          event.logicalKey == LogicalKeyboardKey.arrowDown ||
+          event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+          event.logicalKey == LogicalKeyboardKey.arrowRight;
+      if (arrow && node.hasPrimaryFocus) {
+        node.nextFocus();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
     if (_player.state.duration == Duration.zero) {
       return KeyEventResult.ignored;
     }
@@ -5104,6 +5125,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       onPopInvokedWithResult: (didPop, result) {
         debugPrint('🔵 [POP_SCOPE] onPopInvokedWithResult — didPop=$didPop, mounted=$mounted');
         if (!didPop) {
+          // TV remote Back first hides the on-screen controls, like other
+          // TV players (the on-screen back arrow exits straight away).
+          if (_controlsKey.currentState?.hideControlsForBack() == true) return;
           _handleBackNavigation();
         }
       },
@@ -5401,7 +5425,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       child: _PlayerHoverScale(
                         child: Material(
                           color: Colors.transparent,
-                          child: InkWell(
+                          child: FocusableInkWell(
+                          style: DpadFocusStyle.lift,
+                          requestFocusOnMount: AppPlatform.isTv,
                           onTap: _skipOutro,
                           borderRadius: BorderRadius.circular(6),
                           child: Container(
@@ -6437,6 +6463,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             ),
           ),
           CustomPlayerControls(
+            key: AppPlatform.isTv ? _controlsKey : null,
             controller: _player,
             title: title,
             subtitle: subtitle,
@@ -6679,7 +6706,7 @@ class _EpisodePickerSheetState extends ConsumerState<_EpisodePickerSheet> {
                                         : episode.stillPath!)
                                   : '';
 
-                              return GestureDetector(
+                              return FocusableTap(
                                 onTap: () {
                                   Navigator.pop(context);
                                   if (!isCurrent) {
@@ -7478,7 +7505,8 @@ class _SkipIntroButtonState extends State<SkipIntroButton> {
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
-      child: GestureDetector(
+      child: FocusableTap(
+        requestFocusOnMount: AppPlatform.isTv,
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 300),

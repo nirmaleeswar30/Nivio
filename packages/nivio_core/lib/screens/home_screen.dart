@@ -1,8 +1,10 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:ui';
+import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
@@ -48,6 +50,55 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _currentBannerIndex = 0;
   int _currentBannerPage = 0;
   Timer? _bannerTimer;
+  bool _heroHasFocus = false;
+  // TV: each hero slide's Watch Now, so paging can move focus onto the new one.
+  final Map<int, FocusNode> _heroWatchNodes = {};
+
+  FocusNode _heroWatchNode(int page) => _heroWatchNodes.putIfAbsent(
+        page,
+        () => FocusNode(debugLabel: 'heroWatchNow$page'),
+      );
+
+  /// TV: right on the last hero button shows the next slide and left on
+  /// Watch Now the previous one; on the first slide left falls through to
+  /// the side rail.
+  KeyEventResult _handleHeroButtonsKey(FocusNode row, KeyEvent event) {
+    if (event is! KeyDownEvent || !_pageController.hasClients) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (key != LogicalKeyboardKey.arrowLeft &&
+        key != LogicalKeyboardKey.arrowRight) {
+      return KeyEventResult.ignored;
+    }
+    final buttons = row.traversalDescendants.toList()
+      ..sort((a, b) => a.rect.left.compareTo(b.rect.left));
+    if (buttons.isEmpty) return KeyEventResult.ignored;
+    final primary = FocusManager.instance.primaryFocus;
+    if (key == LogicalKeyboardKey.arrowRight && primary == buttons.last) {
+      _pageHero(1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowLeft &&
+        primary == buttons.first &&
+        _currentBannerIndex > 0) {
+      _pageHero(-1);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  Future<void> _pageHero(int delta) async {
+    await _pageController.animateToPage(
+      _currentBannerPage + delta,
+      duration: const Duration(milliseconds: 450),
+      curve: Curves.easeInOutCubic,
+    );
+    // Let the loop-around jump (last slide -> first) settle first.
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    if (!mounted) return;
+    _heroWatchNode(_currentBannerPage).requestFocus();
+  }
   final Map<int, bool> _pendingWatchlistState = <int, bool>{};
   final Map<int, Color> _ambientColors = {};
   Color _currentAmbientColor = const Color(0xFF0D0F14);
@@ -79,7 +130,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
 
     _bannerTimer = Timer.periodic(const Duration(seconds: 14), (timer) {
-      if (!_pageController.hasClients || !_isBannerVisible) return;
+      if (!_pageController.hasClients || !_isBannerVisible || _heroHasFocus) {
+        return;
+      }
       // Don't waste cycles on banner animation while the video player is active
       if (ref.read(isPlayerActiveProvider)) return;
       final featuredContent = ref.read(featuredContentProvider).value ?? [];
@@ -119,7 +172,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (ref.read(isPlayerActiveProvider)) return;
     
     final content = items[index];
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     final posterPath = isDesktop
         ? (content['backdrop_path'] ?? content['poster_path'])?.toString()
         : (content['poster_path'] ?? content['backdrop_path'])?.toString();
@@ -154,12 +207,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _pageController.dispose();
     _showAppBarBg.dispose();
     _bannerTimer?.cancel();
+    for (final node in _heroWatchNodes.values) {
+      node.dispose();
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     ref.listen(changelogProvider, (previous, next) {
       if (!next.isLoading && !next.hasSeenCurrentVersion && next.releaseNotes != null) {
         ref.read(changelogProvider.notifier).markAsSeen();
@@ -527,7 +583,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Widget _buildProviderSelectionRow() {
     final providers = allProviders.take(20).toList();
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
 
     return SliverToBoxAdapter(
       child: Column(
@@ -566,11 +622,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             height: 90,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
+              clipBehavior: AppPlatform.isTv ? Clip.none : Clip.hardEdge,
               padding: EdgeInsets.only(left: isDesktop ? 64 : 10, right: 10),
-              itemCount: providers.length,
+              // TV: a trailing "View all" tile, see TvSeeAllTile.
+              itemCount: providers.length + (AppPlatform.isTv ? 1 : 0),
               itemBuilder: (context, index) {
+                if (index == providers.length) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: TvSeeAllTile(
+                      onTap: () => context.push('/all-providers'),
+                      width: 160,
+                      height: 90,
+                    ),
+                  );
+                }
                 final provider = providers[index];
-                return GestureDetector(
+                return FocusableTap(
                   onTap: () {
                     context.push('/provider/${provider['id']}?name=${Uri.encodeComponent(provider['name'] as String)}');
                   },
@@ -625,7 +693,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Widget _desktopOutlineButton({required Widget icon, required VoidCallback onTap}) {
     return _AnimatedHoverScale(
-      child: GestureDetector(
+      child: FocusableTap(
+        style: DpadFocusStyle.highlight,
+        borderRadius: BorderRadius.circular(999),
         onTap: onTap,
         child: Container(
           width: 44,
@@ -752,7 +822,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Widget _buildHeroBannerCarousel(BuildContext context, List<Map<String, dynamic>> items) {
     if (items.isEmpty) return const SizedBox(height: 500);
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     final watchlistIds = ref
         .watch(watchlistProvider)
         .map((item) => item.id)
@@ -811,6 +881,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 }
               }
             : null,
+        // TV: pause the auto-advance while a hero button has D-pad focus, or
+        // the slide would change (and drop focus) under the user.
+        child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onFocusChange: (hasFocus) => _heroHasFocus = AppPlatform.isTv && hasFocus,
         child: PageView.builder(
         controller: _pageController,
         itemCount: itemCount,
@@ -866,7 +942,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
           final logoUrl = content['logo_url'] as String?;
 
-          final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+          final isDesktop = AppPlatform.useDesktopLayout;
           // Desktop: use the TMDB-enriched backdrop (high quality; falls back to
           // the AniList backdrop only when TMDB has none). Mobile: portrait poster.
           // (Restored from commit b65a017 — the AniList "clean_backdrop" was
@@ -891,7 +967,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             if (year.isNotEmpty) year,
           ];
 
-          return Stack(
+          // TV: off-screen hero slides stay built in the PageView; keep them out
+          // of D-pad focus so arrows never land on (and scroll to) them.
+          return ExcludeFocus(
+            excluding: AppPlatform.isTv && index != _currentBannerPage,
+            child: Stack(
             children: [
               Container(
                 decoration: BoxDecoration(
@@ -908,7 +988,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               if (isDesktop)
                 Positioned.fill(
                   child: Image.asset(
-                    'assets/images/vignette.png',
+                    // TV ships the desktop vignette (the mobile package's
+                    // vignette.png is an older, different image).
+                    AppPlatform.isTv
+                        ? 'assets/images/vignette_tv.png'
+                        : 'assets/images/vignette.png',
                     fit: BoxFit.fill,
                   ),
                 ),
@@ -948,7 +1032,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 if (logoUrl != null && logoUrl.isNotEmpty)
                                   GestureDetector(
                                     onTap: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
-                                    child: MouseRegion(
+                                    child: DpadFocusable(
+                                      style: DpadFocusStyle.grow,
+                                      onActivate: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
+                                      child: MouseRegion(
                                       cursor: SystemMouseCursors.click,
                                       child: CachedNetworkImage(
                                         imageUrl: logoUrl,
@@ -961,13 +1048,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                         errorWidget: (_, __, ___) => _buildTitleText(title),
                                       ),
                                     ),
+                                    ),
                                   )
                                 else
                                   GestureDetector(
                                     onTap: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
-                                    child: MouseRegion(
+                                    child: DpadFocusable(
+                                      style: DpadFocusStyle.grow,
+                                      onActivate: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
+                                      child: MouseRegion(
                                       cursor: SystemMouseCursors.click,
                                       child: _buildTitleText(title),
+                                    ),
                                     ),
                                   ),
                                 const SizedBox(height: 16),
@@ -977,10 +1069,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   children: _buildDesktopBadges(episodes, format, status, season, voteAverage, slideColor),
                                 ),
                                 const SizedBox(height: 24),
-                                Row(
+                                // TV: left/right on the outer buttons pages the
+                                // hero (see _handleHeroButtonsKey).
+                                Focus(
+                                canRequestFocus: false,
+                                skipTraversal: true,
+                                onKeyEvent: AppPlatform.isTv
+                                    ? (node, event) => _handleHeroButtonsKey(node, event)
+                                    : null,
+                                child: Row(
                                   children: [
                                     _AnimatedHoverScale(
                                       child: ElevatedButton.icon(
+                                        focusNode: AppPlatform.isTv ? _heroWatchNode(index) : null,
                                         onPressed: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
                                         icon: PhosphorIcon(
                                           PhosphorIconsFill.play,
@@ -1025,6 +1126,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     ),
                                   ],
                                 ),
+                                ),
                               ],
                             ),
                           ),
@@ -1062,7 +1164,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           if (logoUrl != null && logoUrl.isNotEmpty)
-                            GestureDetector(
+                            FocusableTap(
                               onTap: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
                               child: CachedNetworkImage(
                                 imageUrl: logoUrl,
@@ -1101,7 +1203,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               ),
                             )
                           else
-                            GestureDetector(
+                            FocusableTap(
                               onTap: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
                               child: AnimatedOpacity(
                                 opacity: 1,
@@ -1202,15 +1304,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
             ],
+          ),
           );
         },
+        ),
         ),
       ),
     );
   }
 
   Widget _buildHeroBannerShimmer() {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final isDesktop = AppPlatform.useDesktopLayout;
     final height = isDesktop ? MediaQuery.sizeOf(context).height * 0.8 : 600.0;
     // Low-cost skeleton block instead of a spinning indicator.
     return Skeletonizer(

@@ -6,6 +6,7 @@ import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/widgets/skeleton.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
 
 class SearchResultCard extends ConsumerWidget {
   final SearchResult media;
@@ -21,7 +22,8 @@ class SearchResultCard extends ConsumerWidget {
     final rating = media.voteAverage;
     final language = (media.originalLanguage ?? '').toUpperCase();
 
-    return InkWell(
+    return FocusableInkWell(
+      style: DpadFocusStyle.lift,
       borderRadius: BorderRadius.circular(10),
       onTap: () {
         context.push('/media/${media.id}?type=${media.mediaType}');
