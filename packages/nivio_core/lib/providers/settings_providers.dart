@@ -951,6 +951,30 @@ class PauseOnLostVisibilityNotifier extends StateNotifier<bool> {
   }
 }
 
+// Ambient Mode Provider (Android phones only; defaults to on). Fills the
+// letterbox/pillarbox bars in the player with a soft glow from the video.
+final ambientModeProvider =
+    StateNotifierProvider<AmbientModeNotifier, bool>((ref) {
+  return AmbientModeNotifier();
+});
+
+class AmbientModeNotifier extends StateNotifier<bool> {
+  AmbientModeNotifier() : super(true) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('ambient_mode_enabled') ?? true;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('ambient_mode_enabled', value);
+  }
+}
+
 // Seek Duration Provider (defaults to 10 seconds)
 final seekDurationProvider =
     StateNotifierProvider<SeekDurationNotifier, int>((ref) {

@@ -15,6 +15,7 @@ import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
+import 'package:nivio/widgets/video_ambient_background.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/screens/player/widgets/custom_player_controls.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -179,6 +180,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   static const int _maxRetries = 3;
   final FocusNode _focusNode = FocusNode();
   final GlobalKey<CustomPlayerControlsState> _controlsKey = GlobalKey<CustomPlayerControlsState>();
+  final GlobalKey _ambientCaptureKey = GlobalKey(debugLabel: 'ambientCapture');
   bool _showNextEpisodeButton = false;
   bool _nextEpisodeDismissed = false;
   Timer? _nextEpisodeTimer;
@@ -6325,20 +6327,44 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // creates its own Video widget with the same controller. This prevents a
     // native DirectX crash on Windows caused by two Video widgets sharing the
     // same VideoController simultaneously.
-    final Widget videoWidget = _videoDetached
+    final screenSize = MediaQuery.sizeOf(context);
+    final isEffectivePip = isPipMode ||
+        (Platform.isAndroid && screenSize.width < 500 && screenSize.height < 400);
+
+    // Ambient mode (Android phones only): a glow fills the letterbox bars.
+    // Desktop, TV, PiP, "Fit Screen" and the mini-player handoff keep the
+    // plain black bars.
+    final ambient = Platform.isAndroid &&
+        !AppPlatform.isTv &&
+        !isEffectivePip &&
+        !_videoDetached &&
+        _selectedDisplayFitKey == 'bestFit' &&
+        ref.watch(ambientModeProvider);
+
+    Widget videoWidget = _videoDetached
         ? Container(color: Colors.black)
         : Video(
             controller: _videoController,
             controls: NoVideoControls,
             fit: _displayFitOptions[_selectedDisplayFitKey] ?? BoxFit.cover,
+            // Transparent so the ambient glow shows through the bars.
+            fill: ambient ? Colors.transparent : Colors.black,
             subtitleViewConfiguration: const SubtitleViewConfiguration(
               visible: false,
             ),
           );
-
-    final screenSize = MediaQuery.sizeOf(context);
-    final isEffectivePip = isPipMode ||
-        (Platform.isAndroid && screenSize.width < 500 && screenSize.height < 400);
+    if (ambient) {
+      videoWidget = Stack(
+        fit: StackFit.expand,
+        children: [
+          VideoAmbientBackground(
+            player: _player,
+            captureKey: _ambientCaptureKey,
+          ),
+          RepaintBoundary(key: _ambientCaptureKey, child: videoWidget),
+        ],
+      );
+    }
 
     if (isEffectivePip) {
       final baseFontSize = ref.watch(subtitleFontSizeProvider) * 1.1;

@@ -303,6 +303,9 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                               ref.read(pauseOnLostVisibilityProvider.notifier).setEnabled(value);
                             },
                           ),
+                        if (_showAmbientSetting &&
+                            _matches(_ambientSearchTerms))
+                          _buildAmbientModeTile(),
                         if (_matches('seek duration skip jump forward rewind step'))
                           _buildActionTile(
                             icon: Icons.fast_forward_rounded,
@@ -1137,6 +1140,9 @@ Widget _buildMobileLayout(BuildContext context, User user) {
         ),
       );
     }
+    if (_showAmbientSetting && _matches(_ambientSearchTerms)) {
+      results.add(_buildAmbientModeTile());
+    }
     if (_matches('seek duration skip jump forward rewind step')) {
       results.add(
         _buildActionTile(
@@ -1598,6 +1604,24 @@ Widget _buildMobileLayout(BuildContext context, User user) {
       subtitle: subtitle,
       onTap: onTap,
       titleColor: titleColor,
+    );
+  }
+
+  // Ambient mode only exists on Android phones (see VideoAmbientBackground).
+  bool get _showAmbientSetting => Platform.isAndroid && !AppPlatform.isTv;
+
+  static const _ambientSearchTerms =
+      'ambient mode glow black bars letterbox background';
+
+  Widget _buildAmbientModeTile() {
+    return _buildSwitchTile(
+      icon: Icons.blur_on_rounded,
+      title: 'Ambient Mode',
+      subtitle: 'Fill the black bars around the video with a soft glow',
+      value: ref.watch(ambientModeProvider),
+      onChanged: (value) {
+        ref.read(ambientModeProvider.notifier).setEnabled(value);
+      },
     );
   }
 
@@ -4134,6 +4158,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                 ref.read(pauseOnLostVisibilityProvider.notifier).setEnabled(val);
               },
             ),
+            if (_showAmbientSetting) _buildAmbientModeTile(),
             _buildActionTile(
               icon: Icons.fast_forward_rounded,
               title: 'Seek Duration',
