@@ -975,6 +975,35 @@ class AmbientModeNotifier extends StateNotifier<bool> {
   }
 }
 
+// Video Decoder Provider: 'auto', 'hwplus' (direct hardware), 'hw' (hardware
+// with copy-back) or 'sw' (CPU). Mapped to mpv's hwdec per platform by the player.
+const videoDecoderModes = ['auto', 'hwplus', 'hw', 'sw'];
+
+final videoDecoderProvider =
+    StateNotifierProvider<VideoDecoderNotifier, String>((ref) {
+  return VideoDecoderNotifier();
+});
+
+class VideoDecoderNotifier extends StateNotifier<String> {
+  VideoDecoderNotifier() : super(_validMode(_startupPrefs?.getString('video_decoder_mode'))) {
+    _loadPreference();
+  }
+
+  static String _validMode(String? mode) =>
+      videoDecoderModes.contains(mode) ? mode! : 'auto';
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = _validMode(prefs.getString('video_decoder_mode'));
+  }
+
+  Future<void> setMode(String mode) async {
+    state = _validMode(mode);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('video_decoder_mode', state);
+  }
+}
+
 // Seek Duration Provider (defaults to 10 seconds)
 final seekDurationProvider =
     StateNotifierProvider<SeekDurationNotifier, int>((ref) {

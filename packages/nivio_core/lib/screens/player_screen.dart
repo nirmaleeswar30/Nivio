@@ -199,6 +199,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _bingeMode = false;
   String? _bingeGroup; // remembered release group, shown on the up-next card
   List<SkipTime> _skipTimes = [];
+
+  /// Intro/outro taken from the file's own chapters (e.g. "Opening" and
+  /// "Ending" in many anime releases). Timed to this exact file, so when
+  /// present they replace the online AniSkip/TheIntroDB times entirely.
+  List<SkipTime> _chapterSkipTimes = [];
+
+  List<SkipTime> get _activeSkipTimes =>
+      _chapterSkipTimes.isNotEmpty ? _chapterSkipTimes : _skipTimes;
   bool _isFetchingSkipTimes = false;
   AnimeFillerData _fillerData = const AnimeFillerData();
   bool _isFetchingFillerData = false;
@@ -759,6 +767,74 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       default:
         return KeyEventResult.ignored;
     }
+  }
+
+  /// Reads the playing file's chapters from mpv and keeps the ones titled
+  /// like an opening or ending as skip segments.
+  Future<void> _loadChapterSkipTimes(Duration duration) async {
+    final platform = _player.platform;
+    if (platform is! NativePlayer) return;
+    try {
+      final count =
+          int.tryParse(await platform.getProperty('chapter-list/count')) ?? 0;
+      final found = <SkipTime>[];
+      if (count >= 2) {
+        final starts = <double>[];
+        final titles = <String>[];
+        for (var i = 0; i < count; i++) {
+          starts.add(double.tryParse(
+                await platform.getProperty('chapter-list/$i/time'),
+              ) ??
+              -1);
+          String title;
+          try {
+            title = await platform.getProperty('chapter-list/$i/title');
+          } catch (_) {
+            title = '';
+          }
+          titles.add(title);
+        }
+        final total = duration.inMilliseconds / 1000.0;
+        for (var i = 0; i < count; i++) {
+          final type = _chapterSkipType(titles[i]);
+          if (type == null || found.any((s) => s.type == type)) continue;
+          final start = starts[i];
+          final end = i + 1 < count ? starts[i + 1] : total;
+          // Ignore implausible chapters (missing times, or too short/long to
+          // be an opening or ending).
+          if (start < 0 || end - start < 5 || end - start > 300) continue;
+          found.add(SkipTime(
+            startTime: Duration(milliseconds: (start * 1000).round()),
+            endTime: Duration(milliseconds: (end * 1000).round()),
+            type: type,
+          ));
+        }
+      }
+      if (!mounted) return;
+      appDebugLog(
+        '⏭️ [SKIP] ${found.isEmpty ? 'no intro/outro chapters in file' : 'using file chapters (ignoring online skip times): $found'}',
+      );
+      setState(() => _chapterSkipTimes = found);
+    } catch (e) {
+      appDebugLog('⏭️ [SKIP] could not read chapters: $e');
+    }
+  }
+
+  /// 'op' / 'ed' for a chapter title like "Opening", "OP", "Intro",
+  /// "Ending", "ED", "Outro", "Credits"; null for anything else.
+  static String? _chapterSkipType(String title) {
+    final t = title.toLowerCase().trim();
+    if (t.isEmpty) return null;
+    if (RegExp(r'^(op|opening|intro|introduction)(\s*\d+)?\b').hasMatch(t) ||
+        RegExp(r'\b(opening|intro) (song|theme|credits)\b').hasMatch(t)) {
+      return 'op';
+    }
+    if (RegExp(r'^(ed|ending|outro|credits|end credits|closing credits)(\s*\d+)?\b')
+            .hasMatch(t) ||
+        RegExp(r'\b(ending|outro) (song|theme|credits)\b').hasMatch(t)) {
+      return 'ed';
+    }
+    return null;
   }
 
   Future<void> _fetchSkipTimes(SearchResult media, int episode) async {
@@ -1419,11 +1495,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // Configure mpv properties before opening
       if (_player.platform is NativePlayer) {
         final np = _player.platform as NativePlayer;
-        if (Platform.isAndroid) {
-          await np.setProperty('hwdec', 'mediacodec');
-        } else {
-          await np.setProperty('hwdec', 'auto-safe');
-        }
+        await np.setProperty('hwdec', _hwdecFor(ref.read(videoDecoderProvider)));
         if (Platform.isLinux) {
           // Never shell out to the host's yt-dlp from mpv's ytdl hook; streams
           // are resolved by Nivio itself.
@@ -1903,6 +1975,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _checkNextEpisode();
         unawaited(_broadcastWatchPartyPlayback(force: false));
         _updateDiscordActivity();
+      }),
+    );
+
+    // A file's chapters are known once its duration is: look for intro /
+    // outro chapters (see _chapterSkipTimes).
+    _subscriptions.add(
+      _player.stream.duration.listen((duration) {
+        if (!mounted || duration <= Duration.zero) return;
+        if (_isZombieCallback('duration stream')) return;
+        unawaited(_loadChapterSkipTimes(duration));
       }),
     );
 
@@ -2687,7 +2769,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_isLoading) return;
 
     // --- Skip Intro/Outro tracking ---
-    final opSkip = _skipTimes.where((s) => s.type == 'op' || s.type == 'mixed-op').firstOrNull;
+    final opSkip = _activeSkipTimes.where((s) => s.type == 'op' || s.type == 'mixed-op').firstOrNull;
     final isInIntro = opSkip != null && position >= opSkip.startTime && position < opSkip.endTime;
     if (isInIntro != _isInIntroSegment) {
       setState(() { _isInIntroSegment = isInIntro; });
@@ -2696,7 +2778,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
     }
 
-    final edSkip = _skipTimes.where((s) => s.type == 'ed' || s.type == 'mixed-ed').firstOrNull;
+    final edSkip = _activeSkipTimes.where((s) => s.type == 'ed' || s.type == 'mixed-ed').firstOrNull;
     final isInOutro = edSkip != null && position >= edSkip.startTime && position < edSkip.endTime;
     if (isInOutro != _isInOutroSegment) {
       setState(() { _isInOutroSegment = isInOutro; });
@@ -2719,7 +2801,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _skipIntro() {
-    final opSkip = _skipTimes.where((s) => s.type == 'op' || s.type == 'mixed-op').firstOrNull;
+    final opSkip = _activeSkipTimes.where((s) => s.type == 'op' || s.type == 'mixed-op').firstOrNull;
     if (opSkip == null) return;
 
     if (_useNativePlayer) {
@@ -2731,7 +2813,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _skipOutro() {
-    final edSkip = _skipTimes.where((s) => s.type == 'ed' || s.type == 'mixed-ed').firstOrNull;
+    final edSkip = _activeSkipTimes.where((s) => s.type == 'ed' || s.type == 'mixed-ed').firstOrNull;
     if (edSkip == null) return;
 
     if (_useNativePlayer) {
@@ -3093,6 +3175,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _nativePosition = Duration.zero;
       _nativeDuration = Duration.zero;
       _skipTimes = [];
+      _chapterSkipTimes = [];
       _isInIntroSegment = false;
       _isInOutroSegment = false;
       _isFetchingSkipTimes = false;
@@ -3509,6 +3592,61 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (value == _selectedDisplayFitKey) return;
     _selectedDisplayFitKey = value;
     _applyDisplaySettings();
+  }
+
+  static const _decoderModeLabels = {'auto': 'Auto', 'hwplus': 'HW+', 'hw': 'HW', 'sw': 'SW'};
+
+  // mpv hwdec value for a decoder mode. Lists are tried in order, and when no
+  // hardware decoder can start mpv falls back to CPU decoding on its own.
+  String _hwdecFor(String mode) {
+    switch (mode) {
+      case 'sw':
+        return 'no';
+      case 'hwplus':
+        if (Platform.isAndroid) return 'mediacodec';
+        if (Platform.isWindows) return 'd3d11va';
+        if (Platform.isMacOS) return 'videotoolbox';
+        return 'vaapi,nvdec';
+      case 'hw':
+        if (Platform.isAndroid) return 'mediacodec-copy';
+        if (Platform.isWindows) return 'd3d11va-copy';
+        if (Platform.isMacOS) return 'videotoolbox-copy';
+        return 'vaapi-copy,nvdec-copy';
+      default:
+        return Platform.isAndroid ? 'mediacodec,mediacodec-copy,no' : 'auto-safe';
+    }
+  }
+
+  // Short label for mpv's hwdec-current (the decoder actually in use).
+  static String _decoderLabel(String hwdecCurrent) {
+    final value = hwdecCurrent.trim();
+    if (value.isEmpty || value == 'no') return 'SW';
+    return value.endsWith('-copy') ? 'HW' : 'HW+';
+  }
+
+  String? _hwdecCurrent;
+
+  Future<void> _refreshHwdecCurrent(VoidCallback? onUpdated) async {
+    if (_player.platform is! NativePlayer) return;
+    try {
+      _hwdecCurrent = await (_player.platform as NativePlayer).getProperty('hwdec-current');
+      if (mounted) onUpdated?.call();
+    } catch (_) {}
+  }
+
+  Future<void> _switchDecoder(String mode, VoidCallback onUpdated) async {
+    await ref.read(videoDecoderProvider.notifier).setMode(mode);
+    if (_player.platform is NativePlayer) {
+      // mpv restarts the decoder in place; playback carries on.
+      await (_player.platform as NativePlayer).setProperty('hwdec', _hwdecFor(mode));
+    }
+    _hwdecCurrent = null;
+    onUpdated();
+    // The new decoder starts asynchronously, so read back what mpv settled on.
+    for (final delay in const [Duration(milliseconds: 600), Duration(milliseconds: 1500)]) {
+      await Future.delayed(delay);
+      await _refreshHwdecCurrent(onUpdated);
+    }
   }
 
   Future<void> _switchQuality(String quality) async {
@@ -4554,6 +4692,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     String? tempSubtitleTrackId;
     String? tempAudioTrackId;
     String? tempVideoTrackId;
+    // Which settings page is open; null shows the tile grid.
+    String? settingsPage;
+    // For async updates (decoder read-back) that may land after the sheet closes.
+    var sheetOpen = true;
+    StateSetter? sheetSetState;
+    void refreshSheet() {
+      if (sheetOpen) sheetSetState?.call(() {});
+    }
+    _refreshHwdecCurrent(refreshSheet);
 
     showGeneralDialog(
       context: context,
@@ -4579,6 +4726,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       left: false,
                       child: StatefulBuilder(
                         builder: (context, setDialogState) {
+                          sheetSetState = setDialogState;
                           final videoTracks = _player.state.tracks.video;
                           final currentVideoTrack = _player.state.track.video;
                           final audioTracks = _player.state.tracks.audio;
@@ -4614,447 +4762,643 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             if (streamSources.any((s) => s.isDub)) 'Dub',
                           ] : <String>[];
 
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.all(24.0),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.settings, color: Colors.white, size: 28),
-                                    const SizedBox(width: 16),
-                                    const Text('Settings', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                                    const Spacer(),
-                                    IconButton(
-                                      icon: const Icon(Icons.close, color: Colors.white),
-                                      onPressed: () => Navigator.of(context).pop(),
-                                    ),
+                          final accent = Theme.of(context).primaryColor;
+                          void openPage(String? page) => setDialogState(() => settingsPage = page);
+
+                          // ── Page contents (same options and behaviour as before) ──
+
+                          List<Widget> displayItems() => _displayFitOrder.map((fitKey) {
+                                final label = _displayFitLabels[fitKey] ?? fitKey;
+                                final isSelected = fitKey == _selectedDisplayFitKey;
+                                return ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                  title: Text(label, style: TextStyle(color: isSelected ? accent : Colors.white)),
+                                  trailing: isSelected ? Icon(Icons.check, color: accent) : null,
+                                  onTap: () {
+                                    _switchDisplayMode(fitKey);
+                                    setDialogState(() {});
+                                  },
+                                );
+                              }).toList();
+
+                          List<Widget> qualityItems() => [
+                                // 1. Native HLS/manifest resolution tracks of the currently loaded stream
+                                if (videoTracks.where((t) => t.id != 'auto' && t.id != 'no').isNotEmpty) ...[
+                                  ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                    title: Text('Auto', style: TextStyle(color: activeVideoId == 'auto' ? accent : Colors.white)),
+                                    trailing: activeVideoId == 'auto' ? Icon(Icons.check, color: accent) : null,
+                                    onTap: () async {
+                                      tempVideoTrackId = 'auto';
+                                      _player.setVideoTrack(VideoTrack.auto());
+                                      await _updateLocalHistoryPreference(resolution: 'Auto');
+                                      setDialogState(() {});
+                                    },
+                                  ),
+                                  ...videoTracks.where((track) => track.id != 'auto' && track.id != 'no').map((track) {
+                                    final label = track.title ?? ((track.h != null && track.h! > 0) ? '${track.h}p' : 'Track ${track.id}');
+                                    final isCurrent = activeVideoId == track.id;
+                                    return ListTile(
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                      title: Text(label, style: TextStyle(color: isCurrent ? accent : Colors.white)),
+                                      trailing: isCurrent ? Icon(Icons.check, color: accent) : null,
+                                      onTap: () async {
+                                        tempVideoTrackId = track.id;
+                                        _player.setVideoTrack(track);
+                                        await _updateLocalHistoryPreference(resolution: label);
+                                        setDialogState(() {});
+                                      },
+                                    );
+                                  }),
+                                ],
+                                // Divider between native resolution and different server options
+                                if (useScraperQualities && videoTracks.where((t) => t.id != 'auto' && t.id != 'no').isNotEmpty)
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 8.0),
+                                    child: Divider(color: Colors.white24, height: 1),
+                                  ),
+                                // 2. Scraper-level sources/servers (if any)
+                                if (useScraperQualities) ...[
+                                  ...scraperQualities.map((source) {
+                                    final isCurrent = source.url == _streamResult?.url;
+                                    String label = source.quality;
+                                    if (label.startsWith('auto (') && label.endsWith(')')) {
+                                      final serverName = label.substring(6, label.length - 1);
+                                      label = 'Server: $serverName';
+                                    }
+                                    return ListTile(
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                      title: Text(label, style: TextStyle(color: isCurrent ? accent : Colors.white)),
+                                      trailing: isCurrent ? Icon(Icons.check, color: accent) : null,
+                                      onTap: () {
+                                        _switchQuality(source.quality);
+                                        setDialogState(() {});
+                                      },
+                                    );
+                                  }),
+                                ],
+                                if (!useScraperQualities && videoTracks.where((t) => t.id != 'auto' && t.id != 'no').isEmpty)
+                                  const ListTile(
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 24.0),
+                                    title: Text('No other qualities for this stream', style: TextStyle(color: Colors.white54)),
+                                  ),
+                              ];
+
+                          List<Widget> audioItems() => [
+                                if (_hasAudioSelection()) ...[
+                                  if ((_streamResult?.availableAudios ?? []).isNotEmpty) ...[
+                                    ...(_streamResult!.availableAudios).map((audio) {
+                                      final isCurrent = audio.toLowerCase() == (_streamResult!.selectedAudio).toLowerCase();
+                                      return ListTile(
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                        title: Text(audio, style: TextStyle(color: isCurrent ? accent : Colors.white)),
+                                        trailing: isCurrent ? Icon(Icons.check, color: accent) : null,
+                                        onTap: () {
+                                          Navigator.pop(context);
+                                          _switchAudioMode(audio);
+                                        },
+                                      );
+                                    }),
+                                  ] else ...[
+                                    ...['sub', 'dub'].map((mode) {
+                                      final isCurrent = mode == ref.read(languagePreferencesProvider).animePreferredAudio.toLowerCase();
+                                      return ListTile(
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                        title: Text(mode == 'dub' ? 'DUB' : 'SUB', style: TextStyle(color: isCurrent ? accent : Colors.white)),
+                                        trailing: isCurrent ? Icon(Icons.check, color: accent) : null,
+                                        onTap: () {
+                                          Navigator.pop(context);
+                                          _switchAudioMode(mode);
+                                        },
+                                      );
+                                    }),
                                   ],
+                                ] else if (useScraperQualities) ...[
+                                  ...scraperAudios.map((audioLabel) {
+                                    final isDubTarget = audioLabel == 'Dub';
+                                    final isCurrent = scraperCurrentSource?.isDub == isDubTarget;
+                                    return ListTile(
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                      title: Text(audioLabel, style: TextStyle(color: isCurrent ? accent : Colors.white)),
+                                      trailing: isCurrent ? Icon(Icons.check, color: accent) : null,
+                                      onTap: () {
+                                        if (!isCurrent) {
+                                          final targetSources = streamSources.where((s) => s.isDub == isDubTarget).toList();
+                                          if (targetSources.isNotEmpty) {
+                                            final bestMatch = targetSources.firstWhere(
+                                              (s) => s.quality == scraperCurrentSource?.quality,
+                                              orElse: () => targetSources.first,
+                                            );
+                                            _switchQuality(bestMatch.quality);
+                                            setDialogState(() {});
+                                          }
+                                        }
+                                      },
+                                    );
+                                  }),
+                                ] else if (audioTracks.isEmpty) ...[
+                                  ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                    title: Text(_localAudioLang, style: TextStyle(color: accent)),
+                                    trailing: Icon(Icons.check, color: accent),
+                                  ),
+                                ] else ...[
+                                  ...audioTracks.where((track) => track.id != 'auto' && track.id != 'no').toList().asMap().entries.map((entry) {
+                                    final track = entry.value;
+                                    final isCurrent = activeAudioId == track.id;
+                                    final label = _trackLabel(track.title, track.language, entry.key, 'Audio');
+                                    return ListTile(
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                      title: Text(label, style: TextStyle(color: isCurrent ? accent : Colors.white)),
+                                      trailing: isCurrent ? Icon(Icons.check, color: accent) : null,
+                                      onTap: () async {
+                                        tempAudioTrackId = track.id;
+                                        _player.setAudioTrack(track);
+                                        await _updateLocalHistoryPreference(audioTrack: label);
+                                        setDialogState(() {});
+                                      },
+                                    );
+                                  }),
+                                ],
+                              ];
+
+                          // Subtitle tracks, de-duplicated, plus not-yet-loaded external ones.
+                          final rawSelectable = subtitleTracks.where((sub) => sub.id != 'auto' && sub.id != 'no').toList();
+                          final displayedNativeTracks = <SubtitleTrack>[];
+                          final seenTrackKeys = <String>{};
+                          for (final sub in rawSelectable) {
+                            final key = '${sub.title?.trim()}|${sub.language?.trim()}';
+                            if (seenTrackKeys.add(key)) {
+                              displayedNativeTracks.add(sub);
+                            }
+                          }
+                          final externalSubs = <StreamSubtitleTrack>[];
+                          if (_streamResult != null && _streamResult!.subtitles.isNotEmpty) {
+                            for (final s in _streamResult!.subtitles) {
+                              final sLang = s.lang.trim().toLowerCase();
+                              final alreadyLoaded = displayedNativeTracks.any((t) {
+                                final tTitle = (t.title ?? '').trim().toLowerCase();
+                                final tLang = (t.language ?? '').trim().toLowerCase();
+                                return (sLang.isNotEmpty && (tTitle == sLang || tLang == sLang)) ||
+                                       (s.url.isNotEmpty && (tTitle.contains(s.url) || s.url.endsWith(tTitle)));
+                              });
+                              if (!alreadyLoaded) {
+                                externalSubs.add(s);
+                              }
+                            }
+                          }
+                          bool isCurrentExternal(StreamSubtitleTrack sub) =>
+                              activeSubtitleId == sub.url ||
+                              (tempSubtitleTrackId == null && (currentSubtitleTrack.title?.toLowerCase() == sub.lang.toLowerCase() ||
+                              currentSubtitleTrack.id.contains(sub.url)));
+                          bool isCurrentNative(SubtitleTrack sub) =>
+                              activeSubtitleId == sub.id ||
+                              (tempSubtitleTrackId == null && currentSubtitleTrack.id == sub.id) ||
+                              (rawSelectable.any((raw) => raw.id == activeSubtitleId && raw.title == sub.title && raw.language == sub.language));
+
+                          List<Widget> subtitleTrackItems() => [
+                                ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                  title: Text('Off', style: TextStyle(color: activeSubtitleId == 'no' ? accent : Colors.white)),
+                                  trailing: activeSubtitleId == 'no' ? Icon(Icons.check, color: accent) : null,
+                                  onTap: () async {
+                                    tempSubtitleTrackId = 'no';
+                                    _player.setSubtitleTrack(SubtitleTrack.no());
+                                    await _updateLocalHistoryPreference(subtitleTrack: 'Off');
+                                    setDialogState(() {});
+                                  },
+                                ),
+                                ...externalSubs.map((sub) {
+                                  final isCurrent = isCurrentExternal(sub);
+                                  return ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                    title: Text(sub.lang.isNotEmpty ? sub.lang : 'Default Subtitle', style: TextStyle(color: isCurrent ? accent : Colors.white)),
+                                    trailing: isCurrent ? Icon(Icons.check, color: accent) : null,
+                                    onTap: () async {
+                                      tempSubtitleTrackId = sub.url;
+                                      _player.setSubtitleTrack(SubtitleTrack.uri(sub.url, title: sub.lang.isNotEmpty ? sub.lang : 'Default Subtitle'));
+                                      await _updateLocalHistoryPreference(subtitleTrack: sub.lang);
+                                      setDialogState(() {});
+                                    },
+                                  );
+                                }),
+                                ...displayedNativeTracks.asMap().entries.map((entry) {
+                                  final sub = entry.value;
+                                  final isCurrent = isCurrentNative(sub);
+                                  final label = _trackLabel(sub.title, sub.language, entry.key, 'Subtitle');
+                                  return ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                    title: Text(label, style: TextStyle(color: isCurrent ? accent : Colors.white)),
+                                    trailing: isCurrent ? Icon(Icons.check, color: accent) : null,
+                                    onTap: () async {
+                                      tempSubtitleTrackId = sub.id;
+                                      _player.setSubtitleTrack(sub);
+                                      await _updateLocalHistoryPreference(subtitleTrack: label);
+                                      setDialogState(() {});
+                                    },
+                                  );
+                                }),
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 8.0),
+                                  child: Divider(color: Colors.white24, height: 1),
+                                ),
+                                ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                  leading: const Icon(Icons.folder_open, color: Colors.white70, size: 20),
+                                  title: const Text('Load from Local File (.srt, .vtt)', style: TextStyle(color: Colors.white70)),
+                                  onTap: () => _loadSubtitleFromFile(setDialogState),
+                                ),
+                                ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                  leading: const Icon(Icons.link, color: Colors.white70, size: 20),
+                                  title: const Text('Load from URL (Internet)', style: TextStyle(color: Colors.white70)),
+                                  onTap: () => _loadSubtitleFromUrl(setDialogState),
+                                ),
+                              ];
+
+                          Widget sectionLabel(String text) => Padding(
+                                padding: const EdgeInsets.fromLTRB(24, 16, 24, 4),
+                                child: Text(text, style: const TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                              );
+
+                          List<Widget> subtitleStyleItems() => [
+                                sectionLabel('SIZE'),
+                                ...subtitleFontSizeOptions.entries.map((entry) {
+                                  final currentSize = ref.watch(subtitleFontSizeProvider);
+                                  final isCurrent = currentSize == entry.value;
+                                  return ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                    title: Text(entry.key, style: TextStyle(color: isCurrent ? accent : Colors.white)),
+                                    trailing: isCurrent ? Icon(Icons.check, color: accent) : null,
+                                    onTap: () async {
+                                      await ref.read(subtitleFontSizeProvider.notifier).setSize(entry.value);
+                                      if (_player.platform is NativePlayer) {
+                                        final baseScale = entry.value / 18.0;
+                                        final scale = _isPipMode ? (baseScale * 0.45) : baseScale;
+                                        await (_player.platform as NativePlayer).setProperty('sub-scale', '$scale');
+                                      }
+                                      setDialogState(() {});
+                                    },
+                                  );
+                                }),
+                                sectionLabel('BACKGROUND'),
+                                ...['Transparent', 'Semi-Transparent', 'Solid'].map((bg) {
+                                  final currentBg = ref.watch(subtitleBackgroundProvider);
+                                  final isCurrent = currentBg == bg;
+                                  return ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                    title: Text(bg, style: TextStyle(color: isCurrent ? accent : Colors.white)),
+                                    trailing: isCurrent ? Icon(Icons.check, color: accent) : null,
+                                    onTap: () async {
+                                      await ref.read(subtitleBackgroundProvider.notifier).setBackground(bg);
+                                      setDialogState(() {});
+                                    },
+                                  );
+                                }),
+                                sectionLabel('TEXT STYLE'),
+                                ...['None', 'Subtle Shadow', 'Outline'].map((styleOpt) {
+                                  final currentStyle = ref.watch(subtitleOutlineProvider);
+                                  final isCurrent = currentStyle == styleOpt;
+                                  return ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                    title: Text(styleOpt, style: TextStyle(color: isCurrent ? accent : Colors.white)),
+                                    trailing: isCurrent ? Icon(Icons.check, color: accent) : null,
+                                    onTap: () async {
+                                      await ref.read(subtitleOutlineProvider.notifier).setOutline(styleOpt);
+                                      setDialogState(() {});
+                                    },
+                                  );
+                                }),
+                              ];
+
+                          List<Widget> syncItems() => [
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.remove, color: Colors.white),
+                                        onPressed: () {
+                                          _updateSubtitleDelay(-250);
+                                          setDialogState(() {});
+                                        },
+                                      ),
+                                      Text('${_subtitleDelayMs > 0 ? "+" : ""}$_subtitleDelayMs ms', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                                      IconButton(
+                                        icon: const Icon(Icons.add, color: Colors.white),
+                                        onPressed: () {
+                                          _updateSubtitleDelay(250);
+                                          setDialogState(() {});
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+                                  child: Text('Negative values show subtitles earlier, positive values show them later.',
+                                    style: TextStyle(color: Colors.white38, fontSize: 12), textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ];
+
+                          // ── Current values shown on the tiles ──
+
+                          String qualityValue() {
+                            if (activeVideoId != 'auto' && activeVideoId != 'no') {
+                              final track = videoTracks.where((t) => t.id == activeVideoId).firstOrNull;
+                              if (track != null) {
+                                return track.title ?? ((track.h != null && track.h! > 0) ? '${track.h}p' : 'Track ${track.id}');
+                              }
+                            }
+                            if (useScraperQualities && scraperCurrentSource != null) {
+                              final q = scraperCurrentSource.quality;
+                              return q.startsWith('auto (') ? 'Auto' : q;
+                            }
+                            return 'Auto';
+                          }
+
+                          String audioValue() {
+                            if (_hasAudioSelection()) {
+                              if ((_streamResult?.availableAudios ?? []).isNotEmpty) return _streamResult!.selectedAudio;
+                              return ref.read(languagePreferencesProvider).animePreferredAudio.toLowerCase() == 'dub' ? 'DUB' : 'SUB';
+                            }
+                            if (useScraperQualities) return scraperCurrentSource?.isDub == true ? 'Dub' : 'Sub';
+                            if (audioTracks.isEmpty) return _localAudioLang;
+                            final tracks = audioTracks.where((t) => t.id != 'auto' && t.id != 'no').toList();
+                            final i = tracks.indexWhere((t) => t.id == activeAudioId);
+                            return i < 0 ? 'Default' : _trackLabel(tracks[i].title, tracks[i].language, i, 'Audio');
+                          }
+
+                          String subtitleValue() {
+                            if (activeSubtitleId == 'no') return 'Off';
+                            for (final sub in externalSubs) {
+                              if (isCurrentExternal(sub)) return sub.lang.isNotEmpty ? sub.lang : 'Default Subtitle';
+                            }
+                            for (final entry in displayedNativeTracks.asMap().entries) {
+                              if (isCurrentNative(entry.value)) {
+                                return _trackLabel(entry.value.title, entry.value.language, entry.key, 'Subtitle');
+                              }
+                            }
+                            return 'On';
+                          }
+
+                          String subtitleStyleValue() {
+                            final size = ref.watch(subtitleFontSizeProvider);
+                            final sizeLabel = subtitleFontSizeOptions.entries.where((e) => e.value == size).firstOrNull?.key ?? 'Custom';
+                            return '$sizeLabel · ${ref.watch(subtitleBackgroundProvider)}';
+                          }
+
+                          final debanding = ref.watch(videoDebandingProvider);
+                          final ambient = ref.watch(ambientModeProvider);
+                          final decoderMode = ref.watch(videoDecoderProvider);
+
+                          String decoderValue() {
+                            final chosen = _decoderModeLabels[decoderMode] ?? 'Auto';
+                            final inUse = _hwdecCurrent;
+                            if (inUse == null) return chosen;
+                            final actual = _decoderLabel(inUse);
+                            if (decoderMode == 'auto') return 'Auto · $actual';
+                            return actual == chosen ? chosen : '$chosen · using $actual';
+                          }
+
+                          List<Widget> decoderItems() {
+                            const descriptions = {
+                              'auto': 'Best hardware decoder available, CPU if none works',
+                              'hwplus': 'Direct hardware decoding. Fastest, best battery',
+                              'hw': 'Hardware decoding with copy-back. Avoids glitches on some devices',
+                              'sw': 'CPU decoding. Plays anything, uses more battery',
+                            };
+                            final inUse = _hwdecCurrent;
+                            return [
+                              if (inUse != null)
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                                  child: Text(
+                                    'In use: ${_decoderLabel(inUse)}${inUse.isEmpty || inUse == 'no' ? '' : ' ($inUse)'}',
+                                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                                  ),
+                                ),
+                              ...videoDecoderModes.map((mode) {
+                                final isCurrent = mode == decoderMode;
+                                return ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                  title: Text(_decoderModeLabels[mode]!, style: TextStyle(color: isCurrent ? accent : Colors.white)),
+                                  subtitle: Text(descriptions[mode]!, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                                  trailing: isCurrent ? Icon(Icons.check, color: accent) : null,
+                                  onTap: () {
+                                    if (!isCurrent) _switchDecoder(mode, refreshSheet);
+                                  },
+                                );
+                              }),
+                              const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+                                child: Text(
+                                  'Some formats (like 10-bit H.264 anime releases) have no hardware support and always use the CPU.',
+                                  style: TextStyle(color: Colors.white38, fontSize: 12),
                                 ),
                               ),
-                              Expanded(
-                                child: ListView(
-                                  padding: EdgeInsets.zero,
-                                  children: [
-                                    Theme(
-                                      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                                      child: ExpansionTile(
-                                        iconColor: Theme.of(context).primaryColor,
-                                        collapsedIconColor: Colors.white54,
-                                        leading: const Icon(Icons.aspect_ratio),
-                                        title: const Text('DISPLAY FIT', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                                        children: _displayFitOrder.map((fitKey) {
-                                          final label = _displayFitLabels[fitKey] ?? fitKey;
-                                          final isSelected = fitKey == _selectedDisplayFitKey;
-                                          return ListTile(
-                                            contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                            title: Text(label, style: TextStyle(color: isSelected ? Theme.of(context).primaryColor : Colors.white)),
-                                            trailing: isSelected ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                            onTap: () {
-                                              _switchDisplayMode(fitKey);
-                                              setDialogState(() {});
-                                            },
-                                          );
-                                        }).toList(),
-                                      ),
-                                    ),
-                                    Theme(
-                                      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                                      child: ExpansionTile(
-                                        iconColor: Theme.of(context).primaryColor,
-                                        collapsedIconColor: Colors.white54,
-                                        leading: const Icon(Icons.high_quality),
-                                        title: const Text('QUALITY', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                                        children: [
-                                          // 1. Native HLS/manifest resolution tracks of the currently loaded stream
-                                          if (videoTracks.where((t) => t.id != 'auto' && t.id != 'no').isNotEmpty) ...[
-                                            ListTile(
-                                              contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                              title: Text('Auto', style: TextStyle(color: activeVideoId == 'auto' ? Theme.of(context).primaryColor : Colors.white)),
-                                              trailing: activeVideoId == 'auto' ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                              onTap: () async {
-                                                tempVideoTrackId = 'auto';
-                                                _player.setVideoTrack(VideoTrack.auto());
-                                                await _updateLocalHistoryPreference(resolution: 'Auto');
-                                                setDialogState(() {});
-                                              },
-                                            ),
-                                            ...videoTracks.where((track) => track.id != 'auto' && track.id != 'no').map((track) {
-                                              final label = track.title ?? ((track.h != null && track.h! > 0) ? '${track.h}p' : 'Track ${track.id}');
-                                              final isCurrent = activeVideoId == track.id;
-                                              return ListTile(
-                                                contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                title: Text(label, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                                trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                                onTap: () async {
-                                                  tempVideoTrackId = track.id;
-                                                  _player.setVideoTrack(track);
-                                                  await _updateLocalHistoryPreference(resolution: label);
-                                                  setDialogState(() {});
-                                                },
-                                              );
-                                            }),
-                                          ],
-                                          // Divider between native resolution and different server options
-                                          if (useScraperQualities && videoTracks.where((t) => t.id != 'auto' && t.id != 'no').isNotEmpty)
-                                            const Padding(
-                                              padding: EdgeInsets.symmetric(vertical: 8.0),
-                                              child: Divider(color: Colors.white24, height: 1),
-                                            ),
-                                          // 2. Scraper-level sources/servers (if any)
-                                          if (useScraperQualities) ...[
-                                            ...scraperQualities.map((source) {
-                                              final isCurrent = source.url == _streamResult?.url;
-                                              String label = source.quality;
-                                              if (label.startsWith('auto (') && label.endsWith(')')) {
-                                                final serverName = label.substring(6, label.length - 1);
-                                                label = 'Server: $serverName';
-                                              }
-                                              return ListTile(
-                                                contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                title: Text(label, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                                trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                                onTap: () {
-                                                  _switchQuality(source.quality);
-                                                  setDialogState(() {});
-                                                },
-                                              );
-                                            }),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                    Theme(
-                                      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                                      child: ExpansionTile(
-                                        iconColor: Theme.of(context).primaryColor,
-                                        collapsedIconColor: Colors.white54,
-                                        leading: const Icon(Icons.audiotrack),
-                                        title: const Text('AUDIO', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                                        children: [
-                                          if (_hasAudioSelection()) ...[
-                                            if ((_streamResult?.availableAudios ?? []).isNotEmpty) ...[
-                                              ...(_streamResult!.availableAudios).map((audio) {
-                                                final isCurrent = audio.toLowerCase() == (_streamResult!.selectedAudio).toLowerCase();
-                                                return ListTile(
-                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                  title: Text(audio, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                                  trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                                  onTap: () {
-                                                    Navigator.pop(context);
-                                                    _switchAudioMode(audio);
-                                                  },
-                                                );
-                                              }),
-                                            ] else ...[
-                                              ...['sub', 'dub'].map((mode) {
-                                                final isCurrent = mode == ref.read(languagePreferencesProvider).animePreferredAudio.toLowerCase();
-                                                return ListTile(
-                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                  title: Text(mode == 'dub' ? 'DUB' : 'SUB', style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                                  trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                                  onTap: () {
-                                                    Navigator.pop(context);
-                                                    _switchAudioMode(mode);
-                                                  },
-                                                );
-                                              }),
-                                            ],
-                                          ] else if (useScraperQualities) ...[
-                                            ...scraperAudios.map((audioLabel) {
-                                              final isDubTarget = audioLabel == 'Dub';
-                                              final isCurrent = scraperCurrentSource?.isDub == isDubTarget;
-                                              return ListTile(
-                                                contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                title: Text(audioLabel, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                                trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                                onTap: () {
-                                                  if (!isCurrent) {
-                                                    final targetSources = streamSources.where((s) => s.isDub == isDubTarget).toList();
-                                                    if (targetSources.isNotEmpty) {
-                                                      final bestMatch = targetSources.firstWhere(
-                                                        (s) => s.quality == scraperCurrentSource?.quality,
-                                                        orElse: () => targetSources.first,
-                                                      );
-                                                      _switchQuality(bestMatch.quality);
-                                                      setDialogState(() {});
-                                                    }
-                                                  }
-                                                },
-                                              );
-                                            }),
-                                          ] else if (audioTracks.isEmpty) ...[
-                                            ListTile(
-                                              contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                              title: Text(_localAudioLang, style: TextStyle(color: Theme.of(context).primaryColor)),
-                                              trailing: Icon(Icons.check, color: Theme.of(context).primaryColor),
-                                            ),
-                                          ] else ...[
-                                            ...audioTracks.where((track) => track.id != 'auto' && track.id != 'no').toList().asMap().entries.map((entry) {
-                                              final track = entry.value;
-                                              final isCurrent = activeAudioId == track.id;
-                                              final label = _trackLabel(track.title, track.language, entry.key, 'Audio');
-                                              return ListTile(
-                                                contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                title: Text(label, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                                trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                                onTap: () async {
-                                                  tempAudioTrackId = track.id;
-                                                  _player.setAudioTrack(track);
-                                                  await _updateLocalHistoryPreference(audioTrack: label);
-                                                  setDialogState(() {});
-                                                },
-                                              );
-                                            }),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                    Theme(
-                                      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                                      child: ExpansionTile(
-                                        iconColor: Theme.of(context).primaryColor,
-                                        collapsedIconColor: Colors.white54,
-                                        leading: const Icon(Icons.subtitles),
-                                        title: const Text('SUBTITLE SETTINGS', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                                        children: [
-                                          // 1. TRACKS
-                                          Theme(
-                                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                                            child: ExpansionTile(
-                                              title: const Text('TRACKS', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
-                                              children: [
-                                                ListTile(
-                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                  title: Text('Off', style: TextStyle(color: activeSubtitleId == 'no' ? Theme.of(context).primaryColor : Colors.white)),
-                                                  trailing: activeSubtitleId == 'no' ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                                  onTap: () async {
-                                                    tempSubtitleTrackId = 'no';
-                                                    _player.setSubtitleTrack(SubtitleTrack.no());
-                                                    await _updateLocalHistoryPreference(subtitleTrack: 'Off');
-                                                    setDialogState(() {});
-                                                  },
-                                                ),
-                                                ListTile(
-                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                  leading: const Icon(Icons.folder_open, color: Colors.white70, size: 20),
-                                                  title: const Text('Load from Local File (.srt, .vtt)', style: TextStyle(color: Colors.white70)),
-                                                  onTap: () => _loadSubtitleFromFile(setDialogState),
-                                                ),
-                                                ListTile(
-                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                  leading: const Icon(Icons.link, color: Colors.white70, size: 20),
-                                                  title: const Text('Load from URL (Internet)', style: TextStyle(color: Colors.white70)),
-                                                  onTap: () => _loadSubtitleFromUrl(setDialogState),
-                                                ),
-                                                ...() {
-                                                  final rawSelectable = subtitleTracks.where((sub) => sub.id != 'auto' && sub.id != 'no').toList();
-                                                  final displayedNativeTracks = <SubtitleTrack>[];
-                                                  final seenTrackKeys = <String>{};
-                                                  for (final sub in rawSelectable) {
-                                                    final key = '${sub.title?.trim()}|${sub.language?.trim()}';
-                                                    if (seenTrackKeys.add(key)) {
-                                                      displayedNativeTracks.add(sub);
-                                                    }
-                                                  }
+                            ];
+                          }
 
-                                                  final externalSubs = <StreamSubtitleTrack>[];
-                                                  if (_streamResult != null && _streamResult!.subtitles.isNotEmpty) {
-                                                    for (final s in _streamResult!.subtitles) {
-                                                      final sLang = s.lang.trim().toLowerCase();
-                                                      final alreadyLoaded = displayedNativeTracks.any((t) {
-                                                        final tTitle = (t.title ?? '').trim().toLowerCase();
-                                                        final tLang = (t.language ?? '').trim().toLowerCase();
-                                                        return (sLang.isNotEmpty && (tTitle == sLang || tLang == sLang)) ||
-                                                               (s.url.isNotEmpty && (tTitle.contains(s.url) || s.url.endsWith(tTitle)));
-                                                      });
-                                                      if (!alreadyLoaded) {
-                                                        externalSubs.add(s);
-                                                      }
-                                                    }
-                                                  }
+                          // ── Tile grid ──
 
-                                                  return [
-                                                    ...externalSubs.map((sub) {
-                                                      final isCurrent = activeSubtitleId == sub.url || 
-                                                          (tempSubtitleTrackId == null && (currentSubtitleTrack.title?.toLowerCase() == sub.lang.toLowerCase() || 
-                                                          currentSubtitleTrack.id.contains(sub.url)));
-                                                      return ListTile(
-                                                        contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                        title: Text(sub.lang.isNotEmpty ? sub.lang : 'Default Subtitle', style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                                        trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                                        onTap: () async {
-                                                          tempSubtitleTrackId = sub.url;
-                                                          _player.setSubtitleTrack(SubtitleTrack.uri(sub.url, title: sub.lang.isNotEmpty ? sub.lang : 'Default Subtitle'));
-                                                          await _updateLocalHistoryPreference(subtitleTrack: sub.lang);
-                                                          setDialogState(() {});
-                                                        },
-                                                      );
-                                                    }),
-                                                    ...displayedNativeTracks.asMap().entries.map((entry) {
-                                                      final sub = entry.value;
-                                                      final isCurrent = activeSubtitleId == sub.id ||
-                                                          (tempSubtitleTrackId == null && currentSubtitleTrack.id == sub.id) ||
-                                                          (rawSelectable.any((raw) => raw.id == activeSubtitleId && raw.title == sub.title && raw.language == sub.language));
-                                                      final label = _trackLabel(sub.title, sub.language, entry.key, 'Subtitle');
-                                                      return ListTile(
-                                                        contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                        title: Text(label, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                                        trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                                        onTap: () async {
-                                                          tempSubtitleTrackId = sub.id;
-                                                          _player.setSubtitleTrack(sub);
-                                                          await _updateLocalHistoryPreference(subtitleTrack: label);
-                                                          setDialogState(() {});
-                                                        },
-                                                      );
-                                                    }),
-                                                  ];
-                                                }(),
-                                              ],
-                                            ),
-                                          ),
-                                          // 2. SIZE
-                                          Theme(
-                                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                                            child: ExpansionTile(
-                                              title: const Text('SIZE', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
-                                              children: [
-                                                ...subtitleFontSizeOptions.entries.map((entry) {
-                                                  final currentSize = ref.watch(subtitleFontSizeProvider);
-                                                  final isCurrent = currentSize == entry.value;
-                                                  return ListTile(
-                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                    title: Text(entry.key, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                                    trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                                    onTap: () async {
-                                                      await ref.read(subtitleFontSizeProvider.notifier).setSize(entry.value);
-                                                      if (_player.platform is NativePlayer) {
-                                                        final baseScale = entry.value / 18.0;
-                                                        final scale = _isPipMode ? (baseScale * 0.45) : baseScale;
-                                                        await (_player.platform as NativePlayer).setProperty('sub-scale', '$scale');
-                                                      }
-                                                      setDialogState(() {});
-                                                    },
-                                                  );
-                                                }),
-                                              ],
-                                            ),
-                                          ),
-                                          // 3. BACKGROUND
-                                          Theme(
-                                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                                            child: ExpansionTile(
-                                              title: const Text('BACKGROUND', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
-                                              children: [
-                                                ...['Transparent', 'Semi-Transparent', 'Solid'].map((bg) {
-                                                  final currentBg = ref.watch(subtitleBackgroundProvider);
-                                                  final isCurrent = currentBg == bg;
-                                                  return ListTile(
-                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                    title: Text(bg, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                                    trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                                    onTap: () async {
-                                                      await ref.read(subtitleBackgroundProvider.notifier).setBackground(bg);
-                                                      setDialogState(() {});
-                                                    },
-                                                  );
-                                                }),
-                                              ],
-                                            ),
-                                          ),
-                                          // 4. TEXT STYLE
-                                          Theme(
-                                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                                            child: ExpansionTile(
-                                              title: const Text('TEXT STYLE', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
-                                              children: [
-                                                ...['None', 'Subtle Shadow', 'Outline'].map((styleOpt) {
-                                                  final currentStyle = ref.watch(subtitleOutlineProvider);
-                                                  final isCurrent = currentStyle == styleOpt;
-                                                  return ListTile(
-                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                                    title: Text(styleOpt, style: TextStyle(color: isCurrent ? Theme.of(context).primaryColor : Colors.white)),
-                                                    trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
-                                                    onTap: () async {
-                                                      await ref.read(subtitleOutlineProvider.notifier).setOutline(styleOpt);
-                                                      setDialogState(() {});
-                                                    },
-                                                  );
-                                                }),
-                                              ],
-                                            ),
-                                          ),
-                                          // 5. SYNC
-                                          Theme(
-                                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                                            child: ExpansionTile(
-                                              title: const Text('SYNC', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
-                                              children: [
-                                                Padding(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
-                                                  child: Row(
-                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                    children: [
-                                                      IconButton(
-                                                        icon: const Icon(Icons.remove, color: Colors.white),
-                                                        onPressed: () {
-                                                          _updateSubtitleDelay(-250);
-                                                          setDialogState(() {});
-                                                        },
-                                                      ),
-                                                      Text('${_subtitleDelayMs > 0 ? "+" : ""}$_subtitleDelayMs ms', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                                                      IconButton(
-                                                        icon: const Icon(Icons.add, color: Colors.white),
-                                                        onPressed: () {
-                                                          _updateSubtitleDelay(250);
-                                                          setDialogState(() {});
-                                                        },
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                                const Padding(
-                                                  padding: EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
-                                                  child: Text('Negative values show subtitles earlier, positive values show them later.',
-                                                    style: TextStyle(color: Colors.white38, fontSize: 12), textAlign: TextAlign.center,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Theme(
-                                      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                                      child: ExpansionTile(
-                                        iconColor: Theme.of(context).primaryColor,
-                                        collapsedIconColor: Colors.white54,
-                                        leading: const Icon(Icons.blur_linear_rounded),
-                                        title: const Text('DEBANDING', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                          Widget tile({
+                            required IconData icon,
+                            required String title,
+                            required String value,
+                            required VoidCallback onTap,
+                            bool? toggled,
+                          }) {
+                            return Material(
+                              color: toggled == true ? accent.withValues(alpha: 0.22) : Colors.white.withValues(alpha: 0.07),
+                              borderRadius: BorderRadius.circular(16),
+                              child: FocusableInkWell(
+                                onTap: onTap,
+                                borderRadius: BorderRadius.circular(16),
+                                child: Container(
+                                  padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(color: toggled == true ? accent.withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.08)),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      // Fixed height so the bigger toggle icon can't
+                                      // make toggle tiles taller than the others.
+                                      SizedBox(
+                                        height: 24,
+                                        child: Row(
                                         children: [
-                                          SwitchListTile(
-                                            contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                            title: const Text('Enable Debanding', style: TextStyle(color: Colors.white)),
-                                            subtitle: const Text('Reduces color banding artifacts (uses more battery)', style: TextStyle(color: Colors.white30, fontSize: 10)),
-                                            value: ref.watch(videoDebandingProvider),
-                                            onChanged: (value) async {
-                                              await ref.read(videoDebandingProvider.notifier).setEnabled(value);
-                                              appDebugLog('🔧 Video debanding filter status dynamically changed to: $value');
-                                              if (_player.platform is NativePlayer) {
-                                                await (_player.platform as NativePlayer).setProperty('deband', value ? 'yes' : 'no');
-                                              }
-                                              setDialogState(() {});
-                                            },
-                                          ),
+                                          Icon(icon, color: toggled == true ? accent : Colors.white, size: 24),
+                                          const Spacer(),
+                                          if (toggled != null)
+                                            Icon(toggled ? Icons.toggle_on : Icons.toggle_off, color: toggled ? accent : Colors.white38, size: 26)
+                                          else
+                                            const Icon(Icons.chevron_right, color: Colors.white38, size: 20),
                                         ],
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                      const Spacer(),
+                                      Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
+                                      const SizedBox(height: 2),
+                                      Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ],
+                            );
+                          }
+
+                          Widget grid() => GridView.count(
+                                key: const ValueKey('grid'),
+                                crossAxisCount: 2,
+                                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                                mainAxisSpacing: 10,
+                                crossAxisSpacing: 10,
+                                childAspectRatio: 1.65,
+                                children: [
+                                  tile(icon: Icons.high_quality, title: 'Quality', value: qualityValue(), onTap: () => openPage('quality')),
+                                  tile(icon: Icons.audiotrack, title: 'Audio', value: audioValue(), onTap: () => openPage('audio')),
+                                  tile(icon: Icons.subtitles, title: 'Subtitles', value: subtitleValue(), onTap: () => openPage('subtitles')),
+                                  tile(
+                                    icon: Icons.aspect_ratio,
+                                    title: 'Display',
+                                    value: _displayFitLabels[_selectedDisplayFitKey] ?? _selectedDisplayFitKey,
+                                    onTap: () => openPage('display'),
+                                  ),
+                                  tile(icon: Icons.text_fields_rounded, title: 'Subtitle style', value: subtitleStyleValue(), onTap: () => openPage('subtitleStyle')),
+                                  tile(
+                                    icon: Icons.sync,
+                                    title: 'Subtitle sync',
+                                    value: _subtitleDelayMs == 0 ? 'In sync' : '${_subtitleDelayMs > 0 ? "+" : ""}$_subtitleDelayMs ms',
+                                    onTap: () => openPage('sync'),
+                                  ),
+                                  tile(icon: Icons.memory, title: 'Decoder', value: decoderValue(), onTap: () => openPage('decoder')),
+                                  tile(
+                                    icon: Icons.blur_linear_rounded,
+                                    title: 'Debanding',
+                                    value: debanding ? 'On · uses more battery' : 'Off',
+                                    toggled: debanding,
+                                    onTap: () async {
+                                      final value = !debanding;
+                                      await ref.read(videoDebandingProvider.notifier).setEnabled(value);
+                                      appDebugLog('🔧 Video debanding filter status dynamically changed to: $value');
+                                      if (_player.platform is NativePlayer) {
+                                        await (_player.platform as NativePlayer).setProperty('deband', value ? 'yes' : 'no');
+                                      }
+                                      setDialogState(() {});
+                                    },
+                                  ),
+                                  // Ambient glow exists on Android phones only.
+                                  if (Platform.isAndroid && !AppPlatform.isTv)
+                                    tile(
+                                      icon: Icons.light_mode_outlined,
+                                      title: 'Ambient',
+                                      value: !ambient
+                                          ? 'Off'
+                                          : (_selectedDisplayFitKey == 'bestFit' ? 'On' : 'On · Best Fit only'),
+                                      toggled: ambient,
+                                      onTap: () async {
+                                        await ref.read(ambientModeProvider.notifier).setEnabled(!ambient);
+                                        setDialogState(() {});
+                                      },
+                                    ),
+                                ],
+                              );
+
+                          const pageTitles = {
+                            'quality': 'Quality',
+                            'audio': 'Audio',
+                            'subtitles': 'Subtitles',
+                            'subtitleStyle': 'Subtitle style',
+                            'sync': 'Subtitle sync',
+                            'display': 'Display',
+                            'decoder': 'Decoder',
+                          };
+
+                          Widget page(String name) {
+                            final items = switch (name) {
+                              'quality' => qualityItems(),
+                              'audio' => audioItems(),
+                              'subtitles' => subtitleTrackItems(),
+                              'subtitleStyle' => subtitleStyleItems(),
+                              'sync' => syncItems(),
+                              'decoder' => decoderItems(),
+                              _ => displayItems(),
+                            };
+                            return ListView(
+                              key: ValueKey(name),
+                              padding: const EdgeInsets.only(bottom: 16),
+                              children: items,
+                            );
+                          }
+
+                          final current = settingsPage;
+                          return PopScope(
+                            // Back closes an open page first, then the panel.
+                            canPop: current == null,
+                            onPopInvokedWithResult: (didPop, _) {
+                              if (!didPop) openPage(null);
+                            },
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 16, 12, 12),
+                                  child: Row(
+                                    children: [
+                                      if (current == null)
+                                        const Padding(
+                                          padding: EdgeInsets.all(8),
+                                          child: Icon(Icons.settings, color: Colors.white, size: 26),
+                                        )
+                                      else
+                                        IconButton(
+                                          icon: const Icon(Icons.arrow_back, color: Colors.white),
+                                          onPressed: () => openPage(null),
+                                        ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        current == null ? 'Settings' : (pageTitles[current] ?? 'Settings'),
+                                        style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                                      ),
+                                      const Spacer(),
+                                      IconButton(
+                                        icon: const Icon(Icons.close, color: Colors.white),
+                                        onPressed: () => Navigator.of(context).pop(),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  child: AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 240),
+                                    switchInCurve: Curves.easeOutCubic,
+                                    switchOutCurve: Curves.easeInCubic,
+                                    transitionBuilder: (child, animation) {
+                                      // Pages slide in from the right; the grid from the left.
+                                      final fromRight = child.key != const ValueKey('grid');
+                                      return FadeTransition(
+                                        opacity: animation,
+                                        child: SlideTransition(
+                                          position: Tween<Offset>(
+                                            begin: Offset(fromRight ? 0.25 : -0.25, 0),
+                                            end: Offset.zero,
+                                          ).animate(animation),
+                                          child: child,
+                                        ),
+                                      );
+                                    },
+                                    child: current == null ? grid() : page(current),
+                                  ),
+                                ),
+                              ],
+                            ),
                           );
                         }
                       ),
@@ -5075,6 +5419,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         );
       },
     ).whenComplete(() {
+      sheetOpen = false;
       if (mounted && !_isPipMode) {
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
       }
@@ -6495,6 +6840,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             subtitle: subtitle,
             providerName: _currentProvider,
             isLive: widget.isLive,
+            skipSegments: _activeSkipTimes,
             onBack: _handleBackNavigation,
             onServerChange: () {
               _showServerOverlayPanel();

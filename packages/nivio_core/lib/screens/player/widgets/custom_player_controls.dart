@@ -17,6 +17,7 @@ import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
+import 'package:nivio/services/skip_times_models.dart';
 
 class CustomPlayerControls extends ConsumerStatefulWidget {
   final Player controller;
@@ -32,6 +33,9 @@ class CustomPlayerControls extends ConsumerStatefulWidget {
   final VoidCallback? onEpisodes;
   final bool isLive;
 
+  /// Intro/outro segments to mark on the seek bar.
+  final List<SkipTime> skipSegments;
+
   const CustomPlayerControls({
     super.key,
     required this.controller,
@@ -45,6 +49,7 @@ class CustomPlayerControls extends ConsumerStatefulWidget {
     this.onServerChange,
     this.onEpisodes,
     this.isLive = false,
+    this.skipSegments = const [],
   });
 
   @override
@@ -490,6 +495,19 @@ class CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
 
 
 
+  /// Skip segments as start/end fractions of [duration], for the seek bar.
+  List<(double, double)> _segmentFractions(Duration duration) {
+    final total = duration.inMilliseconds;
+    if (total <= 0) return const [];
+    return [
+      for (final s in widget.skipSegments)
+        (
+          (s.startTime.inMilliseconds / total).clamp(0.0, 1.0),
+          (s.endTime.inMilliseconds / total).clamp(0.0, 1.0),
+        ),
+    ].where((f) => f.$2 > f.$1).toList();
+  }
+
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, "0");
     String twoDigitMinutes = twoDigits(duration.inMinutes.remainder(60));
@@ -765,17 +783,43 @@ class CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                                       // keep the slider out of D-pad focus.
                                       child: ExcludeFocus(
                                       excluding: AppPlatform.isTv,
-                                      child: SliderTheme(
+                                      // While seeking, the bar grows, the thumb
+                                      // pops and a time bubble follows it.
+                                      child: TweenAnimationBuilder<double>(
+                                        tween: Tween(end: _dragValue != null ? 1.0 : 0.0),
+                                        duration: const Duration(milliseconds: 220),
+                                        curve: Curves.easeOutBack,
+                                        builder: (context, seek, child) => SliderTheme(
                                         data: SliderThemeData(
-                                          trackHeight: 4.0,
-                                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8.0),
-                                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 16.0),
+                                          trackHeight: 4.0 + 5.0 * seek,
+                                          thumbShape: RoundSliderThumbShape(
+                                            enabledThumbRadius: 8.0 + 4.0 * seek,
+                                            elevation: 1.0 + 3.0 * seek,
+                                          ),
+                                          overlayShape: RoundSliderOverlayShape(overlayRadius: 16.0 + 6.0 * seek),
+                                          overlayColor: Theme.of(context).primaryColor.withValues(alpha: 0.22),
                                           activeTrackColor: Theme.of(context).primaryColor,
                                           inactiveTrackColor: Colors.white30,
                                           secondaryActiveTrackColor: Colors.white70,
                                           thumbColor: Theme.of(context).primaryColor,
+                                          showValueIndicator: ShowValueIndicator.onDrag,
+                                          valueIndicatorShape: const RectangularSliderValueIndicatorShape(),
+                                          valueIndicatorColor: const Color(0xE6151515),
+                                          valueIndicatorTextStyle: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                          trackShape: _SkipSegmentTrackShape(
+                                            segments: _segmentFractions(duration),
+                                          ),
+                                        ),
+                                        child: child!,
                                         ),
                                         child: Slider(
+                                          label: _formatDuration(Duration(
+                                            milliseconds: (_dragValue ?? position.inMilliseconds.toDouble()).toInt(),
+                                          )),
                                           value: (_dragValue ?? position.inMilliseconds.toDouble()).clamp(0, duration.inMilliseconds.toDouble()),
                                           secondaryTrackValue: maxBuffered.clamp(0, duration.inMilliseconds.toDouble()),
                                           max: duration.inMilliseconds > 0 ? duration.inMilliseconds.toDouble() : 1.0,
@@ -873,3 +917,63 @@ class CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
   }
 }
 
+
+/// Seek-bar track that also marks skippable segments (intro / outro), like
+/// chapter marks on YouTube's bar: a brighter band over the track, drawn on
+/// top of the played/buffered colours so it stays visible everywhere.
+class _SkipSegmentTrackShape extends RoundedRectSliderTrackShape {
+  const _SkipSegmentTrackShape({required this.segments});
+
+  /// Start/end of each segment as fractions (0..1) of the duration.
+  final List<(double, double)> segments;
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset offset, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Animation<double> enableAnimation,
+    required TextDirection textDirection,
+    required Offset thumbCenter,
+    Offset? secondaryOffset,
+    bool isDiscrete = false,
+    bool isEnabled = false,
+    double additionalActiveTrackHeight = 2,
+  }) {
+    super.paint(
+      context,
+      offset,
+      parentBox: parentBox,
+      sliderTheme: sliderTheme,
+      enableAnimation: enableAnimation,
+      textDirection: textDirection,
+      thumbCenter: thumbCenter,
+      secondaryOffset: secondaryOffset,
+      isDiscrete: isDiscrete,
+      isEnabled: isEnabled,
+      additionalActiveTrackHeight: additionalActiveTrackHeight,
+    );
+    if (segments.isEmpty) return;
+    final track = getPreferredRect(
+      parentBox: parentBox,
+      offset: offset,
+      sliderTheme: sliderTheme,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+    );
+    final paint = Paint()..color = const Color(0xE6FFC94D);
+    for (final (start, end) in segments) {
+      final rect = Rect.fromLTRB(
+        track.left + track.width * start,
+        track.top,
+        track.left + track.width * end,
+        track.bottom,
+      );
+      context.canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, Radius.circular(track.height / 2)),
+        paint,
+      );
+    }
+  }
+}
