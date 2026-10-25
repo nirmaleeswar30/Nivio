@@ -25,6 +25,26 @@ class AppPlatform {
   /// Running on Android TV / Google TV (or TV mode forced for testing).
   static bool get isTv => _isTv;
 
+  static Future<HdrDisplayInfo>? _hdrDisplay;
+
+  /// Whether the screen can show HDR (Android only; asked once, then cached).
+  /// A TV box reports what the connected TV supports.
+  static Future<HdrDisplayInfo> hdrDisplay() {
+    return _hdrDisplay ??= () async {
+      if (!Platform.isAndroid) return const HdrDisplayInfo();
+      try {
+        final info = await _channel.invokeMapMethod<String, dynamic>('hdrInfo');
+        return HdrDisplayInfo(
+          isHdr: info?['isHdr'] == true,
+          types: ((info?['types'] as List?) ?? const []).map((e) => '$e').toList(),
+          maxLuminance: (info?['maxLuminance'] as num?)?.toDouble(),
+        );
+      } catch (_) {
+        return const HdrDisplayInfo();
+      }
+    }();
+  }
+
   /// Windows, Linux or macOS.
   static bool get isDesktopOS =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
@@ -49,4 +69,18 @@ class AppPlatform {
           FocusHighlightStrategy.alwaysTraditional;
     }
   }
+}
+
+/// What the screen can show for HDR video.
+class HdrDisplayInfo {
+  /// The screen (or connected TV) supports HDR.
+  final bool isHdr;
+
+  /// e.g. hdr10, hlg, dolbyVision, hdr10plus.
+  final List<String> types;
+
+  /// Desired peak brightness in nits, if the system reports it.
+  final double? maxLuminance;
+
+  const HdrDisplayInfo({this.isHdr = false, this.types = const [], this.maxLuminance});
 }

@@ -39,6 +39,12 @@ flutter:
     - assets/nivio-preload.mpeg
     - shorebird.yaml
     - assets/fonts/satoshi/
+    # hdr-toys tone-mapping shaders (MIT), for the "HDR Toys" tone mapping
+    - assets/hdr-toys/
+    - assets/hdr-toys/utils/
+    - assets/hdr-toys/transfer-function/
+    - assets/hdr-toys/tone-mapping/
+    - assets/hdr-toys/gamut-mapping/
     - .env
 
   fonts:

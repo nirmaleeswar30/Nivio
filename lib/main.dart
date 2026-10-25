@@ -17,6 +17,7 @@ import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/core/mpv_android_setup.dart';
 import 'package:nivio/core/tv_focus.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/firebase_options.dart';
@@ -183,6 +184,7 @@ void main([List<String> args = const []]) async {
     }
     initDebugLogFile();
     MediaKit.ensureInitialized(libmpv: _bundledLibmpvPath());
+    setUpMpvForAndroid();
 
     if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
       await windowManager.ensureInitialized();

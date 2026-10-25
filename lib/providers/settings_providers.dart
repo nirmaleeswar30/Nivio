@@ -975,6 +975,61 @@ class AmbientModeNotifier extends StateNotifier<bool> {
   }
 }
 
+// HDR Output Provider (Android): HDR video on an HDR screen plays as true HDR
+// (SurfaceView + mpv's Vulkan renderer). Off, or on SDR screens, HDR video is
+// tone-mapped to SDR instead (see toneMappingProvider). Defaults to on.
+final hdrOutputProvider = StateNotifierProvider<HdrOutputNotifier, bool>((ref) {
+  return HdrOutputNotifier();
+});
+
+class HdrOutputNotifier extends StateNotifier<bool> {
+  HdrOutputNotifier() : super(_startupPrefs?.getBool('hdr_output_enabled') ?? true) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('hdr_output_enabled') ?? true;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('hdr_output_enabled', value);
+  }
+}
+
+// Tone Mapping Provider: how HDR (and wide-gamut BT.2020) video is converted
+// to SDR when it isn't shown as true HDR.
+//  'standard' — mpv/libplacebo's own tone mapping with per-scene peak detection.
+//  'hdrToys'  — the hdr-toys shader pipelines (Astra tone mapping, Bottosson
+//               gamut mapping), picked from the video: PQ, HLG or BT.2020.
+//               Android only (needs mpv's gpu-next renderer).
+const toneMappingModes = ['standard', 'hdrToys'];
+
+final toneMappingProvider = StateNotifierProvider<ToneMappingNotifier, String>((ref) {
+  return ToneMappingNotifier();
+});
+
+class ToneMappingNotifier extends StateNotifier<String> {
+  ToneMappingNotifier() : super(_valid(_startupPrefs?.getString('tone_mapping_mode'))) {
+    _loadPreference();
+  }
+
+  static String _valid(String? mode) => toneMappingModes.contains(mode) ? mode! : 'standard';
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = _valid(prefs.getString('tone_mapping_mode'));
+  }
+
+  Future<void> setMode(String mode) async {
+    state = _valid(mode);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('tone_mapping_mode', state);
+  }
+}
+
 // Video Decoder Provider: 'auto', 'hwplus' (direct hardware), 'hw' (hardware
 // with copy-back) or 'sw' (CPU). Mapped to mpv's hwdec per platform by the player.
 const videoDecoderModes = ['auto', 'hwplus', 'hw', 'sw'];

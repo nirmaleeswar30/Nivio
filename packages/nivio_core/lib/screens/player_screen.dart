@@ -17,6 +17,9 @@ import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/widgets/video_ambient_background.dart';
 import 'package:nivio/widgets/seek_preview.dart';
+import 'package:nivio/core/mpv_android_setup.dart';
+import 'package:nivio/widgets/hdr_video_surface.dart';
+import 'package:nivio/services/hdr_tone_mapping.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/screens/player/widgets/custom_player_controls.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -529,6 +532,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _player,
         configuration: VideoControllerConfiguration(
           enableHardwareAcceleration: !Platform.isLinux,
+          // Android ships mpvlibAndroid's mpv (see android/app/build.gradle.kts),
+          // whose libplacebo renderer tone-maps HDR far better and runs the
+          // hdr-toys shaders (see HdrToneMapping).
+          vo: Platform.isAndroid ? 'gpu-next' : null,
         ),
       );
       appDebugLog(
@@ -1510,10 +1517,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (_player.platform is NativePlayer) {
         final np = _player.platform as NativePlayer;
         await np.setProperty('hwdec', _hwdecFor(ref.read(videoDecoderProvider)));
-        if (Platform.isLinux) {
-          // Never shell out to the host's yt-dlp from mpv's ytdl hook; streams
-          // are resolved by Nivio itself.
-          await np.setProperty('ytdl', 'no');
+        // Never shell out to yt-dlp from mpv's ytdl hook; streams are resolved
+        // by Nivio itself. (Android's mpv has the Lua hook too and would try
+        // to spawn it after every failed open.)
+        await np.setProperty('ytdl', 'no');
+        // Android's mpv checks HTTPS certificates and needs a CA bundle file.
+        final caBundle = mpvCaBundlePath;
+        if (caBundle != null) {
+          await np.setProperty('tls-ca-file', caBundle);
+          await np.setProperty('tls-verify', 'yes');
         }
         
         final debandEnabled = ref.read(videoDebandingProvider);
@@ -2007,6 +2019,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _checkNextEpisode();
         unawaited(_broadcastWatchPartyPlayback(force: false));
         _updateDiscordActivity();
+      }),
+    );
+
+    // HDR video (PQ / HLG transfer) on an HDR screen plays through the HDR
+    // surface instead of media_kit's SDR texture (see _useHdrSurface);
+    // otherwise it is tone-mapped to SDR (see _syncToneMapping).
+    if (Platform.isAndroid) {
+      unawaited(AppPlatform.hdrDisplay().then((info) {
+        if (mounted && info.isHdr != _hdrDisplay) setState(() => _hdrDisplay = info.isHdr);
+      }));
+    }
+    _subscriptions.add(
+      _player.stream.videoParams.listen((params) {
+        if (!mounted || _isZombieCallback('video params stream')) return;
+        final gamma = params.gamma;
+        if (gamma == null || gamma.isEmpty) return; // not decoded yet
+        if (gamma == _videoGamma && params.primaries == _videoPrimaries) return;
+        final hdr = gamma == 'pq' || gamma == 'hlg';
+        appDebugLog('🌈 Video colour: $gamma / ${params.primaries} (HDR=$hdr, peak=${params.sigPeak})');
+        setState(() {
+          _videoGamma = gamma;
+          _videoPrimaries = params.primaries;
+          if (hdr != _hdrVideo) _hdrSurfaceFailed = false;
+          _hdrVideo = hdr;
+        });
       }),
     );
 
@@ -3761,6 +3798,73 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (label != null) await _updateLocalHistoryPreference(resolution: label);
   }
 
+  // True HDR output (Android): the screen supports HDR, the current video is
+  // HDR, and the HDR surface hasn't failed for this video.
+  bool _hdrDisplay = false;
+  bool _hdrVideo = false;
+  bool _hdrSurfaceFailed = false;
+
+  String? _videoGamma;
+  String? _videoPrimaries;
+
+  /// HDR video on an HDR screen with HDR output on.
+  bool get _trueHdr => Platform.isAndroid && _hdrDisplay && _hdrVideo && ref.read(hdrOutputProvider);
+
+  /// Tone-mapping settings for the current video and mode (null while loading).
+  Map<String, String>? _toneMappingProps;
+  String? _toneMappingPropsKey;
+  // What the settings were last applied to the texture path for.
+  String? _toneMappingAppliedKey;
+
+  /// mpv renders on the Vulkan surface (HdrVideoSurface) instead of media_kit's
+  /// texture for true HDR, and for HDR Toys: like mpvRx, its shaders need
+  /// Vulkan (on the texture's OpenGL ES, Adreno's GLSL compiler rejects them
+  /// and the tone mapper's buffers exceed the limits).
+  bool get _useHdrSurface =>
+      Platform.isAndroid &&
+      !_hdrSurfaceFailed &&
+      !_videoDetached &&
+      (_trueHdr || (_toneMappingProps?['glsl-shaders'] ?? '').isNotEmpty);
+
+  /// Loads the tone-mapping settings for the current video and mode, and
+  /// applies them on the texture path (the HDR surface applies its own).
+  /// Called from build; only acts when one of its inputs changed.
+  void _syncToneMapping() {
+    final mode = ref.read(toneMappingProvider);
+    final propsKey = '$_videoGamma|$_videoPrimaries|$mode';
+    if (propsKey != _toneMappingPropsKey) {
+      _toneMappingPropsKey = propsKey;
+      _toneMappingProps = null;
+      HdrToneMapping.properties(mode: mode, gamma: _videoGamma, primaries: _videoPrimaries).then((props) {
+        if (mounted && propsKey == _toneMappingPropsKey) setState(() => _toneMappingProps = props);
+      });
+      return;
+    }
+    final props = _toneMappingProps;
+    if (props == null) return;
+    final hdrSurface = _useHdrSurface;
+    final key = '$propsKey|$hdrSurface';
+    if (key == _toneMappingAppliedKey) return;
+    _toneMappingAppliedKey = key;
+    if (hdrSurface || _player.platform is! NativePlayer) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Leaving the HDR surface restores media_kit's output first.
+      await Future.delayed(const Duration(milliseconds: 300));
+      if (!mounted || key != _toneMappingAppliedKey) return;
+      final mpv = _player.platform as NativePlayer;
+      for (final e in props.entries) {
+        try {
+          await mpv.setProperty(e.key, e.value);
+        } catch (err) {
+          appDebugLog('🌈 Tone mapping: ${e.key} not supported here ($err)');
+        }
+      }
+      if (HdrToneMapping.needsMapping(_videoGamma, _videoPrimaries)) {
+        appDebugLog('🌈 Tone mapping ($mode) for $_videoGamma / $_videoPrimaries');
+      }
+    });
+  }
+
   // Seek-bar thumbnail previews for the current stream, when its server
   // provides a WebVTT sprite map (some AnimeX, Miruro and Animetsu servers).
   SeekPreviewLoader? _seekPreview;
@@ -5413,6 +5517,95 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             ];
                           }
 
+                          final hdrOutput = ref.watch(hdrOutputProvider);
+                          final toneMode = ref.watch(toneMappingProvider);
+
+                          String videoColourLabel() => switch (_videoGamma) {
+                                'pq' => 'HDR10 (PQ)',
+                                'hlg' => 'HLG',
+                                null => 'Unknown',
+                                _ => _videoPrimaries == 'bt.2020' ? 'SDR · BT.2020' : 'SDR',
+                              };
+
+                          String hdrValue() {
+                            if (_useHdrSurface && _trueHdr) return 'True HDR';
+                            if (!HdrToneMapping.needsMapping(_videoGamma, _videoPrimaries)) return videoColourLabel();
+                            return toneMode == 'hdrToys' ? 'Tone mapped · HDR Toys' : 'Tone mapped';
+                          }
+
+                          List<Widget> hdrItems() {
+                            const toneLabels = {'standard': 'Standard', 'hdrToys': 'HDR Toys'};
+                            const toneDescriptions = {
+                              'standard': "mpv's tone mapping with per-scene brightness detection",
+                              'hdrToys': 'hdr-toys shaders: PQ, HLG and BT.2020 profiles picked from the video. Ambient mode is off while they run',
+                            };
+                            final trueHdrNow = _useHdrSurface && _trueHdr;
+                            final String status;
+                            if (trueHdrNow) {
+                              status = 'Playing in HDR on this screen.';
+                            } else if (!_hdrVideo) {
+                              status = 'This video is ${videoColourLabel()}${_videoPrimaries == 'bt.2020' ? ', its colours are mapped to the screen.' : ', nothing to convert.'}';
+                            } else if (!_hdrDisplay) {
+                              status = "This screen isn't HDR, so the video is tone mapped to SDR.";
+                            } else if (!hdrOutput) {
+                              status = 'HDR output is off, so the video is tone mapped to SDR.';
+                            } else {
+                              status = "HDR output couldn't start here, so the video is tone mapped to SDR.";
+                            }
+                            return [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                                child: Text('Video: ${videoColourLabel()}\n$status',
+                                    style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                              ),
+                              SwitchListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                activeThumbColor: accent,
+                                title: const Text('HDR output', style: TextStyle(color: Colors.white)),
+                                subtitle: Text(
+                                  _hdrDisplay ? 'Show HDR videos in HDR on this screen' : "This screen doesn't support HDR",
+                                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                                ),
+                                value: hdrOutput,
+                                onChanged: _hdrDisplay
+                                    ? (value) async {
+                                        await ref.read(hdrOutputProvider.notifier).setEnabled(value);
+                                        if (value) _hdrSurfaceFailed = false;
+                                        refreshSheet();
+                                      }
+                                    : null,
+                              ),
+                              const Padding(
+                                padding: EdgeInsets.fromLTRB(24, 12, 24, 4),
+                                child: Text('Tone mapping (HDR on SDR)', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
+                              ),
+                              // Unused during true HDR; still selectable for later.
+                              if (trueHdrNow)
+                                const Padding(
+                                  padding: EdgeInsets.fromLTRB(24, 0, 24, 4),
+                                  child: Text(
+                                    'Not used while playing in HDR. Applies when HDR output is off or on screens without HDR.',
+                                    style: TextStyle(color: Colors.white38, fontSize: 11),
+                                  ),
+                                ),
+                              ...toneMappingModes.map((mode) {
+                                final isCurrent = mode == toneMode;
+                                final tileWidget = ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                  title: Text(toneLabels[mode]!, style: TextStyle(color: isCurrent ? accent : Colors.white)),
+                                  subtitle: Text(toneDescriptions[mode]!, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                                  trailing: isCurrent ? Icon(Icons.check, color: accent) : null,
+                                  onTap: () async {
+                                    if (isCurrent) return;
+                                    await ref.read(toneMappingProvider.notifier).setMode(mode);
+                                    refreshSheet();
+                                  },
+                                );
+                                return trueHdrNow ? Opacity(opacity: 0.4, child: tileWidget) : tileWidget;
+                              }),
+                            ];
+                          }
+
                           // ── Tile grid ──
 
                           Widget tile({
@@ -5490,6 +5683,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                     onTap: () => openPage('sync'),
                                   ),
                                   tile(icon: Icons.memory, title: 'Decoder', value: decoderValue(), onTap: () => openPage('decoder')),
+                                  // True HDR and the tone-mapping choice are Android-only;
+                                  // desktop always uses Standard tone mapping.
+                                  if (Platform.isAndroid)
+                                    tile(icon: Icons.hdr_on_outlined, title: 'HDR', value: hdrValue(), onTap: () => openPage('hdr')),
                                   tile(
                                     icon: Icons.blur_linear_rounded,
                                     title: 'Debanding',
@@ -5530,6 +5727,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             'sync': 'Subtitle sync',
                             'display': 'Display',
                             'decoder': 'Decoder',
+                            'hdr': 'HDR',
                           };
 
                           Widget page(String name) {
@@ -5540,6 +5738,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                               'subtitleStyle' => subtitleStyleItems(),
                               'sync' => syncItems(),
                               'decoder' => decoderItems(),
+                              'hdr' => hdrItems(),
                               _ => displayItems(),
                             };
                             return ListView(
@@ -6890,16 +7089,36 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // Ambient mode (Android phones only): a glow fills the letterbox bars.
     // Desktop, TV, PiP, "Fit Screen" and the mini-player handoff keep the
     // plain black bars.
+    // True HDR and HDR Toys: an Android SurfaceView with mpv's Vulkan
+    // renderer instead of media_kit's texture (which Flutter shows as SDR).
+    // Ambient mode can't capture a SurfaceView, so it's off then.
+    ref.watch(hdrOutputProvider);
+    ref.watch(toneMappingProvider);
+    _syncToneMapping();
+    final hdrSurface = _useHdrSurface;
     final ambient = Platform.isAndroid &&
         !AppPlatform.isTv &&
         !isEffectivePip &&
         !_videoDetached &&
+        !hdrSurface &&
         _selectedDisplayFitKey == 'bestFit' &&
         ref.watch(ambientModeProvider);
 
     Widget videoWidget = _videoDetached
         ? Container(color: Colors.black)
-        : Video(
+        : hdrSurface
+            ? HdrVideoSurface(
+                player: _player,
+                settings: _trueHdr
+                    ? HdrOutputSettings.passthrough
+                    : HdrOutputSettings.toneMapped(_toneMappingProps ?? const {}),
+                fit: _displayFitOptions[_selectedDisplayFitKey] ?? BoxFit.contain,
+                onFailed: () {
+                  appDebugLog('🌈 HDR surface failed; back to normal video output');
+                  if (mounted) setState(() => _hdrSurfaceFailed = true);
+                },
+              )
+            : Video(
             controller: _videoController,
             controls: NoVideoControls,
             fit: _displayFitOptions[_selectedDisplayFitKey] ?? BoxFit.cover,

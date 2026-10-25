@@ -90,9 +90,16 @@ class MainActivity : PipCallbackHelperActivityWrapper() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "isTv" -> result.success(isTelevision())
+                    "hdrInfo" -> result.success(hdrInfo())
                     else -> result.notImplemented()
                 }
             }
+
+        // SurfaceView for HDR video output (see HdrSurfaceView.kt).
+        flutterEngine.platformViewsController.registry.registerViewFactory(
+            "nivio/hdr_surface",
+            HdrSurfaceViewFactory(flutterEngine.dartExecutor.binaryMessenger)
+        )
 
         // Foreground service that keeps a watch party connected in the
         // background. Driven by WatchPartyKeepAlive on the Dart side.
@@ -127,6 +134,33 @@ class MainActivity : PipCallbackHelperActivityWrapper() {
     override fun setRequestedOrientation(requestedOrientation: Int) {
         if (isTelevision()) return
         super.setRequestedOrientation(requestedOrientation)
+    }
+
+    /** Whether this screen can show HDR, which formats, and its peak brightness. */
+    private fun hdrInfo(): Map<String, Any> {
+        val info = HashMap<String, Any>()
+        val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display else windowManager.defaultDisplay
+        val caps = display?.hdrCapabilities
+        val types = caps?.supportedHdrTypes?.map {
+            when (it) {
+                android.view.Display.HdrCapabilities.HDR_TYPE_HDR10 -> "hdr10"
+                android.view.Display.HdrCapabilities.HDR_TYPE_HLG -> "hlg"
+                android.view.Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION -> "dolbyVision"
+                android.view.Display.HdrCapabilities.HDR_TYPE_HDR10_PLUS -> "hdr10plus"
+                else -> "other"
+            }
+        } ?: emptyList()
+        info["types"] = types
+        info["isHdr"] = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            resources.configuration.isScreenHdr
+        } else {
+            types.isNotEmpty()
+        }
+        caps?.let {
+            info["maxLuminance"] = it.desiredMaxLuminance.toDouble()
+            info["minLuminance"] = it.desiredMinLuminance.toDouble()
+        }
+        return info
     }
 
     private fun isTelevision(): Boolean {
