@@ -13,11 +13,42 @@ class MiruroScraperService {
   static const String _userAgent =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
+  // Headers for miruro.bz API calls: what Chrome on Android sends for a
+  // same-origin fetch. Cloudflare in front of the API now answers 403 to
+  // Cronet requests that lack the sec-ch-ua / sec-fetch-* set (tested on a
+  // phone: with these headers 200, without them 403, User-Agent aside).
+  // The UA and sec-ch-ua versions must agree. No Origin: Chrome doesn't send
+  // one on a same-origin GET.
+  static const Map<String, String> _apiHeaders = {
+    'User-Agent':
+        'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36',
+    'Accept': 'application/octet-stream, application/json, */*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': '$_baseUrl/',
+    'sec-ch-ua': '"Chromium";v="155", "Google Chrome";v="155", "Not_A Brand";v="99"',
+    'sec-ch-ua-mobile': '?1',
+    'sec-ch-ua-platform': '"Android"',
+    'sec-fetch-site': 'same-origin',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-dest': 'empty',
+  };
+
   final Map<String, String> _animeIdCache = {};
   final Map<String, Future<dynamic>> _playCache = {};
 
   MiruroScraperService() {
     client = NetworkClientFactory.createClient();
+  }
+
+  // Start of an error body, whitespace collapsed, for the log (an HTML error
+  // page's <title> says whether it is a Cloudflare block or the API refusing).
+  static String _bodySnippet(http.Response res) {
+    final text = utf8.decode(res.bodyBytes, allowMalformed: true);
+    final title = RegExp(r'<title>([^<]*)</title>', caseSensitive: false).firstMatch(text)?.group(1);
+    final snippet = text.replaceAll(RegExp(r'\s+'), ' ');
+    return title != null
+        ? 'title="$title"'
+        : snippet.substring(0, snippet.length < 200 ? snippet.length : 200);
   }
 
   dynamic _decodeCatalogResponse(List<int> bytes) {
@@ -84,14 +115,15 @@ class MiruroScraperService {
       if (q.isEmpty) continue;
       try {
         final uri = Uri.parse('$_baseUrl/api/v1/anime?q=${Uri.encodeComponent(q)}&limit=15&sort=-popularity');
-        final res = await client.get(uri, headers: {
-          'User-Agent': _userAgent,
-          'Referer': '$_baseUrl/',
-          'Origin': _baseUrl,
-          'Accept': 'application/octet-stream, application/json, */*',
-        });
+        final res = await client.get(uri, headers: _apiHeaders);
 
-        if (res.statusCode != 200) continue;
+        if (res.statusCode != 200) {
+          appDebugLog(
+            'Miruro: search "$q" returned ${res.statusCode} '
+            '(${res.headers['content-type']}): ${_bodySnippet(res)}',
+          );
+          continue;
+        }
 
         dynamic data;
         final ct = res.headers['content-type'] ?? '';
@@ -135,14 +167,13 @@ class MiruroScraperService {
 
     final future = () async {
       final uri = Uri.parse('$_baseUrl/api/v1/anime/$miruroId/episodes/$episode/play');
-      final res = await client.get(uri, headers: {
-        'User-Agent': _userAgent,
-        'Referer': '$_baseUrl/',
-        'Origin': _baseUrl,
-        'Accept': 'application/octet-stream, application/json, */*',
-      });
+      final res = await client.get(uri, headers: _apiHeaders);
 
       if (res.statusCode != 200) {
+        appDebugLog(
+          'Miruro: play $miruroId ep $episode returned ${res.statusCode} '
+          '(${res.headers['content-type']}): ${_bodySnippet(res)}',
+        );
         throw Exception('Play request failed with status: ${res.statusCode}');
       }
 

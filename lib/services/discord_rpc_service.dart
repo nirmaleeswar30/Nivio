@@ -21,9 +21,20 @@ class DiscordRpcService {
   String? _clientId;
   bool _connected = false;
   bool _disposed = false;
+  Timer? _retryTimer;
 
   /// Whether the service is currently connected to Discord.
   bool get isConnected => _connected;
+
+  /// Desktop IPC connection state, for the settings tile. Desktop needs no
+  /// sign-in: it talks to the Discord app the user is already logged into,
+  /// so "not connected" means that app isn't running.
+  final ValueNotifier<bool> connectedNotifier = ValueNotifier(false);
+
+  void _setConnected(bool value) {
+    _connected = value;
+    connectedNotifier.value = value;
+  }
 
   // ──────────────────── Lifecycle ────────────────────
 
@@ -46,16 +57,23 @@ class DiscordRpcService {
 
     _clientId = trimmed;
     _disposed = false;
+    _retryTimer?.cancel();
 
     try {
       _client = Client(clientId: trimmed);
       await _client!.connect();
-      _connected = true;
+      _setConnected(true);
       debugPrint('[DiscordRPC] Connected to Discord (clientId: $trimmed)');
     } catch (e) {
-      _connected = false;
+      _setConnected(false);
       _client = null;
       debugPrint('[DiscordRPC] Could not connect to Discord: $e');
+      // Discord isn't running yet; keep trying so presence appears once it starts.
+      _retryTimer = Timer(const Duration(seconds: 20), () async {
+        if (_disposed || _clientId == null || _connected) return;
+        await initialize(_clientId!);
+        if (_connected) setBrowsing();
+      });
     }
   }
 
@@ -66,7 +84,11 @@ class DiscordRpcService {
       return;
     }
     _disposed = true;
-    if (!_connected || _client == null) return;
+    _retryTimer?.cancel();
+    if (!_connected || _client == null) {
+      _setConnected(false);
+      return;
+    }
 
     try {
       await _client!.disconnect();
@@ -74,7 +96,7 @@ class DiscordRpcService {
     } catch (e) {
       debugPrint('[DiscordRPC] Error disconnecting: $e');
     } finally {
-      _connected = false;
+      _setConnected(false);
       _client = null;
     }
   }
@@ -186,7 +208,7 @@ class DiscordRpcService {
       // discord_rich_presence doesn't have a clearActivity method,
       // so we disconnect and reconnect to clear the status.
       await _client!.disconnect();
-      _connected = false;
+      _setConnected(false);
       _client = null;
 
       if (!_disposed && _clientId != null) {
@@ -196,7 +218,7 @@ class DiscordRpcService {
       }
     } catch (e) {
       debugPrint('[DiscordRPC] Failed to clear activity: $e');
-      _connected = false;
+      _setConnected(false);
       _client = null;
     }
   }
@@ -229,7 +251,7 @@ class DiscordRpcService {
   /// Handle an unexpected disconnect — mark as disconnected and attempt
   /// a background reconnect after a delay.
   void _handleDisconnect() {
-    _connected = false;
+    _setConnected(false);
     _client = null;
 
     if (!_disposed && _clientId != null) {

@@ -3,11 +3,65 @@ import 'package:http/http.dart' as http;
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/services/skip_times_models.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AnimexScraperService {
   final http.Client client = http.Client();
   final String _baseUrl = 'https://animex.one';
   final String _apiUrl = 'https://pp.animex.one/rest/api';
+
+  // The slug lookup downloads a ~140 KB page that takes 2-3 s to arrive, and an
+  // anime's slug never changes, so it is cached in memory and on disk.
+  static const _slugPrefsPrefix = 'animex_slug_';
+
+  Future<String?> _cachedSlug(String anilistId) {
+    final pending = _slugCache[anilistId];
+    if (pending != null) return pending;
+    final future = () async {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString('$_slugPrefsPrefix$anilistId');
+      if (saved != null && saved.isNotEmpty) return saved;
+      final slug = await _getSlug(anilistId);
+      if (slug != null) await prefs.setString('$_slugPrefsPrefix$anilistId', slug);
+      return slug;
+    }();
+    _slugCache[anilistId] = future;
+    // Don't keep a failed lookup around; retry on the next request.
+    future.then((slug) {
+      if (slug == null) _slugCache.remove(anilistId);
+    });
+    return future;
+  }
+
+  Future<void> _forgetSlug(String anilistId) async {
+    _slugCache.remove(anilistId);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('$_slugPrefsPrefix$anilistId');
+  }
+
+  // /servers is needed both to list servers and to resolve a stream, usually
+  // seconds apart; share one response between them.
+  Future<http.Response> _cachedServers(String slug, int episode) {
+    final key = '$slug:$episode';
+    final pending = _serversCache[key];
+    if (pending != null) return pending;
+    final future = client.get(Uri.parse('$_apiUrl/servers?id=$slug&epNum=$episode'), headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+      'Origin': _baseUrl,
+      'Referer': '$_baseUrl/',
+      'Accept': '*/*',
+    });
+    _serversCache[key] = future;
+    future.then((res) {
+      if (res.statusCode != 200) _serversCache.remove(key);
+    }, onError: (_) {
+      _serversCache.remove(key);
+    });
+    Future.delayed(const Duration(minutes: 2), () {
+      _serversCache.remove(key);
+    });
+    return future;
+  }
 
   Future<String?> _getSlug(String anilistId) async {
     try {
@@ -38,17 +92,12 @@ class AnimexScraperService {
       final anilistId = int.tryParse(tmdbId);
       if (anilistId == null) return [];
 
-      final slug = await _getSlug(anilistId.toString());
+      final slug = await _cachedSlug(anilistId.toString());
       if (slug == null) return [];
 
       final type = preferredAudio.toLowerCase().contains('english') || preferredAudio.toLowerCase() == 'dub' ? 'dub' : 'sub';
 
-      final serversRes = await client.get(Uri.parse('$_apiUrl/servers?id=$slug&epNum=$episode'), headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
-        'Origin': _baseUrl,
-        'Referer': '$_baseUrl/',
-        'Accept': '*/*',
-      });
+      final serversRes = await _cachedServers(slug, episode);
 
       if (serversRes.statusCode != 200) return [];
 
@@ -57,7 +106,13 @@ class AnimexScraperService {
 
       if (providersList == null || providersList.isEmpty) return [];
 
-      return providersList.map((p) {
+      // The site's default server first (it's marked "Fastest"), the rest in site order.
+      final ordered = [
+        ...providersList.where((p) => p['default'] == true),
+        ...providersList.where((p) => p['default'] != true),
+      ];
+
+      return ordered.map((p) {
         String name = p['serverName']?.toString() ?? p['id'].toString();
         
         final tip = p['tip']?.toString().toLowerCase() ?? '';
@@ -89,14 +144,9 @@ class AnimexScraperService {
       final anilistId = int.tryParse(tmdbId);
       if (anilistId == null) return null;
 
-      // 1. Get the slug (deduplicated)
-      final slugKey = '$anilistId';
-      if (!_slugCache.containsKey(slugKey)) {
-        _slugCache[slugKey] = _getSlug(anilistId.toString());
-        Future.delayed(const Duration(minutes: 5), () { _slugCache.remove(slugKey); });
-      }
-      final slug = await _slugCache[slugKey];
-      
+      // 1. Get the slug (shared with fetchAvailableServers)
+      final slug = await _cachedSlug('$anilistId');
+
       if (slug == null) {
         appDebugLog('Animex: Could not find slug for Anilist ID $anilistId');
         return null;
@@ -104,22 +154,13 @@ class AnimexScraperService {
 
       final type = preferredAudio.toLowerCase().contains('english') || preferredAudio.toLowerCase() == 'dub' ? 'dub' : 'sub';
 
-      // 2. Get the servers (deduplicated)
-      final serversKey = '$slug:$episode';
-      if (!_serversCache.containsKey(serversKey)) {
-        _serversCache[serversKey] = client.get(Uri.parse('$_apiUrl/servers?id=$slug&epNum=$episode'), headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
-          'Origin': _baseUrl,
-          'Referer': '$_baseUrl/',
-          'Accept': '*/*',
-        });
-        Future.delayed(const Duration(seconds: 15), () { _serversCache.remove(serversKey); });
-      }
-      
-      final serversRes = await _serversCache[serversKey];
+      // 2. Get the servers (shared with fetchAvailableServers)
+      final serversRes = await _cachedServers(slug, episode);
 
-      if (serversRes == null || serversRes.statusCode != 200) {
-        appDebugLog('Animex: /servers returned ${serversRes?.statusCode} for $slug ep $episode (server "$providerName")');
+      if (serversRes.statusCode != 200) {
+        // A saved slug can go stale if the site renames the show; look it up again next time.
+        if (serversRes.statusCode == 404) await _forgetSlug('$anilistId');
+        appDebugLog('Animex: /servers returned ${serversRes.statusCode} for $slug ep $episode (server "$providerName")');
         return null;
       }
 
@@ -219,8 +260,15 @@ class AnimexScraperService {
           final url = t['url']?.toString() ?? '';
           final kind = t['kind']?.toString().toLowerCase() ?? '';
           if (url.isNotEmpty && url.startsWith('http')) {
-            if (kind == 'thumbnails' || url.contains('.m3u8') || url.contains('.m3u') || url.contains('.ass') || url.contains('.ssa')) {
-              continue; // Skip unsupported subtitle formats and playlists
+            // Some servers label their seek-preview sprite map (thumbnails.vtt)
+            // as "captions", so check the URL too.
+            final lowerUrl = url.toLowerCase();
+            final isThumbnails = kind == 'thumbnails' ||
+                lowerUrl.contains('thumbnail') ||
+                lowerUrl.contains('sprite') ||
+                lowerUrl.contains('/preview/');
+            if (isThumbnails || url.contains('.m3u8') || url.contains('.m3u') || url.contains('.ass') || url.contains('.ssa')) {
+              continue; // Skip seek previews, unsupported subtitle formats and playlists
             }
             final rawLang = (t['lang'] ?? t['language'] ?? t['label'] ?? t['name'] ?? '').toString().trim();
             final lang = (rawLang.isEmpty || rawLang.toLowerCase() == 'auto' || rawLang.toLowerCase() == 'und' || rawLang.toLowerCase() == 'unknown')

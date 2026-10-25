@@ -72,8 +72,11 @@ class DiscordGatewayService {
   static const String _prefCachedGlobal = 'nivio_discord_cached_global';
   static const String _prefCachedAvatar = 'nivio_discord_cached_avatar';
 
+  // Square app icon shown as the presence image (Discord turns it into an
+  // `mp:` asset). Must be a live URL: when it 404s, Discord shows its generic
+  // placeholder instead of the Nivio logo.
   static const String _logoUrl =
-      'https://raw.githubusercontent.com/nirmaleeswar30/Nivio/main/assets/icon/icon.png';
+      'https://raw.githubusercontent.com/nirmaleeswar30/Nivio/main/assets/images/app-icon.png';
 
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
@@ -116,6 +119,12 @@ class DiscordGatewayService {
   void _debug(String m) => debugPrint('[DiscordGateway] $m');
 
   // ─────────────────────────── Lifecycle ───────────────────────────
+
+  /// Sets the client id without connecting, so sign-in works while Rich
+  /// Presence is still off ([load] only runs once it is turned on).
+  void setClientId(String clientId) {
+    _clientId = clientId.trim();
+  }
 
   /// Loads the client id + stored tokens and connects if already authorized.
   Future<void> load(String clientId) async {

@@ -124,19 +124,8 @@ class StreamingService {
       _dynamicMiruroServers = miruroResult.map((id) => 'Miruro ($id)').toList();
     }
     if (animexResult.isNotEmpty) {
-      const preferredAnimexOrder = ['mimi', 'zoro', 'gogo', 'pahe'];
-      animexResult.sort((a, b) {
-        final aLower = a.toLowerCase();
-        final bLower = b.toLowerCase();
-        if (aLower == 'bonk') return 1;
-        if (bLower == 'bonk') return -1;
-        final aIdx = preferredAnimexOrder.indexOf(aLower);
-        final bIdx = preferredAnimexOrder.indexOf(bLower);
-        if (aIdx != -1 && bIdx != -1) return aIdx.compareTo(bIdx);
-        if (aIdx != -1) return -1;
-        if (bIdx != -1) return 1;
-        return aLower.compareTo(bLower);
-      });
+      // Keep Animex's own order: it lists its default ("Fastest") server first.
+      // An alphabetical sort used to put a slower server ahead of it.
       _dynamicAnimexServers = animexResult.map((id) => 'Animex ($id)').toList();
     }
     final ordered = _animeProviders;
@@ -166,10 +155,11 @@ class StreamingService {
     // yields the highest-quality releases when peers are available.
     final torrent = isTorrentEnabled(isAnime: true) ? ['Nivio Torrents'] : <String>[];
 
+    // Animetsu before Animex in fallback: Animex's CDNs start noticeably slower.
     if (pref == 'Miruro') {
-      return [...torrent, ...miruroServers, ...animexServers, ...animetsuServers];
+      return [...torrent, ...miruroServers, ...animetsuServers, ...animexServers];
     } else if (pref == 'Animex') {
-      return [...torrent, ...animexServers, ...miruroServers, ...animetsuServers];
+      return [...torrent, ...animexServers, ...animetsuServers, ...miruroServers];
     } else { // Animetsu
       return [...torrent, ...animetsuServers, ...miruroServers, ...animexServers];
     }

@@ -24,6 +24,7 @@ import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
 import 'package:nivio/services/discord_gateway_service.dart';
+import 'package:nivio/services/discord_rpc_service.dart';
 import 'package:nivio/providers/changelog_provider.dart';
 import 'package:nivio/providers/home_layout_provider.dart';
 import 'package:nivio/services/episode_check_service.dart';
@@ -168,7 +169,6 @@ Widget _buildMobileLayout(BuildContext context, User user) {
 
     final appThemeKey = ref.watch(appThemeProvider);
     final uiScale = ref.watch(uiScaleProvider);
-    final discordRpcEnabled = ref.watch(discordRpcEnabledProvider);
 
     return Scaffold(
       backgroundColor: NivioTheme.backgroundColorOf(context),
@@ -715,16 +715,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                           _buildUiScaleTile(uiScale),
                         if ((Platform.isWindows || Platform.isLinux || Platform.isMacOS) &&
                             _matches('discord rich presence rpc activity status'))
-                          _buildSwitchTile(
-                            icon: PhosphorIconsRegular.discordLogo,
-                            title: 'Discord Rich Presence',
-                            subtitle: discordRpcEnabled
-                                ? 'Displaying watch activity on Discord'
-                                : 'Disabled',
-                            value: discordRpcEnabled,
-                            onChanged: (value) =>
-                                ref.read(discordRpcEnabledProvider.notifier).setEnabled(value),
-                          ),
+                          _buildDiscordDesktopTile(),
                         if ((Platform.isAndroid || Platform.isIOS) &&
                             _matches('discord rich presence rpc activity status'))
                           _buildDiscordMobileTile(),
@@ -1483,20 +1474,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     }
     if ((Platform.isWindows || Platform.isLinux || Platform.isMacOS) &&
         _matches('discord rich presence rpc activity status')) {
-      final discordRpcEnabled = ref.watch(discordRpcEnabledProvider);
-      results.add(
-        _buildSwitchTile(
-          icon: PhosphorIconsRegular.discordLogo,
-          title: 'Discord Rich Presence',
-          subtitle: discordRpcEnabled
-              ? 'Displaying watch activity on Discord'
-              : 'Disabled',
-          value: discordRpcEnabled,
-          onChanged: (value) {
-            ref.read(discordRpcEnabledProvider.notifier).setEnabled(value);
-          },
-        ),
-      );
+      results.add(_buildDiscordDesktopTile());
     }
     if ((Platform.isAndroid || Platform.isIOS) &&
         _matches('discord rich presence rpc activity status')) {
@@ -1643,6 +1621,30 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     );
   }
 
+  /// Desktop Discord Rich Presence tile. Desktop has no sign-in: presence goes
+  /// through the Discord app the user is already logged into, so the subtitle
+  /// reports whether that app was found.
+  Widget _buildDiscordDesktopTile() {
+    return ValueListenableBuilder<bool>(
+      valueListenable: DiscordRpcService.instance.connectedNotifier,
+      builder: (context, connected, _) {
+        final enabled = ref.watch(discordRpcEnabledProvider);
+        return _buildSwitchTile(
+          icon: PhosphorIconsRegular.discordLogo,
+          title: 'Discord Rich Presence',
+          subtitle: !enabled
+              ? 'Shows what you watch on your Discord profile (uses the Discord app)'
+              : connected
+                  ? 'Showing your activity through the Discord app'
+                  : 'Discord app not running — open Discord to show activity',
+          value: enabled,
+          onChanged: (value) =>
+              ref.read(discordRpcEnabledProvider.notifier).setEnabled(value),
+        );
+      },
+    );
+  }
+
   /// Mobile Discord Rich Presence tile: connects through Discord OAuth2 (system
   /// browser sign-in) and reflects live connection status.
   Widget _buildDiscordMobileTile() {
@@ -1653,7 +1655,13 @@ Widget _buildMobileLayout(BuildContext context, User user) {
         final authorized = DiscordGatewayService.instance.isAuthorized;
         String subtitle;
         if (!enabled) {
-          subtitle = authorized ? 'Disabled' : 'Tap to sign in with Discord';
+          // A failed sign-in leaves the toggle off; say why instead of looking unresponsive.
+          subtitle = dstate.errorMessage ??
+              (dstate.status == DiscordGatewayStatus.connecting
+                  ? 'Signing in…'
+                  : authorized
+                      ? 'Disabled'
+                      : 'Tap to sign in with Discord');
         } else if (dstate.status == DiscordGatewayStatus.connected) {
           subtitle = 'Connected as ${dstate.displayName}';
         } else if (dstate.status == DiscordGatewayStatus.connecting) {
@@ -1928,7 +1936,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
 
   Future<void> _showPreferredAnimeSourceDialog() async {
     final currentSource = ref.read(preferredAnimeSourceProvider);
-    final sources = ['Miruro', 'Animex', 'Animetsu'];
+    final sources = ['Miruro', 'Animetsu', 'Animex'];
     
     await showModalBottomSheet<void>(
       context: context,
@@ -4442,16 +4450,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
             _buildUiScaleTile(uiScale),
             if (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
-              _buildSwitchTile(
-                icon: PhosphorIconsRegular.discordLogo,
-                title: 'Discord Rich Presence',
-                subtitle: discordRpcEnabled
-                    ? 'Displaying watch activity on Discord'
-                    : 'Disabled',
-                value: discordRpcEnabled,
-                onChanged: (value) =>
-                    ref.read(discordRpcEnabledProvider.notifier).setEnabled(value),
-              ),
+              _buildDiscordDesktopTile(),
             if (Platform.isAndroid || Platform.isIOS) _buildDiscordMobileTile(),
             FutureBuilder<String>(
               future: _getAppVersionLabel(),

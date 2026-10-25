@@ -56,6 +56,7 @@ import 'package:nivio/services/watch_party/watch_party_supabase_config.dart';
 import 'package:nivio/services/download_service.dart';
 import 'package:nivio/services/hls_proxy_service.dart';
 import 'package:nivio/services/discord_rpc_service.dart';
+import 'package:nivio/services/discord_gateway_service.dart';
 import 'package:nivio/services/anilist_auth_service.dart';
 import 'package:nivio/services/simkl_auth_service.dart';
 import 'package:nivio/services/mal_auth_service.dart';
@@ -469,6 +470,10 @@ void _handleDeepLink(Uri uri) {
   _lastDeepLinkAt = now;
   debugPrint('🔗 Deep link received: $uri');
 
+  // Discord sign-in callback: DiscordOAuth listens for it itself; routing it
+  // would open a page that doesn't exist.
+  if (uri.scheme == 'niviodiscord') return;
+
   // Handle OAuth authentication callbacks:
   // - AniList: nivio://auth/anilist#access_token=... OR nivio://auth/anilist?code=...
   // - MAL:     nivio://auth/mal?code=...
@@ -828,6 +833,12 @@ class _NivioAppState extends ConsumerState<NivioApp> {
   void _initDiscordRpc() {
     final clientId = dotenv.env['DISCORD_CLIENT_ID']?.trim() ?? '';
     if (clientId.isEmpty) return;
+
+    // Mobile sign-in (from the settings toggle) needs the id even while
+    // Rich Presence is off.
+    if (Platform.isAndroid || Platform.isIOS) {
+      DiscordGatewayService.instance.setClientId(clientId);
+    }
 
     // Check initial setting and connect if enabled
     WidgetsBinding.instance.addPostFrameCallback((_) async {

@@ -97,6 +97,9 @@ class PlayerScreen extends ConsumerStatefulWidget {
   ConsumerState<PlayerScreen> createState() => _PlayerScreenState();
 }
 
+/// One rendition listed in an HLS master playlist.
+typedef _HlsVariant = ({String url, int height, int bandwidth});
+
 class _PlayerScreenState extends ConsumerState<PlayerScreen>
     with WidgetsBindingObserver, TickerProviderStateMixin {
   WatchHistoryService? _cachedHistoryService;
@@ -419,32 +422,52 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return false;
   }
 
-  // Automatic fallback walks from _providerStartIndex to the end, then wraps to
-  // 0 and stops just before _providerStartIndex. Without the wrap, a saved
-  // preferredProviderIndex (a raw index into the *dynamic* anime server list,
-  // whose contents shift between sessions) silently skipped every provider
-  // before it — e.g. anime replays starting at 4 never tried Animex at 0–3.
-  int _providerStartIndex = 0;
-  bool _providerWrapped = false;
+  // Automatic fallback order for the current run: the start provider, then
+  // every other direct provider (those after it, then wrapping round to those
+  // before it), then embed providers. Embeds always "load" in the WebView, so
+  // walking the list in index order meant a failing last direct provider fell
+  // straight to an embed and the direct ones before it were never tried. The
+  // wrap matters too: a saved preferredProviderIndex is a raw index into the
+  // *dynamic* anime server list, so starting at 4 must still reach 0–3.
+  // Nivio Torrents is never chosen automatically (it opens the picker).
+  List<int> _providerOrder = const [];
+  int _providerOrderPos = 0;
+
+  void _startProviderOrder(int start) {
+    final media = ref.read(selectedMediaProvider) ?? _cachedMedia;
+    final isAnime = _isAnimeMedia(media);
+    final service = ref.read(streamingServiceProvider);
+    final total = _maxProviders;
+    final rest = [for (var k = 1; k < total; k++) (start + k) % total]
+        .where((i) => service.getProviderName(i, isAnime: isAnime) != 'Nivio Torrents')
+        .toList();
+    _providerOrder = [
+      start,
+      ...rest.where((i) => service.isDirectStream(i, isAnime: isAnime)),
+      ...rest.where((i) => !service.isDirectStream(i, isAnime: isAnime)),
+    ];
+    _providerOrderPos = 0;
+    appDebugLog('🔁 [FLOW] Provider fallback order: $_providerOrder');
+  }
+
+  // Streams that didn't come from a fallback run (prefetched episode, preloaded
+  // audio) or a manual switch can leave the plan out of step; restart it here.
+  void _ensureProviderOrder() {
+    if (_providerOrderPos >= _providerOrder.length ||
+        _providerOrder[_providerOrderPos] != _currentProviderIndex) {
+      _startProviderOrder(_currentProviderIndex);
+    }
+  }
 
   bool get _hasNextProvider {
-    final next = _currentProviderIndex + 1;
-    if (_providerWrapped) return next < _providerStartIndex;
-    return next < _maxProviders || _providerStartIndex > 0;
+    _ensureProviderOrder();
+    return _providerOrderPos + 1 < _providerOrder.length;
   }
 
   void _advanceProvider() {
-    final next = _currentProviderIndex + 1;
-    if (!_providerWrapped && next >= _maxProviders) {
-      _providerWrapped = true;
-      _currentProviderIndex = 0;
-      appDebugLog(
-        '🔁 [CW_DEBUG] PlayerScreen#$_sid reached end of $_maxProviders providers — '
-        'wrapping to 0 to try the ones before start index $_providerStartIndex',
-      );
-    } else {
-      _currentProviderIndex = next;
-    }
+    if (!_hasNextProvider) return;
+    _providerOrderPos++;
+    _currentProviderIndex = _providerOrder[_providerOrderPos];
   }
 
   int get _maxProviders {
@@ -1230,13 +1253,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (targetAudio == 'Original') targetAudio = null;
 
         if (_runningFetchers == null) {
-          // Fresh fallback run: remember where it began so it can wrap around
-          // to the providers *before* a saved preferred index (see _advanceProvider).
-          _providerStartIndex = _currentProviderIndex;
-          _providerWrapped = false;
+          // Fresh fallback run: plan the order providers are tried in (see _startProviderOrder).
+          _startProviderOrder(_currentProviderIndex);
         }
         if (_runningFetchers == null || !_runningFetchers!.containsKey(_currentProviderIndex)) {
-          appDebugLog('🚀 [FLOW] Launching fetchers starting from provider index $_currentProviderIndex (wrapped=$_providerWrapped)');
+          appDebugLog('🚀 [FLOW] Launching fetchers starting from provider index $_currentProviderIndex');
           _runningFetchers ??= {};
 
           final isCurrentTorrent = streamingService.getProviderName(
@@ -1266,8 +1287,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               },
             );
           } else {
-            // Fire all remaining direct providers in parallel to eliminate sequential fallback latency!
-            for (int i = _currentProviderIndex; i < _maxProviders; i++) {
+            // Fire all remaining providers in parallel (in fallback order) to eliminate sequential fallback latency!
+            _ensureProviderOrder();
+            for (final i in _providerOrder.skip(_providerOrderPos)) {
               if (_runningFetchers!.containsKey(i)) continue;
               appDebugLog('🚀 [FLOW] Launching fetcher for provider index $i');
               _runningFetchers![i] = streamingService.fetchStreamUrl(
@@ -1355,6 +1377,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // fetched from peers — a short HTTP probe would time out and wrongly skip
       // the provider. media_kit/mpv buffers the stream natively instead.
       final isTorrentStream = result.provider == 'Nivio Torrents';
+      // Set when verification finds an HLS master; mpv then opens one variant
+      // directly (see _probeStreamCandidate).
+      String? playbackVariantUrl;
+      _hlsVariants = const [];
+      _hlsVariantUrl = null;
       if (_isDirectStream && result.url.startsWith('http') && !isTorrentStream) {
         if (mounted) setState(() => _loadingMessage = 'Verifying stream connection...');
 
@@ -1375,44 +1402,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
         StreamSource? working;
         int? lastStatus;
-        
+
         // Fire all candidate verifications simultaneously to prevent 10-15s sequential timeout delays!
         appDebugLog('⏳ [FLOW] Starting parallel stream verification for ${candidates.length} candidates from ${result.provider}');
-        final checkFutures = candidates.map((cand) async {
-          try {
-            appDebugLog('🔍 [FLOW] Verifying candidate: ${cand.quality} (${cand.url})');
-            final request = http.Request('GET', Uri.parse(cand.url));
-            request.headers.addAll(headers);
-            request.headers['Range'] = 'bytes=0-100'; // range request avoids buffering the whole video
-            final client = http.Client();
-            
-            final streamedResponse = await client.send(request).timeout(const Duration(milliseconds: 2500));
-            final status = streamedResponse.statusCode;
-            client.close(); // Abort immediately to prevent downloading the video file
-            
-            if (status < 400) {
-              appDebugLog('✅ Stream pre-verification passed (${cand.quality}) with status: $status');
-              return {'cand': cand, 'status': status};
-            }
-            appDebugLog('⚠️ Source "${cand.quality}" returned $status');
-            return {'status': status};
-          } catch (e) {
-            appDebugLog('⚠️ Source "${cand.quality}" error: $e');
-            return null;
-          }
-        }).toList();
+        final checkFutures = candidates.map((cand) => _probeStreamCandidate(cand, headers)).toList();
 
-        final resultsList = await Future.wait(checkFutures);
-        
-        // Find the first working one, strictly respecting original order (primary first, then alternates)
+        // Take the first working one, strictly respecting original order (primary first, then
+        // alternates), as soon as it answers instead of waiting for every candidate.
         for (int i = 0; i < candidates.length; i++) {
-          final res = resultsList[i];
-          if (res != null) {
-            if (res['status'] != null) lastStatus = res['status'] as int;
-            if (res['cand'] != null) {
-              working = res['cand'] as StreamSource;
-              break;
+          final res = await checkFutures[i];
+          if (res == null) continue;
+          if (res.status != null) lastStatus = res.status;
+          if (res.ok) {
+            working = candidates[i];
+            final variants = res.variants;
+            if (variants != null) {
+              final chosen = _pickVariant(variants, preferredQuality);
+              playbackVariantUrl = chosen.url;
+              if (variants.length > 1) {
+                _hlsVariants = variants;
+                _hlsVariantUrl = chosen.url;
+              }
             }
+            break;
           }
         }
 
@@ -1519,10 +1531,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
 
       // Open media
-      String targetUrl = result.url;
+      String targetUrl = playbackVariantUrl ?? result.url;
       if (targetUrl.startsWith('/') && !targetUrl.startsWith('file://')) {
         targetUrl = 'file://$targetUrl';
       }
+      if (playbackVariantUrl != null) {
+        appDebugLog('⚡ [FLOW] HLS master — opening one variant directly (${_hlsVariants.length} available): $playbackVariantUrl');
+      }
+
+      // Open straight at the resume point instead of loading the start of the
+      // video and seeking afterwards, which buffered twice. Torrents and
+      // still-downloading files keep the seek-after-start path: the data at
+      // the resume point may not be there yet.
+      final openAtResume = startAt != null &&
+          startAt.inSeconds > 0 &&
+          !isTorrentStream &&
+          !_isDownloadStream;
 
       // The user may have backed out while providers were resolving. A removed
       // screen still reports mounted == true, so check deactivation as well.
@@ -1540,6 +1564,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         Media(
           targetUrl,
           httpHeaders: headers,
+          start: openAtResume ? startAt : null,
         ),
         play: true,
       );
@@ -1586,6 +1611,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           }
           if (pos > Duration.zero && _player.state.duration > Duration.zero) {
             seekSub.cancel();
+            // Opened at the resume point already; only seek if mpv ignored it.
+            if (openAtResume && (pos - startAt!).abs() < const Duration(seconds: 10)) {
+              appDebugLog('🎬 SEEK_DEBUG: Opened at resume point ($pos), no seek needed');
+              return;
+            }
             appDebugLog('🎬 SEEK_DEBUG: Position tick is $pos (> zero) and duration is ${_player.state.duration}. Waiting 300ms for stream stabilization...');
             Future.delayed(const Duration(milliseconds: 300), () async {
               if (mounted) {
@@ -2033,7 +2063,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               if (_streamResult != null) {
                 await _player.open(
                   Media(
-                    _streamResult!.url,
+                    // The HLS variant that was playing, if one was opened directly.
+                    _hlsVariantUrl ?? _streamResult!.url,
                     httpHeaders: _streamResult!.headers,
                   ),
                   play: true,
@@ -2135,8 +2166,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _updateDiscordActivity({bool? isPlaying, bool force = false}) {
-    if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) return;
-
+    // DiscordRpcService routes to the desktop IPC or the mobile Gateway itself.
     final playing = isPlaying ?? _player.state.playing;
     final media = ref.read(selectedMediaProvider);
     final title = widget.directStreamTitle ??
@@ -3594,6 +3624,125 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _applyDisplaySettings();
   }
 
+  /// Verification request for one stream candidate: a ranged GET that reads
+  /// at most 64 KB. When the response is an HLS master playlist, its variants
+  /// are returned too. Playing one variant directly saves real time: mpv's
+  /// HLS demuxer (ffmpeg) downloads every variant playlist one after another
+  /// before the first frame, and slow CDNs take 1-6 s per playlist (VidRock's
+  /// three-variant masters cost 10-15 s that way).
+  Future<({bool ok, int? status, List<_HlsVariant>? variants})?> _probeStreamCandidate(
+    StreamSource cand,
+    Map<String, String> headers,
+  ) async {
+    final client = http.Client();
+    try {
+      appDebugLog('🔍 [FLOW] Verifying candidate: ${cand.quality} (${cand.url})');
+      final request = http.Request('GET', Uri.parse(cand.url));
+      request.headers.addAll(headers);
+      request.headers['Range'] = 'bytes=0-65535'; // range request avoids buffering the whole video
+      final response = await client.send(request).timeout(const Duration(milliseconds: 2500));
+      final status = response.statusCode;
+      if (status >= 400) {
+        appDebugLog('⚠️ Source "${cand.quality}" returned $status');
+        return (ok: false, status: status, variants: null);
+      }
+      appDebugLog('✅ Stream pre-verification passed (${cand.quality}) with status: $status');
+
+      List<_HlsVariant>? variants;
+      try {
+        final bytes = <int>[];
+        await for (final chunk in response.stream.timeout(const Duration(seconds: 1))) {
+          bytes.addAll(chunk);
+          if (bytes.length >= 65536) break;
+          // Only playlists are worth reading; stop as soon as it's clearly not one.
+          if (bytes.length >= 16 && !_looksLikeM3u(bytes)) break;
+        }
+        if (bytes.length < 65536) variants = _masterVariants(bytes, cand.url);
+      } catch (_) {}
+      return (ok: true, status: status, variants: variants);
+    } catch (e) {
+      appDebugLog('⚠️ Source "${cand.quality}" error: $e');
+      return null;
+    } finally {
+      client.close(); // Abort so a video file isn't downloaded
+    }
+  }
+
+  static bool _looksLikeM3u(List<int> bytes) {
+    final head = utf8.decode(bytes.take(32).toList(), allowMalformed: true);
+    return head.replaceFirst('﻿', '').trimLeft().startsWith('#EXTM3U');
+  }
+
+  /// Variants of an HLS master playlist, or null when the playlist isn't a
+  /// master or has separate audio/subtitle renditions (those need the master).
+  static List<_HlsVariant>? _masterVariants(List<int> bytes, String masterUrl) {
+    if (!_looksLikeM3u(bytes)) return null;
+    final text = utf8.decode(bytes, allowMalformed: true);
+    if (text.contains('#EXTINF') || text.contains('#EXT-X-MEDIA:') || text.contains('#EXT-X-SESSION-KEY')) {
+      return null;
+    }
+    final lines = const LineSplitter().convert(text).map((l) => l.trim()).toList();
+    final base = Uri.parse(masterUrl);
+    final variants = <_HlsVariant>[];
+    for (var i = 0; i < lines.length; i++) {
+      if (!lines[i].startsWith('#EXT-X-STREAM-INF')) continue;
+      String? uri;
+      for (var j = i + 1; j < lines.length; j++) {
+        if (lines[j].isEmpty) continue;
+        if (!lines[j].startsWith('#')) uri = lines[j];
+        break;
+      }
+      if (uri == null) continue;
+      final height = int.tryParse(RegExp(r'RESOLUTION=\d+x(\d+)').firstMatch(lines[i])?.group(1) ?? '') ?? 0;
+      final bandwidth = int.tryParse(RegExp(r'[^-]BANDWIDTH=(\d+)').firstMatch(' ${lines[i]}')?.group(1) ?? '') ?? 0;
+      variants.add((url: base.resolve(uri).toString(), height: height, bandwidth: bandwidth));
+    }
+    if (variants.isEmpty) return null;
+    // Highest quality first.
+    variants.sort((a, b) => b.height != a.height ? b.height.compareTo(a.height) : b.bandwidth.compareTo(a.bandwidth));
+    return variants;
+  }
+
+  /// The variant to open: the one matching [preferredQuality] (e.g. "720p")
+  /// when there is one, otherwise the highest.
+  static _HlsVariant _pickVariant(List<_HlsVariant> variants, String? preferredQuality) {
+    final want = int.tryParse(RegExp(r'(\d{3,4})').firstMatch(preferredQuality ?? '')?.group(1) ?? '');
+    if (want != null) {
+      final match = variants.where((v) => v.height == want).firstOrNull;
+      if (match != null) return match;
+      // Closest not above the preference, else the lowest available.
+      final below = variants.where((v) => v.height > 0 && v.height <= want).firstOrNull;
+      return below ?? variants.last;
+    }
+    return variants.first;
+  }
+
+  static String _variantLabel(_HlsVariant v) =>
+      v.height > 0 ? '${v.height}p' : '${(v.bandwidth / 1000).round()} kbps';
+
+  // Set when playback opened one variant of a multi-variant master directly
+  // (see _probeStreamCandidate). mpv then only knows that one rendition, so the
+  // Quality page lists these and switching reopens at the same position.
+  List<_HlsVariant> _hlsVariants = const [];
+  String? _hlsVariantUrl;
+
+  Future<void> _switchHlsVariant(String url) async {
+    if (url == _hlsVariantUrl) return;
+    final position = _player.state.position;
+    _hlsVariantUrl = url;
+    final label = _hlsVariants.where((v) => v.url == url).map(_variantLabel).firstOrNull;
+    appDebugLog('🎚️ Switching HLS variant to $label at $position');
+    await _player.open(
+      Media(
+        url,
+        httpHeaders: _buildPlaybackHeaders(_streamResult?.headers ?? const {}),
+        start: position > Duration.zero ? position : null,
+      ),
+      play: true,
+    );
+    if (label != null) await _updateLocalHistoryPreference(resolution: label);
+  }
+
   static const _decoderModeLabels = {'auto': 'Auto', 'hwplus': 'HW+', 'hw': 'HW', 'sw': 'SW'};
 
   // mpv hwdec value for a decoder mode. Lists are tried in order, and when no
@@ -3865,148 +4014,157 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return '${twoDigits(m)}:${twoDigits(s)}';
   }
 
-  Widget _buildSingleProviderTile(int index, SearchResult? media) {
+  // Server picker cards, styled like the player settings tiles.
+  Widget _buildProviderCard(int index, SearchResult? media, {bool wide = false}) {
     final isCurrent = index == _currentProviderIndex;
-    String providerName = ref.read(streamingServiceProvider).getProviderName(index, isAnime: _isAnimeMedia(media));
-    
-    if (providerName.startsWith('Animetsu (')) {
-      providerName = providerName.substring('Animetsu ('.length);
-      if (providerName.endsWith(')')) providerName = providerName.substring(0, providerName.length - 1);
-    } else if (providerName.startsWith('Miruro (')) {
-      providerName = providerName.substring('Miruro ('.length);
-      if (providerName.endsWith(')')) providerName = providerName.substring(0, providerName.length - 1);
-    } else if (providerName.startsWith('Animex (')) {
-      providerName = providerName.substring('Animex ('.length);
-      if (providerName.endsWith(')')) providerName = providerName.substring(0, providerName.length - 1);
-    }
-    
-    final isTorrent = providerName == 'Nivio Torrents';
+    final isAnime = _isAnimeMedia(media);
+    final service = ref.read(streamingServiceProvider);
+    final fullName = service.getProviderName(index, isAnime: isAnime);
+    // Anime servers are listed under their source's heading, so drop the prefix.
+    var providerName = fullName;
+    final prefix = RegExp(r'^(Animetsu|Miruro|Animex) \((.*)\)$').firstMatch(fullName);
+    if (prefix != null) providerName = prefix.group(2)!;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-      child: ListTile(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: isTorrent
-              ? BorderSide(
-                  color: isCurrent
-                      ? Theme.of(context).primaryColor.withOpacity(0.5)
-                      : Colors.white.withOpacity(0.18),
-                  width: 1.0,
-                )
-              : BorderSide.none,
-        ),
-        tileColor: isCurrent 
-            ? Theme.of(context).primaryColor.withOpacity(0.15) 
-            : (isTorrent ? Colors.white.withOpacity(0.04) : null),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-        leading: isTorrent
-            ? Icon(
-                Icons.cloud_download_rounded,
-                color: isCurrent ? Theme.of(context).primaryColor : Colors.greenAccent,
-                size: 22,
-              )
-            : null,
-        title: Row(
-          children: [
-            Text(
-              providerName,
-              style: TextStyle(
-                color: isCurrent ? Theme.of(context).primaryColor : Colors.white,
-                fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-                fontSize: 16,
-              ),
-            ),
-            if (isTorrent) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.greenAccent.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.greenAccent.withOpacity(0.4), width: 0.8),
-                ),
-                child: const Text(
-                  'P2P',
-                  style: TextStyle(
-                    color: Colors.greenAccent,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-        subtitle: isTorrent
-            ? Text(
-                'High quality BitTorrent stream',
-                style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
-              )
-            : null,
-        trailing: isCurrent ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
+    final isTorrent = fullName == 'Nivio Torrents';
+    final isDirect = service.isDirectStream(index, isAnime: isAnime);
+    final accent = Theme.of(context).primaryColor;
+    final IconData icon;
+    final String kind;
+    if (isTorrent) {
+      icon = Icons.cloud_download_rounded;
+      kind = 'P2P · High quality';
+    } else if (isDirect) {
+      icon = Icons.bolt_rounded;
+      kind = 'Direct';
+    } else {
+      icon = Icons.language_rounded;
+      kind = 'Embed';
+    }
+
+    return Material(
+      color: isCurrent ? accent.withValues(alpha: 0.22) : Colors.white.withValues(alpha: 0.07),
+      borderRadius: BorderRadius.circular(16),
+      child: FocusableInkWell(
+        borderRadius: BorderRadius.circular(16),
         onTap: () {
           Navigator.of(context).pop();
           if (!isCurrent) _switchToProvider(index);
         },
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isCurrent
+                  ? accent.withValues(alpha: 0.6)
+                  : isTorrent
+                      ? Colors.greenAccent.withValues(alpha: 0.3)
+                      : Colors.white.withValues(alpha: 0.08),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                height: 24,
+                child: Row(
+                  children: [
+                    Icon(
+                      icon,
+                      size: 22,
+                      color: isCurrent
+                          ? accent
+                          : isTorrent
+                              ? Colors.greenAccent
+                              : Colors.white,
+                    ),
+                    const Spacer(),
+                    if (isCurrent) Icon(Icons.check_circle_rounded, color: accent, size: 20),
+                  ],
+                ),
+              ),
+              if (!wide) const Spacer() else const SizedBox(height: 10),
+              Text(
+                providerName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: isCurrent ? accent : Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                isCurrent ? '$kind · Playing' : kind,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white60, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
+  Widget _providerSectionLabel(String text) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+        child: Text(
+          text.toUpperCase(),
+          style: const TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0),
+        ),
+      );
+
+  Widget _providerGrid(List<int> indices, SearchResult? media) => GridView.count(
+        crossAxisCount: 2,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 1.65,
+        children: [for (final i in indices) _buildProviderCard(i, media)],
+      );
+
+  /// Server picker contents: Nivio Torrents as a full-width card, then
+  /// sections of cards (anime: one per source; others: direct, then embed).
   List<Widget> _buildProviderListTiles(SearchResult? media) {
     final List<Widget> widgets = [];
     final bool isAnime = _isAnimeMedia(media);
+    final service = ref.read(streamingServiceProvider);
 
-    if (isAnime) {
-      final Map<String, List<int>> groups = {};
-      for (int i = 0; i < _maxProviders; i++) {
-        final name = ref.read(streamingServiceProvider).getProviderName(i, isAnime: true);
-        String groupName = name;
-        if (name.startsWith('Animetsu')) groupName = 'Animetsu';
-        else if (name.startsWith('Miruro')) groupName = 'Miruro';
-        else if (name.startsWith('Animex')) groupName = 'Animex';
-        
-        groups.putIfAbsent(groupName, () => []).add(i);
+    // Ordered section name -> provider indices.
+    final Map<String, List<int>> groups = {};
+    for (int i = 0; i < _maxProviders; i++) {
+      final name = service.getProviderName(i, isAnime: isAnime);
+      if (name == 'Nivio Torrents') {
+        widgets.add(Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+          child: _buildProviderCard(i, media, wide: true),
+        ));
+        continue;
       }
-
-      for (final entry in groups.entries) {
-        final groupName = entry.key;
-        final indices = entry.value;
-
-        if (groupName == 'Nivio Torrents') {
-          for (final i in indices) {
-            widgets.add(_buildSingleProviderTile(i, media));
-          }
-          continue;
-        }
-
-        bool containsCurrent = indices.contains(_currentProviderIndex);
-        widgets.add(
-          Theme(
-            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              initiallyExpanded: containsCurrent,
-              iconColor: Theme.of(context).primaryColor,
-              collapsedIconColor: Colors.white70,
-              title: Text(
-                groupName,
-                style: TextStyle(
-                  color: containsCurrent ? Theme.of(context).primaryColor : Colors.white,
-                  fontWeight: containsCurrent ? FontWeight.bold : FontWeight.w600,
-                  fontSize: 16,
-                ),
-              ),
-              children: indices.map((i) => _buildSingleProviderTile(i, media)).toList(),
-            ),
-          ),
-        );
+      final String section;
+      if (isAnime) {
+        section = name.startsWith('Animetsu')
+            ? 'Animetsu'
+            : name.startsWith('Miruro')
+                ? 'Miruro'
+                : name.startsWith('Animex')
+                    ? 'Animex'
+                    : name;
+      } else {
+        section = service.isDirectStream(i, isAnime: false) ? 'Direct' : 'Embed';
       }
-    } else {
-      for (int i = 0; i < _maxProviders; i++) {
-        widgets.add(_buildSingleProviderTile(i, media));
-      }
+      groups.putIfAbsent(section, () => []).add(i);
     }
 
+    for (final entry in groups.entries) {
+      widgets.add(_providerSectionLabel(entry.key));
+      widgets.add(_providerGrid(entry.value, media));
+    }
+    widgets.add(const SizedBox(height: 16));
     return widgets;
   }
 
@@ -4327,8 +4485,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (cachedNotifier != null) {
         Future.microtask(() => cachedNotifier.state = false);
       }
-      if (!_transferredToMiniPlayer &&
-          (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      if (!_transferredToMiniPlayer) {
         DiscordRpcService.instance.setBrowsing();
       }
       appDebugLog('🔴 [DISPOSE] Step 12: ✅ done');
@@ -4782,8 +4939,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                               }).toList();
 
                           List<Widget> qualityItems() => [
+                                // 0. Renditions of an HLS master that was opened one variant at a
+                                //    time (mpv only sees the open one, so they're listed here)
+                                ..._hlsVariants.map((variant) {
+                                  final isCurrent = variant.url == _hlsVariantUrl;
+                                  return ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                    title: Text(_variantLabel(variant), style: TextStyle(color: isCurrent ? accent : Colors.white)),
+                                    trailing: isCurrent ? Icon(Icons.check, color: accent) : null,
+                                    onTap: () async {
+                                      await _switchHlsVariant(variant.url);
+                                      setDialogState(() {});
+                                    },
+                                  );
+                                }),
                                 // 1. Native HLS/manifest resolution tracks of the currently loaded stream
-                                if (videoTracks.where((t) => t.id != 'auto' && t.id != 'no').isNotEmpty) ...[
+                                if (_hlsVariants.isEmpty && videoTracks.where((t) => t.id != 'auto' && t.id != 'no').isNotEmpty) ...[
                                   ListTile(
                                     contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
                                     title: Text('Auto', style: TextStyle(color: activeVideoId == 'auto' ? accent : Colors.white)),
@@ -4812,7 +4983,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                   }),
                                 ],
                                 // Divider between native resolution and different server options
-                                if (useScraperQualities && videoTracks.where((t) => t.id != 'auto' && t.id != 'no').isNotEmpty)
+                                if (useScraperQualities && (_hlsVariants.isNotEmpty || videoTracks.where((t) => t.id != 'auto' && t.id != 'no').isNotEmpty))
                                   const Padding(
                                     padding: EdgeInsets.symmetric(vertical: 8.0),
                                     child: Divider(color: Colors.white24, height: 1),
@@ -4837,7 +5008,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                     );
                                   }),
                                 ],
-                                if (!useScraperQualities && videoTracks.where((t) => t.id != 'auto' && t.id != 'no').isEmpty)
+                                if (!useScraperQualities && _hlsVariants.isEmpty && videoTracks.where((t) => t.id != 'auto' && t.id != 'no').isEmpty)
                                   const ListTile(
                                     contentPadding: EdgeInsets.symmetric(horizontal: 24.0),
                                     title: Text('No other qualities for this stream', style: TextStyle(color: Colors.white54)),
@@ -5106,6 +5277,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                           // ── Current values shown on the tiles ──
 
                           String qualityValue() {
+                            final openVariant = _hlsVariants.where((v) => v.url == _hlsVariantUrl).firstOrNull;
+                            if (openVariant != null) return _variantLabel(openVariant);
                             if (activeVideoId != 'auto' && activeVideoId != 'no') {
                               final track = videoTracks.where((t) => t.id == activeVideoId).firstOrNull;
                               if (track != null) {

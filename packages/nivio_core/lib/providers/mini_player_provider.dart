@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
@@ -129,9 +128,7 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
 
     if (player != null) MediaSessionService.instance.detachPlayer(player);
     state = const MiniPlayerState();
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      DiscordRpcService.instance.setBrowsing();
-    }
+    DiscordRpcService.instance.setBrowsing();
     Future.microtask(() {
       player?.dispose();
     });

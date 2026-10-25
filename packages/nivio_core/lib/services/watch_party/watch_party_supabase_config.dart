@@ -38,6 +38,10 @@ class WatchPartySupabaseConfig {
         anonKey: _supabaseAnonKey.trim(),
         authOptions: const FlutterAuthClientOptions(
           authFlowType: AuthFlowType.implicit,
+          // Nivio never signs in to Supabase through a deep link. Left on, it
+          // treats every link carrying code/error (Discord, AniList, MAL,
+          // Simkl sign-in callbacks) as its own and tries to handle it.
+          detectSessionInUri: false,
         ),
         realtimeClientOptions: const RealtimeClientOptions(eventsPerSecond: 10),
       );
