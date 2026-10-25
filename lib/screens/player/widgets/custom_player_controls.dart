@@ -18,6 +18,7 @@ import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/services/skip_times_models.dart';
+import 'package:nivio/widgets/seek_preview.dart';
 
 class CustomPlayerControls extends ConsumerStatefulWidget {
   final Player controller;
@@ -31,10 +32,19 @@ class CustomPlayerControls extends ConsumerStatefulWidget {
   final VoidCallback? onSettings;
   final VoidCallback? onServerChange;
   final VoidCallback? onEpisodes;
+
+  /// Previous/next episode buttons beside play/pause (series and anime).
+  /// Null hides that button.
+  final VoidCallback? onPreviousEpisode;
+  final VoidCallback? onNextEpisode;
   final bool isLive;
 
   /// Intro/outro segments to mark on the seek bar.
   final List<SkipTime> skipSegments;
+
+  /// Thumbnail previews shown above the seek bar while dragging, when the
+  /// stream comes with a WebVTT sprite map.
+  final SeekPreviewLoader? seekPreview;
 
   const CustomPlayerControls({
     super.key,
@@ -48,8 +58,11 @@ class CustomPlayerControls extends ConsumerStatefulWidget {
     this.onSettings,
     this.onServerChange,
     this.onEpisodes,
+    this.onPreviousEpisode,
+    this.onNextEpisode,
     this.isLive = false,
     this.skipSegments = const [],
+    this.seekPreview,
   });
 
   @override
@@ -263,6 +276,15 @@ class CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
         return KeyEventResult.handled;
       }
       return KeyEventResult.ignored;
+    }
+
+    // Remote ⏮ / ⏭ keys: previous / next episode.
+    if (key == LogicalKeyboardKey.mediaTrackNext || key == LogicalKeyboardKey.mediaTrackPrevious) {
+      if (event is KeyRepeatEvent) return KeyEventResult.handled;
+      final action = key == LogicalKeyboardKey.mediaTrackNext ? widget.onNextEpisode : widget.onPreviousEpisode;
+      if (action == null) return KeyEventResult.ignored;
+      action();
+      return KeyEventResult.handled;
     }
 
     if (key == LogicalKeyboardKey.arrowLeft ||
@@ -496,6 +518,60 @@ class CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
 
 
   /// Skip segments as start/end fractions of [duration], for the seek bar.
+  /// Previous/next episode button. With no callback (first or last episode)
+  /// it keeps its space, so play/pause stays centred.
+  Widget _episodeButton(IconData icon, String tooltip, VoidCallback? onPressed) {
+    return Opacity(
+      opacity: onPressed == null ? 0 : 1,
+      child: IgnorePointer(
+        ignoring: onPressed == null,
+        child: ExcludeFocus(
+          excluding: onPressed == null,
+          child: IconButton(
+            iconSize: 44,
+            color: Colors.white,
+            tooltip: tooltip,
+            icon: Icon(icon),
+            onPressed: onPressed == null
+                ? null
+                : () {
+                    _startHideTimer();
+                    onPressed();
+                  },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The thumbnail card above the slider thumb, kept inside the bar's width.
+  Widget _seekPreviewOverlay(SeekPreviewLoader preview, double width, Duration duration) {
+    final size = AppPlatform.isTv
+        ? const Size(240, 135)
+        : AppPlatform.useDesktopLayout
+            ? const Size(192, 108)
+            : const Size(150, 84);
+    final value = _dragValue ?? 0;
+    final fraction = duration.inMilliseconds > 0 ? (value / duration.inMilliseconds).clamp(0.0, 1.0) : 0.0;
+    // The slider's track is inset by the thumb overlay radius on each side.
+    const inset = 22.0;
+    final thumbX = inset + fraction * (width - 2 * inset);
+    final left = (thumbX - size.width / 2).clamp(0.0, (width - size.width).clamp(0.0, double.infinity));
+    final position = Duration(milliseconds: value.toInt());
+    return Positioned(
+      left: left,
+      bottom: 40,
+      child: IgnorePointer(
+        child: SeekPreviewThumbnail(
+          loader: preview,
+          position: position,
+          label: _formatDuration(position),
+          size: size,
+        ),
+      ),
+    );
+  }
+
   List<(double, double)> _segmentFractions(Duration duration) {
     final total = duration.inMilliseconds;
     if (total <= 0) return const [];
@@ -729,21 +805,34 @@ class CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                     ),
                   ),
                   
-                  // Center Play/Pause
+                  // Center: previous episode · play/pause · next episode
                   Center(
-                    child: IconButton(
-                      focusNode: AppPlatform.isTv ? _playPauseNode : null,
-                      iconSize: 72,
-                      color: Colors.white,
-                      icon: Icon(_isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled),
-                      onPressed: () {
-                        if (_isPlaying) {
-                          widget.controller.pause();
-                        } else {
-                          widget.controller.play();
-                        }
-                        _startHideTimer();
-                      },
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (widget.onPreviousEpisode != null || widget.onNextEpisode != null) ...[
+                          _episodeButton(Icons.skip_previous_rounded, 'Previous episode', widget.onPreviousEpisode),
+                          const SizedBox(width: 28),
+                        ],
+                        IconButton(
+                          focusNode: AppPlatform.isTv ? _playPauseNode : null,
+                          iconSize: 72,
+                          color: Colors.white,
+                          icon: Icon(_isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled),
+                          onPressed: () {
+                            if (_isPlaying) {
+                              widget.controller.pause();
+                            } else {
+                              widget.controller.play();
+                            }
+                            _startHideTimer();
+                          },
+                        ),
+                        if (widget.onPreviousEpisode != null || widget.onNextEpisode != null) ...[
+                          const SizedBox(width: 28),
+                          _episodeButton(Icons.skip_next_rounded, 'Next episode', widget.onNextEpisode),
+                        ],
+                      ],
                     ),
                   ),
                   
@@ -783,9 +872,16 @@ class CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                                       // keep the slider out of D-pad focus.
                                       child: ExcludeFocus(
                                       excluding: AppPlatform.isTv,
+                                      child: LayoutBuilder(builder: (context, box) {
+                                      final preview = widget.seekPreview;
+                                      final showPreview = _dragValue != null && preview != null && preview.ready.value;
+                                      return Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
                                       // While seeking, the bar grows, the thumb
-                                      // pops and a time bubble follows it.
-                                      child: TweenAnimationBuilder<double>(
+                                      // pops and a time bubble follows it (or a
+                                      // thumbnail preview, when the stream has one).
+                                      TweenAnimationBuilder<double>(
                                         tween: Tween(end: _dragValue != null ? 1.0 : 0.0),
                                         duration: const Duration(milliseconds: 220),
                                         curve: Curves.easeOutBack,
@@ -802,7 +898,7 @@ class CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                                           inactiveTrackColor: Colors.white30,
                                           secondaryActiveTrackColor: Colors.white70,
                                           thumbColor: Theme.of(context).primaryColor,
-                                          showValueIndicator: ShowValueIndicator.onDrag,
+                                          showValueIndicator: showPreview ? ShowValueIndicator.never : ShowValueIndicator.onDrag,
                                           valueIndicatorShape: const RectangularSliderValueIndicatorShape(),
                                           valueIndicatorColor: const Color(0xE6151515),
                                           valueIndicatorTextStyle: const TextStyle(
@@ -838,6 +934,11 @@ class CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                                           },
                                         ),
                                       ),
+                                      if (showPreview)
+                                        _seekPreviewOverlay(preview, box.maxWidth, duration),
+                                      ],
+                                      );
+                                      }),
                                       ),
                                     ),
                                     const SizedBox(width: 16),

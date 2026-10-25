@@ -16,6 +16,7 @@ import 'package:nivio/core/theme.dart';
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/widgets/video_ambient_background.dart';
+import 'package:nivio/widgets/seek_preview.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/screens/player/widgets/custom_player_controls.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1359,6 +1360,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       _streamResult = result;
       _currentProvider = result.provider;
+      _setSeekPreview(result);
       // A local downloaded file is always played directly (never via WebView).
       _isDirectStream = ((isInitialEpisode && widget.directStreamUrl != null) || _isDownloadStream || (_effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty))
           ? true
@@ -3181,6 +3183,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _playEpisode(nextEpisode);
   }
 
+  /// A series/anime episode from a provider (not a live or IPTV direct stream),
+  /// so previous/next episode make sense.
+  bool _isEpisodic(SearchResult? media) {
+    if (widget.directStreamUrl != null || widget.isLive) return false;
+    final type = media?.mediaType ?? widget.mediaType;
+    return type == 'tv' || type == 'anime';
+  }
+
+  /// True while the season's episode list is unknown (still loading), so the
+  /// button doesn't flicker; false on the season's last episode.
+  bool get _hasNextEpisodeInSeason {
+    final episodes = _currentSeasonData?.episodes;
+    if (episodes == null || episodes.isEmpty) return true;
+    return _currentEpisode < episodes.length;
+  }
+
   void _playEpisode(int episodeNumber) {
     if (_currentEpisode == episodeNumber) return;
     _nextEpisodeTimer?.cancel();
@@ -3741,6 +3759,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       play: true,
     );
     if (label != null) await _updateLocalHistoryPreference(resolution: label);
+  }
+
+  // Seek-bar thumbnail previews for the current stream, when its server
+  // provides a WebVTT sprite map (some AnimeX, Miruro and Animetsu servers).
+  SeekPreviewLoader? _seekPreview;
+
+  void _setSeekPreview(StreamResult result) {
+    final vtt = result.thumbnailsVtt;
+    if (vtt != null && vtt == _seekPreview?.vttUrl) return;
+    _seekPreview?.dispose();
+    _seekPreview = null;
+    if (vtt == null || vtt.isEmpty) return;
+    final loader = SeekPreviewLoader(vttUrl: vtt, headers: result.thumbnailsHeaders);
+    _seekPreview = loader;
+    loader.load().then((_) {
+      if (mounted && identical(_seekPreview, loader)) setState(() {});
+    });
   }
 
   static const _decoderModeLabels = {'auto': 'Auto', 'hwplus': 'HW+', 'hw': 'HW', 'sw': 'SW'};
@@ -4385,6 +4420,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         unawaited(_cachedTorrentService?.stopActive() ?? Future.value());
       } catch (_) {}
     }
+
+    _seekPreview?.dispose();
+    _seekPreview = null;
 
     if (Platform.isAndroid) {
       try {
@@ -7014,6 +7052,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             providerName: _currentProvider,
             isLive: widget.isLive,
             skipSegments: _activeSkipTimes,
+            seekPreview: _seekPreview,
             onBack: _handleBackNavigation,
             onServerChange: () {
               _showServerOverlayPanel();
@@ -7024,6 +7063,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             onEpisodes: ((media?.mediaType == 'tv' || media?.mediaType == 'anime')) ? () {
               _showEpisodesBottomSheet();
             } : null,
+            onPreviousEpisode: _isEpisodic(media) && _currentEpisode > 1
+                ? () => _playEpisode(_currentEpisode - 1)
+                : null,
+            onNextEpisode: _isEpisodic(media) && _hasNextEpisodeInSeason ? _playNextEpisode : null,
             onFitChanged: (fit) {
               final key = fit == BoxFit.cover ? 'fitScreen' : 'bestFit';
               _switchDisplayMode(key);

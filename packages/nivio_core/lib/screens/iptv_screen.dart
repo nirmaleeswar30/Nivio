@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +9,9 @@ import 'package:nivio/core/theme.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../models/iptv_channel.dart';
 import '../services/iptv_service.dart';
+import '../services/xtream_client.dart';
+import '../models/iptv_vod.dart';
+import 'iptv_vod_view.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class IptvScreen extends ConsumerStatefulWidget {
@@ -22,6 +26,12 @@ class IptvScreen extends ConsumerStatefulWidget {
 
 class _IptvScreenState extends ConsumerState<IptvScreen> {
   final TextEditingController _urlController = TextEditingController();
+  // Xtream Codes login form (the "Xtream login" tab of the add-playlist view).
+  final TextEditingController _xtreamServerController = TextEditingController();
+  final TextEditingController _xtreamUserController = TextEditingController();
+  final TextEditingController _xtreamPassController = TextEditingController();
+  bool _xtreamMode = false;
+  bool _showXtreamPassword = false;
   bool _isLoading = false;
   String? _error;
   List<IptvChannel> _channels = [];
@@ -30,6 +40,10 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
   
   String _searchQuery = '';
   String? _selectedGroup;
+
+  // Movies & series from the same playlists; 0 = channels, 1 = movies, 2 = series.
+  IptvVodLibrary _vod = const IptvVodLibrary();
+  int _section = 0;
 
   @override
   void initState() {
@@ -40,6 +54,9 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
   @override
   void dispose() {
     _urlController.dispose();
+    _xtreamServerController.dispose();
+    _xtreamUserController.dispose();
+    _xtreamPassController.dispose();
     super.dispose();
   }
 
@@ -48,14 +65,43 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
     try {
       final service = ref.read(iptvServiceProvider);
       final channels = await service.loadAllChannels();
-      if (channels.isNotEmpty) {
-        _processChannels(channels);
-      }
+      // Also when empty, so a deleted playlist's channels don't linger.
+      _processChannels(channels);
+      // Movies/series can be big (first Xtream load downloads the catalog),
+      // so they arrive after the channels are already showing.
+      unawaited(_loadVod());
     } catch (e) {
       debugPrint('Error loading saved playlists: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _loadVod() async {
+    try {
+      final vod = await ref.read(iptvServiceProvider).loadVod();
+      if (!mounted) return;
+      setState(() {
+        _vod = vod;
+        // Open on something that has content.
+        if (_section == 1 && vod.movies.isEmpty || _section == 2 && vod.series.isEmpty) _section = 0;
+        if (_section == 0 && _channels.isEmpty && !vod.isEmpty) _section = vod.movies.isNotEmpty ? 1 : 2;
+      });
+    } catch (e) {
+      debugPrint('Error loading IPTV movies/series: $e');
+    }
+  }
+
+  void _playVod(String url, String title) {
+    final uri = Uri(
+      path: '/player/0',
+      queryParameters: {
+        'directStreamUrl': url,
+        'directStreamTitle': title,
+        'isLive': 'false',
+      },
+    );
+    context.push(uri.toString());
   }
 
   Future<void> _fetchPlaylist(String url, {String name = 'New Playlist'}) async {
@@ -72,13 +118,46 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
       await _loadSavedPlaylist();
     } catch (e) {
       setState(() {
-        _error = 'Failed to load playlist. Make sure the URL is valid and accessible.';
+        _error = e is XtreamException
+            ? e.message
+            : 'Failed to load playlist. Make sure the URL is valid and accessible.';
       });
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
-  
+
+  Future<void> _loginXtream() async {
+    final server = _xtreamServerController.text.trim();
+    final user = _xtreamUserController.text.trim();
+    final pass = _xtreamPassController.text;
+    if (server.isEmpty || user.isEmpty || pass.isEmpty) {
+      setState(() => _error = 'Enter the server, username and password.');
+      return;
+    }
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      await ref.read(iptvServiceProvider).addXtreamPlaylist(
+            server: server,
+            username: user,
+            password: pass,
+          );
+      _xtreamPassController.clear();
+      await _loadSavedPlaylist();
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e is XtreamException ? e.message : 'Login failed: $e';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   void _processChannels(List<IptvChannel> channels) {
     // Group channels
     final Map<String, List<IptvChannel>> grouped = {};
@@ -135,6 +214,8 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
     
     showModalBottomSheet(
       context: context,
+      // Above the floating nav bar; the tab's own navigator sits under it.
+      useRootNavigator: true,
       backgroundColor: NivioTheme.netflixDarkGrey,
       isScrollControlled: true,
       constraints: BoxConstraints(maxWidth: isDesktop ? 520 : double.infinity),
@@ -182,7 +263,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                             return ListTile(
                               leading: const Icon(PhosphorIconsRegular.list, color: Colors.white54),
                               title: Text(p.name, style: const TextStyle(color: Colors.white)),
-                              subtitle: Text(p.url, style: const TextStyle(color: Colors.white54, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+                              subtitle: Text(p.isXtream ? 'Xtream · ${p.username} · ${p.url}' : p.url, style: const TextStyle(color: Colors.white54, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
                               trailing: IconButton(
                                 icon: const Icon(PhosphorIconsRegular.trash, color: Colors.red),
                                 onPressed: () async {
@@ -195,6 +276,8 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                                       _channels = [];
                                       _filteredChannels = [];
                                       _groupedChannels = {};
+                                      _vod = const IptvVodLibrary();
+                                      _section = 0;
                                     });
                                   } else {
                                     await _loadSavedPlaylist();
@@ -205,21 +288,27 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                           },
                         ),
                       ),
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          setState(() {
-                            _channels = []; // Triggers empty state to add new
-                          });
-                        },
-                        icon: const Icon(PhosphorIconsRegular.plus),
-                        label: const Text('Add New Playlist'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: NivioTheme.accentColorOf(context),
-                          foregroundColor: Colors.white,
-                          minimumSize: const Size(double.infinity, 50),
+                    // Keep the button above the system navigation bar.
+                    SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            setState(() {
+                              _channels = []; // Triggers empty state to add new
+                              _vod = const IptvVodLibrary();
+                              _section = 0;
+                            });
+                          },
+                          icon: const Icon(PhosphorIconsRegular.plus),
+                          label: const Text('Add New Playlist'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: NivioTheme.accentColorOf(context),
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size(double.infinity, 50),
+                          ),
                         ),
                       ),
                     ),
@@ -232,6 +321,11 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
       },
     );
   }
+
+  /// Space at the end of scrolling content for whatever covers the bottom of
+  /// the screen: the shell's floating nav bar (it reserves its height in
+  /// MediaQuery padding) or the system navigation bar.
+  static double _bottomInset(BuildContext context) => MediaQuery.paddingOf(context).bottom;
 
   void _playChannel(IptvChannel channel) {
     final uri = Uri(
@@ -259,12 +353,15 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
       ),
       child: SafeArea(
         top: !widget.embedded,
+        // Content runs under the floating nav / system bar; the scroll views
+        // add that inset as end padding instead (see _bottomInset).
+        bottom: false,
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
-            : _channels.isEmpty
+            : _channels.isEmpty && _vod.isEmpty
                 ? Center(
                     child: SingleChildScrollView(
-                      padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 24, 24, 24, 24),
+                      padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 24, 24, 24, 24 + _bottomInset(context)),
                       child: Container(
                         constraints: const BoxConstraints(maxWidth: 500),
                         child: _buildEmptyState(),
@@ -327,43 +424,55 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Enter an M3U URL to stream live TV channels directly in the app.',
+        Text(
+          _xtreamMode
+              ? 'Log in with the Xtream Codes details from your IPTV provider.'
+              : 'Enter an M3U URL to stream live TV channels directly in the app.',
           textAlign: TextAlign.center,
-          style: TextStyle(
+          style: const TextStyle(
             color: Colors.white60,
             fontSize: 14,
           ),
         ),
-        const SizedBox(height: 28),
-        TvTextFieldGate(builder: (context, focusNode) => TextField(focusNode: focusNode,
-          controller: _urlController,
-          style: const TextStyle(color: Colors.white),
-          decoration: InputDecoration(
-            hintText: 'https://example.com/playlist.m3u',
-            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
-            filled: true,
-            fillColor: Colors.white.withValues(alpha: 0.06),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: NivioTheme.accentColorOf(context)),
-            ),
-            prefixIcon: Icon(
-              PhosphorIconsRegular.link,
-              color: Colors.white.withValues(alpha: 0.5),
-            ),
+        const SizedBox(height: 20),
+        _buildSourceTypeSwitch(),
+        const SizedBox(height: 16),
+        if (_xtreamMode) ...[
+          _inputField(
+            controller: _xtreamServerController,
+            hint: 'Server, e.g. http://line.example.com:8080',
+            icon: PhosphorIconsRegular.globe,
+            keyboardType: TextInputType.url,
           ),
-          onSubmitted: _fetchPlaylist,
-        ),
-        ),
+          const SizedBox(height: 10),
+          _inputField(
+            controller: _xtreamUserController,
+            hint: 'Username',
+            icon: PhosphorIconsRegular.user,
+          ),
+          const SizedBox(height: 10),
+          _inputField(
+            controller: _xtreamPassController,
+            hint: 'Password',
+            icon: PhosphorIconsRegular.lockKey,
+            obscure: !_showXtreamPassword,
+            suffix: IconButton(
+              icon: Icon(
+                _showXtreamPassword ? PhosphorIconsRegular.eyeSlash : PhosphorIconsRegular.eye,
+                color: Colors.white.withValues(alpha: 0.5),
+              ),
+              onPressed: () => setState(() => _showXtreamPassword = !_showXtreamPassword),
+            ),
+            onSubmitted: (_) => _loginXtream(),
+          ),
+        ] else
+          _inputField(
+            controller: _urlController,
+            hint: 'https://example.com/playlist.m3u',
+            icon: PhosphorIconsRegular.link,
+            keyboardType: TextInputType.url,
+            onSubmitted: _fetchPlaylist,
+          ),
         if (_error != null) ...[
           const SizedBox(height: 12),
           Text(
@@ -374,9 +483,9 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
         ],
         const SizedBox(height: 16),
         FilledButton.icon(
-          onPressed: () => _fetchPlaylist(_urlController.text.trim()),
-          icon: const Icon(PhosphorIconsRegular.downloadSimple, size: 20),
-          label: const Text('Load Playlist'),
+          onPressed: _xtreamMode ? _loginXtream : () => _fetchPlaylist(_urlController.text.trim()),
+          icon: Icon(_xtreamMode ? PhosphorIconsRegular.signIn : PhosphorIconsRegular.downloadSimple, size: 20),
+          label: Text(_xtreamMode ? 'Log in' : 'Load Playlist'),
           style: FilledButton.styleFrom(
             backgroundColor: NivioTheme.accentColorOf(context),
             foregroundColor: Colors.white,
@@ -411,6 +520,160 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
               child: _quickAddButton(s),
             )),
       ],
+    );
+  }
+
+  /// Channels | Movies | Series switch (only sections with content are shown).
+  Widget _buildSectionSwitch() {
+    final accent = NivioTheme.accentColorOf(context);
+    final sections = [
+      (index: 0, label: 'Channels', icon: PhosphorIconsRegular.television, count: _channels.length),
+      (index: 1, label: 'Movies', icon: PhosphorIconsRegular.filmStrip, count: _vod.movies.length),
+      (index: 2, label: 'Series', icon: PhosphorIconsRegular.monitorPlay, count: _vod.series.length),
+    ].where((s) => s.count > 0).toList();
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        children: [
+          for (final s in sections)
+            Expanded(
+              child: FocusableTap(
+                behavior: HitTestBehavior.opaque,
+                borderRadius: BorderRadius.circular(9),
+                onTap: () => setState(() => _section = s.index),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(vertical: 9),
+                  decoration: BoxDecoration(
+                    color: _section == s.index ? accent.withValues(alpha: 0.22) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(color: _section == s.index ? accent.withValues(alpha: 0.6) : Colors.transparent),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(s.icon, size: 16, color: _section == s.index ? accent : Colors.white60),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          s.label,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: _section == s.index ? Colors.white : Colors.white60,
+                            fontSize: 13,
+                            fontWeight: _section == s.index ? FontWeight.w700 : FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// "M3U link | Xtream login" switch for the add-playlist form.
+  Widget _buildSourceTypeSwitch() {
+    final accent = NivioTheme.accentColorOf(context);
+    Widget option(String label, IconData icon, bool xtream) {
+      final selected = _xtreamMode == xtream;
+      return Expanded(
+        child: FocusableTap(
+          behavior: HitTestBehavior.opaque,
+          borderRadius: BorderRadius.circular(9),
+          onTap: () => setState(() {
+            _xtreamMode = xtream;
+            _error = null;
+          }),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? accent.withValues(alpha: 0.22) : Colors.transparent,
+              borderRadius: BorderRadius.circular(9),
+              border: Border.all(color: selected ? accent.withValues(alpha: 0.6) : Colors.transparent),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 16, color: selected ? accent : Colors.white60),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: selected ? Colors.white : Colors.white60,
+                    fontSize: 13,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        children: [
+          option('M3U link', PhosphorIconsRegular.link, false),
+          option('Xtream login', PhosphorIconsRegular.signIn, true),
+        ],
+      ),
+    );
+  }
+
+  Widget _inputField({
+    required TextEditingController controller,
+    required String hint,
+    required IconData icon,
+    bool obscure = false,
+    Widget? suffix,
+    TextInputType? keyboardType,
+    ValueChanged<String>? onSubmitted,
+  }) {
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+    );
+    return TvTextFieldGate(
+      borderRadius: BorderRadius.circular(12),
+      builder: (context, focusNode) => TextField(
+        focusNode: focusNode,
+        controller: controller,
+        obscureText: obscure,
+        autocorrect: false,
+        enableSuggestions: !obscure,
+        keyboardType: keyboardType,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+          filled: true,
+          fillColor: Colors.white.withValues(alpha: 0.06),
+          border: border,
+          enabledBorder: border,
+          focusedBorder: border.copyWith(borderSide: BorderSide(color: NivioTheme.accentColorOf(context))),
+          prefixIcon: Icon(icon, color: Colors.white.withValues(alpha: 0.5)),
+          suffixIcon: suffix,
+        ),
+        onSubmitted: onSubmitted,
+      ),
     );
   }
 
@@ -481,6 +744,25 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
           ),
         ),
 
+        // Channels / Movies / Series, when the playlists have on-demand content.
+        if (!_vod.isEmpty)
+          Padding(
+            padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16.0, 0, 16.0, 12.0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: SizedBox(width: isDesktop ? 420 : double.infinity, child: _buildSectionSwitch()),
+            ),
+          ),
+
+        if (_section != 0)
+          Expanded(
+            child: IptvVodView(
+              library: _vod,
+              series: _section == 2,
+              onPlay: _playVod,
+            ),
+          )
+        else ...[
         // Search and Filter Bar
         Padding(
           padding: EdgeInsets.fromLTRB(isDesktop ? 68 : 16.0, 0, 16.0, 12.0),
@@ -532,6 +814,8 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                     onTap: () {
                       showModalBottomSheet(
                         context: context,
+                        // Above the floating nav bar; the tab's own navigator sits under it.
+                        useRootNavigator: true,
                         backgroundColor: NivioTheme.netflixDarkGrey,
                         constraints: BoxConstraints(maxWidth: isDesktop ? 500 : double.infinity),
                         shape: const RoundedRectangleBorder(
@@ -552,6 +836,8 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                               ),
                               Expanded(
                                 child: AppListView.builder(
+                                  // Last categories scroll clear of the system navigation bar.
+                                  padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom + 8),
                                   cacheExtent: 250,
                                   scrollSpeed: 2.0,
                                   silkyScrollDuration: const Duration(milliseconds: 500),
@@ -630,7 +916,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                 )
               : isDesktop
                   ? AppGridView.builder(
-                      padding: const EdgeInsets.fromLTRB(68, 4, 16, 24),
+                      padding: EdgeInsets.fromLTRB(68, 4, 16, 24 + _bottomInset(context)),
                       cacheExtent: 1000,
                       scrollSpeed: 2.0,
                       silkyScrollDuration: const Duration(milliseconds: 500),
@@ -653,7 +939,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                       },
                     )
                   : AppListView.builder(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                      padding: EdgeInsets.fromLTRB(16, 4, 16, 24 + _bottomInset(context)),
                       cacheExtent: 350,
                       scrollSpeed: 2.0,
                       silkyScrollDuration: const Duration(milliseconds: 500),
@@ -670,6 +956,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                       },
                     ),
         ),
+        ],
       ],
     );
   }

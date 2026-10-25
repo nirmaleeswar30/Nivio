@@ -51,6 +51,11 @@ class MiruroScraperService {
         : snippet.substring(0, snippet.length < 200 ? snippet.length : 200);
   }
 
+  static String? _thumbnailsVtt(Object? thumbnails) {
+    final vtt = thumbnails is Map ? thumbnails['vtt']?.toString() : null;
+    return (vtt != null && vtt.startsWith('http')) ? vtt : null;
+  }
+
   dynamic _decodeCatalogResponse(List<int> bytes) {
     final xorBytes = List<int>.generate(
       bytes.length,
@@ -432,6 +437,10 @@ class MiruroScraperService {
         sources: sources,
         availableAudios: availableAudios,
         selectedAudio: preferredAudio,
+        // Seek-bar previews: anikoto, kickassanime and icarus provide a
+        // `thumbnails.vtt`; its CDN checks the same Referer as the stream.
+        thumbnailsVtt: _thumbnailsVtt(selectedProv['thumbnails']),
+        thumbnailsHeaders: finalHeaders,
       );
     } catch (e) {
       appDebugLog('Error in MiruroScraperService: $e');

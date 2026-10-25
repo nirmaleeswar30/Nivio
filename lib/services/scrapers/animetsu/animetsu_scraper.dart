@@ -101,6 +101,7 @@ class AnimetsuScraperService {
     );
 
     final subtitles = <StreamSubtitleTrack>[];
+    String? thumbnailsVtt;
     final rawSubs = (data['subtitles'] ?? data['tracks']) as List<dynamic>?;
     if (rawSubs != null) {
       for (final sub in rawSubs) {
@@ -109,7 +110,10 @@ class AnimetsuScraperService {
         if (l.isEmpty || l.toLowerCase() == 'auto' || l.toLowerCase() == 'und') {
           l = 'English';
         }
-        if (u.isNotEmpty) {
+        if (u.isEmpty) continue;
+        if (_isPreviewTrack(sub, u)) {
+          thumbnailsVtt ??= u; // seek-bar previews, not a subtitle
+        } else {
           subtitles.add(StreamSubtitleTrack(url: u, lang: l));
         }
       }
@@ -151,7 +155,20 @@ class AnimetsuScraperService {
         'Origin': 'https://beta.zanora.xyz',
         'User-Agent': _userAgent,
       },
+      thumbnailsVtt: thumbnailsVtt,
+      thumbnailsHeaders: {
+        'Referer': 'https://beta.zanora.xyz/',
+        'Origin': 'https://beta.zanora.xyz',
+        'User-Agent': _userAgent,
+      },
     );
+  }
+
+  /// A seek-preview sprite map (thumbnails VTT) listed among subtitles/tracks.
+  static bool _isPreviewTrack(dynamic track, String url) {
+    final kind = (track is Map ? track['kind'] : null)?.toString().toLowerCase() ?? '';
+    final u = url.toLowerCase();
+    return kind == 'thumbnails' || u.contains('thumbnail') || u.contains('sprite') || u.contains('/preview');
   }
 
   Future<StreamResult?> _fetchAnikoto(int anilistId, int episode, String category, bool isDub) async {
@@ -209,6 +226,7 @@ class AnimetsuScraperService {
     }
 
     final subtitles = <StreamSubtitleTrack>[];
+    String? thumbnailsVtt;
     final rawSubs = (hlsStreams.first['subtitles'] ?? data['subtitles']) as List<dynamic>?;
     if (rawSubs != null) {
       for (final sub in rawSubs) {
@@ -217,7 +235,10 @@ class AnimetsuScraperService {
         if (l.isEmpty || l.toLowerCase() == 'auto' || l.toLowerCase() == 'und') {
           l = 'English';
         }
-        if (u.isNotEmpty) {
+        if (u.isEmpty) continue;
+        if (_isPreviewTrack(sub, u)) {
+          thumbnailsVtt ??= u; // seek-bar previews, not a subtitle
+        } else {
           subtitles.add(StreamSubtitleTrack(url: u, lang: l));
         }
       }
@@ -256,6 +277,12 @@ class AnimetsuScraperService {
       selectedAudio: isDub ? 'English' : 'Default',
       isM3U8: true,
       headers: {
+        'Referer': ref,
+        'Origin': orig,
+        'User-Agent': _userAgent,
+      },
+      thumbnailsVtt: thumbnailsVtt,
+      thumbnailsHeaders: {
         'Referer': ref,
         'Origin': orig,
         'User-Agent': _userAgent,

@@ -254,6 +254,7 @@ class AnimexScraperService {
       }
 
       final List<StreamSubtitleTrack> subtitles = [];
+      String? thumbnailsVtt;
       final tracks = sourcesData['tracks'] as List<dynamic>?;
       if (tracks != null) {
         for (final t in tracks) {
@@ -267,8 +268,12 @@ class AnimexScraperService {
                 lowerUrl.contains('thumbnail') ||
                 lowerUrl.contains('sprite') ||
                 lowerUrl.contains('/preview/');
-            if (isThumbnails || url.contains('.m3u8') || url.contains('.m3u') || url.contains('.ass') || url.contains('.ssa')) {
-              continue; // Skip seek previews, unsupported subtitle formats and playlists
+            if (isThumbnails) {
+              thumbnailsVtt ??= url; // Seek-bar previews, not a subtitle
+              continue;
+            }
+            if (url.contains('.m3u8') || url.contains('.m3u') || url.contains('.ass') || url.contains('.ssa')) {
+              continue; // Skip unsupported subtitle formats and playlists
             }
             final rawLang = (t['lang'] ?? t['language'] ?? t['label'] ?? t['name'] ?? '').toString().trim();
             final lang = (rawLang.isEmpty || rawLang.toLowerCase() == 'auto' || rawLang.toLowerCase() == 'und' || rawLang.toLowerCase() == 'unknown')
@@ -319,6 +324,9 @@ class AnimexScraperService {
         availableAudios: availableAudios,
         selectedAudio: type == 'dub' ? 'English (Dub)' : 'Japanese (Sub)',
         sources: mappedSources,
+        // The preview CDN checks the same Referer as the stream (e.g. megaplay.buzz).
+        thumbnailsVtt: thumbnailsVtt,
+        thumbnailsHeaders: headers,
       );
     } catch (e) {
       appDebugLog('Animex fetchStreamUrl error: $e');

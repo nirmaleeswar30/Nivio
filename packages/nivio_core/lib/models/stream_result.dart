@@ -54,6 +54,12 @@ class StreamResult {
   final List<SkipTime> skipTimes;
   Map<String, StreamResult>? preloadedSources;
 
+  /// WebVTT seek-preview track (cues pointing at sprite-sheet tiles), when the
+  /// server provides one, and the headers its CDN needs (usually the stream's
+  /// Referer/Origin).
+  final String? thumbnailsVtt;
+  final Map<String, String> thumbnailsHeaders;
+
   StreamResult({
     required this.url,
     required this.quality,
@@ -67,6 +73,8 @@ class StreamResult {
     this.sources = const [],
     this.skipTimes = const [],
     this.preloadedSources,
+    this.thumbnailsVtt,
+    this.thumbnailsHeaders = const {},
   });
 
   StreamResult copyWith({
@@ -81,6 +89,9 @@ class StreamResult {
     Map<String, String>? headers,
     List<StreamSource>? sources,
     Map<String, StreamResult>? preloadedSources,
+    List<SkipTime>? skipTimes,
+    String? thumbnailsVtt,
+    Map<String, String>? thumbnailsHeaders,
   }) {
     return StreamResult(
       url: url ?? this.url,
@@ -94,6 +105,10 @@ class StreamResult {
       headers: headers ?? this.headers,
       sources: sources ?? this.sources,
       preloadedSources: preloadedSources ?? this.preloadedSources,
+      // Was missing, so picking a quality dropped the provider's skip times.
+      skipTimes: skipTimes ?? this.skipTimes,
+      thumbnailsVtt: thumbnailsVtt ?? this.thumbnailsVtt,
+      thumbnailsHeaders: thumbnailsHeaders ?? this.thumbnailsHeaders,
     );
   }
 }
