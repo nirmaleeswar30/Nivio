@@ -165,6 +165,8 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
     _enqueue(() async {
       final mpv = _mpv;
       if (mpv == null || !mounted) return;
+      _hijackGuardTimer?.cancel();
+      _hijackGuardTimer = null;
       if (_attached && wid == _wid) {
         await mpv.setProperty('android-surface-size', '${width}x$height');
         return;
@@ -210,9 +212,13 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
         appDebugLog('🌈 HDR surface (gpu-next): mpv on SurfaceView ${width}x$height (wid=$wid)');
       }
 
-      // If switching mid-stream, flush decoder to an IDR keyframe so MediaCodec doesn't drop P/B frames
+      // If switching mid-stream, reload video track so mpv cleanly tears down
+      // the old MediaCodec instance and initializes the new one (zero-copy vs copy mode)
       if (wasPlayingMidStream) {
         try {
+          final vid = await mpv.getProperty('vid');
+          await mpv.setProperty('vid', 'no');
+          await mpv.setProperty('vid', vid.isNotEmpty && vid != 'no' ? vid : 'auto');
           await mpv.command(['seek', '0', 'relative+keyframes']);
         } catch (_) {}
       }
@@ -266,6 +272,8 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
   void didUpdateWidget(covariant HdrVideoSurface oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.backend != widget.backend) {
+      _hijackGuardTimer?.cancel();
+      _hijackGuardTimer = null;
       if (_wid != 0 && _width > 0 && _height > 0) {
         _attached = false;
         _onSurface(_wid, _width, _height);

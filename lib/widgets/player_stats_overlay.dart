@@ -132,7 +132,13 @@ class _PlayerStatsOverlayState extends State<PlayerStatsOverlay> {
     final avsync = _stats['avsync'] ?? '';
     final isBuffering = _stats['paused-for-cache'] == 'yes';
 
-    final dvText = widget.doviProfile != null ? 'Dolby Vision P${widget.doviProfile}' : (widget.isHdr ? 'HDR' : 'SDR');
+    final String dvText;
+    if (widget.doviProfile != null) {
+      final sub = widget.doviProfile == 8 ? '8.1' : '${widget.doviProfile}';
+      dvText = vo == 'gpu-next' ? 'HDR10 (DV P$sub Base)' : 'Dolby Vision P$sub';
+    } else {
+      dvText = widget.isHdr ? 'HDR' : 'SDR';
+    }
 
     return Positioned(
       top: 60,

@@ -3995,7 +3995,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         return 'vaapi-copy,nvdec-copy';
       default:
         if (Platform.isAndroid) {
-          return _useHdrSurface ? 'mediacodec,mediacodec-copy,no' : 'mediacodec-copy,mediacodec,no';
+          return 'mediacodec,mediacodec-copy,no';
         }
         return 'auto-safe';
     }
@@ -5636,7 +5636,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                               if (surfaceBackend == 'mediacodecEmbed') {
                                 return isDv ? 'True DV · MediaCodec' : 'True HDR · MediaCodec';
                               }
-                              return isDv ? 'True Dolby Vision' : 'True HDR';
+                              return isDv ? 'True HDR (DV Base)' : 'True HDR';
                             }
                             if (!HdrToneMapping.needsMapping(_videoGamma, _videoPrimaries) && !isDv) return videoColourLabel();
                             return toneMode == 'hdrToys' ? 'Tone mapped · HDR Toys' : 'Tone mapped';
@@ -5651,9 +5651,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             final trueHdrNow = _useHdrSurface && _trueHdr;
                             final String status;
                             if (trueHdrNow) {
-                              status = _doviProfile != null
-                                  ? 'Playing in Dolby Vision (Profile ${_doviProfile == 8 ? '8.1' : '$_doviProfile'}) direct to screen.'
-                                  : 'Playing in HDR on this screen.';
+                              if (surfaceBackend == 'mediacodecEmbed') {
+                                status = _doviProfile != null
+                                    ? 'Playing in Dolby Vision (Profile ${_doviProfile == 8 ? '8.1' : '$_doviProfile'}) direct to screen.'
+                                    : 'Playing in HDR on this screen (MediaCodec Direct).';
+                              } else {
+                                status = _doviProfile != null
+                                    ? 'Playing HDR10 base layer via Vulkan swapchain. (Video supports Dolby Vision Profile ${_doviProfile == 8 ? '8.1' : '$_doviProfile'} — switch to MediaCodec Direct for full DV hardware tunnel).'
+                                    : 'Playing in HDR on this screen (Vulkan swapchain).';
+                              }
                             } else if (!_hdrVideo) {
                               status = 'This video is ${videoColourLabel()}${_videoPrimaries == 'bt.2020' ? ', its colours are mapped to the screen.' : ', nothing to convert.'}';
                             } else if (!_hdrDisplay) {
@@ -7263,7 +7269,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         : hdrSurface
             ? HdrVideoSurface(
                 player: _player,
-                backend: ((ref.watch(hdrSurfaceBackendProvider) == 'mediacodecEmbed' || _doviProfile != null) &&
+                backend: (ref.watch(hdrSurfaceBackendProvider) == 'mediacodecEmbed' &&
                           (_toneMappingProps?['glsl-shaders'] ?? '').isEmpty)
                     ? HdrSurfaceBackend.mediacodecEmbed
                     : HdrSurfaceBackend.vulkan,
