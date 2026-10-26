@@ -47,21 +47,31 @@ class HdrOutputSettings {
         };
 }
 
+/// Video output driver backend for the native SurfaceView.
+enum HdrSurfaceBackend {
+  /// Standard Vulkan gpu-next swapchain (true HDR10 & HDR Toys shaders).
+  vulkan,
+
+  /// Zero-copy direct MediaCodec output to SurfaceView (hardware pipeline).
+  mediacodecEmbed,
+}
+
 /// Android-only video surface for HDR output, also used for hdr-toys tone
 /// mapping (its shaders need mpv's Vulkan renderer).
 ///
 /// Shows an Android SurfaceView (com.nirmal.nivio.HdrSurfaceView) and points
-/// the player's mpv at it with the Vulkan gpu-next renderer, instead of
-/// media_kit's Flutter texture (which Flutter composites as SDR). When it goes
-/// away, mpv is switched back to media_kit's texture surface.
+/// the player's mpv at it with the Vulkan gpu-next renderer or mediacodec_embed,
+/// instead of media_kit's Flutter texture (which Flutter composites as SDR).
+/// When it goes away, mpv is switched back to media_kit's texture surface.
 class HdrVideoSurface extends StatefulWidget {
   final Player player;
   final HdrOutputSettings settings;
+  final HdrSurfaceBackend backend;
 
   /// How the video fills the view (mpv scales it here, not Flutter).
   final BoxFit fit;
 
-  /// Called if mpv can't start its Vulkan renderer here; the caller should go
+  /// Called if mpv can't start its renderer here; the caller should go
   /// back to the normal video widget.
   final VoidCallback? onFailed;
 
@@ -69,6 +79,7 @@ class HdrVideoSurface extends StatefulWidget {
     super.key,
     required this.player,
     this.settings = HdrOutputSettings.passthrough,
+    this.backend = HdrSurfaceBackend.vulkan,
     this.fit = BoxFit.contain,
     this.onFailed,
   });
@@ -80,6 +91,8 @@ class HdrVideoSurface extends StatefulWidget {
 class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
   MethodChannel? _channel;
   int _wid = 0;
+  int _width = 0;
+  int _height = 0;
   bool _attached = false;
 
   /// media_kit's own output settings, restored when leaving the HDR surface.
@@ -122,6 +135,8 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
 
   void _onSurface(int wid, int width, int height) {
     if (wid == 0 || width <= 0 || height <= 0) return;
+    _width = width;
+    _height = height;
     _enqueue(() async {
       final mpv = _mpv;
       if (mpv == null || !mounted) return;
@@ -134,26 +149,43 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
       await mpv.setProperty('vo', 'null');
       await mpv.setProperty('android-surface-size', '${width}x$height');
       await mpv.setProperty('wid', '$wid');
-      await mpv.setProperty('gpu-api', 'vulkan');
-      await mpv.setProperty('gpu-context', 'androidvk');
-      // The Vulkan path can't take MediaCodec's GPU frames directly.
-      await mpv.setProperty('hwdec', 'mediacodec-copy');
-      for (final e in widget.settings.properties.entries) {
-        await mpv.setProperty(e.key, e.value);
-      }
-      for (final e in _fitProperties(widget.fit).entries) {
-        await mpv.setProperty(e.key, e.value);
-      }
-      await mpv.setProperty('vo', 'gpu-next');
-      _wid = wid;
-      _attached = true;
-      appDebugLog('🌈 HDR surface: mpv on SurfaceView ${width}x$height (wid=$wid)');
 
-      // Check that the Vulkan renderer actually came up.
+      final isEmbed = widget.backend == HdrSurfaceBackend.mediacodecEmbed;
+      if (isEmbed) {
+        await mpv.setProperty('gpu-api', 'auto');
+        await mpv.setProperty('gpu-context', 'auto');
+        // Zero-copy direct hardware decode to SurfaceView
+        await mpv.setProperty('hwdec', 'mediacodec');
+        for (final e in _fitProperties(widget.fit).entries) {
+          await mpv.setProperty(e.key, e.value);
+        }
+        await mpv.setProperty('vo', 'mediacodec_embed');
+        _wid = wid;
+        _attached = true;
+        appDebugLog('🌈 HDR surface (mediacodec_embed): mpv on SurfaceView ${width}x$height (wid=$wid)');
+      } else {
+        await mpv.setProperty('gpu-api', 'vulkan');
+        await mpv.setProperty('gpu-context', 'androidvk');
+        // The Vulkan path can't take MediaCodec's GPU frames directly.
+        await mpv.setProperty('hwdec', 'mediacodec-copy');
+        for (final e in widget.settings.properties.entries) {
+          await mpv.setProperty(e.key, e.value);
+        }
+        for (final e in _fitProperties(widget.fit).entries) {
+          await mpv.setProperty(e.key, e.value);
+        }
+        await mpv.setProperty('vo', 'gpu-next');
+        _wid = wid;
+        _attached = true;
+        appDebugLog('🌈 HDR surface (gpu-next): mpv on SurfaceView ${width}x$height (wid=$wid)');
+      }
+
+      // Check that the selected renderer actually came up.
       await Future.delayed(const Duration(milliseconds: 800));
       final vo = await mpv.getProperty('current-vo');
       appDebugLog('🌈 HDR surface: current-vo=$vo');
-      if (vo != 'gpu-next' && mounted) {
+      final expectedVo = isEmbed ? 'mediacodec_embed' : 'gpu-next';
+      if (vo != expectedVo && mounted) {
         widget.onFailed?.call();
       }
     });
@@ -170,6 +202,13 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
   @override
   void didUpdateWidget(covariant HdrVideoSurface oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.backend != widget.backend) {
+      if (_wid != 0 && _width > 0 && _height > 0) {
+        _attached = false;
+        _onSurface(_wid, _width, _height);
+      }
+      return;
+    }
     if (!mapEquals(oldWidget.settings.properties, widget.settings.properties)) {
       final settings = widget.settings.properties;
       _enqueue(() async {

@@ -1030,6 +1030,34 @@ class ToneMappingNotifier extends StateNotifier<String> {
   }
 }
 
+// HDR Surface Output Backend (Android):
+//  'vulkan'          — mpv's gpu-next renderer on Vulkan swapchain (standard).
+//  'mediacodecEmbed' — mpv's zero-copy mediacodec_embed directly to SurfaceView.
+const hdrSurfaceBackends = ['vulkan', 'mediacodecEmbed'];
+
+final hdrSurfaceBackendProvider = StateNotifierProvider<HdrSurfaceBackendNotifier, String>((ref) {
+  return HdrSurfaceBackendNotifier();
+});
+
+class HdrSurfaceBackendNotifier extends StateNotifier<String> {
+  HdrSurfaceBackendNotifier() : super(_valid(_startupPrefs?.getString('hdr_surface_backend'))) {
+    _loadPreference();
+  }
+
+  static String _valid(String? mode) => hdrSurfaceBackends.contains(mode) ? mode! : 'mediacodecEmbed';
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = _valid(prefs.getString('hdr_surface_backend'));
+  }
+
+  Future<void> setBackend(String mode) async {
+    state = _valid(mode);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('hdr_surface_backend', state);
+  }
+}
+
 // Video Decoder Provider: 'auto', 'hwplus' (direct hardware), 'hw' (hardware
 // with copy-back) or 'sw' (CPU). Mapped to mpv's hwdec per platform by the player.
 const videoDecoderModes = ['auto', 'hwplus', 'hw', 'sw'];

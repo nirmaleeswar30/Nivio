@@ -72,7 +72,7 @@ flutter {
 // module's jniLibs take priority, so it replaces it (its FFmpeg is renamed, below).
 // Downloaded once into build/ and checked against the release's SHA-256.
 val mpvlibVersion = "1.1.4"
-val mpvlibSha256 = "4abc71bfc1a0e0c8d5008e8fb3a8ccf83f3ced6e430a04b51156f75ae53bb285"
+val mpvlibSha256 = "bebfa2ad542d4d2ca1fe16f1173ea59671d48f8c35fa033ff8c39a31e7f11bd5"
 val mpvlibDir = layout.buildDirectory.dir("mpvlib")
 
 val fetchMpvlib by tasks.registering {
@@ -100,7 +100,7 @@ val fetchMpvlib by tasks.registering {
         }
         if (!aar.exists() || sha256(aar) != mpvlibSha256) {
             dir.mkdirs()
-            val url = "https://github.com/Riteshp2001/mpvlibAndroid/releases/download/v$mpvlibVersion/mpvlib-$mpvlibVersion.aar"
+            val url = "https://github.com/nirmaleeswar30/mpvlibAndroid/releases/download/v1.1.4-dv/mpvlib-$mpvlibVersion.aar"
             println("Downloading $url")
             val input: InputStream = URI(url).toURL().openStream()
             val output = FileOutputStream(aar)

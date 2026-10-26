@@ -1574,6 +1574,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         'provider=${result.provider} startAt=$startAt url=$targetUrl',
       );
       // Start playback
+      _doviProfile = null;
+      _hdrVideo = false;
+      _hdrSurfaceFailed = false;
       await _player.open(
         Media(
           targetUrl,
@@ -2036,14 +2039,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         final gamma = params.gamma;
         if (gamma == null || gamma.isEmpty) return; // not decoded yet
         if (gamma == _videoGamma && params.primaries == _videoPrimaries) return;
-        final hdr = gamma == 'pq' || gamma == 'hlg';
-        appDebugLog('🌈 Video colour: $gamma / ${params.primaries} (HDR=$hdr, peak=${params.sigPeak})');
+        final hdr = gamma == 'pq' || gamma == 'hlg' || _doviProfile != null;
+        appDebugLog('🌈 Video colour: $gamma / ${params.primaries} (HDR=$hdr, DOVI=$_doviProfile, peak=${params.sigPeak})');
         setState(() {
           _videoGamma = gamma;
           _videoPrimaries = params.primaries;
           if (hdr != _hdrVideo) _hdrSurfaceFailed = false;
           _hdrVideo = hdr;
         });
+        unawaited(_refreshDolbyVision());
       }),
     );
 
@@ -2142,6 +2146,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (!mounted) return;
         if (_isZombieCallback('tracks stream')) return;
         _applyTrackPreferences();
+        unawaited(_refreshDolbyVision());
         setState(() {});
       }),
     );
@@ -3803,9 +3808,67 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _hdrDisplay = false;
   bool _hdrVideo = false;
   bool _hdrSurfaceFailed = false;
+  int? _doviProfile;
 
   String? _videoGamma;
   String? _videoPrimaries;
+
+  Future<void> _refreshDolbyVision() async {
+    if (_player.platform is! NativePlayer) return;
+    final np = _player.platform as NativePlayer;
+    int? detected;
+
+    // 1. mpv track-level property for dolby vision profile
+    try {
+      final prop = await np.getProperty('current-tracks/video/dolby-vision-profile');
+      final val = int.tryParse(prop.trim());
+      if (val != null && val > 0) detected = val;
+    } catch (_) {}
+
+    // 2. mpv video-params/colormatrix (Profile 5 IPT)
+    if (detected == null) {
+      try {
+        final matrix = (await np.getProperty('video-params/colormatrix')).trim().toLowerCase();
+        if (matrix == 'dolbyvision') detected = 5;
+      } catch (_) {}
+    }
+
+    // 3. mpv video-codec check (dvh1, dvhe)
+    if (detected == null) {
+      try {
+        final vcodec = (await np.getProperty('video-codec')).trim().toLowerCase();
+        if (vcodec.startsWith('dvh') || vcodec.startsWith('dvhe')) {
+          detected = vcodec.contains('05') ? 5 : 8;
+        }
+      } catch (_) {}
+    }
+
+    // 4. Fallback: URL or stream title
+    if (detected == null) {
+      final url = (_streamResult?.url ?? widget.directStreamUrl ?? '').toLowerCase();
+      final media = ref.read(selectedMediaProvider);
+      final title = (widget.directStreamTitle ?? media?.title ?? media?.name ?? '').toLowerCase();
+      final combined = '$url $title';
+      if (combined.contains('dv') || combined.contains('dolby') || combined.contains('dovi')) {
+        if (combined.contains('p5') || combined.contains('profile 5') || combined.contains('profile5')) {
+          detected = 5;
+        } else if (combined.contains('p8') || combined.contains('profile 8') || combined.contains('profile8')) {
+          detected = 8;
+        } else if (combined.contains('p7') || combined.contains('profile 7') || combined.contains('profile7')) {
+          detected = 7;
+        }
+      }
+    }
+
+    if (detected != null && mounted && _doviProfile != detected) {
+      appDebugLog('🌈 Dolby Vision detected: Profile $detected (hardware display tunnel engaged)');
+      setState(() {
+        _doviProfile = detected;
+        _hdrVideo = true;
+        _hdrSurfaceFailed = false;
+      });
+    }
+  }
 
   /// HDR video on an HDR screen with HDR output on.
   bool get _trueHdr => Platform.isAndroid && _hdrDisplay && _hdrVideo && ref.read(hdrOutputProvider);
@@ -5519,17 +5582,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
                           final hdrOutput = ref.watch(hdrOutputProvider);
                           final toneMode = ref.watch(toneMappingProvider);
+                          final surfaceBackend = ref.watch(hdrSurfaceBackendProvider);
 
-                          String videoColourLabel() => switch (_videoGamma) {
-                                'pq' => 'HDR10 (PQ)',
-                                'hlg' => 'HLG',
-                                null => 'Unknown',
-                                _ => _videoPrimaries == 'bt.2020' ? 'SDR · BT.2020' : 'SDR',
-                              };
+                          String videoColourLabel() {
+                            if (_doviProfile != null) {
+                              final sub = _doviProfile == 8 ? '8.1' : '$_doviProfile';
+                              return 'Dolby Vision (Profile $sub)';
+                            }
+                            return switch (_videoGamma) {
+                              'pq' => 'HDR10 (PQ)',
+                              'hlg' => 'HLG',
+                              null => 'Unknown',
+                              _ => _videoPrimaries == 'bt.2020' ? 'SDR · BT.2020' : 'SDR',
+                            };
+                          }
 
                           String hdrValue() {
-                            if (_useHdrSurface && _trueHdr) return 'True HDR';
-                            if (!HdrToneMapping.needsMapping(_videoGamma, _videoPrimaries)) return videoColourLabel();
+                            final isDv = _doviProfile != null;
+                            if (_useHdrSurface && _trueHdr) {
+                              if (surfaceBackend == 'mediacodecEmbed') {
+                                return isDv ? 'True DV · MediaCodec' : 'True HDR · MediaCodec';
+                              }
+                              return isDv ? 'True Dolby Vision' : 'True HDR';
+                            }
+                            if (!HdrToneMapping.needsMapping(_videoGamma, _videoPrimaries) && !isDv) return videoColourLabel();
                             return toneMode == 'hdrToys' ? 'Tone mapped · HDR Toys' : 'Tone mapped';
                           }
 
@@ -5542,7 +5618,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             final trueHdrNow = _useHdrSurface && _trueHdr;
                             final String status;
                             if (trueHdrNow) {
-                              status = 'Playing in HDR on this screen.';
+                              status = _doviProfile != null
+                                  ? 'Playing in Dolby Vision (Profile ${_doviProfile == 8 ? '8.1' : '$_doviProfile'}) direct to screen.'
+                                  : 'Playing in HDR on this screen.';
                             } else if (!_hdrVideo) {
                               status = 'This video is ${videoColourLabel()}${_videoPrimaries == 'bt.2020' ? ', its colours are mapped to the screen.' : ', nothing to convert.'}';
                             } else if (!_hdrDisplay) {
@@ -5575,6 +5653,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                       }
                                     : null,
                               ),
+                              if (trueHdrNow) ...[
+                                const Padding(
+                                  padding: EdgeInsets.fromLTRB(24, 12, 24, 4),
+                                  child: Text('Surface output (Experimental)', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
+                                ),
+                                ...hdrSurfaceBackends.map((backend) {
+                                  final isCurrent = backend == surfaceBackend;
+                                  const backendLabels = {
+                                    'vulkan': 'Vulkan (gpu-next)',
+                                    'mediacodecEmbed': 'MediaCodec Direct (mediacodec_embed)',
+                                  };
+                                  const backendDescriptions = {
+                                    'vulkan': 'Standard HDR10 via Vulkan swapchain (HW copy-back). Note: Dolby Vision hardware tunnel is disabled in this mode.',
+                                    'mediacodecEmbed': 'Zero-copy direct hardware decode (HW+). Required for Dolby Vision and optimal battery/thermals for all HDR.',
+                                  };
+                                  return ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                    title: Text(backendLabels[backend]!, style: TextStyle(color: isCurrent ? accent : Colors.white)),
+                                    subtitle: Text(backendDescriptions[backend]!, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                                    trailing: isCurrent ? Icon(Icons.check, color: accent) : null,
+                                    onTap: () async {
+                                      if (isCurrent) return;
+                                      await ref.read(hdrSurfaceBackendProvider.notifier).setBackend(backend);
+                                      refreshSheet();
+                                    },
+                                  );
+                                }),
+                              ],
                               const Padding(
                                 padding: EdgeInsets.fromLTRB(24, 12, 24, 4),
                                 child: Text('Tone mapping (HDR on SDR)', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
@@ -5686,7 +5792,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                   // True HDR and the tone-mapping choice are Android-only;
                                   // desktop always uses Standard tone mapping.
                                   if (Platform.isAndroid)
-                                    tile(icon: Icons.hdr_on_outlined, title: 'HDR', value: hdrValue(), onTap: () => openPage('hdr')),
+                                    tile(
+                                      icon: _doviProfile != null ? Icons.branding_watermark_rounded : Icons.hdr_on_outlined,
+                                      title: _doviProfile != null ? 'Dolby Vision' : 'HDR',
+                                      value: hdrValue(),
+                                      onTap: () => openPage('hdr'),
+                                    ),
                                   tile(
                                     icon: Icons.blur_linear_rounded,
                                     title: 'Debanding',
@@ -7109,6 +7220,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         : hdrSurface
             ? HdrVideoSurface(
                 player: _player,
+                backend: _trueHdr && ref.watch(hdrSurfaceBackendProvider) == 'mediacodecEmbed'
+                    ? HdrSurfaceBackend.mediacodecEmbed
+                    : HdrSurfaceBackend.vulkan,
                 settings: _trueHdr
                     ? HdrOutputSettings.passthrough
                     : HdrOutputSettings.toneMapped(_toneMappingProps ?? const {}),
