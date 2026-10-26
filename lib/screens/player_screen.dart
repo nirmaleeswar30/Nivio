@@ -1,5 +1,6 @@
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:media_kit_video/src/video_controller/android_video_controller/android_video_controller.dart';
 import 'package:simple_pip_mode/actions/pip_actions_layout.dart';
 import 'package:nivio/services/window_fullscreen.dart';
 import 'dart:io';
@@ -19,6 +20,7 @@ import 'package:nivio/widgets/video_ambient_background.dart';
 import 'package:nivio/widgets/seek_preview.dart';
 import 'package:nivio/core/mpv_android_setup.dart';
 import 'package:nivio/widgets/hdr_video_surface.dart';
+import 'package:nivio/widgets/player_stats_overlay.dart';
 import 'package:nivio/services/hdr_tone_mapping.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/screens/player/widgets/custom_player_controls.dart';
@@ -153,6 +155,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final playing = isPlaying ?? _player.state.playing;
       unawaited(SimplePip().setIsPlaying(playing).catchError((_) => false));
     } catch (_) {}
+  }
+
+  void _guardVideoControllerWid(VideoController controller) {
+    if (!Platform.isAndroid) return;
+    controller.platform.future.then((platform) {
+      if (platform is AndroidVideoController) {
+        platform.wid.removeListener(platform.widListener);
+        platform.wid.addListener(() {
+          if (_useHdrSurface) {
+            appDebugLog(
+              '🛡️ [HDR_GUARD] AndroidVideoController wid changed (${platform.wid.value}) '
+              'but HDR surface is active — ignoring hijack',
+            );
+            return;
+          }
+          platform.widListener();
+        });
+      }
+    }).catchError((_) {});
   }
 
   static const List<String> _displayFitOrder = [
@@ -521,6 +542,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       );
       _player = miniPlayerState.player!;
       _videoController = miniPlayerState.videoController!;
+      _guardVideoControllerWid(_videoController);
       _isDirectStream = true;
       final miniNotifier = ref.read(miniPlayerProvider.notifier);
       Future.microtask(() {
@@ -538,6 +560,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           vo: Platform.isAndroid ? 'gpu-next' : null,
         ),
       );
+      _guardVideoControllerWid(_videoController);
       appDebugLog(
         '🧪 [CW_DEBUG] PlayerScreen#$_sid created NEW player=${_hash(_player)} ctrl=${_hash(_videoController)}',
       );
@@ -1574,8 +1597,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         'provider=${result.provider} startAt=$startAt url=$targetUrl',
       );
       // Start playback
-      _doviProfile = null;
-      _hdrVideo = false;
+      final title = (widget.directStreamTitle ?? media?.title ?? media?.name ?? '').toLowerCase();
+      final url = (playbackVariantUrl ?? result.url).toLowerCase();
+      final isDvOrHdr = title.contains('dv') || title.contains('dolby') || title.contains('dovi') ||
+                        url.contains('dv') || url.contains('dolby') || url.contains('dovi');
+      if (!isDvOrHdr) {
+        _doviProfile = null;
+        _hdrVideo = false;
+      }
       _hdrSurfaceFailed = false;
       await _player.open(
         Media(
@@ -3809,6 +3838,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _hdrVideo = false;
   bool _hdrSurfaceFailed = false;
   int? _doviProfile;
+  bool _showStatsOverlay = true;
 
   String? _videoGamma;
   String? _videoPrimaries;
@@ -3964,7 +3994,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (Platform.isMacOS) return 'videotoolbox-copy';
         return 'vaapi-copy,nvdec-copy';
       default:
-        return Platform.isAndroid ? 'mediacodec,mediacodec-copy,no' : 'auto-safe';
+        if (Platform.isAndroid) {
+          return _useHdrSurface ? 'mediacodec,mediacodec-copy,no' : 'mediacodec-copy,mediacodec,no';
+        }
+        return 'auto-safe';
     }
   }
 
@@ -5799,6 +5832,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                       onTap: () => openPage('hdr'),
                                     ),
                                   tile(
+                                    icon: Icons.analytics_outlined,
+                                    title: 'Stats for Nerds',
+                                    value: _showStatsOverlay ? 'On' : 'Off',
+                                    toggled: _showStatsOverlay,
+                                    onTap: () {
+                                      setState(() => _showStatsOverlay = !_showStatsOverlay);
+                                      setDialogState(() {});
+                                    },
+                                  ),
+                                  tile(
                                     icon: Icons.blur_linear_rounded,
                                     title: 'Debanding',
                                     value: debanding ? 'On · uses more battery' : 'Off',
@@ -7220,7 +7263,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         : hdrSurface
             ? HdrVideoSurface(
                 player: _player,
-                backend: _trueHdr && ref.watch(hdrSurfaceBackendProvider) == 'mediacodecEmbed'
+                backend: ((ref.watch(hdrSurfaceBackendProvider) == 'mediacodecEmbed' || _doviProfile != null) &&
+                          (_toneMappingProps?['glsl-shaders'] ?? '').isEmpty)
                     ? HdrSurfaceBackend.mediacodecEmbed
                     : HdrSurfaceBackend.vulkan,
                 settings: _trueHdr
@@ -7377,6 +7421,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ),
             ),
           ),
+          if (_showStatsOverlay)
+            PlayerStatsOverlay(
+              player: _player,
+              doviProfile: _doviProfile,
+              isHdr: _hdrVideo,
+              onClose: () => setState(() => _showStatsOverlay = false),
+            ),
           CustomPlayerControls(
             key: AppPlatform.isTv ? _controlsKey : null,
             controller: _player,

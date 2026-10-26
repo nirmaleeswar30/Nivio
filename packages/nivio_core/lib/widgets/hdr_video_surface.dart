@@ -94,6 +94,31 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
   int _width = 0;
   int _height = 0;
   bool _attached = false;
+  Timer? _hijackGuardTimer;
+
+  void _startHijackGuard(String expectedVo) {
+    _hijackGuardTimer?.cancel();
+    _hijackGuardTimer = Timer.periodic(const Duration(milliseconds: 500), (_) async {
+      final mpv = _mpv;
+      if (!mounted || !_attached || _wid == 0 || mpv == null) {
+        _hijackGuardTimer?.cancel();
+        return;
+      }
+      try {
+        final currentWid = await mpv.getProperty('wid');
+        final currentVo = await mpv.getProperty('vo');
+        if (currentWid.isNotEmpty && currentWid != '$_wid') {
+          appDebugLog('🛡️ [HDR_SURFACE] Hijack detected: wid was $currentWid, re-asserting $_wid');
+          await mpv.setProperty('vo', 'null');
+          await mpv.setProperty('wid', '$_wid');
+          await mpv.setProperty('vo', expectedVo);
+        } else if (currentVo.isNotEmpty && currentVo != 'null' && currentVo != expectedVo) {
+          appDebugLog('🛡️ [HDR_SURFACE] Hijack detected: vo was $currentVo, re-asserting $expectedVo');
+          await mpv.setProperty('vo', expectedVo);
+        }
+      } catch (_) {}
+    });
+  }
 
   /// media_kit's own output settings, restored when leaving the HDR surface.
   Map<String, String>? _saved;
@@ -144,6 +169,11 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
         await mpv.setProperty('android-surface-size', '${width}x$height');
         return;
       }
+      // Check whether video was already playing before this surface switch
+      final currentDwidth = await mpv.getProperty('dwidth');
+      final currentPos = double.tryParse(await mpv.getProperty('time-pos')) ?? 0;
+      final wasPlayingMidStream = (currentDwidth.isNotEmpty && currentDwidth != '0') || currentPos > 0;
+
       _saved ??= {for (final k in _savedKeys) k: await mpv.getProperty(k)};
       // vo must be off while wid changes (mpv requirement on Android).
       await mpv.setProperty('vo', 'null');
@@ -180,13 +210,46 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
         appDebugLog('🌈 HDR surface (gpu-next): mpv on SurfaceView ${width}x$height (wid=$wid)');
       }
 
-      // Check that the selected renderer actually came up.
-      await Future.delayed(const Duration(milliseconds: 800));
-      final vo = await mpv.getProperty('current-vo');
-      appDebugLog('🌈 HDR surface: current-vo=$vo');
+      // If switching mid-stream, flush decoder to an IDR keyframe so MediaCodec doesn't drop P/B frames
+      if (wasPlayingMidStream) {
+        try {
+          await mpv.command(['seek', '0', 'relative+keyframes']);
+        } catch (_) {}
+      }
+
+      // Wait for mpv to actually configure the VO and decode video frames.
+      // Do not fail while the stream is buffering network packets or demuxing.
+      int totalPollTicks = 0;
+      int activeDecodingTicks = 0;
       final expectedVo = isEmbed ? 'mediacodec_embed' : 'gpu-next';
-      if (vo != expectedVo && mounted) {
-        widget.onFailed?.call();
+
+      while (mounted && _attached && wid == _wid && totalPollTicks < 150) {
+        await Future.delayed(const Duration(milliseconds: 200));
+        totalPollTicks++;
+        if (!mounted || !_attached || wid != _wid) return;
+
+        final currentVo = await mpv.getProperty('current-vo');
+        if (currentVo == expectedVo) {
+          appDebugLog('🌈 HDR surface: confirmed active VO=$currentVo (in ${totalPollTicks * 200}ms)');
+          _startHijackGuard(expectedVo);
+          return; // Success!
+        }
+
+        final isBuffering = (await mpv.getProperty('paused-for-cache')) == 'yes' ||
+                            (await mpv.getProperty('core-idle')) == 'yes';
+        final primaries = await mpv.getProperty('video-params/primaries');
+        final timePos = double.tryParse(await mpv.getProperty('time-pos')) ?? 0;
+
+        // Only count as active decoding if core is actively playing (not idle/buffering),
+        // colorspace/primaries are populated, and playback position has begun advancing.
+        if (!isBuffering && primaries.isNotEmpty && timePos > 0.5) {
+          activeDecodingTicks++;
+          if (activeDecodingTicks > 15) {
+            appDebugLog('🌈 HDR surface: video active for >3s but VO=$currentVo (expected $expectedVo) — falling back');
+            widget.onFailed?.call();
+            return;
+          }
+        }
       }
     });
   }
@@ -232,6 +295,7 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
 
   /// Surface gone (e.g. app in background): stop rendering into it.
   Future<void> _parkRenderer() async {
+    _hijackGuardTimer?.cancel();
     final mpv = _mpv;
     if (mpv == null || !_attached) return;
     await mpv.setProperty('vo', 'null');
@@ -241,6 +305,7 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
 
   /// Back to media_kit's texture surface and its renderer settings.
   Future<void> _restore() async {
+    _hijackGuardTimer?.cancel();
     final mpv = _mpv;
     final saved = _saved;
     if (mpv == null || saved == null) return;
@@ -254,11 +319,15 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
     await mpv.setProperty('panscan', '0.0');
     final vo = saved['vo'];
     await mpv.setProperty('vo', (vo == null || vo.isEmpty || vo == 'null') ? 'gpu' : vo);
+    try {
+      await mpv.command(['seek', '0', 'relative+keyframes']);
+    } catch (_) {}
     appDebugLog('🌈 HDR surface: back to the texture surface');
   }
 
   @override
   void dispose() {
+    _hijackGuardTimer?.cancel();
     _channel?.setMethodCallHandler(null);
     _enqueue(_restore);
     super.dispose();
