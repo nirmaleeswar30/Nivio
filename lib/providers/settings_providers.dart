@@ -1,6 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/episode_check_service.dart';
 import '../core/theme.dart';
@@ -13,6 +18,10 @@ SharedPreferences? _startupPrefs;
 
 Future<void> preloadSettingsPrefs() async {
   _startupPrefs = await SharedPreferences.getInstance();
+  final customFontPath = _startupPrefs?.getString('custom_subtitle_font_path');
+  if (customFontPath != null && customFontPath.isNotEmpty) {
+    unawaited(loadCustomSubtitleFontFile(customFontPath));
+  }
 }
 
 class AppAccentOption {
@@ -735,6 +744,216 @@ class SubtitleOutlineNotifier extends StateNotifier<String> {
     state = outline;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('subtitle_outline', outline);
+  }
+}
+
+// Subtitle Font Family Provider
+const List<String> subtitleFontFamilyOptions = [
+  'Satoshi',
+  'Trebuchet MS',
+  'Inter',
+  'Roboto',
+  'Open Sans',
+  'Poppins',
+  'Montserrat',
+  'Cinzel',
+  'Roboto Mono',
+  'Comic Neue',
+  'Custom',
+];
+
+const String kDefaultSubtitleFontFamily = 'Satoshi';
+
+final subtitleFontFamilyProvider =
+    StateNotifierProvider<SubtitleFontFamilyNotifier, String>((ref) {
+  return SubtitleFontFamilyNotifier();
+});
+
+class SubtitleFontFamilyNotifier extends StateNotifier<String> {
+  SubtitleFontFamilyNotifier() : super(kDefaultSubtitleFontFamily) {
+    _loadSetting();
+  }
+
+  Future<void> _loadSetting() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getString('subtitle_font_family') ?? kDefaultSubtitleFontFamily;
+  }
+
+  Future<void> setFamily(String family) async {
+    state = family;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('subtitle_font_family', family);
+  }
+}
+
+// Custom Subtitle Font Path & Name Providers
+final customSubtitleFontPathProvider =
+    StateNotifierProvider<CustomSubtitleFontPathNotifier, String?>((ref) {
+  return CustomSubtitleFontPathNotifier();
+});
+
+class CustomSubtitleFontPathNotifier extends StateNotifier<String?> {
+  CustomSubtitleFontPathNotifier() : super(null) {
+    _loadSetting();
+  }
+
+  Future<void> _loadSetting() async {
+    final prefs = await SharedPreferences.getInstance();
+    final path = prefs.getString('custom_subtitle_font_path');
+    state = path;
+    if (path != null && path.isNotEmpty) {
+      await loadCustomSubtitleFontFile(path);
+    }
+  }
+
+  Future<void> setPath(String? path) async {
+    state = path;
+    final prefs = await SharedPreferences.getInstance();
+    if (path != null) {
+      await prefs.setString('custom_subtitle_font_path', path);
+      await loadCustomSubtitleFontFile(path);
+    } else {
+      await prefs.remove('custom_subtitle_font_path');
+    }
+  }
+}
+
+final customSubtitleFontNameProvider =
+    StateNotifierProvider<CustomSubtitleFontNameNotifier, String?>((ref) {
+  return CustomSubtitleFontNameNotifier();
+});
+
+class CustomSubtitleFontNameNotifier extends StateNotifier<String?> {
+  CustomSubtitleFontNameNotifier() : super(null) {
+    _loadSetting();
+  }
+
+  Future<void> _loadSetting() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getString('custom_subtitle_font_name');
+  }
+
+  Future<void> setName(String? name) async {
+    state = name;
+    final prefs = await SharedPreferences.getInstance();
+    if (name != null) {
+      await prefs.setString('custom_subtitle_font_name', name);
+    } else {
+      await prefs.remove('custom_subtitle_font_name');
+    }
+  }
+}
+
+/// Dynamically registers a custom font file (.ttf / .otf) with the Flutter engine.
+Future<bool> loadCustomSubtitleFontFile(String path) async {
+  try {
+    final file = File(path);
+    if (!await file.exists()) return false;
+    final bytes = await file.readAsBytes();
+    final fontLoader = FontLoader('CustomSubtitleFont');
+    fontLoader.addFont(Future.value(ByteData.sublistView(bytes)));
+    await fontLoader.load();
+    return true;
+  } catch (e) {
+    debugPrint('Failed to load custom subtitle font: $e');
+    return false;
+  }
+}
+
+/// Imports and persists a custom font file (.ttf / .otf) into app storage.
+Future<bool> importCustomSubtitleFont(String sourcePath, String fileName, WidgetRef ref) async {
+  try {
+    final sourceFile = File(sourcePath);
+    if (!await sourceFile.exists()) return false;
+    final appDir = await getApplicationDocumentsDirectory();
+    final ext = sourcePath.contains('.') ? '.${sourcePath.split('.').last}' : '.ttf';
+    final targetPath = '${appDir.path}/custom_subtitle_font$ext';
+    await sourceFile.copy(targetPath);
+    final loaded = await loadCustomSubtitleFontFile(targetPath);
+    if (loaded) {
+      await ref.read(customSubtitleFontPathProvider.notifier).setPath(targetPath);
+      await ref.read(customSubtitleFontNameProvider.notifier).setName(fileName);
+      await ref.read(subtitleFontFamilyProvider.notifier).setFamily('Custom');
+      return true;
+    }
+    return false;
+  } catch (e) {
+    debugPrint('Error importing custom subtitle font: $e');
+    return false;
+  }
+}
+
+/// Prompts the user to pick a local font file (.ttf / .otf) and applies it.
+Future<bool> pickAndImportCustomFont(BuildContext context, WidgetRef ref) async {
+  try {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['ttf', 'otf'],
+    );
+    if (result != null && result.files.isNotEmpty && result.files.single.path != null) {
+      final file = result.files.single;
+      final success = await importCustomSubtitleFont(file.path!, file.name, ref);
+      if (context.mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Custom font "${file.name}" applied!')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to load selected font file.')),
+          );
+        }
+      }
+      return success;
+    }
+  } catch (e) {
+    debugPrint('Error picking custom font: $e');
+  }
+  return false;
+}
+
+/// Resolves the styled [TextStyle] for subtitles based on the selected font family.
+TextStyle getSubtitleTextStyle({
+  required String fontFamily,
+  required double fontSize,
+  required Color color,
+  Color? backgroundColor,
+  List<Shadow>? shadows,
+  FontWeight fontWeight = FontWeight.w600,
+}) {
+  final base = TextStyle(
+    fontSize: fontSize,
+    color: color,
+    backgroundColor: backgroundColor,
+    shadows: shadows,
+    fontWeight: fontWeight,
+  );
+
+  switch (fontFamily) {
+    case 'Custom':
+      return base.copyWith(fontFamily: 'CustomSubtitleFont');
+    case 'Satoshi':
+      return base.copyWith(fontFamily: 'Satoshi');
+    case 'Trebuchet MS':
+      return base.copyWith(fontFamily: 'Trebuchet MS', fontFamilyFallback: const ['sans-serif']);
+    case 'Inter':
+      return GoogleFonts.inter(textStyle: base);
+    case 'Roboto':
+      return GoogleFonts.roboto(textStyle: base);
+    case 'Open Sans':
+      return GoogleFonts.openSans(textStyle: base);
+    case 'Poppins':
+      return GoogleFonts.poppins(textStyle: base);
+    case 'Montserrat':
+      return GoogleFonts.montserrat(textStyle: base);
+    case 'Cinzel':
+      return GoogleFonts.cinzel(textStyle: base);
+    case 'Roboto Mono':
+      return GoogleFonts.robotoMono(textStyle: base);
+    case 'Comic Neue':
+      return GoogleFonts.comicNeue(textStyle: base);
+    default:
+      return base.copyWith(fontFamily: fontFamily);
   }
 }
 

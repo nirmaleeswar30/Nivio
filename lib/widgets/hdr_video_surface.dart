@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
+import 'package:media_kit_video/src/video_controller/android_video_controller/android_video_controller.dart';
 import 'package:nivio/core/debug_log.dart';
 
 /// mpv settings for each HDR output mode, applied on the HDR surface.
@@ -71,6 +73,10 @@ class HdrVideoSurface extends StatefulWidget {
   /// How the video fills the view (mpv scales it here, not Flutter).
   final BoxFit fit;
 
+  /// The active VideoController, used to retrieve the media_kit texture WID
+  /// and surface dimensions when restoring back to SDR / tone-mapped playback.
+  final VideoController? videoController;
+
   /// Called if mpv can't start its renderer here; the caller should go
   /// back to the normal video widget.
   final VoidCallback? onFailed;
@@ -78,6 +84,7 @@ class HdrVideoSurface extends StatefulWidget {
   const HdrVideoSurface({
     super.key,
     required this.player,
+    this.videoController,
     this.settings = HdrOutputSettings.passthrough,
     this.backend = HdrSurfaceBackend.vulkan,
     this.fit = BoxFit.contain,
@@ -118,6 +125,27 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
         });
       }
     }
+  }
+
+  Future<({int? wid, int? w, int? h})> _getTextureInfo() async {
+    final vc = widget.videoController;
+    if (vc == null) return (wid: null, w: null, h: null);
+    try {
+      final p = vc.notifier.value ??
+          await vc.platform.future.timeout(const Duration(milliseconds: 500));
+      if (p is AndroidVideoController) {
+        var wid = p.wid.value;
+        for (int i = 0; i < 10 && (wid == null || wid == 0); i++) {
+          await Future.delayed(const Duration(milliseconds: 50));
+          wid = p.wid.value;
+        }
+        final r = p.rect.value;
+        final w = (r != null && r.width > 0) ? r.width.toInt() : null;
+        final h = (r != null && r.height > 0) ? r.height.toInt() : null;
+        return (wid: (wid != null && wid > 0) ? wid : null, w: w, h: h);
+      }
+    } catch (_) {}
+    return (wid: null, w: null, h: null);
   }
 
   void _startHijackGuard(String expectedVo) {
@@ -202,11 +230,23 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
       final currentPos = double.tryParse(await mpv.getProperty('time-pos')) ?? 0;
       final wasPlayingMidStream = (currentDwidth.isNotEmpty && currentDwidth != '0') || currentPos > 0;
 
-      _saved ??= {for (final k in _savedKeys) k: await mpv.getProperty(k)};
+      if (_saved == null) {
+        final map = {for (final k in _savedKeys) k: await mpv.getProperty(k)};
+        final info = await _getTextureInfo();
+        if ((map['wid'] == null || map['wid']!.isEmpty || map['wid'] == '0') && info.wid != null) {
+          map['wid'] = '${info.wid}';
+        }
+        if ((map['android-surface-size'] == null || map['android-surface-size']!.isEmpty) && info.w != null && info.h != null) {
+          map['android-surface-size'] = '${info.w}x${info.h}';
+        }
+        _saved = map;
+      }
       // vo must be off while wid changes (mpv requirement on Android).
       await mpv.setProperty('vo', 'null');
       await mpv.setProperty('android-surface-size', '${width}x$height');
       await mpv.setProperty('wid', '$wid');
+      await mpv.setProperty('sub-visibility', 'no');
+      await mpv.setProperty('secondary-sub-visibility', 'no');
 
       final isEmbed = widget.backend == HdrSurfaceBackend.mediacodecEmbed;
       if (isEmbed) {
@@ -340,23 +380,79 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
   /// Back to media_kit's texture surface and its renderer settings.
   Future<void> _restore() async {
     _hijackGuardTimer?.cancel();
+    _hijackGuardTimer = null;
     final mpv = _mpv;
+    if (mpv == null) return;
+
+    appDebugLog('🌈 HDR surface: restoring to media_kit texture surface...');
     final saved = _saved;
-    if (mpv == null || saved == null) return;
+
+    // 1. Turn off vo while modifying wid / surface
     await mpv.setProperty('vo', 'null');
-    for (final key in const ['gpu-api', 'gpu-context', 'hwdec', 'target-colorspace-hint', 'hdr-compute-peak', 'android-surface-size', 'wid']) {
-      final value = saved[key];
-      if (value != null && value.isNotEmpty) await mpv.setProperty(key, value);
+
+    // 2. Query texture info from videoController (or fallback to saved)
+    final info = await _getTextureInfo();
+    final savedWid = saved?['wid'];
+    final targetWid = info.wid != null
+        ? '${info.wid}'
+        : ((savedWid != null && savedWid.isNotEmpty && savedWid != '0' && savedWid != '$_wid') ? savedWid : null);
+
+    final targetW = info.w ?? _videoWidth ?? 1920;
+    final targetH = info.h ?? _videoHeight ?? 1080;
+    await mpv.setProperty('android-surface-size', '${targetW}x$targetH');
+
+    // 3. Set wid to media_kit's Flutter texture
+    if (targetWid != null && targetWid.isNotEmpty) {
+      await mpv.setProperty('wid', targetWid);
+      appDebugLog('🌈 HDR surface: restored wid=$targetWid');
+    } else {
+      appDebugLog('⚠️ [HDR_SURFACE] Could not find texture wid to restore!');
     }
-    // Flutter does the scaling on the texture path.
+
+    // 4. Context & API for media_kit Android texture (EGL / OpenGL ES)
+    await mpv.setProperty('gpu-api', 'auto');
+    final savedGpuContext = saved?['gpu-context'];
+    final gpuContext = (savedGpuContext != null && savedGpuContext.isNotEmpty && savedGpuContext != 'androidvk')
+        ? savedGpuContext
+        : 'android';
+    await mpv.setProperty('gpu-context', gpuContext);
+
+    // 5. Disable direct HDR color signaling to the SDR texture surface
+    await mpv.setProperty('target-colorspace-hint', 'no');
+    await mpv.setProperty('hdr-compute-peak', 'no');
+
+    // 6. Restore decoder setting: use user's saved preference or try HW+ with fallback
+    final savedHwdec = saved?['hwdec'];
+    final targetHwdec = (savedHwdec != null && savedHwdec.isNotEmpty)
+        ? savedHwdec
+        : 'mediacodec,mediacodec-copy,no';
+    await mpv.setProperty('hwdec', targetHwdec);
+
+    // 7. Flutter does the scaling on the texture path
     await mpv.setProperty('keepaspect', 'yes');
     await mpv.setProperty('panscan', '0.0');
-    final vo = saved['vo'];
-    await mpv.setProperty('vo', (vo == null || vo.isEmpty || vo == 'null') ? 'gpu' : vo);
+    await mpv.setProperty('sub-visibility', 'no');
+    await mpv.setProperty('secondary-sub-visibility', 'no');
+
+    // 8. Re-enable VO with gpu-next
+    final savedVo = saved?['vo'];
+    final targetVo = (savedVo != null && savedVo.isNotEmpty && savedVo != 'null' && savedVo != 'mediacodec_embed')
+        ? savedVo
+        : 'gpu-next';
+    await mpv.setProperty('vo', targetVo);
+
+    // 9. Recycle video track so MediaCodec cleanly unbinds from the destroyed SurfaceView
+    // and binds fresh to the texture in copy mode
     try {
+      final vid = await mpv.getProperty('vid');
+      await mpv.setProperty('vid', 'no');
+      await mpv.setProperty('vid', vid.isNotEmpty && vid != 'no' ? vid : 'auto');
       await mpv.command(['seek', '0', 'relative+keyframes']);
     } catch (_) {}
-    appDebugLog('🌈 HDR surface: back to the texture surface');
+
+    _attached = false;
+    _wid = 0;
+    appDebugLog('🌈 HDR surface: successfully restored to texture surface (vo=$targetVo, wid=$targetWid)');
   }
 
   @override
@@ -397,14 +493,6 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
       },
     );
 
-    final isEmbed = widget.backend == HdrSurfaceBackend.mediacodecEmbed;
-    if (!isEmbed) {
-      return ColoredBox(
-        color: Colors.black,
-        child: platformView,
-      );
-    }
-
     return LayoutBuilder(
       builder: (context, constraints) {
         final screenW = constraints.maxWidth;
@@ -413,8 +501,15 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
           return ColoredBox(color: Colors.black, child: platformView);
         }
 
-        final vw = _videoWidth != null && _videoWidth! > 0 ? _videoWidth!.toDouble() : 1920.0;
-        final vh = _videoHeight != null && _videoHeight! > 0 ? _videoHeight!.toDouble() : 1080.0;
+        int? vwInt = _videoWidth;
+        int? vhInt = _videoHeight;
+        if (vwInt == null || vhInt == null || vwInt <= 0 || vhInt <= 0) {
+          final vp = widget.player.state.videoParams;
+          vwInt = vp.dw ?? vp.w;
+          vhInt = vp.dh ?? vp.h;
+        }
+        final vw = (vwInt != null && vwInt > 0) ? vwInt.toDouble() : 1920.0;
+        final vh = (vhInt != null && vhInt > 0) ? vhInt.toDouble() : 1080.0;
         final videoAspect = vw / vh;
         final screenAspect = screenW / screenH;
 

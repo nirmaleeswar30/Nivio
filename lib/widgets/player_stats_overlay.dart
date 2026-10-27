@@ -7,6 +7,8 @@ class PlayerStatsOverlay extends StatefulWidget {
   final Player player;
   final int? doviProfile;
   final bool isHdr;
+  final bool isHdrOutput;
+  final String? toneMappingMode;
   final VoidCallback? onClose;
 
   const PlayerStatsOverlay({
@@ -14,6 +16,8 @@ class PlayerStatsOverlay extends StatefulWidget {
     required this.player,
     this.doviProfile,
     this.isHdr = false,
+    this.isHdrOutput = false,
+    this.toneMappingMode,
     this.onClose,
   });
 
@@ -132,12 +136,30 @@ class _PlayerStatsOverlayState extends State<PlayerStatsOverlay> {
     final avsync = _stats['avsync'] ?? '';
     final isBuffering = _stats['paused-for-cache'] == 'yes';
 
-    final String dvText;
+    final String sourceFormat;
     if (widget.doviProfile != null) {
       final sub = widget.doviProfile == 8 ? '8.1' : '${widget.doviProfile}';
-      dvText = vo == 'gpu-next' ? 'HDR10 (DV P$sub Base)' : 'Dolby Vision P$sub';
+      sourceFormat = 'Dolby Vision P$sub';
+    } else if (widget.isHdr) {
+      sourceFormat = gamma == 'hlg' ? 'HLG' : 'HDR10 (PQ)';
     } else {
-      dvText = widget.isHdr ? 'HDR' : 'SDR';
+      sourceFormat = 'SDR';
+    }
+
+    final String outputFormat;
+    if (widget.isHdrOutput) {
+      if (widget.doviProfile != null) {
+        outputFormat = vo == 'mediacodec_embed' ? 'Dolby Vision (Direct)' : 'True HDR (DV Base)';
+      } else {
+        outputFormat = gamma == 'hlg' ? 'True HDR (HLG)' : 'True HDR (HDR10)';
+      }
+    } else {
+      if (widget.doviProfile != null || widget.isHdr) {
+        final mode = widget.toneMappingMode == 'hdrToys' ? 'HDR Toys' : 'Standard';
+        outputFormat = 'SDR ($mode Mapped)';
+      } else {
+        outputFormat = 'SDR';
+      }
     }
 
     return Positioned(
@@ -200,8 +222,9 @@ class _PlayerStatsOverlayState extends State<PlayerStatsOverlay> {
               _statRow('Video FPS', '${fps.isNotEmpty ? fps : (containerFps.isNotEmpty ? containerFps : '--')} fps'),
               _statRow('Dropped Frames', '$voDrops (VO) / $frameDrops (Dec)', isWarning: voDrops != '0' || frameDrops != '0'),
               _statRow('Resolution', w.isNotEmpty ? '${w}x$h ($codec)' : '--'),
-              _statRow('Format', dvText, isAccent: widget.doviProfile != null),
-              _statRow('Colorspace', matrix.isNotEmpty ? '$gamma / $primaries' : '--'),
+              _statRow('Source Format', sourceFormat, isAccent: widget.doviProfile != null),
+              _statRow('Display Output', outputFormat, isHighlight: widget.isHdrOutput),
+              _statRow('Source Colors', (gamma.isNotEmpty || primaries.isNotEmpty) ? (matrix.isNotEmpty ? '$gamma / $primaries ($matrix)' : '$gamma / $primaries') : '--'),
               _statRow('A/V Sync', avsync.isNotEmpty ? '$avsync s' : '--'),
               _statRow('Buffering', isBuffering ? 'YES (paused for cache)' : 'No', isWarning: isBuffering),
             ],

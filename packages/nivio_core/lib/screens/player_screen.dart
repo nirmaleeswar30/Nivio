@@ -1559,6 +1559,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         await np.setProperty('demuxer-max-bytes', '104857600'); // 100MB buffer
         await np.setProperty('demuxer-readahead-secs', '120'); // Buffer 2 mins ahead
         await np.setProperty('sub-delay', '${_subtitleDelayMs / 1000.0}');
+        // Disable mpv's internal subtitle rendering so Flutter's custom subtitle overlay
+        // does not double-render with ghosting/black shadows underneath.
+        await np.setProperty('sub-visibility', 'no');
+        await np.setProperty('secondary-sub-visibility', 'no');
         final fontSize = ref.read(subtitleFontSizeProvider);
         final baseScale = fontSize / 18.0;
         final scale = _isPipMode ? (baseScale * 0.45) : baseScale;
@@ -5430,8 +5434,84 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                 child: Text(text, style: const TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
                               );
 
-                          List<Widget> subtitleStyleItems() => [
-                                sectionLabel('SIZE'),
+                          List<Widget> subtitleStyleItems() {
+                            final currentFont = ref.watch(subtitleFontFamilyProvider);
+                            final customFontName = ref.watch(customSubtitleFontNameProvider);
+                            final customFontPath = ref.watch(customSubtitleFontPathProvider);
+
+                            return [
+                              sectionLabel('FONT'),
+                              ...subtitleFontFamilyOptions.map((font) {
+                                if (font == 'Custom') {
+                                  final isCurrent = currentFont == 'Custom';
+                                  return ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                    leading: Icon(Icons.font_download_outlined, color: isCurrent ? accent : Colors.white70),
+                                    title: Text(
+                                      customFontName != null ? 'Custom: $customFontName' : 'Custom Font (.ttf / .otf)',
+                                      style: TextStyle(
+                                        color: isCurrent ? accent : Colors.white,
+                                        fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      customFontPath != null ? 'Tap to choose or re-import a font file' : 'Load your own font file (.ttf / .otf)',
+                                      style: const TextStyle(color: Colors.white38, fontSize: 11),
+                                    ),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (isCurrent) Icon(Icons.check, color: accent),
+                                        IconButton(
+                                          icon: const Icon(Icons.folder_open_rounded, color: Colors.white70, size: 20),
+                                          tooltip: 'Browse font file',
+                                          onPressed: () async {
+                                            await pickAndImportCustomFont(context, ref);
+                                            setDialogState(() {});
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                    onTap: () async {
+                                      if (customFontPath != null) {
+                                        await ref.read(subtitleFontFamilyProvider.notifier).setFamily('Custom');
+                                        setDialogState(() {});
+                                      } else {
+                                        await pickAndImportCustomFont(context, ref);
+                                        setDialogState(() {});
+                                      }
+                                    },
+                                  );
+                                }
+
+                                final isCurrent = currentFont == font;
+                                return ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                  title: Text(
+                                    font,
+                                    style: TextStyle(
+                                      color: isCurrent ? accent : Colors.white,
+                                      fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    'The quick brown fox jumps over the lazy dog',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: getSubtitleTextStyle(
+                                      fontFamily: font,
+                                      fontSize: 13,
+                                      color: isCurrent ? accent.withOpacity(0.85) : Colors.white60,
+                                    ),
+                                  ),
+                                  trailing: isCurrent ? Icon(Icons.check, color: accent) : null,
+                                  onTap: () async {
+                                    await ref.read(subtitleFontFamilyProvider.notifier).setFamily(font);
+                                    setDialogState(() {});
+                                  },
+                                );
+                              }),
+                              sectionLabel('SIZE'),
                                 ...subtitleFontSizeOptions.entries.map((entry) {
                                   final currentSize = ref.watch(subtitleFontSizeProvider);
                                   final isCurrent = currentSize == entry.value;
@@ -5479,6 +5559,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                   );
                                 }),
                               ];
+                            }
 
                           List<Widget> syncItems() => [
                                 Padding(
@@ -5556,9 +5637,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                           }
 
                           String subtitleStyleValue() {
+                            final font = ref.watch(subtitleFontFamilyProvider);
+                            final customName = ref.watch(customSubtitleFontNameProvider);
+                            final fontLabel = (font == 'Custom' && customName != null) ? 'Custom ($customName)' : font;
                             final size = ref.watch(subtitleFontSizeProvider);
                             final sizeLabel = subtitleFontSizeOptions.entries.where((e) => e.value == size).firstOrNull?.key ?? 'Custom';
-                            return '$sizeLabel · ${ref.watch(subtitleBackgroundProvider)}';
+                            return '$fontLabel · $sizeLabel · ${ref.watch(subtitleBackgroundProvider)}';
                           }
 
                           final debanding = ref.watch(videoDebandingProvider);
@@ -7269,6 +7353,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         : hdrSurface
             ? HdrVideoSurface(
                 player: _player,
+                videoController: _videoController,
                 backend: (ref.watch(hdrSurfaceBackendProvider) == 'mediacodecEmbed' &&
                           (_toneMappingProps?['glsl-shaders'] ?? '').isEmpty)
                     ? HdrSurfaceBackend.mediacodecEmbed
@@ -7338,7 +7423,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                           child: Text(
                             line,
                             textAlign: TextAlign.center,
-                            style: TextStyle(
+                            style: getSubtitleTextStyle(
+                              fontFamily: ref.watch(subtitleFontFamilyProvider),
                               fontSize: pipFontSize,
                               color: Colors.white,
                               backgroundColor: backgroundColor,
@@ -7413,7 +7499,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         child: Text(
                           line,
                           textAlign: TextAlign.center,
-                          style: TextStyle(
+                          style: getSubtitleTextStyle(
+                            fontFamily: ref.watch(subtitleFontFamilyProvider),
                             fontSize: ref.watch(subtitleFontSizeProvider) * 1.1,
                             color: Colors.white,
                             backgroundColor: backgroundColor,
@@ -7432,6 +7519,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               player: _player,
               doviProfile: _doviProfile,
               isHdr: _hdrVideo,
+              isHdrOutput: _trueHdr && _useHdrSurface,
+              toneMappingMode: ref.watch(toneMappingProvider),
               onClose: () => setState(() => _showStatsOverlay = false),
             ),
           CustomPlayerControls(

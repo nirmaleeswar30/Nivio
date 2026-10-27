@@ -53,6 +53,7 @@ dependencies:
   flutter_native_splash: ^2.4.2
   silky_scroll: ^2.6.4
   animations: ^2.2.0
+  google_fonts: ^6.2.1
 
   # Utilities
   intl: ^0.20.2

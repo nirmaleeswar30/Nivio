@@ -166,6 +166,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     final subtitleFontSize = ref.watch(subtitleFontSizeProvider);
     final subtitleBackground = ref.watch(subtitleBackgroundProvider);
     final subtitleOutline = ref.watch(subtitleOutlineProvider);
+    final subtitleFontFamily = ref.watch(subtitleFontFamilyProvider);
+    final customFontName = ref.watch(customSubtitleFontNameProvider);
 
     final appThemeKey = ref.watch(appThemeProvider);
     final uiScale = ref.watch(uiScaleProvider);
@@ -376,6 +378,15 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                     title: 'Subtitle Appearance',
                     child: Column(
                       children: [
+                        if (_matches('subtitle font family style typeface'))
+                          _buildActionTile(
+                            icon: Icons.font_download_rounded,
+                            title: 'Subtitle Font',
+                            subtitle: subtitleFontFamily == 'Custom' && customFontName != null
+                                ? 'Custom ($customFontName)'
+                                : subtitleFontFamily,
+                            onTap: _showSubtitleFontDialog,
+                          ),
                         if (_matches('subtitle size font scale'))
                           _buildActionTile(
                             icon: Icons.format_size_rounded,
@@ -3487,6 +3498,142 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     );
   }
 
+  Future<void> _showSubtitleFontDialog() async {
+    final current = ref.read(subtitleFontFamilyProvider);
+    final customName = ref.read(customSubtitleFontNameProvider);
+    final customPath = ref.read(customSubtitleFontPathProvider);
+    final options = subtitleFontFamilyOptions;
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: NivioTheme.netflixDarkGrey,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              child: Text(
+                'Subtitle Font',
+                style: TextStyle(
+                  color: NivioTheme.netflixWhite,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (context, index) {
+                  final font = options[index];
+                  final isSelected = current == font;
+
+                  if (font == 'Custom') {
+                    final hasCustom = customPath != null && customPath.isNotEmpty;
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                      leading: Icon(
+                        Icons.font_download_outlined,
+                        color: isSelected
+                            ? NivioTheme.accentColorOf(context)
+                            : NivioTheme.netflixWhite.withOpacity(0.7),
+                      ),
+                      title: Text(
+                        customName != null ? 'Custom ($customName)' : 'Custom Font (.ttf / .otf)',
+                        style: TextStyle(
+                          color: isSelected
+                              ? NivioTheme.accentColorOf(context)
+                              : NivioTheme.netflixWhite,
+                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                        ),
+                      ),
+                      subtitle: Text(
+                        hasCustom ? 'Tap to apply or browse a new file' : 'Import your own font file (.ttf / .otf)',
+                        style: TextStyle(
+                          color: NivioTheme.netflixWhite.withOpacity(0.5),
+                          fontSize: 12,
+                        ),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isSelected)
+                            Icon(Icons.check_circle_rounded,
+                                color: NivioTheme.accentColorOf(context)),
+                          IconButton(
+                            icon: const Icon(Icons.folder_open_rounded, color: Colors.white70),
+                            tooltip: 'Browse font file',
+                            onPressed: () async {
+                              final ok = await pickAndImportCustomFont(context, ref);
+                              if (ok && context.mounted) {
+                                Navigator.pop(context);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                      onTap: () async {
+                        if (hasCustom) {
+                          await ref.read(subtitleFontFamilyProvider.notifier).setFamily('Custom');
+                          if (context.mounted) Navigator.pop(context);
+                        } else {
+                          final ok = await pickAndImportCustomFont(context, ref);
+                          if (ok && context.mounted) Navigator.pop(context);
+                        }
+                      },
+                    );
+                  }
+
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                    title: Text(
+                      font,
+                      style: TextStyle(
+                        color: isSelected
+                            ? NivioTheme.accentColorOf(context)
+                            : NivioTheme.netflixWhite,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'The quick brown fox jumps over the lazy dog',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: getSubtitleTextStyle(
+                        fontFamily: font,
+                        fontSize: 13,
+                        color: isSelected
+                            ? NivioTheme.accentColorOf(context).withOpacity(0.85)
+                            : NivioTheme.netflixWhite.withOpacity(0.6),
+                      ),
+                    ),
+                    trailing: isSelected
+                        ? Icon(Icons.check_circle_rounded,
+                            color: NivioTheme.accentColorOf(context))
+                        : null,
+                    onTap: () {
+                      ref.read(subtitleFontFamilyProvider.notifier).setFamily(font);
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _showSubtitleFontSizeDialog() async {
     final current = ref.read(subtitleFontSizeProvider);
     final options = subtitleFontSizeOptions.entries.toList();
@@ -4039,6 +4186,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     final subtitleFontSize = ref.watch(subtitleFontSizeProvider);
     final subtitleBackground = ref.watch(subtitleBackgroundProvider);
     final subtitleOutline = ref.watch(subtitleOutlineProvider);
+    final subtitleFontFamily = ref.watch(subtitleFontFamilyProvider);
+    final customFontName = ref.watch(customSubtitleFontNameProvider);
     final appThemeKey = ref.watch(appThemeProvider);
     final uiScale = ref.watch(uiScaleProvider);
     final discordRpcEnabled = ref.watch(discordRpcEnabledProvider);
@@ -4075,6 +4224,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           subtitleFontSize: subtitleFontSize,
           subtitleBackground: subtitleBackground,
           subtitleOutline: subtitleOutline,
+          subtitleFontFamily: subtitleFontFamily,
+          customFontName: customFontName,
           appThemeKey: appThemeKey,
           uiScale: uiScale,
           discordRpcEnabled: discordRpcEnabled,
@@ -4104,6 +4255,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     required double subtitleFontSize,
     required String subtitleBackground,
     required String subtitleOutline,
+    required String subtitleFontFamily,
+    required String? customFontName,
     required String appThemeKey,
     required double uiScale,
     required bool discordRpcEnabled,
@@ -4223,6 +4376,14 @@ Widget _buildMobileLayout(BuildContext context, User user) {
       case 2: // Subtitle Appearance
         return Column(
           children: [
+            _buildActionTile(
+              icon: Icons.font_download_rounded,
+              title: 'Subtitle Font',
+              subtitle: subtitleFontFamily == 'Custom' && customFontName != null
+                  ? 'Custom ($customFontName)'
+                  : subtitleFontFamily,
+              onTap: _showSubtitleFontDialog,
+            ),
             _buildActionTile(
               icon: Icons.format_size_rounded,
               title: 'Subtitle Font Size',

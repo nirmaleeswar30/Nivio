@@ -1,10 +1,14 @@
 import 'dart:async';
 
+import 'dart:io';
+
+import 'package:hive/hive.dart';
 import 'package:rqbit_ffi/rqbit_ffi.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/debug_log.dart';
 import '../../models/search_result.dart';
+import '../download_service.dart';
 import '../tmdb_service.dart';
 import 'anime_query_builder.dart';
 import 'media_ranking.dart';
@@ -90,6 +94,7 @@ class TorrentStreamService {
   TmdbService? get tmdbService => _tmdbService;
 
   int? _activeTorrentId;
+  int? _lastStreamedTorrentId;
   // True when _activeTorrentId points at a torrent owned by DownloadService
   // (adopted only so stats can be shown). We must NOT forget/delete it on
   // stopActive — that would kill the user's ongoing download.
@@ -384,9 +389,10 @@ class TorrentStreamService {
     if (client == null) return null;
 
     if (!p.fromPack) {
-      final old = _activeTorrentId;
+      final old = _activeTorrentId ?? _lastStreamedTorrentId;
       final oldAdopted = _activeIsAdopted;
       _activeTorrentId = p.torrentId;
+      _lastStreamedTorrentId = p.torrentId;
       _activeIsAdopted = false;
       // Never release an adopted download torrent — it belongs to DownloadService.
       if (old != null && old != p.torrentId && !oldAdopted) {
@@ -499,7 +505,7 @@ class TorrentStreamService {
 
     // Stop any previously-playing torrent — unless it was an adopted download
     // torrent (owned by DownloadService), which must keep running.
-    final prev = _activeTorrentId;
+    final prev = _activeTorrentId ?? _lastStreamedTorrentId;
     final prevAdopted = _activeIsAdopted;
     if (prev != null && prev != id && !prevAdopted) {
       try {
@@ -511,6 +517,7 @@ class TorrentStreamService {
       } catch (_) {}
     }
     _activeTorrentId = id;
+    _lastStreamedTorrentId = id;
     _activeIsAdopted = false;
 
     // Magnets resolve metadata from peers — wait for the file list.
@@ -526,6 +533,9 @@ class TorrentStreamService {
       return null;
     }
     _log('metadata ready: ${details.files.length} file(s) in torrent');
+    if (!persistFiles) {
+      unawaited(_cleanupOldStreamingCache(client, currentTorrentId: id, details: details));
+    }
 
     TorrentFileInfo? file;
     if (best.fileIndex != null) {
@@ -635,10 +645,92 @@ class TorrentStreamService {
     }
     if (id != null && client != null) {
       try {
-        deleteFiles ? await client.delete(id) : await client.forget(id);
+        if (deleteFiles) {
+          await client.delete(id);
+          _lastStreamedTorrentId = null;
+        } else {
+          _lastStreamedTorrentId = id;
+          await client.pause(id);
+        }
       } catch (_) {}
     }
     unawaited(TorrentForegroundService.instance.stop());
+  }
+
+  /// Cleans up previous streaming torrents and disk cache when a new torrent is played.
+  Future<void> _cleanupOldStreamingCache(
+    RqbitClient client, {
+    required int currentTorrentId,
+    required TorrentDetails details,
+  }) async {
+    try {
+      final activeDownloadTorrentIds = <int>{};
+      final activeDownloadPaths = <String>{};
+      if (Hive.isBoxOpen('downloads')) {
+        for (final item in DownloadService.box.values) {
+          if (item.torrentId != null) activeDownloadTorrentIds.add(item.torrentId!);
+          if (item.savePath.isNotEmpty) activeDownloadPaths.add(item.savePath);
+        }
+      }
+
+      // 1. Delete any other torrents in rqbit session not belonging to DownloadService
+      final allTorrents = await client.listTorrents();
+      for (final t in allTorrents) {
+        final tId = t.id;
+        if (tId != null && tId != currentTorrentId && !activeDownloadTorrentIds.contains(tId)) {
+          _log('🗑️ Purging previous streaming torrent $tId (${t.name}) from rqbit');
+          try {
+            await client.delete(tId);
+          } catch (_) {}
+        }
+      }
+
+      // 2. Clear prefetch if it was for a different torrent
+      if (_prefetch != null && _prefetch!.torrentId != currentTorrentId) {
+        final pId = _prefetch!.torrentId;
+        _prefetch = null;
+        if (!activeDownloadTorrentIds.contains(pId)) {
+          try {
+            await client.delete(pId);
+          } catch (_) {}
+        }
+      }
+
+      // 3. Clean up any leftover folders/files in the torrents cache directory
+      final downloadDir = RqbitEngine.instance.downloadDir;
+      if (downloadDir != null) {
+        final dir = Directory(downloadDir);
+        if (await dir.exists()) {
+          final keepNames = <String>{};
+          if (details.name != null && details.name!.isNotEmpty) {
+            keepNames.add(details.name!);
+          }
+          for (final f in details.files) {
+            if (f.name.isNotEmpty) {
+              keepNames.add(f.name.split(Platform.pathSeparator).first);
+              keepNames.add(f.name.split('/').first);
+            }
+          }
+
+          final entities = await dir.list().toList();
+          for (final entity in entities) {
+            final baseName = entity.uri.pathSegments.where((s) => s.isNotEmpty).lastOrNull ?? '';
+            if (baseName.isEmpty) continue;
+            if (keepNames.contains(baseName)) continue;
+            if (activeDownloadPaths.any((p) => p.contains(baseName))) continue;
+
+            try {
+              _log('🧹 Purging old torrent streaming cache from disk: ${entity.path}');
+              await entity.delete(recursive: true);
+            } catch (e) {
+              _log('Failed to delete old torrent cache ${entity.path}: $e');
+            }
+          }
+        }
+      }
+    } catch (e) {
+      _log('Warning: cleanupOldStreamingCache error: $e');
+    }
   }
 
   Future<List<TorrentResult>> _gather(AnimeQuery query) async {

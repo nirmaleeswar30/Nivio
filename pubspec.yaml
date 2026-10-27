@@ -88,6 +88,7 @@ dependencies:
   crypto: any
   discord_rich_presence: ^1.1.1  # Discord Rich Presence (desktop only)
   flutter_secure_storage: ^11.2.0  # Encrypted storage for the mobile Discord token
+  google_fonts: ^9.0.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
