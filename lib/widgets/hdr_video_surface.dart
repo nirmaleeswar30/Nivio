@@ -95,6 +95,30 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
   int _height = 0;
   bool _attached = false;
   Timer? _hijackGuardTimer;
+  int? _videoWidth;
+  int? _videoHeight;
+  StreamSubscription? _videoParamsSub;
+
+  @override
+  void initState() {
+    super.initState();
+    final vp = widget.player.state.videoParams;
+    _updateVideoDimensions(vp.dw ?? vp.w, vp.dh ?? vp.h);
+    _videoParamsSub = widget.player.stream.videoParams.listen((vp) {
+      _updateVideoDimensions(vp.dw ?? vp.w, vp.dh ?? vp.h);
+    });
+  }
+
+  void _updateVideoDimensions(int? w, int? h) {
+    if (w != null && h != null && w > 0 && h > 0 && (w != _videoWidth || h != _videoHeight)) {
+      if (mounted) {
+        setState(() {
+          _videoWidth = w;
+          _videoHeight = h;
+        });
+      }
+    }
+  }
 
   void _startHijackGuard(String expectedVo) {
     _hijackGuardTimer?.cancel();
@@ -173,6 +197,8 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
       }
       // Check whether video was already playing before this surface switch
       final currentDwidth = await mpv.getProperty('dwidth');
+      final currentDheight = await mpv.getProperty('dheight');
+      _updateVideoDimensions(int.tryParse(currentDwidth), int.tryParse(currentDheight));
       final currentPos = double.tryParse(await mpv.getProperty('time-pos')) ?? 0;
       final wasPlayingMidStream = (currentDwidth.isNotEmpty && currentDwidth != '0') || currentPos > 0;
 
@@ -335,6 +361,7 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
 
   @override
   void dispose() {
+    _videoParamsSub?.cancel();
     _hijackGuardTimer?.cancel();
     _channel?.setMethodCallHandler(null);
     _enqueue(_restore);
@@ -344,32 +371,107 @@ class _HdrVideoSurfaceState extends State<HdrVideoSurface> {
   @override
   Widget build(BuildContext context) {
     if (defaultTargetPlatform != TargetPlatform.android) return const SizedBox.shrink();
-    return ColoredBox(
-      color: Colors.black,
-      child: PlatformViewLink(
-        viewType: 'nivio/hdr_surface',
-        surfaceFactory: (context, controller) => AndroidViewSurface(
-          controller: controller as AndroidViewController,
-          gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
-          // Touches go to the player controls drawn above it.
-          hitTestBehavior: PlatformViewHitTestBehavior.transparent,
-        ),
-        onCreatePlatformView: (params) {
-          // A SurfaceView needs Hybrid Composition (a real Android view in the
-          // hierarchy); texture-based platform views would make it SDR again.
-          final controller = PlatformViewsService.initExpensiveAndroidView(
-            id: params.id,
-            viewType: 'nivio/hdr_surface',
-            layoutDirection: TextDirection.ltr,
-            creationParamsCodec: const StandardMessageCodec(),
-            onFocus: () => params.onFocusChanged(true),
-          )
-            ..addOnPlatformViewCreatedListener(params.onPlatformViewCreated)
-            ..addOnPlatformViewCreatedListener(_onViewCreated);
-          controller.create();
-          return controller;
-        },
+
+    final platformView = PlatformViewLink(
+      viewType: 'nivio/hdr_surface',
+      surfaceFactory: (context, controller) => AndroidViewSurface(
+        controller: controller as AndroidViewController,
+        gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
+        // Touches go to the player controls drawn above it.
+        hitTestBehavior: PlatformViewHitTestBehavior.transparent,
       ),
+      onCreatePlatformView: (params) {
+        // A SurfaceView needs Hybrid Composition (a real Android view in the
+        // hierarchy); texture-based platform views would make it SDR again.
+        final controller = PlatformViewsService.initExpensiveAndroidView(
+          id: params.id,
+          viewType: 'nivio/hdr_surface',
+          layoutDirection: TextDirection.ltr,
+          creationParamsCodec: const StandardMessageCodec(),
+          onFocus: () => params.onFocusChanged(true),
+        )
+          ..addOnPlatformViewCreatedListener(params.onPlatformViewCreated)
+          ..addOnPlatformViewCreatedListener(_onViewCreated);
+        controller.create();
+        return controller;
+      },
+    );
+
+    final isEmbed = widget.backend == HdrSurfaceBackend.mediacodecEmbed;
+    if (!isEmbed) {
+      return ColoredBox(
+        color: Colors.black,
+        child: platformView,
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screenW = constraints.maxWidth;
+        final screenH = constraints.maxHeight;
+        if (screenW <= 0 || screenH <= 0) {
+          return ColoredBox(color: Colors.black, child: platformView);
+        }
+
+        final vw = _videoWidth != null && _videoWidth! > 0 ? _videoWidth!.toDouble() : 1920.0;
+        final vh = _videoHeight != null && _videoHeight! > 0 ? _videoHeight!.toDouble() : 1080.0;
+        final videoAspect = vw / vh;
+        final screenAspect = screenW / screenH;
+
+        double targetW;
+        double targetH;
+
+        switch (widget.fit) {
+          case BoxFit.cover: // "Fit Screen" (Zoom to fill screen, crop top/bottom or sides)
+            if (screenAspect > videoAspect) {
+              targetW = screenW;
+              targetH = screenW / videoAspect;
+            } else {
+              targetH = screenH;
+              targetW = screenH * videoAspect;
+            }
+            break;
+
+          case BoxFit.fill: // "Fill" (Stretch to exact screen rectangle)
+            targetW = screenW;
+            targetH = screenH;
+            break;
+
+          case BoxFit.none:
+            targetW = vw;
+            targetH = vh;
+            break;
+
+          case BoxFit.contain: // "Best Fit" (Preserve aspect ratio, letterbox with black bars)
+          default:
+            if (screenAspect > videoAspect) {
+              targetH = screenH;
+              targetW = screenH * videoAspect;
+            } else {
+              targetW = screenW;
+              targetH = screenW / videoAspect;
+            }
+            break;
+        }
+
+        return ColoredBox(
+          color: Colors.black,
+          child: ClipRect(
+            child: OverflowBox(
+              minWidth: 0,
+              maxWidth: double.infinity,
+              minHeight: 0,
+              maxHeight: double.infinity,
+              alignment: Alignment.center,
+              child: SizedBox(
+                width: targetW,
+                height: targetH,
+                child: platformView,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
