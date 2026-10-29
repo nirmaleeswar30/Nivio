@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:nivio/core/debug_log.dart';
+import 'package:nivio/core/screen_wake_lock.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/services/discord_rpc_service.dart';
 import 'package:nivio/services/media_session_service.dart';
@@ -93,7 +94,11 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
       isActive: true,
       mediaInfo: mediaInfo,
     );
+    // The video keeps playing here after the player screen is gone.
+    ScreenWakeLock.acquire(_wakeLockKey);
   }
+
+  static const _wakeLockKey = 'mini_player';
 
   /// Deactivate and fully dispose the mini player.
   void deactivate() {
@@ -128,6 +133,7 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
 
     if (player != null) MediaSessionService.instance.detachPlayer(player);
     state = const MiniPlayerState();
+    ScreenWakeLock.release(_wakeLockKey);
     DiscordRpcService.instance.setBrowsing();
     Future.microtask(() {
       player?.dispose();
@@ -149,6 +155,7 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
     final reclaimed = state;
     // Clear state without disposing — the full-screen player now owns it.
     state = const MiniPlayerState();
+    ScreenWakeLock.release(_wakeLockKey);
     return reclaimed;
   }
 
@@ -157,6 +164,7 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
     final player = state.player;
     if (player != null) MediaSessionService.instance.detachPlayer(player);
     state.player?.dispose();
+    ScreenWakeLock.release(_wakeLockKey);
     super.dispose();
   }
 }

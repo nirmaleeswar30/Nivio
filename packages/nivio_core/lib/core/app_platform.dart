@@ -45,6 +45,17 @@ class AppPlatform {
     }();
   }
 
+  /// Hands the screen brightness back to the system setting after the
+  /// player's brightness gesture overrode it for the app window (Android).
+  static Future<void> resetWindowBrightness() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _channel.invokeMethod<void>('resetWindowBrightness');
+    } catch (e) {
+      if (kDebugMode) debugPrint('resetWindowBrightness failed: $e');
+    }
+  }
+
   /// Windows, Linux or macOS.
   static bool get isDesktopOS =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;

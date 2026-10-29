@@ -15,7 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:nivio/widgets/skeleton.dart';
 import 'package:go_router/go_router.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:nivio/core/screen_wake_lock.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
@@ -2406,7 +2406,7 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(WakelockPlus.enable());
+    ScreenWakeLock.acquire(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
@@ -2470,7 +2470,7 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
 
   @override
   void dispose() {
-    unawaited(WakelockPlus.disable());
+    ScreenWakeLock.release(this);
     _youtubeSubscription?.cancel();
     final youtubeController = _youtubeController;
     if (youtubeController != null) {

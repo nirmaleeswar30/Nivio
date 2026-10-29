@@ -10,7 +10,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:nivio/core/screen_wake_lock.dart';
 
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/return_code.dart';
@@ -89,7 +89,6 @@ class DownloadService {
 
   // Active download cancellation tokens
   static final Map<String, CancelToken> _activeDownloads = {};
-  static bool _wakelockEnabled = false;
 
   static Future<void> init() async {
     if (_isInitialized) return;
@@ -368,27 +367,11 @@ class DownloadService {
   }
 
   static Future<void> _acquireWakelock() async {
-    if (!_wakelockEnabled && _activeDownloads.isNotEmpty) {
-      try {
-        await WakelockPlus.enable();
-        _wakelockEnabled = true;
-        appDebugLog('📥 Wakelock ENABLED for downloads');
-      } catch (e) {
-        appDebugLog('📥 Failed to enable wakelock: $e');
-      }
-    }
+    if (_activeDownloads.isNotEmpty) ScreenWakeLock.acquire('downloads');
   }
 
   static Future<void> _releaseWakelock() async {
-    if (_wakelockEnabled && _activeDownloads.isEmpty) {
-      try {
-        await WakelockPlus.disable();
-        _wakelockEnabled = false;
-        appDebugLog('📥 Wakelock DISABLED (no active downloads)');
-      } catch (e) {
-        appDebugLog('📥 Failed to disable wakelock: $e');
-      }
-    }
+    if (_activeDownloads.isEmpty) ScreenWakeLock.release('downloads');
   }
 
   static Future<void> startDownload(DownloadItem item) async {

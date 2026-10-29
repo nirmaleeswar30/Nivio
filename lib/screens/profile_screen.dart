@@ -366,6 +366,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                               ref.read(videoDebandingProvider.notifier).setEnabled(value);
                             },
                           ),
+                        if (_showHdrSettings && _matches(_hdrSearchTerms))
+                          ..._buildHdrSettingTiles(),
                       ],
                     ),
                   ),
@@ -1145,6 +1147,9 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     if (_showAmbientSetting && _matches(_ambientSearchTerms)) {
       results.add(_buildAmbientModeTile());
     }
+    if (_showHdrSettings && _matches(_hdrSearchTerms)) {
+      results.addAll(_buildHdrSettingTiles());
+    }
     if (_matches('seek duration skip jump forward rewind step')) {
       results.add(
         _buildActionTile(
@@ -1610,6 +1615,135 @@ Widget _buildMobileLayout(BuildContext context, User user) {
       value: ref.watch(ambientModeProvider),
       onChanged: (value) {
         ref.read(ambientModeProvider.notifier).setEnabled(value);
+      },
+    );
+  }
+
+  // True HDR, Dolby Vision and the tone-mapping choice are Android-only (the
+  // player's HDR tile shows the same); desktop always uses Standard tone mapping.
+  bool get _showHdrSettings => Platform.isAndroid;
+
+  static const _hdrSearchTerms =
+      'hdr dolby vision dv tone mapping sdr hdr10 hlg bt2020 toys surface output mediacodec vulkan';
+
+  static const _toneMappingLabels = {'standard': 'Standard', 'hdrToys': 'HDR Toys'};
+  static const _toneMappingDescriptions = {
+    'standard': "mpv's tone mapping with per-scene brightness detection",
+    'hdrToys': 'hdr-toys shaders: PQ, HLG and BT.2020 profiles picked from the video. Ambient mode is off while they run',
+  };
+  static const _hdrBackendLabels = {
+    'vulkan': 'Vulkan (gpu-next)',
+    'mediacodecEmbed': 'MediaCodec Direct',
+  };
+  static const _hdrBackendDescriptions = {
+    'vulkan': 'HDR10 through mpv\'s Vulkan renderer. Dolby Vision videos play their HDR10 base layer',
+    'mediacodecEmbed': 'Straight from the hardware decoder to the screen. Needed for Dolby Vision, easiest on battery',
+  };
+
+  List<Widget> _buildHdrSettingTiles() {
+    final toneMode = ref.watch(toneMappingProvider);
+    final backend = ref.watch(hdrSurfaceBackendProvider);
+    return [
+      FutureBuilder<HdrDisplayInfo>(
+        future: AppPlatform.hdrDisplay(),
+        builder: (context, snapshot) {
+          final hdrScreen = snapshot.data?.isHdr ?? false;
+          return _buildSwitchTile(
+            icon: Icons.hdr_on_rounded,
+            title: 'HDR Output',
+            subtitle: !snapshot.hasData || hdrScreen
+                ? 'Show HDR and Dolby Vision videos in HDR on this screen'
+                : "This screen doesn't support HDR, so HDR videos are tone mapped",
+            value: ref.watch(hdrOutputProvider),
+            enabled: hdrScreen,
+            onChanged: (value) {
+              ref.read(hdrOutputProvider.notifier).setEnabled(value);
+            },
+          );
+        },
+      ),
+      _buildActionTile(
+        icon: Icons.tonality_rounded,
+        title: 'Tone Mapping',
+        subtitle: '${_toneMappingLabels[toneMode]} · used when HDR output is off or the screen has no HDR',
+        onTap: () => _showHdrOptionSheet(
+          title: 'Tone Mapping (HDR on SDR)',
+          options: toneMappingModes,
+          labels: _toneMappingLabels,
+          descriptions: _toneMappingDescriptions,
+          current: toneMode,
+          onSelected: (mode) => ref.read(toneMappingProvider.notifier).setMode(mode),
+        ),
+      ),
+      _buildActionTile(
+        icon: Icons.developer_board_rounded,
+        title: 'HDR Surface Output',
+        subtitle: '${_hdrBackendLabels[backend]} · how HDR video reaches the screen',
+        onTap: () => _showHdrOptionSheet(
+          title: 'HDR Surface Output (Experimental)',
+          options: hdrSurfaceBackends,
+          labels: _hdrBackendLabels,
+          descriptions: _hdrBackendDescriptions,
+          current: backend,
+          onSelected: (mode) => ref.read(hdrSurfaceBackendProvider.notifier).setBackend(mode),
+        ),
+      ),
+    ];
+  }
+
+  Future<void> _showHdrOptionSheet({
+    required String title,
+    required List<String> options,
+    required Map<String, String> labels,
+    required Map<String, String> descriptions,
+    required String current,
+    required ValueChanged<String> onSelected,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: NivioTheme.netflixDarkGrey,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              ListTile(
+                title: Text(
+                  title,
+                  style: const TextStyle(
+                    color: NivioTheme.netflixWhite,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              ...options.map((option) {
+                final isSelected = option == current;
+                return ListTile(
+                  leading: Icon(
+                    isSelected
+                        ? Icons.check_circle_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                    color: isSelected
+                        ? NivioTheme.accentColorOf(context)
+                        : NivioTheme.netflixGrey,
+                  ),
+                  title: Text(
+                    labels[option] ?? option,
+                    style: const TextStyle(color: NivioTheme.netflixWhite),
+                  ),
+                  subtitle: Text(
+                    descriptions[option] ?? '',
+                    style: const TextStyle(color: NivioTheme.netflixGrey, fontSize: 12),
+                  ),
+                  onTap: () {
+                    onSelected(option);
+                    Navigator.pop(sheetContext);
+                  },
+                );
+              }),
+            ],
+          ),
+        );
       },
     );
   }
@@ -4371,6 +4505,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                 ref.read(videoDebandingProvider.notifier).setEnabled(value);
               },
             ),
+            // Android TV uses this layout.
+            if (_showHdrSettings) ..._buildHdrSettingTiles(),
           ],
         );
       case 2: // Subtitle Appearance

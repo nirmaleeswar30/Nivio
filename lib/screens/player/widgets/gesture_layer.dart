@@ -332,8 +332,8 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
     }
   }
 
+  // Long press toggles the screen lock, so it must still work while locked.
   void _handleLongPress() {
-    if (widget.isLocked) return;
     _singleTapTimer?.cancel();
     _singleTapTimer = null;
     _lastTapTime = null;

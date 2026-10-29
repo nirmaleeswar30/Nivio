@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.graphics.Rect
+import android.view.WindowManager
 import cl.puntito.simple_pip_mode.PipCallbackHelperActivityWrapper
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -91,6 +92,14 @@ class MainActivity : PipCallbackHelperActivityWrapper() {
                 when (call.method) {
                     "isTv" -> result.success(isTelevision())
                     "hdrInfo" -> result.success(hdrInfo())
+                    // The player's brightness gesture overrides the window's
+                    // brightness; this hands it back to the system setting.
+                    "resetWindowBrightness" -> {
+                        window.attributes = window.attributes.apply {
+                            screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                        }
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }

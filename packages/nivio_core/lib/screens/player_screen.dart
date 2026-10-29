@@ -4,7 +4,7 @@ import 'package:media_kit_video/src/video_controller/android_video_controller/an
 import 'package:simple_pip_mode/actions/pip_actions_layout.dart';
 import 'package:nivio/services/window_fullscreen.dart';
 import 'dart:io';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:nivio/core/screen_wake_lock.dart';
 import 'package:simple_pip_mode/simple_pip.dart';
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -501,13 +501,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return streamingService.totalProvidersFor(isAnime: _isAnimeMedia(media));
   }
 
+  /// Player screens currently alive (the next episode's opens before the old
+  /// one is disposed).
+  static int _liveScreens = 0;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadSubtitleDelay();
-    unawaited(WakelockPlus.enable());
-    
+    ScreenWakeLock.acquire(this);
+    _liveScreens++;
+
     // Pre-cache providers to prevent using ref after widget disposal in dispose() or in microtasks
     _cachedHistoryService = ref.read(watchHistoryServiceProvider);
     _cachedMedia = ref.read(selectedMediaProvider);
@@ -650,6 +655,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (_isDisposing) return;
+    if (state == AppLifecycleState.resumed) ScreenWakeLock.acquire(this);
     final pauseOnLost = ref.read(pauseOnLostVisibilityProvider);
     if (pauseOnLost && !_isPipMode) {
       if (state == AppLifecycleState.paused ||
@@ -2066,6 +2072,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (mounted && info.isHdr != _hdrDisplay) setState(() => _hdrDisplay = info.isHdr);
       }));
     }
+    // Keep the screen awake for the whole player session; re-asserted on each
+    // play so nothing that cleared it in between leaves the video to sleep.
+    _subscriptions.add(
+      _player.stream.playing.listen((playing) {
+        if (playing && !_isDisposing) ScreenWakeLock.acquire(this);
+      }),
+    );
     _subscriptions.add(
       _player.stream.videoParams.listen((params) {
         if (!mounted || _isZombieCallback('video params stream')) return;
@@ -3842,7 +3855,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _hdrVideo = false;
   bool _hdrSurfaceFailed = false;
   int? _doviProfile;
-  bool _showStatsOverlay = true;
+  // Stats for nerds: off until turned on from the player settings.
+  bool _showStatsOverlay = false;
 
   String? _videoGamma;
   String? _videoPrimaries;
@@ -4610,13 +4624,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       appDebugLog('🔴 [DISPOSE] Step 1: ❌ FAILED — $e\n$st');
     }
 
-    try {
-      appDebugLog('🔴 [DISPOSE] Step 2: WakelockPlus.disable()...');
-      unawaited(WakelockPlus.disable());
-      appDebugLog('🔴 [DISPOSE] Step 2: ✅ done');
-    } catch (e, st) {
-      appDebugLog('🔴 [DISPOSE] Step 2: ❌ FAILED — $e\n$st');
-    }
+    // Only this screen's hold: the next episode's screen (opened before this
+    // one is disposed) or the mini player keep theirs.
+    ScreenWakeLock.release(this);
+
+    // The brightness gesture overrides the whole app window's brightness;
+    // give it back to the system once no player screen is left (the next
+    // episode's screen keeps the level the user picked).
+    _liveScreens--;
+    if (_liveScreens == 0) unawaited(AppPlatform.resetWindowBrightness());
 
     // Release the active torrent unless playback continues in the mini-player.
     if (!_transferredToMiniPlayer) {
