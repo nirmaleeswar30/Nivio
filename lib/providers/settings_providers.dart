@@ -1194,6 +1194,63 @@ class AmbientModeNotifier extends StateNotifier<bool> {
   }
 }
 
+// Ambient Style Provider: 'fade' (default) also fades the video's edges into
+// the glow; 'glow' keeps the glow in the bars only, with sharp video edges.
+const ambientStyles = ['fade', 'glow'];
+const ambientStyleLabels = {'fade': 'Glow + edge fade', 'glow': 'Glow only'};
+
+final ambientStyleProvider = StateNotifierProvider<AmbientStyleNotifier, String>((ref) {
+  return AmbientStyleNotifier();
+});
+
+class AmbientStyleNotifier extends StateNotifier<String> {
+  AmbientStyleNotifier() : super(_valid(_startupPrefs?.getString('ambient_style'))) {
+    _loadPreference();
+  }
+
+  static String _valid(String? style) => ambientStyles.contains(style) ? style! : 'fade';
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = _valid(prefs.getString('ambient_style'));
+  }
+
+  Future<void> setStyle(String style) async {
+    state = _valid(style);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('ambient_style', state);
+  }
+}
+
+// Ambient Blur Provider: how soft the glow is, as a strength from
+// ambientBlurMin (no blur) to ambientBlurMax (the original look, and the
+// default), set with a slider. See VideoAmbientBackground.blurStrength.
+const ambientBlurMin = 0;
+const ambientBlurMax = 10;
+
+final ambientBlurProvider = StateNotifierProvider<AmbientBlurNotifier, int>((ref) {
+  return AmbientBlurNotifier();
+});
+
+class AmbientBlurNotifier extends StateNotifier<int> {
+  AmbientBlurNotifier() : super(_valid(_startupPrefs?.getInt('ambient_blur_strength'))) {
+    _loadPreference();
+  }
+
+  static int _valid(int? level) => (level ?? ambientBlurMax).clamp(ambientBlurMin, ambientBlurMax);
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = _valid(prefs.getInt('ambient_blur_strength'));
+  }
+
+  Future<void> setLevel(int level) async {
+    state = _valid(level);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('ambient_blur_strength', state);
+  }
+}
+
 // HDR Output Provider (Android): HDR video on an HDR screen plays as true HDR
 // (SurfaceView + mpv's Vulkan renderer). Off, or on SDR screens, HDR video is
 // tone-mapped to SDR instead (see toneMappingProvider). Defaults to on.

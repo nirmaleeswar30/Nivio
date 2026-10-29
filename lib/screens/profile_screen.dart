@@ -307,7 +307,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                           ),
                         if (_showAmbientSetting &&
                             _matches(_ambientSearchTerms))
-                          _buildAmbientModeTile(),
+                          ..._buildAmbientModeTiles(),
                         if (_matches('seek duration skip jump forward rewind step'))
                           _buildActionTile(
                             icon: Icons.fast_forward_rounded,
@@ -1145,7 +1145,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
       );
     }
     if (_showAmbientSetting && _matches(_ambientSearchTerms)) {
-      results.add(_buildAmbientModeTile());
+      results.addAll(_buildAmbientModeTiles());
     }
     if (_showHdrSettings && _matches(_hdrSearchTerms)) {
       results.addAll(_buildHdrSettingTiles());
@@ -1605,17 +1605,111 @@ Widget _buildMobileLayout(BuildContext context, User user) {
   bool get _showAmbientSetting => Platform.isAndroid && !AppPlatform.isTv;
 
   static const _ambientSearchTerms =
-      'ambient mode glow black bars letterbox background';
+      'ambient mode glow black bars letterbox background blur fade edge style';
 
-  Widget _buildAmbientModeTile() {
-    return _buildSwitchTile(
-      icon: Icons.blur_on_rounded,
-      title: 'Ambient Mode',
-      subtitle: 'Fill the black bars around the video with a soft glow',
-      value: ref.watch(ambientModeProvider),
-      onChanged: (value) {
-        ref.read(ambientModeProvider.notifier).setEnabled(value);
-      },
+  /// Ambient mode switch, then its style and blur (the player's Ambient page
+  /// has the same).
+  List<Widget> _buildAmbientModeTiles() {
+    final style = ref.watch(ambientStyleProvider);
+    final blur = ref.watch(ambientBlurProvider);
+    return [
+      _buildSwitchTile(
+        icon: Icons.blur_on_rounded,
+        title: 'Ambient Mode',
+        subtitle: 'Fill the black bars around the video with a soft glow',
+        value: ref.watch(ambientModeProvider),
+        onChanged: (value) {
+          ref.read(ambientModeProvider.notifier).setEnabled(value);
+        },
+      ),
+      _buildActionTile(
+        icon: Icons.gradient_rounded,
+        title: 'Ambient Style',
+        subtitle: ambientStyleLabels[style] ?? style,
+        onTap: () => _showOptionSheet(
+          title: 'Ambient Style',
+          options: ambientStyles,
+          labels: ambientStyleLabels,
+          descriptions: const {
+            'fade': "The video's edges fade softly into the glow",
+            'glow': 'Glow in the bars only, with sharp video edges',
+          },
+          current: style,
+          onSelected: (value) => ref.read(ambientStyleProvider.notifier).setStyle(value),
+        ),
+      ),
+      _buildAmbientBlurTile(blur),
+    ];
+  }
+
+  /// Blur strength slider: 0 keeps the picture's shapes in the glow, 10 (the
+  /// default, the original look) is the softest.
+  Widget _buildAmbientBlurTile(int blur) {
+    final accentColor = NivioTheme.accentColorOf(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 2),
+            child: Icon(Icons.blur_linear_rounded, color: NivioTheme.netflixWhite, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Ambient Blur',
+                        style: TextStyle(
+                          color: NivioTheme.netflixWhite,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      blur == ambientBlurMax ? '$blur · default' : '$blur',
+                      style: TextStyle(color: accentColor, fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  "0 keeps the picture's shapes in the glow, 10 is the softest (the default)",
+                  style: TextStyle(color: NivioTheme.netflixGrey, fontSize: 12),
+                ),
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 4.0,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.5),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 12.0),
+                    activeTrackColor: accentColor,
+                    inactiveTrackColor: Colors.white.withValues(alpha: 0.12),
+                    thumbColor: accentColor,
+                    overlayColor: accentColor.withValues(alpha: 0.15),
+                  ),
+                  child: Slider(
+                    value: blur.toDouble(),
+                    min: ambientBlurMin.toDouble(),
+                    max: ambientBlurMax.toDouble(),
+                    divisions: ambientBlurMax - ambientBlurMin,
+                    onChanged: (value) {
+                      final level = value.round();
+                      if (level != blur) ref.read(ambientBlurProvider.notifier).setLevel(level);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1666,7 +1760,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
         icon: Icons.tonality_rounded,
         title: 'Tone Mapping',
         subtitle: '${_toneMappingLabels[toneMode]} · used when HDR output is off or the screen has no HDR',
-        onTap: () => _showHdrOptionSheet(
+        onTap: () => _showOptionSheet(
           title: 'Tone Mapping (HDR on SDR)',
           options: toneMappingModes,
           labels: _toneMappingLabels,
@@ -1679,7 +1773,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
         icon: Icons.developer_board_rounded,
         title: 'HDR Surface Output',
         subtitle: '${_hdrBackendLabels[backend]} · how HDR video reaches the screen',
-        onTap: () => _showHdrOptionSheet(
+        onTap: () => _showOptionSheet(
           title: 'HDR Surface Output (Experimental)',
           options: hdrSurfaceBackends,
           labels: _hdrBackendLabels,
@@ -1691,7 +1785,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     ];
   }
 
-  Future<void> _showHdrOptionSheet({
+  Future<void> _showOptionSheet({
     required String title,
     required List<String> options,
     required Map<String, String> labels,
@@ -4453,7 +4547,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                 ref.read(pauseOnLostVisibilityProvider.notifier).setEnabled(val);
               },
             ),
-            if (_showAmbientSetting) _buildAmbientModeTile(),
+            if (_showAmbientSetting) ..._buildAmbientModeTiles(),
             _buildActionTile(
               icon: Icons.fast_forward_rounded,
               title: 'Seek Duration',

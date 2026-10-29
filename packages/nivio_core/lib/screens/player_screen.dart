@@ -5674,6 +5674,103 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             return actual == chosen ? chosen : '$chosen · using $actual';
                           }
 
+                          final ambientStyle = ref.watch(ambientStyleProvider);
+                          final ambientBlur = ref.watch(ambientBlurProvider);
+
+                          String ambientValue() {
+                            if (!ambient) return 'Off';
+                            if (_selectedDisplayFitKey != 'bestFit') return 'On · Best Fit only';
+                            return ambientStyle == 'fade' ? 'On · Edge fade' : 'On · Glow only';
+                          }
+
+                          List<Widget> ambientItems() {
+                            const styleDescriptions = {
+                              'fade': "The video's edges fade softly into the glow",
+                              'glow': 'Glow in the bars only, with sharp video edges',
+                            };
+                            Widget sectionTitle(String text) => Padding(
+                                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 4),
+                                  child: Text(text, style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
+                                );
+                            // Style and blur are still selectable while ambient is off.
+                            Widget dimmed(Widget child) => ambient ? child : Opacity(opacity: 0.4, child: child);
+                            return [
+                              if (_selectedDisplayFitKey != 'bestFit' || _useHdrSurface)
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                                  child: Text(
+                                    _useHdrSurface
+                                        ? 'Not shown for this video: it plays on the HDR surface, which ambient mode can\'t draw around.'
+                                        : 'Shown with the Best Fit display mode only.',
+                                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                                  ),
+                                ),
+                              SwitchListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                activeThumbColor: accent,
+                                title: const Text('Ambient mode', style: TextStyle(color: Colors.white)),
+                                subtitle: const Text(
+                                  'Fill the black bars around the video with a soft glow',
+                                  style: TextStyle(color: Colors.white38, fontSize: 11),
+                                ),
+                                value: ambient,
+                                onChanged: (value) async {
+                                  await ref.read(ambientModeProvider.notifier).setEnabled(value);
+                                  refreshSheet();
+                                },
+                              ),
+                              sectionTitle('Style'),
+                              ...ambientStyles.map((style) {
+                                final isCurrent = style == ambientStyle;
+                                return dimmed(ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                  title: Text(ambientStyleLabels[style]!, style: TextStyle(color: isCurrent ? accent : Colors.white)),
+                                  subtitle: Text(styleDescriptions[style]!, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                                  trailing: isCurrent ? Icon(Icons.check, color: accent) : null,
+                                  onTap: () async {
+                                    if (isCurrent) return;
+                                    await ref.read(ambientStyleProvider.notifier).setStyle(style);
+                                    refreshSheet();
+                                  },
+                                ));
+                              }),
+                              sectionTitle('Blur strength · $ambientBlur'),
+                              // Applies live: the glow is re-blurred as the slider moves.
+                              dimmed(Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                                child: Row(
+                                  children: [
+                                    const Padding(
+                                      padding: EdgeInsets.only(left: 12),
+                                      child: Icon(Icons.blur_off_rounded, color: Colors.white38, size: 18),
+                                    ),
+                                    Expanded(
+                                      child: Slider(
+                                        value: ambientBlur.toDouble(),
+                                        min: ambientBlurMin.toDouble(),
+                                        max: ambientBlurMax.toDouble(),
+                                        divisions: ambientBlurMax - ambientBlurMin,
+                                        label: '$ambientBlur',
+                                        activeColor: accent,
+                                        inactiveColor: Colors.white24,
+                                        onChanged: (value) async {
+                                          final level = value.round();
+                                          if (level == ambientBlur) return;
+                                          await ref.read(ambientBlurProvider.notifier).setLevel(level);
+                                          refreshSheet();
+                                        },
+                                      ),
+                                    ),
+                                    const Padding(
+                                      padding: EdgeInsets.only(right: 12),
+                                      child: Icon(Icons.blur_on_rounded, color: Colors.white70, size: 22),
+                                    ),
+                                  ],
+                                ),
+                              )),
+                            ];
+                          }
+
                           List<Widget> decoderItems() {
                             const descriptions = {
                               'auto': 'Best hardware decoder available, CPU if none works',
@@ -5967,14 +6064,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                     tile(
                                       icon: Icons.light_mode_outlined,
                                       title: 'Ambient',
-                                      value: !ambient
-                                          ? 'Off'
-                                          : (_selectedDisplayFitKey == 'bestFit' ? 'On' : 'On · Best Fit only'),
-                                      toggled: ambient,
-                                      onTap: () async {
-                                        await ref.read(ambientModeProvider.notifier).setEnabled(!ambient);
-                                        setDialogState(() {});
-                                      },
+                                      value: ambientValue(),
+                                      onTap: () => openPage('ambient'),
                                     ),
                                 ],
                               );
@@ -5987,6 +6078,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             'sync': 'Subtitle sync',
                             'display': 'Display',
                             'decoder': 'Decoder',
+                            'ambient': 'Ambient',
                             'hdr': 'HDR',
                           };
 
@@ -5998,6 +6090,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                               'subtitleStyle' => subtitleStyleItems(),
                               'sync' => syncItems(),
                               'decoder' => decoderItems(),
+                              'ambient' => ambientItems(),
                               'hdr' => hdrItems(),
                               _ => displayItems(),
                             };
@@ -7394,15 +7487,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             ),
           );
     if (ambient) {
-      videoWidget = Stack(
-        fit: StackFit.expand,
-        children: [
-          VideoAmbientBackground(
-            player: _player,
-            captureKey: _ambientCaptureKey,
-          ),
-          RepaintBoundary(key: _ambientCaptureKey, child: videoWidget),
-        ],
+      videoWidget = VideoAmbientBackground(
+        player: _player,
+        captureKey: _ambientCaptureKey,
+        blurStrength: ref.watch(ambientBlurProvider),
+        edgeFade: ref.watch(ambientStyleProvider) == 'fade',
+        child: RepaintBoundary(key: _ambientCaptureKey, child: videoWidget),
       );
     }
 

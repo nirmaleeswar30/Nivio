@@ -11,9 +11,14 @@ import 'package:media_kit/media_kit.dart';
 /// YouTube-style "ambient mode": fills the letterbox / pillarbox bars around
 /// a "Best Fit" video with a soft glow taken from the picture.
 ///
-/// Used by the player on Android phones only. It goes behind the [Video]
-/// widget, which must have a transparent fill and be wrapped in a
-/// [RepaintBoundary] keyed with [captureKey].
+/// Used by the player on Android phones only. [child] is the [Video] widget,
+/// which must have a transparent fill and be wrapped in a [RepaintBoundary]
+/// keyed with [captureKey]. The glow is painted behind it, and (with
+/// [edgeFade]) thin strips of the same glow are faded in over the video's
+/// edges next to the bars, so the
+/// picture melts into the glow instead of ending in a hard line. The strips
+/// are small offscreen layers (a few percent of the video's width each), so
+/// they cost far less than masking the whole video every frame.
 ///
 /// A few times a second it samples a tiny (~48px wide) copy of the current
 /// frame, blurs it, picks a base and an accent colour, and crossfades to the
@@ -28,12 +33,25 @@ class VideoAmbientBackground extends StatefulWidget {
     super.key,
     required this.player,
     required this.captureKey,
+    required this.child,
+    this.blurStrength = 10,
+    this.edgeFade = true,
   });
 
   final Player player;
 
+  /// Glow softness from 0 (no blur) to 10 (the original look: box-blur radius
+  /// 2 on the tiny sample). In-between values blend the two nearest radii.
+  final int blurStrength;
+
+  /// Fade the video's edges into the glow (ambient style 'fade').
+  final bool edgeFade;
+
   /// Key of the [RepaintBoundary] wrapping the [Video] widget.
   final GlobalKey captureKey;
+
+  /// The video, drawn between the glow and the faded edges.
+  final Widget child;
 
   @override
   State<VideoAmbientBackground> createState() =>
@@ -79,6 +97,19 @@ class _VideoAmbientBackgroundState extends State<VideoAmbientBackground>
   Color _accentFrom = const Color(0xFF000000);
   Color _accentTo = const Color(0xFF000000);
   Uint8List? _lastSample;
+
+  /// The last sample used, so a blur change can redo the glow right away
+  /// (also while paused, when nothing new is captured).
+  _Sample? _lastApplied;
+
+  @override
+  void didUpdateWidget(covariant VideoAmbientBackground oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final sample = _lastApplied;
+    if (oldWidget.blurStrength != widget.blurStrength && sample != null) {
+      unawaited(_apply(sample, force: true));
+    }
+  }
 
   @override
   void initState() {
@@ -233,9 +264,9 @@ class _VideoAmbientBackgroundState extends State<VideoAmbientBackground>
     return _Sample(out, w, h);
   }
 
-  Future<void> _apply(_Sample sample) async {
+  Future<void> _apply(_Sample sample, {bool force = false}) async {
     final last = _lastSample;
-    if (last != null && last.length == sample.rgba.length) {
+    if (!force && last != null && last.length == sample.rgba.length) {
       var diff = 0;
       for (var i = 0; i < last.length; i++) {
         diff += (last[i] - sample.rgba[i]).abs();
@@ -243,8 +274,9 @@ class _VideoAmbientBackgroundState extends State<VideoAmbientBackground>
       if (diff / last.length < _changeThreshold) return;
     }
     _lastSample = sample.rgba;
+    _lastApplied = sample;
 
-    final blurred = _boxBlur(sample.rgba, sample.width, sample.height);
+    final blurred = _blurByStrength(sample.rgba, sample.width, sample.height, widget.blurStrength);
     final colors = _extractColors(blurred);
     final image = await _decode(blurred, sample.width, sample.height);
     if (_disposed) {
@@ -265,8 +297,9 @@ class _VideoAmbientBackgroundState extends State<VideoAmbientBackground>
     _fade.forward(from: 0);
   }
 
-  @override
-  Widget build(BuildContext context) {
+  /// One glow layer: the full glow behind the video, or the faded strips
+  /// over its edges ([edges]).
+  Widget _glowLayer({required bool edges}) {
     return IgnorePointer(
       child: RepaintBoundary(
         child: AnimatedBuilder(
@@ -284,11 +317,24 @@ class _VideoAmbientBackgroundState extends State<VideoAmbientBackground>
                 base: Color.lerp(_baseFrom, _baseTo, _fade.value)!,
                 accent: Color.lerp(_accentFrom, _accentTo, _fade.value)!,
                 videoAspect: vw > 0 && vh > 0 ? vw / vh : null,
+                edges: edges,
               ),
             );
           },
         ),
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _glowLayer(edges: false),
+        widget.child,
+        if (widget.edgeFade) _glowLayer(edges: true),
+      ],
     );
   }
 }
@@ -312,10 +358,32 @@ Rect _containRect(Size box, double aspect) {
   return Rect.fromLTWH((box.width - w) / 2, (box.height - h) / 2, w, h);
 }
 
-/// Separable box blur (radius 2, two passes) on an RGBA buffer, so the
-/// upscaled sample reads as a soft glow rather than blocks.
-Uint8List _boxBlur(Uint8List src, int w, int h) {
-  const radius = 2;
+/// The largest box-blur radius, reached at strength 10 (the original look).
+const int _maxBlurRadius = 2;
+
+/// Blurs for a strength from 0 to 10, mapped to a radius from 0 to
+/// [_maxBlurRadius]. Radii are whole numbers, so a strength between two of
+/// them blends those two blurs, which keeps every slider step distinct.
+Uint8List _blurByStrength(Uint8List src, int w, int h, int strength) {
+  final radius = strength.clamp(0, 10) / 10 * _maxBlurRadius;
+  final lo = radius.floor();
+  final hi = radius.ceil();
+  Uint8List blurAt(int r) => r == 0 ? src : _boxBlur(src, w, h, r);
+  final a = blurAt(lo);
+  if (hi == lo) return a;
+  final b = blurAt(hi);
+  final f = radius - lo;
+  final out = Uint8List(src.length);
+  for (var i = 0; i < out.length; i++) {
+    out[i] = (a[i] + (b[i] - a[i]) * f).round();
+  }
+  return out;
+}
+
+/// Separable box blur ([radius], two passes) on an RGBA buffer, so the
+/// upscaled sample reads as a soft glow rather than blocks. The sample is
+/// tiny, so this costs next to nothing.
+Uint8List _boxBlur(Uint8List src, int w, int h, int radius) {
   var a = Uint8List.fromList(src);
   var b = Uint8List(src.length);
   for (var pass = 0; pass < 2; pass++) {
@@ -410,6 +478,7 @@ class _AmbientPainter extends CustomPainter {
     required this.base,
     required this.accent,
     required this.videoAspect,
+    required this.edges,
   });
 
   final ui.Image? previous;
@@ -419,12 +488,77 @@ class _AmbientPainter extends CustomPainter {
   final Color accent;
   final double? videoAspect;
 
+  /// Paint only the faded strips over the video's edges (drawn above the
+  /// video) instead of the full glow (drawn behind it).
+  final bool edges;
+
   static const double _baseAlpha = 0.5;
   static const double _frameAlpha = 0.5;
   static const double _accentAlpha = 0.22;
 
+  /// Width of each faded edge, as a fraction of the video's width (or
+  /// height, for bars above and below).
+  static const double _edgeFraction = 0.06;
+
+  /// Glow opacity across a strip, from the video's edge inwards. Eased
+  /// rather than linear so the strip's inner end doesn't show as a line.
+  static const _edgeColors = [
+    Color(0xFFFFFFFF),
+    Color(0xBFFFFFFF),
+    Color(0x66FFFFFF),
+    Color(0x1FFFFFFF),
+    Color(0x00FFFFFF),
+  ];
+  static const _edgeStops = [0.0, 0.25, 0.55, 0.8, 1.0];
+
   @override
   void paint(Canvas canvas, Size size) {
+    if (edges) {
+      _paintEdges(canvas, size);
+    } else {
+      _paintGlow(canvas, size);
+    }
+  }
+
+  /// The glow over the video's edges next to the bars: each strip is the
+  /// glow drawn into a small offscreen layer, then faded out towards the
+  /// middle of the picture.
+  void _paintEdges(Canvas canvas, Size size) {
+    final aspect = videoAspect;
+    if (current == null || aspect == null) return;
+    final video = _containRect(size, aspect);
+    final strips = <(Rect, Offset, Offset)>[];
+    if (size.width - video.width > 8) {
+      final w = video.width * _edgeFraction;
+      strips
+        ..add((Rect.fromLTWH(video.left, video.top, w, video.height),
+            Offset(video.left, 0), Offset(video.left + w, 0)))
+        ..add((Rect.fromLTWH(video.right - w, video.top, w, video.height),
+            Offset(video.right, 0), Offset(video.right - w, 0)));
+    }
+    if (size.height - video.height > 8) {
+      final h = video.height * _edgeFraction;
+      strips
+        ..add((Rect.fromLTWH(video.left, video.top, video.width, h),
+            Offset(0, video.top), Offset(0, video.top + h)))
+        ..add((Rect.fromLTWH(video.left, video.bottom - h, video.width, h),
+            Offset(0, video.bottom), Offset(0, video.bottom - h)));
+    }
+    for (final (rect, from, to) in strips) {
+      canvas.saveLayer(rect, Paint());
+      canvas.clipRect(rect);
+      _paintGlow(canvas, size);
+      canvas.drawRect(
+        rect,
+        Paint()
+          ..blendMode = BlendMode.dstIn
+          ..shader = ui.Gradient.linear(from, to, _edgeColors, _edgeStops),
+      );
+      canvas.restore();
+    }
+  }
+
+  void _paintGlow(Canvas canvas, Size size) {
     final full = Offset.zero & size;
     canvas.drawRect(full, Paint()..color = const Color(0xFF000000));
     if (current == null) return;
@@ -482,5 +616,6 @@ class _AmbientPainter extends CustomPainter {
       old.t != t ||
       old.base != base ||
       old.accent != accent ||
-      old.videoAspect != videoAspect;
+      old.videoAspect != videoAspect ||
+      old.edges != edges;
 }
