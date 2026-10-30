@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>/* Relative links need /docs/ (with the slash) to resolve inside docs/. */if(location.pathname.slice(-5)==="/docs")location.replace(location.pathname+"/"+location.search+location.hash);</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Android TV · Nivio Docs</title>
+<meta name="description" content="Install Nivio on Android TV and Google TV, use it with your remote, and get HDR and Dolby Vision on your TV.">
+<meta property="og:title" content="Android TV · Nivio Docs">
+<meta property="og:description" content="Install Nivio on Android TV and Google TV, use it with your remote, and get HDR and Dolby Vision on your TV.">
+<meta property="og:image" content="https://nivio.nirmaleeswar.dev/appicon.png">
+<link rel="icon" type="image/png" href="../nivio.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="docs.css">
+<script src="docs.js" defer></script>
+</head>
+<body>
+<div class="field" aria-hidden="true"></div>
+<header class="docs-top"><div class="in">
+  <a class="brand" href="../index.html" aria-label="Nivio home"><img class="mark" src="../nivio.png" alt=""><img class="word" src="../nivio-wordmark.png" alt="Nivio"><span class="tag">Docs</span></a>
+  <div class="top-actions">
+    <a class="btn hide-sm" href="https://github.com/nirmaleeswar30/Nivio" target="_blank" rel="noopener noreferrer">GitHub</a>
+    <a class="btn btn-primary hide-sm" href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">Download</a>
+    <button class="btn menu-btn" id="menu-btn" type="button" aria-controls="docs-nav" aria-expanded="false">Menu</button>
+  </div>
+</div></header>
+<div class="docs-shell">
+  <nav class="docs-nav" id="docs-nav" aria-label="Documentation"><noscript><a href="index.html">All docs</a></noscript></nav>
+  <main class="docs-main">
+    <article class="prose">
+<span class="crumb">Devices & accounts</span>
+<h1>Android TV</h1>
+<p class="lead">Nivio runs on Android TV and Google TV devices, such as the Chromecast with Google TV, NVIDIA Shield and Android-based smart TVs, with a layout built for the big screen and your remote.</p>
+
+<h2 id="install">Install it</h2>
+<p>Nivio isn't in the Play Store, so you sideload the same <code>nivio.apk</code> used on phones. The easiest way is the free <strong>Downloader</strong> app:</p>
+<ol class="steps">
+  <li>On your TV, install <strong>Downloader</strong> from the Play Store.</li>
+  <li>Allow it to install apps: <strong>Settings → Apps → Security & restrictions → Unknown sources</strong> (the menu names vary by device).</li>
+  <li>In Downloader, enter <code>https://github.com/nirmaleeswar30/Nivio/releases/latest</code>, download <code>nivio.apk</code> and install it. Older 32-bit boxes need <code>universal.apk</code> instead.</li>
+</ol>
+<p>If you use a computer, <code>adb install nivio.apk</code> works too. Nivio recognises the TV on first launch and switches to the TV layout by itself.</p>
+
+<h2 id="layout">The TV layout</h2>
+<p>On a TV, Nivio uses its big-screen layout: a navigation rail down the side, poster grids, and wide detail pages. Everything is reachable with the D-pad, and the focused item is clearly highlighted.</p>
+
+<h2 id="remote">Using the remote</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>Button</th><th>Browsing</th><th>In the player</th></tr></thead>
+  <tbody>
+    <tr><td>Arrows</td><td>Move between items</td><td>Left and right seek; with the controls shown, they move between buttons</td></tr>
+    <tr><td>OK / Select</td><td>Open the focused item</td><td>Show the controls, or press the focused button</td></tr>
+    <tr><td>Back</td><td>Go back</td><td>Hide the controls first, then leave the player</td></tr>
+    <tr><td>Play/pause, next, previous</td><td>-</td><td>Work as on any media remote</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="hdr">HDR and Dolby Vision on TV</h2>
+<p>A TV box reports what your TV supports, so Nivio can play true HDR and, where the box has a Dolby Vision decoder, Dolby Vision. The HDR settings work the same as on phones. See <a href="hdr.html">HDR & Dolby Vision</a>.</p>
+<p>Ambient mode is a phone feature and doesn't appear on TV.</p>
+
+<h2 id="updates">Updating</h2>
+<p>Nivio shows an <em>Update available</em> prompt when a new version is out. Install the new APK over the old one the same way; your data stays.</p>
+    </article>
+    <nav class="pager" id="pager" aria-label="Previous and next page"></nav>
+    <p class="edit">Something wrong or missing? <a href="https://github.com/nirmaleeswar30/Nivio/issues/new/choose" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a>.</p>
+  </main>
+  <aside class="docs-toc" id="docs-toc" aria-label="On this page"></aside>
+</div>
+</body>
+</html>

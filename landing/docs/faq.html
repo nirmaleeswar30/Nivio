@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>/* Relative links need /docs/ (with the slash) to resolve inside docs/. */if(location.pathname.slice(-5)==="/docs")location.replace(location.pathname+"/"+location.search+location.hash);</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Troubleshooting & FAQ · Nivio Docs</title>
+<meta name="description" content="Fixes for common Nivio problems: videos that won't load or show a black screen, HDR that looks wrong, update and install trouble, and how to report a bug.">
+<meta property="og:title" content="Troubleshooting & FAQ · Nivio Docs">
+<meta property="og:description" content="Fixes for common Nivio problems: videos that won't load or show a black screen, HDR that looks wrong, update and install trouble, and how to report a bug.">
+<meta property="og:image" content="https://nivio.nirmaleeswar.dev/appicon.png">
+<link rel="icon" type="image/png" href="../nivio.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="docs.css">
+<script src="docs.js" defer></script>
+</head>
+<body>
+<div class="field" aria-hidden="true"></div>
+<header class="docs-top"><div class="in">
+  <a class="brand" href="../index.html" aria-label="Nivio home"><img class="mark" src="../nivio.png" alt=""><img class="word" src="../nivio-wordmark.png" alt="Nivio"><span class="tag">Docs</span></a>
+  <div class="top-actions">
+    <a class="btn hide-sm" href="https://github.com/nirmaleeswar30/Nivio" target="_blank" rel="noopener noreferrer">GitHub</a>
+    <a class="btn btn-primary hide-sm" href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">Download</a>
+    <button class="btn menu-btn" id="menu-btn" type="button" aria-controls="docs-nav" aria-expanded="false">Menu</button>
+  </div>
+</div></header>
+<div class="docs-shell">
+  <nav class="docs-nav" id="docs-nav" aria-label="Documentation"><noscript><a href="index.html">All docs</a></noscript></nav>
+  <main class="docs-main">
+    <article class="prose">
+<span class="crumb">Help</span>
+<h1>Troubleshooting & FAQ</h1>
+<p class="lead">Quick fixes for the problems people run into most. If yours isn't here, <a href="#report">report it</a>.</p>
+
+<h2 id="wont-load">A video won't load or keeps buffering</h2>
+<ul>
+  <li><strong>Try another server.</strong> Tap the circular arrows at the top right of the player and pick a different server card. Sources go down and come back often.</li>
+  <li><strong>Give fallback a moment.</strong> When a source fails, Nivio tries the next one by itself, which can take a few seconds.</li>
+  <li><strong>Check your connection or DNS.</strong> Some networks and ISPs block streaming sites. Setting a <strong>DNS over HTTPS URL</strong> under Settings → Network often helps.</li>
+  <li><strong>Torrents stall?</strong> Pick a result with more seeders. See <a href="torrents.html">Torrent streaming</a>.</li>
+</ul>
+
+<h2 id="black-screen">Sound plays but the screen is black or green</h2>
+<p>This is almost always a decoding problem. Open the player settings, tap <strong>Decoder</strong> and switch to <strong>HW</strong>, or <strong>SW</strong> if that doesn't help. On an HDR video, try the other <strong>HDR Surface Output</strong> in the HDR tile. See <a href="player.html#decoder">Decoder modes</a>.</p>
+
+<h2 id="hdr">HDR looks washed out, too dark, or the colours are off</h2>
+<p>See <a href="hdr.html#troubleshooting">HDR troubleshooting</a>. Short version: check what the HDR tile says, switch the surface output, or turn HDR Output off to tone-map instead.</p>
+
+<h2 id="subtitles">Subtitles are missing or out of sync</h2>
+<ul>
+  <li>Pick a different subtitle track under <strong>Subtitles</strong>, or load your own <code>.srt</code> / <code>.vtt</code> file or URL there.</li>
+  <li>Use <strong>Subtitle sync</strong> to shift them earlier or later.</li>
+  <li>Set your default language in Settings → Preferred Subtitle Language.</li>
+</ul>
+
+<h2 id="update">Updating doesn't work on Windows or Linux</h2>
+<p>Since the version after 2.2.5, tapping <strong>Install</strong> on the update prompt downloads the update, installs it and restarts Nivio for you. On 2.2.5 or older:</p>
+<ul>
+  <li><strong>Windows:</strong> close Nivio completely, then run the new <code>Nivio-Setup</code>. It upgrades the existing install; there's no need to uninstall first. If Nivio seems to be closed but the installer still says files are in use, end <code>nivio.exe</code> in Task Manager.</li>
+  <li><strong>Linux:</strong> replace the old AppImage with the new one, keeping the same file name so your shortcuts still work.</li>
+</ul>
+<p>See <a href="install.html">Install & update</a> for details.</p>
+
+<h2 id="smartscreen">Windows says it protected my PC</h2>
+<p>That's SmartScreen warning about an app that isn't code-signed. Click <strong>More info → Run anyway</strong>. Only download Nivio from <a href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">GitHub Releases</a> or this site.</p>
+
+<h2 id="appimage">The Linux AppImage won't start</h2>
+<p>Make sure it's executable (<code>chmod +x</code>), and install FUSE 2: <code>libfuse2</code> on Debian and Ubuntu, <code>fuse2</code> on Arch and Fedora. If you sign in to AniList, MyAnimeList, Simkl or Google and the browser doesn't return to Nivio, open Nivio once from the AppImage so it can register its <code>nivio://</code> link handler.</p>
+
+<h2 id="sleep">The screen turns off while I'm watching</h2>
+<p>Nivio keeps the screen on while a video plays, including in the mini player and while downloads run. If it still sleeps, update to the latest version; older versions could lose the screen-on hold when moving to the next episode.</p>
+
+<h2 id="data">Will I lose my history or settings?</h2>
+<p>Not when you update. On Android, uninstalling deletes your local data, so sign in with Google first if you want your watchlist and history back afterwards. Clearing the cache in Settings only removes cached posters and metadata.</p>
+
+<h2 id="play-store">Is Nivio on the Play Store?</h2>
+<p>No. Nivio is only distributed through <a href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">GitHub Releases</a> (and Obtainium, which installs from GitHub). Copies on other sites aren't ours and may be modified.</p>
+
+<h2 id="free">Is it really free?</h2>
+<p>Yes. Nivio is free and open source under the MIT License, with no ads and no subscriptions. If you'd like to support development, you can <a href="https://github.com/sponsors/nirmaleeswar30" target="_blank" rel="noopener noreferrer">sponsor it on GitHub</a>.</p>
+
+<h2 id="report">Report a bug or request a feature</h2>
+<p><a href="https://github.com/nirmaleeswar30/Nivio/issues/new/choose" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a>. To help us fix it fast, include:</p>
+<ul>
+  <li>Your device and platform (for example, Pixel 8 on Android 15, or Windows 11)</li>
+  <li>Your Nivio version (Settings → App & Updates → App Version)</li>
+  <li>What you were playing, which server, and what happened</li>
+  <li>A screenshot, or the <strong>Stats for nerds</strong> overlay for playback problems</li>
+</ul>
+    </article>
+    <nav class="pager" id="pager" aria-label="Previous and next page"></nav>
+    <p class="edit">Something wrong or missing? <a href="https://github.com/nirmaleeswar30/Nivio/issues/new/choose" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a>.</p>
+  </main>
+  <aside class="docs-toc" id="docs-toc" aria-label="On this page"></aside>
+</div>
+</body>
+</html>

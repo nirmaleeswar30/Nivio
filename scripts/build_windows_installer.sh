@@ -14,7 +14,7 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DESKTOP_DIR="$PROJECT_ROOT/packages/nivio_desktop"
-ISS="$PROJECT_ROOT/installer/nivio.iss"
+ISS="$DESKTOP_DIR/installer/windows/nivio.iss"
 
 SKIP_BUILD=0
 [[ "${1:-}" == "--skip-build" ]] && SKIP_BUILD=1
@@ -59,6 +59,6 @@ elif [[ -f "$DESKTOP_DIR/pubspec.yaml" ]]; then
 fi
 
 echo "📦 Compiling installer ($ISS) for version $APP_VERSION ..."
-"$ISCC" "/DMyAppVersion=$APP_VERSION" "$ISS"
+"$ISCC" "/DAppVersion=$APP_VERSION" "$ISS"
 
-echo "✅ Done. Installer is in $PROJECT_ROOT/dist/"
+echo "✅ Done. Installer is in $DESKTOP_DIR/dist/windows/"

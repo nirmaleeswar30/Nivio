@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>/* Relative links need /docs/ (with the slash) to resolve inside docs/. */if(location.pathname.slice(-5)==="/docs")location.replace(location.pathname+"/"+location.search+location.hash);</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sync & integrations · Nivio Docs</title>
+<meta name="description" content="Sync your Nivio library across devices with Google, track anime and shows on AniList, MyAnimeList and Simkl, and show what you're watching on Discord.">
+<meta property="og:title" content="Sync & integrations · Nivio Docs">
+<meta property="og:description" content="Sync your Nivio library across devices with Google, track anime and shows on AniList, MyAnimeList and Simkl, and show what you're watching on Discord.">
+<meta property="og:image" content="https://nivio.nirmaleeswar.dev/appicon.png">
+<link rel="icon" type="image/png" href="../nivio.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="docs.css">
+<script src="docs.js" defer></script>
+</head>
+<body>
+<div class="field" aria-hidden="true"></div>
+<header class="docs-top"><div class="in">
+  <a class="brand" href="../index.html" aria-label="Nivio home"><img class="mark" src="../nivio.png" alt=""><img class="word" src="../nivio-wordmark.png" alt="Nivio"><span class="tag">Docs</span></a>
+  <div class="top-actions">
+    <a class="btn hide-sm" href="https://github.com/nirmaleeswar30/Nivio" target="_blank" rel="noopener noreferrer">GitHub</a>
+    <a class="btn btn-primary hide-sm" href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">Download</a>
+    <button class="btn menu-btn" id="menu-btn" type="button" aria-controls="docs-nav" aria-expanded="false">Menu</button>
+  </div>
+</div></header>
+<div class="docs-shell">
+  <nav class="docs-nav" id="docs-nav" aria-label="Documentation"><noscript><a href="index.html">All docs</a></noscript></nav>
+  <main class="docs-main">
+    <article class="prose">
+<span class="crumb">Devices & accounts</span>
+<h1>Sync & integrations</h1>
+<p class="lead">Nivio works without an account. Sign-ins are optional and each one adds something: cloud sync, list tracking, or Discord status.</p>
+
+<h2 id="cloud">Cloud sync with Google</h2>
+<p>Sign in with Google to keep your watchlist and watch history in sync across all your devices. Progress you make on your phone shows up on your TV and computer, and it all comes back if you reinstall.</p>
+<p>On Windows and Linux, sign-in opens in your web browser and returns to Nivio when you're done.</p>
+
+<h2 id="anime">AniList, MyAnimeList and Simkl</h2>
+<p>Connect your tracking accounts in <strong>Settings → Tracking</strong>. Nivio then updates your lists as you watch:</p>
+<ul>
+  <li>Finished episodes are marked watched on your list.</li>
+  <li>Titles you add to your watchlist go to your Planning (AniList) or Plan to Watch (MyAnimeList, Simkl) list.</li>
+  <li><strong>Sync Library Now</strong> pulls your lists into Nivio's library.</li>
+</ul>
+<div class="table-wrap"><table>
+  <thead><tr><th>Service</th><th>Tracks</th></tr></thead>
+  <tbody>
+    <tr><td>AniList</td><td>Anime</td></tr>
+    <tr><td>MyAnimeList</td><td>Anime</td></tr>
+    <tr><td>Simkl</td><td>Movies, TV shows and anime</td></tr>
+  </tbody>
+</table></div>
+<p>Use <strong>Auto-Sync Watch Progress</strong> and <strong>Auto-Sync Watchlist</strong> to choose what syncs on its own. On Linux, connecting an account needs Nivio to be able to open <code>nivio://</code> links, which the AppImage sets up the first time it runs.</p>
+
+<h2 id="discord">Discord Rich Presence</h2>
+<p>Show what you're watching in your Discord status, with the title, episode and poster. Turn it on in Settings under <strong>Discord Rich Presence</strong>.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Platform</th><th>How it connects</th></tr></thead>
+  <tbody>
+    <tr><td>Windows and Linux</td><td>Through the Discord desktop app. Keep Discord open and signed in; no extra login. The setting shows whether Discord was found.</td></tr>
+    <tr><td>Android</td><td>Tap the setting and sign in with Discord once. Your status updates even though Discord itself isn't running on the phone.</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="alerts">Episode alerts</h2>
+<p>Turn on <strong>Episode Alerts</strong> in Settings and Nivio checks in the background for new episodes of what you're watching, then sends a notification. See <a href="anime.html#alerts">Anime</a> for details.</p>
+    </article>
+    <nav class="pager" id="pager" aria-label="Previous and next page"></nav>
+    <p class="edit">Something wrong or missing? <a href="https://github.com/nirmaleeswar30/Nivio/issues/new/choose" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a>.</p>
+  </main>
+  <aside class="docs-toc" id="docs-toc" aria-label="On this page"></aside>
+</div>
+</body>
+</html>

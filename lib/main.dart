@@ -31,6 +31,7 @@ import 'package:nivio/services/watchlist_service.dart';
 import 'package:nivio/services/auth_service.dart';
 import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/github_release_update_service.dart';
+import 'package:nivio/services/desktop_self_updater.dart';
 import 'package:nivio/services/shorebird_update_service.dart';
 import 'package:nivio/services/webview_environment_service.dart';
 import 'package:nivio/providers/service_providers.dart';
@@ -69,6 +70,10 @@ import 'package:window_manager/window_manager.dart';
 
 const int _desktopIpcPort = 45328;
 
+/// Sent by a second launch with no link to open, so the running Nivio shows
+/// its window instead of the launch seeming to do nothing.
+const String _focusMessage = 'nivio-internal:focus';
+
 /// Process arguments, kept so a Linux cold start launched by the browser
 /// (`nivio nivio://auth/...`) can still handle its link.
 List<String> _launchArgs = const [];
@@ -89,7 +94,11 @@ Future<bool> _handleDesktopSingleInstance(List<String> args) async {
     server.listen((Socket client) {
       utf8.decoder.bind(client).listen((data) {
         final link = data.trim();
-        if (link.isNotEmpty) {
+        if (link == _focusMessage) {
+          // Nivio was launched again with nothing to open: bring it forward.
+          windowManager.show();
+          windowManager.focus();
+        } else if (link.isNotEmpty) {
           debugPrint('🔗 Received link from secondary instance: $link');
           final uri = Uri.tryParse(link);
           if (uri != null) {
@@ -125,10 +134,8 @@ Future<bool> _handleDesktopSingleInstance(List<String> args) async {
         linkToSend = args.first;
       }
 
-      if (linkToSend.isNotEmpty) {
-        client.write(linkToSend);
-        await client.flush();
-      }
+      client.write(linkToSend.isNotEmpty ? linkToSend : _focusMessage);
+      await client.flush();
       await client.close();
     } catch (e) {
       debugPrint('Error sending link to primary instance: $e');
@@ -1193,12 +1200,13 @@ class _GitHubReleasePromptGateState extends State<_GitHubReleasePromptGate> {
               ),
               FilledButton(
                 onPressed: () async {
-                  await GitHubReleaseUpdateService.openReleasePage(
-                    result.releaseUrl,
-                  );
                   if (dialogContext.mounted) {
                     Navigator.of(dialogContext).pop();
                   }
+                  await DesktopSelfUpdater.installOrOpen(
+                    context,
+                    result.releaseUrl,
+                  );
                 },
                 child: const Text('Install'),
               ),

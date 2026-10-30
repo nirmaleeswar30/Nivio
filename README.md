@@ -11,7 +11,8 @@
   [![Firebase](https://img.shields.io/badge/Powered_by-Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com/)
   [![TMDB](https://img.shields.io/badge/Metadata-TMDB-01B4E4?style=for-the-badge&logo=themoviedatabase&logoColor=white)](https://www.themoviedb.org/)
   [![AniList](https://img.shields.io/badge/Anime-AniList-02A9FF?style=for-the-badge&logo=anilist&logoColor=white)](https://anilist.co/)
-  [![Platforms](https://img.shields.io/badge/Platforms-Android%20%7C%20Windows%20%7C%20Linux-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com)
+  [![Platforms](https://img.shields.io/badge/Platforms-Android%20%7C%20Android%20TV%20%7C%20Windows%20%7C%20Linux-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com)
+  [![HDR](https://img.shields.io/badge/Android-True%20HDR%20%7C%20Dolby%20Vision-000000?style=for-the-badge&logo=dolby&logoColor=white)](#hdr)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
 </div>
@@ -20,7 +21,7 @@
 
 <div align="center">
 
-[Features](#features) • [Screenshots](#screenshots) • [Installation](#installation) • [Build from Source](#build-from-source) • [Contributing](#contributing)
+[Features](#features) • [HDR & Dolby Vision](#hdr) • [Screenshots](#screenshots) • [Docs](https://nivio.nirmaleeswar.dev/docs/) • [Roadmap](#roadmap) • [Installation](#installation) • [Build from Source](#build-from-source) • [Contributing](#contributing)
 
 </div>
 
@@ -108,8 +109,27 @@
 * **🧲 Instant Torrent Streaming** — Watch magnet links directly on the fly without waiting for downloads, powered by an embedded Rust engine.
 * **🎌 Dedicated Anime Hub** — Fast multi-source scraping, one-tap skip intro, filler episode tagging, and AniList sync.
 * **⚽ Live Sports & IPTV** — Live sports match streams, schedules, and global TV channels.
-* **⚡ Native MPV Playback** — Hardware-accelerated decoding, 200% software volume boost, and Picture-in-Picture.
+* **🌈 True HDR & Dolby Vision on Android** — Real HDR10 / HLG output and hardware Dolby Vision on supported phones, plus HDR → SDR tone mapping everywhere else. [More below](#hdr).
+* **📺 Android TV & Google TV** — A full TV layout driven by the remote's D-pad, from browsing to the player.
+* **⚡ Native MPV Playback** — Hardware-accelerated decoding (HW+ / HW / SW), 200% software volume boost, and Picture-in-Picture.
+* **✨ Ambient Mode** — A soft glow fills the black bars around the video, with adjustable blur and edges that fade into it.
 * **🧠 Smart Recommendations** — Private, local recommendations shaped around what you actually watch.
+
+---
+
+<a id="hdr"></a>
+
+## 🌈 True HDR & Dolby Vision (Android)
+
+As far as we know, **Nivio is the only Flutter app that plays real HDR and hardware Dolby Vision.** Flutter draws everything (video included) as SDR, so HDR video normally comes out flat and washed out. Nivio gets around it by giving the video its own Android surface and rendering it with a custom-built mpv:
+
+* **True HDR10 & HLG** — On an HDR screen, the panel switches into HDR mode for HDR videos, rendered by mpv's Vulkan `gpu-next` renderer and tagged with the video's real colour space.
+* **Hardware Dolby Vision** — Our own [mpvlibAndroid build](https://github.com/nirmaleeswar30/mpvlibAndroid/releases/tag/v1.1.4-dv) patches FFmpeg to decode on the phone's Dolby Vision decoder and send it straight to the screen, so the display's own Dolby Vision engine kicks in (profiles 5 and 8 on supported phones). Nivio can also convert between Dolby Vision and HDR10 on the fly.
+* **Tone mapping for SDR screens** — No HDR screen, or HDR output turned off? HDR and BT.2020 video is tone-mapped to SDR instead: either mpv's own per-scene tone mapping or the [hdr-toys](https://github.com/natural-harmonia-gropius/hdr-toys) shader pipeline (PQ, HLG and BT.2020 profiles, picked from the video), the same approach as [mpvRx](https://github.com/Riteshp2001/mpvRx).
+* **You stay in control** — An HDR tile in the player shows exactly what's happening ("True HDR", "True DV", "Tone mapped") and lets you switch HDR output, the tone-mapping mode and the surface backend, also available under Settings → Playback.
+
+> [!NOTE]
+> Dolby Vision needs a phone with a Dolby Vision decoder (most recent Snapdragon flagships). Blu-ray remuxes use Dolby Vision profile 7, which phones don't decode; those play their HDR10 layer. HDR & Dolby Vision on Windows and Linux are on the [roadmap](#roadmap).
 
 ---
 
@@ -140,9 +160,17 @@ Nivio is free and open source. If it makes your day a little better, consider su
 * **Offline Downloads**
 * **Curated Release Shelves** (Theatrical, OTT Premiere & Weekly Anime)
 * **Custom Subtitles & Persistence** (Local .srt/.vtt or remote URLs)
-* **Native Desktop & Mobile Apps** (Windows, Linux, Android)
+* **Native Desktop, Mobile & TV Apps** (Windows, Linux, Android, Android TV / Google TV)
+* **True HDR, Dolby Vision & Tone Mapping** (Android, [details](#hdr))
+* **Live TV & IPTV** (M3U playlists and Xtream Codes, including Xtream movies & series)
+* **Seek-Bar Thumbnail Previews** (for sources that provide sprite sheets)
+* **Discord Rich Presence** (desktop and Android)
 * **Background Episode Alerts**
-* **Over-the-Air App Updates** (Shorebird CodePush)
+* **Over-the-Air App Updates** (Shorebird CodePush) and one-click desktop updates
+
+### 📺 Android TV
+
+Nivio runs on Android TV and Google TV with a layout made for the big screen: a side navigation rail, poster grids and wide detail pages, all driven by the remote's D-pad with clear focus highlights. The player is remote-friendly too: arrows to seek, OK to show the controls, Back to step out. Install the same APK as on phones (sideload it, or use a downloader app); Nivio detects the TV and switches layout on its own.
 
 ---
 
@@ -151,7 +179,7 @@ Nivio is free and open source. If it makes your day a little better, consider su
 *   **Architecture**: Modular Monorepo (`nivio_core`, `nivio_desktop`, `nivio_mobile`, `rqbit_ffi`)
 *   **UI & Framework**: Flutter (Dart `^3.10.0`)
 *   **Native P2P Engine**: Rust (`rqbit_ffi` / C-FFI bindings)
-*   **Media Playback**: `media_kit` (high-performance playback engine utilizing `libmpv` / MPV for hardware-accelerated rendering and extensive format decoding)
+*   **Media Playback**: `media_kit` (high-performance playback engine utilizing `libmpv` / MPV for hardware-accelerated rendering and extensive format decoding). On Android, a custom [mpvlibAndroid](https://github.com/nirmaleeswar30/mpvlibAndroid) build (mpv 0.41, libplacebo, Vulkan, Dolby Vision MediaCodec) powers HDR and Dolby Vision.
 *   **State Management**: Riverpod (`flutter_riverpod ^2.6.1`)
 *   **Networking**: Dio & Google Cronet HTTP engine
 *   **Routing & Navigation**: GoRouter (`go_router ^17.3.0`)
@@ -280,6 +308,22 @@ Trailer players and hover card preview players on Windows utilize Microsoft Edge
 * **User Data Isolation:** Nivio configures `WebViewEnvironment` with `userDataFolder` pointing to `%LOCALAPPDATA%\Nivio\webview2_data`.
 * **Standard User Compatibility:** Because Edge WebView2 defaults to writing next to the executable, apps installed in `C:\Program Files` would otherwise trigger permission errors (*"We couldn't create the data directory"* / `E_ACCESSDENIED`). Isolating data in `%LOCALAPPDATA%` guarantees full read/write functionality for standard user accounts without requiring administrative elevation.
 * **Prerequisites:** Windows 10 and 11 come with Edge WebView2 pre-installed. If running on minimal or LTSC Windows editions, ensure the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) is installed.
+
+---
+
+<a id="roadmap"></a>
+
+## 🗺️ Roadmap
+
+- [x] True HDR10 / HLG output on Android
+- [x] Hardware Dolby Vision on Android (profiles 5 & 8)
+- [x] HDR → SDR tone mapping (Standard & hdr-toys) on Android
+- [x] Android TV & Google TV support
+- [ ] **HDR on Windows** — render mpv (Direct3D 11, `gpu-next`) into its own native window under Flutter's controls, with a newer libmpv. True HDR10 / HLG on HDR monitors, better tone mapping and correct Dolby Vision colours on SDR screens.
+- [ ] **HDR on Linux** — the same native-window approach on Wayland compositors with HDR support (KDE Plasma 6, recent GNOME).
+- [ ] **Dolby Vision profile 7** — convert Blu-ray profile 7 to 8.1 on the fly (as Kodi does) so phones can play it in Dolby Vision.
+
+Have an idea? [Open a feature request](https://github.com/nirmaleeswar30/Nivio/issues/new/choose).
 
 ---
 

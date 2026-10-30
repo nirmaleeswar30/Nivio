@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>/* Relative links need /docs/ (with the slash) to resolve inside docs/. */if(location.pathname.slice(-5)==="/docs")location.replace(location.pathname+"/"+location.search+location.hash);</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Anime · Nivio Docs</title>
+<meta name="description" content="Watching anime in Nivio: sources and automatic fallback, sub or dub, filler episodes, skipping intros, and new-episode alerts.">
+<meta property="og:title" content="Anime · Nivio Docs">
+<meta property="og:description" content="Watching anime in Nivio: sources and automatic fallback, sub or dub, filler episodes, skipping intros, and new-episode alerts.">
+<meta property="og:image" content="https://nivio.nirmaleeswar.dev/appicon.png">
+<link rel="icon" type="image/png" href="../nivio.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="docs.css">
+<script src="docs.js" defer></script>
+</head>
+<body>
+<div class="field" aria-hidden="true"></div>
+<header class="docs-top"><div class="in">
+  <a class="brand" href="../index.html" aria-label="Nivio home"><img class="mark" src="../nivio.png" alt=""><img class="word" src="../nivio-wordmark.png" alt="Nivio"><span class="tag">Docs</span></a>
+  <div class="top-actions">
+    <a class="btn hide-sm" href="https://github.com/nirmaleeswar30/Nivio" target="_blank" rel="noopener noreferrer">GitHub</a>
+    <a class="btn btn-primary hide-sm" href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">Download</a>
+    <button class="btn menu-btn" id="menu-btn" type="button" aria-controls="docs-nav" aria-expanded="false">Menu</button>
+  </div>
+</div></header>
+<div class="docs-shell">
+  <nav class="docs-nav" id="docs-nav" aria-label="Documentation"><noscript><a href="index.html">All docs</a></noscript></nav>
+  <main class="docs-main">
+    <article class="prose">
+<span class="crumb">What to watch</span>
+<h1>Anime</h1>
+<p class="lead">Nivio has a dedicated anime hub with several streaming sources, sub and dub audio, filler tagging and one-tap intro skipping. Your progress can sync to AniList, MyAnimeList or Simkl.</p>
+
+<h2 id="sources">Sources and fallback</h2>
+<p>Nivio streams anime from several sources, tried in this order:</p>
+<ol>
+  <li><strong>Miruro</strong></li>
+  <li><strong>Animetsu</strong></li>
+  <li><strong>AnimeX</strong></li>
+</ol>
+<p>If a source doesn't have the episode or fails to load, Nivio moves on to the next by itself, and tries every direct stream before falling back to embedded players. To start from a different source, change <strong>Preferred Anime Source</strong> in Settings. You can switch servers mid-episode from the player too (see <a href="player.html#servers">The player</a>).</p>
+<p>For anime torrents from Nyaa, see <a href="torrents.html">Torrent streaming</a>.</p>
+
+<h2 id="audio">Sub or dub</h2>
+<p>Set <strong>Preferred Anime Audio</strong> in Settings to choose subbed (Japanese with subtitles) or dubbed (English) by default. If an episode isn't available in your preference, Nivio plays what the source has.</p>
+
+<h2 id="filler">Filler episodes</h2>
+<p>Filler episodes are tagged in the episode list, so you can see at a glance which ones you can skip. Turn on <strong>Auto Skip Filler</strong> in Settings → Playback, and auto-play will pass over them on its way to the next canon episode.</p>
+
+<h2 id="skip">Skipping intros and outros</h2>
+<p>When an episode's opening and ending times are known, the player shows <strong>Skip intro</strong> and <strong>Skip outro</strong> buttons at the right moment. Turn on <strong>Auto Skip Intro & Outro</strong> to skip them without tapping. Skip times come from community databases (AniSkip and TheIntroDB), so a few episodes won't have them.</p>
+
+<h2 id="alerts">New episode alerts</h2>
+<p>Nivio can check in the background for newly aired episodes of shows and anime you follow and notify you. Turn on <strong>Episode Alerts</strong> in Settings. <strong>Check Now</strong> runs the check straight away, and <strong>Open New Episodes</strong> lists what it found.</p>
+
+<h2 id="tracking">Tracking your progress</h2>
+<p>Connect AniList, MyAnimeList or Simkl and Nivio updates your list as you watch: episodes you finish are marked watched, and new shows land in your planning list. See <a href="sync.html#anime">Sync & integrations</a>.</p>
+    </article>
+    <nav class="pager" id="pager" aria-label="Previous and next page"></nav>
+    <p class="edit">Something wrong or missing? <a href="https://github.com/nirmaleeswar30/Nivio/issues/new/choose" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a>.</p>
+  </main>
+  <aside class="docs-toc" id="docs-toc" aria-label="On this page"></aside>
+</div>
+</body>
+</html>

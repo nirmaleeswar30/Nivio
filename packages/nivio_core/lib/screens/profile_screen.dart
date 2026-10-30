@@ -29,6 +29,7 @@ import 'package:nivio/providers/changelog_provider.dart';
 import 'package:nivio/providers/home_layout_provider.dart';
 import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/github_release_update_service.dart';
+import 'package:nivio/services/desktop_self_updater.dart';
 import 'package:nivio/services/api_status_service.dart';
 import 'package:nivio/services/shorebird_update_service.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -3576,7 +3577,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             isUpdatePrompt: true,
             onDismiss: () {},
             onInstall: () async {
-              await GitHubReleaseUpdateService.openReleasePage(result.releaseUrl);
+              await DesktopSelfUpdater.installOrOpen(context, result.releaseUrl);
             },
           );
         },

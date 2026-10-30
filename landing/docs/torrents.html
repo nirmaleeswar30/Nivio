@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>/* Relative links need /docs/ (with the slash) to resolve inside docs/. */if(location.pathname.slice(-5)==="/docs")location.replace(location.pathname+"/"+location.search+location.hash);</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Torrent streaming · Nivio Docs</title>
+<meta name="description" content="How Nivio streams torrents while they download with its built-in Rust engine, which torrent sources it searches, and the torrent settings.">
+<meta property="og:title" content="Torrent streaming · Nivio Docs">
+<meta property="og:description" content="How Nivio streams torrents while they download with its built-in Rust engine, which torrent sources it searches, and the torrent settings.">
+<meta property="og:image" content="https://nivio.nirmaleeswar.dev/appicon.png">
+<link rel="icon" type="image/png" href="../nivio.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="docs.css">
+<script src="docs.js" defer></script>
+</head>
+<body>
+<div class="field" aria-hidden="true"></div>
+<header class="docs-top"><div class="in">
+  <a class="brand" href="../index.html" aria-label="Nivio home"><img class="mark" src="../nivio.png" alt=""><img class="word" src="../nivio-wordmark.png" alt="Nivio"><span class="tag">Docs</span></a>
+  <div class="top-actions">
+    <a class="btn hide-sm" href="https://github.com/nirmaleeswar30/Nivio" target="_blank" rel="noopener noreferrer">GitHub</a>
+    <a class="btn btn-primary hide-sm" href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">Download</a>
+    <button class="btn menu-btn" id="menu-btn" type="button" aria-controls="docs-nav" aria-expanded="false">Menu</button>
+  </div>
+</div></header>
+<div class="docs-shell">
+  <nav class="docs-nav" id="docs-nav" aria-label="Documentation"><noscript><a href="index.html">All docs</a></noscript></nav>
+  <main class="docs-main">
+    <article class="prose">
+<span class="crumb">What to watch</span>
+<h1>Torrent streaming</h1>
+<p class="lead">Nivio can play torrents while they download, with no separate torrent client. A built-in engine written in Rust fetches the pieces you're about to watch first, so playback starts within seconds and seeking works.</p>
+
+<h2 id="enable">Turn it on</h2>
+<p>Torrent streaming is optional. Turn on <strong>Enable Torrent Streaming</strong> in Settings → Torrents. Torrent results then show up in the provider list as <strong>Nivio Torrents</strong>.</p>
+<div class="callout warn"><span class="ic">Note</span><div><p>Torrenting shares the pieces you download with other people. In many countries that's monitored, and sharing copyrighted content may be illegal where you live. Many people use a VPN. You're responsible for what you stream.</p></div></div>
+
+<h2 id="sources">Where results come from</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>Source</th><th>For</th></tr></thead>
+  <tbody>
+    <tr><td>Nyaa</td><td>Anime releases</td></tr>
+    <tr><td>PirateBay, YTS, EZTV, 1337x and others</td><td>Movies and shows</td></tr>
+  </tbody>
+</table></div>
+<p>You can turn each source on or off in Settings → Torrents.</p>
+
+<h2 id="playing">While it plays</h2>
+<p>A stats bar at the top of the player shows download speed and peers, and stays visible while the video is buffering. Torrents with more seeders start faster and stall less, so pick well-seeded results when you have a choice.</p>
+<p><strong>Auto-Select Episode File</strong> picks the right episode out of a season or batch torrent for you.</p>
+
+<h2 id="files">Keeping files</h2>
+<p>By default, Nivio deletes a torrent's files when you stop watching, so they don't fill your storage. Turn on <strong>Persist Torrent Files</strong> to keep them on disk, which makes rewatching instant.</p>
+    </article>
+    <nav class="pager" id="pager" aria-label="Previous and next page"></nav>
+    <p class="edit">Something wrong or missing? <a href="https://github.com/nirmaleeswar30/Nivio/issues/new/choose" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a>.</p>
+  </main>
+  <aside class="docs-toc" id="docs-toc" aria-label="On this page"></aside>
+</div>
+</body>
+</html>

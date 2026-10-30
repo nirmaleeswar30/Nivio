@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>/* Relative links need /docs/ (with the slash) to resolve inside docs/. */if(location.pathname.slice(-5)==="/docs")location.replace(location.pathname+"/"+location.search+location.hash);</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nivio Docs</title>
+<meta name="description" content="Nivio documentation: install and update the app, use the player, HDR and Dolby Vision, anime, torrents, Live TV, Watch Party, Android TV and more.">
+<meta property="og:title" content="Nivio Docs">
+<meta property="og:description" content="Nivio documentation: install and update the app, use the player, HDR and Dolby Vision, anime, torrents, Live TV, Watch Party, Android TV and more.">
+<meta property="og:image" content="https://nivio.nirmaleeswar.dev/appicon.png">
+<link rel="icon" type="image/png" href="../nivio.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="docs.css">
+<script src="docs.js" defer></script>
+</head>
+<body>
+<div class="field" aria-hidden="true"></div>
+<header class="docs-top"><div class="in">
+  <a class="brand" href="../index.html" aria-label="Nivio home"><img class="mark" src="../nivio.png" alt=""><img class="word" src="../nivio-wordmark.png" alt="Nivio"><span class="tag">Docs</span></a>
+  <div class="top-actions">
+    <a class="btn hide-sm" href="https://github.com/nirmaleeswar30/Nivio" target="_blank" rel="noopener noreferrer">GitHub</a>
+    <a class="btn btn-primary hide-sm" href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">Download</a>
+    <button class="btn menu-btn" id="menu-btn" type="button" aria-controls="docs-nav" aria-expanded="false">Menu</button>
+  </div>
+</div></header>
+<div class="docs-shell">
+  <nav class="docs-nav" id="docs-nav" aria-label="Documentation"><noscript><a href="index.html">All docs</a></noscript></nav>
+  <main class="docs-main">
+    <article class="prose">
+<span class="crumb">Nivio Docs</span>
+<h1>Everything Nivio can do, and how to use it</h1>
+<p class="lead">Nivio is a free, open-source app for Movies, TV Shows, Anime and Live TV, with Watch Parties and offline downloads. It runs on Android phones, Android TV, Windows and Linux. These pages explain how to set it up and get the most out of it.</p>
+
+<div class="callout warn"><span class="ic">Note</span><div><p>Nivio doesn't host any media. It finds metadata and streams from third-party sources on the internet. You're responsible for following your local laws when you use it. Official downloads are only on <a href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">GitHub</a> and this site.</p></div></div>
+
+<h2 id="start">Start here</h2>
+<div class="cards">
+  <a class="card" href="install.html"><b>Install & update</b><span>Get Nivio on your phone, TV or computer, and keep it up to date.</span></a>
+  <a class="card" href="player.html"><b>The player</b><span>Gestures, shortcuts, servers, subtitles and every player setting.</span></a>
+  <a class="card" href="hdr.html"><b>HDR & Dolby Vision</b><span>True HDR and hardware Dolby Vision on Android, explained.</span></a>
+  <a class="card" href="faq.html"><b>Troubleshooting</b><span>A video won't play, looks wrong, or something else is off.</span></a>
+</div>
+
+<h2 id="features">Features at a glance</h2>
+<div class="cards">
+  <a class="card" href="anime.html"><b>Anime</b><span>Several sources with automatic fallback, sub or dub, filler tags and skip intro.</span></a>
+  <a class="card" href="torrents.html"><b>Torrent streaming</b><span>Play torrents while they download, with the built-in Rust engine.</span></a>
+  <a class="card" href="live-tv.html"><b>Live TV & IPTV</b><span>Live channels, sports, and your own M3U or Xtream playlists.</span></a>
+  <a class="card" href="watch-party.html"><b>Watch Party</b><span>Watch in sync with friends, with shared controls and chat.</span></a>
+  <a class="card" href="downloads.html"><b>Downloads</b><span>Save movies and episodes to watch offline.</span></a>
+  <a class="card" href="android-tv.html"><b>Android TV</b><span>A full TV layout you drive with the remote.</span></a>
+  <a class="card" href="sync.html"><b>Sync & integrations</b><span>Cloud sync, AniList, MyAnimeList, Simkl and Discord.</span></a>
+</div>
+
+<h2 id="platforms">Which platforms get what</h2>
+<p>Most features work everywhere. A few depend on what the device can do:</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Feature</th><th>Android</th><th>Android TV</th><th>Windows</th><th>Linux</th></tr></thead>
+  <tbody>
+    <tr><td>Movies, shows, anime, Live TV</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+    <tr><td>Torrent streaming</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+    <tr><td>Watch Party</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+    <tr><td>True HDR & Dolby Vision</td><td>Yes, on supported phones</td><td>Yes, through your TV box</td><td>On the roadmap</td><td>On the roadmap</td></tr>
+    <tr><td>HDR → SDR tone mapping</td><td>Standard or HDR Toys</td><td>Standard or HDR Toys</td><td>Standard</td><td>Standard</td></tr>
+    <tr><td>Ambient mode</td><td>Yes</td><td>No</td><td>No</td><td>No</td></tr>
+    <tr><td>Discord Rich Presence</td><td>Yes (sign in with Discord)</td><td>Same as Android</td><td>Yes (uses your Discord app)</td><td>Yes (uses your Discord app)</td></tr>
+    <tr><td>One-click updates</td><td>Download from the app</td><td>Download from the app</td><td>Installs and restarts itself</td><td>Replaces the AppImage and restarts</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="help">Need help?</h2>
+<p>Check <a href="faq.html">Troubleshooting & FAQ</a> first. If your problem isn't there, <a href="https://github.com/nirmaleeswar30/Nivio/issues/new/choose" target="_blank" rel="noopener noreferrer">open an issue on GitHub</a> with your platform, the Nivio version (Settings → App & Updates) and what you were playing.</p>
+    </article>
+    <nav class="pager" id="pager" aria-label="Previous and next page"></nav>
+    <p class="edit">Something wrong or missing? <a href="https://github.com/nirmaleeswar30/Nivio/issues/new/choose" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a>.</p>
+  </main>
+  <aside class="docs-toc" id="docs-toc" aria-label="On this page"></aside>
+</div>
+</body>
+</html>

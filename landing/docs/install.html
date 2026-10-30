@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>/* Relative links need /docs/ (with the slash) to resolve inside docs/. */if(location.pathname.slice(-5)==="/docs")location.replace(location.pathname+"/"+location.search+location.hash);</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Install & update · Nivio Docs</title>
+<meta name="description" content="How to install Nivio on Android, Android TV, Windows and Linux, and how updates work on each.">
+<meta property="og:title" content="Install & update · Nivio Docs">
+<meta property="og:description" content="How to install Nivio on Android, Android TV, Windows and Linux, and how updates work on each.">
+<meta property="og:image" content="https://nivio.nirmaleeswar.dev/appicon.png">
+<link rel="icon" type="image/png" href="../nivio.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="docs.css">
+<script src="docs.js" defer></script>
+</head>
+<body>
+<div class="field" aria-hidden="true"></div>
+<header class="docs-top"><div class="in">
+  <a class="brand" href="../index.html" aria-label="Nivio home"><img class="mark" src="../nivio.png" alt=""><img class="word" src="../nivio-wordmark.png" alt="Nivio"><span class="tag">Docs</span></a>
+  <div class="top-actions">
+    <a class="btn hide-sm" href="https://github.com/nirmaleeswar30/Nivio" target="_blank" rel="noopener noreferrer">GitHub</a>
+    <a class="btn btn-primary hide-sm" href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">Download</a>
+    <button class="btn menu-btn" id="menu-btn" type="button" aria-controls="docs-nav" aria-expanded="false">Menu</button>
+  </div>
+</div></header>
+<div class="docs-shell">
+  <nav class="docs-nav" id="docs-nav" aria-label="Documentation"><noscript><a href="index.html">All docs</a></noscript></nav>
+  <main class="docs-main">
+    <article class="prose">
+<span class="crumb">Getting started</span>
+<h1>Install & update</h1>
+<p class="lead">Nivio is distributed only through <a href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">GitHub Releases</a>. It isn't on the Play Store, and builds from other sites aren't ours.</p>
+
+<h2 id="android">Android</h2>
+<div class="platforms"><span class="chip on">Android</span><span class="chip">Phones & tablets</span></div>
+<p>Each release has two Android files. Pick one:</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>File</th><th>Use it when</th></tr></thead>
+  <tbody>
+    <tr><td><code>nivio.apk</code></td><td>Your phone is from the last several years (64-bit ARM). Smaller download. This is the right one for almost everybody.</td></tr>
+    <tr><td><code>universal.apk</code></td><td>You have an older 32-bit phone, an x86 device or an emulator, or <code>nivio.apk</code> won't install.</td></tr>
+  </tbody>
+</table></div>
+<ol class="steps">
+  <li>Open the <a href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">latest release</a> on your phone and download the APK.</li>
+  <li>Open the downloaded file. If Android asks, allow your browser or file manager to install unknown apps.</li>
+  <li>Tap <strong>Install</strong>, then open Nivio.</li>
+</ol>
+<div class="callout tip"><span class="ic">Tip</span><div><p>Use <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.nirmal.nivio%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fnirmaleeswar30%2FNivio%22%2C%22author%22%3A%22nirmaleeswar30%22%2C%22name%22%3A%22Nivio%22%7D" target="_blank" rel="noopener noreferrer">Obtainium</a> to get new versions automatically, straight from GitHub.</p></div></div>
+
+<h3>Updating on Android</h3>
+<p>Nivio gets updates in two ways:</p>
+<ul>
+  <li><strong>Small fixes</strong> arrive over the air in the background. The next time you open Nivio, you're on the fixed version.</li>
+  <li><strong>New versions</strong> show an <em>Update available</em> prompt with the release notes. Tap <strong>Install</strong> to download the new APK, then install it over the current one. Your library, history and settings stay.</li>
+</ul>
+<p>You can also check by hand in <strong>Settings → App & Updates → Check GitHub Release</strong>.</p>
+
+<h2 id="android-tv">Android TV</h2>
+<p>The same <code>nivio.apk</code> runs on Android TV and Google TV. Nivio detects the TV and switches to its TV layout. See <a href="android-tv.html">Android TV</a> for how to sideload it.</p>
+
+<h2 id="windows">Windows</h2>
+<div class="platforms"><span class="chip on">Windows 10 & 11</span><span class="chip">64-bit</span></div>
+<ol class="steps">
+  <li>Download <code>Nivio-Setup-&lt;version&gt;.exe</code> from the <a href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">latest release</a>.</li>
+  <li>Run it. If Windows SmartScreen says it protected your PC, click <strong>More info → Run anyway</strong>. Nivio is open source but not code-signed, which is why SmartScreen warns about it.</li>
+  <li>Follow the installer. Nivio installs to <code>Program Files\Nivio</code> and adds a Start menu entry.</li>
+</ol>
+<p>Trailers and previews use Microsoft Edge WebView2, which comes with Windows 10 and 11. On minimal or LTSC editions, install the <a href="https://developer.microsoft.com/en-us/microsoft-edge/webview2/" target="_blank" rel="noopener noreferrer">WebView2 Runtime</a> first.</p>
+
+<h3>Updating on Windows</h3>
+<p>When a new version is out, Nivio shows an <em>Update available</em> prompt. Tap <strong>Install</strong> and Nivio downloads the update, closes, installs it over the old version and opens again. Windows may ask for permission once, because Nivio lives in Program Files.</p>
+<div class="callout"><span class="ic">Note</span><div><p>You never need to uninstall Nivio to update it. Running a newer <code>Nivio-Setup</code> over an existing install upgrades it in place, keeping your data. The installer closes Nivio first if it's still running.</p>
+<p>The automatic install arrived after version 2.2.5. On 2.2.5 and older, <strong>Install</strong> opens the download in your browser. Close Nivio completely before you run the downloaded setup.</p></div></div>
+
+<h2 id="linux">Linux</h2>
+<div class="platforms"><span class="chip on">x86_64</span><span class="chip">AppImage</span></div>
+<ol class="steps">
+  <li>Download <code>Nivio-Linux-&lt;version&gt;-x86_64.AppImage</code> from the <a href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">latest release</a>, ideally into a folder you keep, such as <code>~/Applications</code>.</li>
+  <li>Make it executable, then run it:
+<pre><code>chmod +x Nivio-Linux-*-x86_64.AppImage
+./Nivio-Linux-*-x86_64.AppImage</code></pre></li>
+  <li>On first run, Nivio registers itself to open <code>nivio://</code> links, which sign-in with AniList, MyAnimeList, Simkl and Google relies on.</li>
+</ol>
+<p>The AppImage bundles mpv, so there's nothing else to install. If it doesn't start, your system may be missing FUSE 2: install <code>libfuse2</code> (Debian, Ubuntu) or <code>fuse2</code> (Arch, Fedora).</p>
+
+<h3>Updating on Linux</h3>
+<p>Tap <strong>Install</strong> on the <em>Update available</em> prompt. Nivio downloads the new AppImage, swaps it in under the same file name and restarts. Your launcher shortcuts and the <code>nivio://</code> link handler keep working, because the file stays where it was.</p>
+<p>Updating by hand works too: replace the old AppImage file with the new one, and keep the same name if you have shortcuts pointing at it.</p>
+
+<h2 id="data">Where your data lives</h2>
+<p>Updating never touches your library, history or settings. Uninstalling on Android deletes them along with the app. If you sign in with Google, your watch history and watchlist also sync to the cloud and come back when you sign in again. See <a href="sync.html">Sync & integrations</a>.</p>
+    </article>
+    <nav class="pager" id="pager" aria-label="Previous and next page"></nav>
+    <p class="edit">Something wrong or missing? <a href="https://github.com/nirmaleeswar30/Nivio/issues/new/choose" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a>.</p>
+  </main>
+  <aside class="docs-toc" id="docs-toc" aria-label="On this page"></aside>
+</div>
+</body>
+</html>

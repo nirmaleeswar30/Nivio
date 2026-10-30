@@ -11,6 +11,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/services/github_release_update_service.dart';
+import 'package:nivio/services/desktop_self_updater.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
 
 import 'package:nivio/providers/auth_provider.dart';
@@ -162,7 +163,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
               isUpdatePrompt: true,
               onDismiss: () {},
               onInstall: () async {
-                await GitHubReleaseUpdateService.openReleasePage(result.releaseUrl);
+                await DesktopSelfUpdater.installOrOpen(context, result.releaseUrl);
               },
             );
           },

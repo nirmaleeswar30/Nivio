@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>/* Relative links need /docs/ (with the slash) to resolve inside docs/. */if(location.pathname.slice(-5)==="/docs")location.replace(location.pathname+"/"+location.search+location.hash);</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The player · Nivio Docs</title>
+<meta name="description" content="How to use Nivio's player: servers, touch gestures, keyboard shortcuts, the screen lock, subtitles, audio and every player setting.">
+<meta property="og:title" content="The player · Nivio Docs">
+<meta property="og:description" content="How to use Nivio's player: servers, touch gestures, keyboard shortcuts, the screen lock, subtitles, audio and every player setting.">
+<meta property="og:image" content="https://nivio.nirmaleeswar.dev/appicon.png">
+<link rel="icon" type="image/png" href="../nivio.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="docs.css">
+<script src="docs.js" defer></script>
+</head>
+<body>
+<div class="field" aria-hidden="true"></div>
+<header class="docs-top"><div class="in">
+  <a class="brand" href="../index.html" aria-label="Nivio home"><img class="mark" src="../nivio.png" alt=""><img class="word" src="../nivio-wordmark.png" alt="Nivio"><span class="tag">Docs</span></a>
+  <div class="top-actions">
+    <a class="btn hide-sm" href="https://github.com/nirmaleeswar30/Nivio" target="_blank" rel="noopener noreferrer">GitHub</a>
+    <a class="btn btn-primary hide-sm" href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">Download</a>
+    <button class="btn menu-btn" id="menu-btn" type="button" aria-controls="docs-nav" aria-expanded="false">Menu</button>
+  </div>
+</div></header>
+<div class="docs-shell">
+  <nav class="docs-nav" id="docs-nav" aria-label="Documentation"><noscript><a href="index.html">All docs</a></noscript></nav>
+  <main class="docs-main">
+    <article class="prose">
+<span class="crumb">Watching</span>
+<h1>The player</h1>
+<p class="lead">Nivio plays everything with mpv, a fast player that handles nearly any format with hardware decoding. This page covers how to control it on each device and what every setting in the player does.</p>
+
+<h2 id="servers">Servers and sources</h2>
+<p>When you press play, Nivio asks its sources for a stream and starts the first one that works. If a source fails or is too slow, Nivio moves on to the next by itself, trying direct streams before embedded web players.</p>
+<p>To choose a server yourself, tap the circular arrows at the top right of the player. Each server shows as a card. Pick one and playback continues from where you were.</p>
+
+<h2 id="touch">Touch gestures</h2>
+<div class="platforms"><span class="chip on">Android</span></div>
+<div class="table-wrap"><table>
+  <thead><tr><th>Gesture</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td>Tap</td><td>Show or hide the controls</td></tr>
+    <tr><td>Double-tap left or right</td><td>Skip back or forward by your seek step (10 seconds by default). Keep tapping to skip further.</td></tr>
+    <tr><td>Swipe up or down on the left</td><td>Screen brightness, for the player only</td></tr>
+    <tr><td>Swipe up or down on the right</td><td>Volume. Past 100% it boosts the sound up to 200%.</td></tr>
+    <tr><td>Pinch</td><td>Zoom the video to fill the screen, or back to fit</td></tr>
+    <tr><td>Long press</td><td>Lock the screen. Long press again to unlock.</td></tr>
+  </tbody>
+</table></div>
+<p>The lock blocks every touch except the long press that unlocks it, so a pocket or a toddler can't pause or skip. Tapping while locked reminds you how to unlock. Change the seek step in <strong>Settings → Playback → Seek Duration</strong>.</p>
+
+<h2 id="keyboard">Keyboard shortcuts</h2>
+<div class="platforms"><span class="chip on">Windows</span><span class="chip on">Linux</span></div>
+<div class="table-wrap"><table>
+  <thead><tr><th>Key</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><kbd>Space</kbd> or <kbd>K</kbd></td><td>Play or pause</td></tr>
+    <tr><td><kbd>←</kbd> or <kbd>J</kbd></td><td>Skip back by your seek step</td></tr>
+    <tr><td><kbd>→</kbd> or <kbd>L</kbd></td><td>Skip forward by your seek step</td></tr>
+    <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>Volume up or down by 10%</td></tr>
+    <tr><td><kbd>M</kbd></td><td>Mute or unmute</td></tr>
+    <tr><td>Media keys</td><td>Play, pause, and next or previous episode, from your keyboard, headphones or the system media controls</td></tr>
+  </tbody>
+</table></div>
+<p>For TV remotes, see <a href="android-tv.html#remote">Android TV</a>.</p>
+
+<h2 id="episodes">Episodes, intros and auto-play</h2>
+<ul>
+  <li><strong>Previous and next episode</strong> buttons sit beside play/pause for shows and anime.</li>
+  <li><strong>Skip intro and outro</strong> buttons appear when Nivio knows where they are. Turn on <strong>Auto Skip Intro & Outro</strong> in Settings → Playback to skip them without asking.</li>
+  <li><strong>Auto Play Next Episode</strong> starts the next one when the current episode ends. For anime, <strong>Auto Skip Filler</strong> passes over filler episodes.</li>
+  <li><strong>Seek previews</strong>: when a server provides thumbnails, dragging the seek bar shows a preview of that moment.</li>
+  <li>Nivio remembers where you stopped and resumes there next time.</li>
+</ul>
+
+<h2 id="settings">Player settings</h2>
+<p>Tap the gear in the player to open its settings. Changes apply straight away, and most are remembered for next time.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td>Quality</td><td>Pick a resolution, or leave it on Auto. Set a default in Settings → Playback → Preferred Video Quality.</td></tr>
+    <tr><td>Audio</td><td>Switch audio tracks, such as language or commentary.</td></tr>
+    <tr><td>Subtitles</td><td>Pick a subtitle track, turn subtitles off, or load your own <code>.srt</code> / <code>.vtt</code> file or URL.</td></tr>
+    <tr><td>Display</td><td>How the video fills the screen: Best Fit, Fit Screen, Fill or None. Pinch to switch quickly.</td></tr>
+    <tr><td>Subtitle style</td><td>Size, background and outline. Settings → Subtitle Appearance also lets you pick a font, including your own.</td></tr>
+    <tr><td>Subtitle sync</td><td>Shift subtitles earlier or later when they're out of step.</td></tr>
+    <tr><td>Decoder</td><td>How video is decoded. See <a href="#decoder">Decoder modes</a>.</td></tr>
+    <tr><td>HDR</td><td>HDR output and tone mapping. Android only. See <a href="hdr.html">HDR & Dolby Vision</a>.</td></tr>
+    <tr><td>Debanding</td><td>Smooths colour banding in dark scenes and gradients. Uses more battery.</td></tr>
+    <tr><td>Ambient</td><td>Fills the black bars with a glow from the picture. Android phones only. See <a href="#ambient">Ambient mode</a>.</td></tr>
+    <tr><td>Stats for nerds</td><td>An overlay with resolution, codec, decoder, bitrate, colour space and dropped frames. Off by default.</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="decoder">Decoder modes</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>Mode</th><th>How it works</th><th>When to use it</th></tr></thead>
+  <tbody>
+    <tr><td>Auto</td><td>The best hardware decoder available, and the CPU if none works</td><td>Almost always</td></tr>
+    <tr><td>HW+</td><td>Direct hardware decoding</td><td>Fastest, easiest on the battery</td></tr>
+    <tr><td>HW</td><td>Hardware decoding with copy-back</td><td>The video glitches or shows artifacts on HW+</td></tr>
+    <tr><td>SW</td><td>Decoding on the CPU</td><td>The video is black, green or corrupted on the hardware modes</td></tr>
+  </tbody>
+</table></div>
+<p>The Decoder tile shows the decoder actually in use. Some formats, such as 10-bit H.264 anime releases, have no hardware support and always use the CPU.</p>
+
+<h2 id="ambient">Ambient mode</h2>
+<div class="platforms"><span class="chip on">Android phones</span></div>
+<p>Ambient mode fills the black bars around the video with a soft glow taken from the picture, a bit like a TV with backlighting. It works with the <strong>Best Fit</strong> display mode. Tap the Ambient tile to adjust it:</p>
+<ul>
+  <li><strong>Style</strong>: <em>Glow + edge fade</em> (the default) softly fades the video's edges into the glow. <em>Glow only</em> keeps sharp video edges.</li>
+  <li><strong>Blur strength</strong>: a slider from 0 to 10. At 0 the glow keeps some shapes from the picture. At 10, the default, it's the softest and shows just the colours.</li>
+</ul>
+<p>Ambient mode is off while a video plays in true HDR or Dolby Vision, because those use a separate video surface it can't draw around.</p>
+
+<h2 id="pip">Picture-in-Picture and background</h2>
+<div class="platforms"><span class="chip on">Android</span></div>
+<p>With <strong>PiP on Lost Visibility</strong> turned on, leaving the app shrinks the video into a floating window. <strong>Pause on Lost Visibility</strong> pauses instead. Both are in Settings → Playback. The screen stays awake while a video is playing.</p>
+<p>Pressing back in the player can also keep the video going in a mini player while you browse.</p>
+    </article>
+    <nav class="pager" id="pager" aria-label="Previous and next page"></nav>
+    <p class="edit">Something wrong or missing? <a href="https://github.com/nirmaleeswar30/Nivio/issues/new/choose" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a>.</p>
+  </main>
+  <aside class="docs-toc" id="docs-toc" aria-label="On this page"></aside>
+</div>
+</body>
+</html>

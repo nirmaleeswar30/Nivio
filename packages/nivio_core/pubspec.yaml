@@ -1,7 +1,7 @@
 name: nivio
 description: "Core logic, models, scrapers, state management, and UI components for Nivio."
 publish_to: 'none'
-version: 2.2.5
+version: 2.2.6
 
 environment:
   sdk: ^3.10.0

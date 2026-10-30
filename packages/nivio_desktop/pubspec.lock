@@ -646,6 +646,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "17.3.0"
+  google_fonts:
+    dependency: transitive
+    description:
+      name: google_fonts
+      sha256: ba03d03bcaa2f6cb7bd920e3b5027181db75ab524f8891c8bc3aa603885b8055
+      url: "https://pub.dev"
+    source: hosted
+    version: "6.3.3"
   google_sign_in:
     dependency: "direct overridden"
     description:
@@ -923,7 +931,7 @@ packages:
       path: "../nivio_core"
       relative: true
     source: path
-    version: "2.2.5"
+    version: "2.2.6"
   nm:
     dependency: transitive
     description:
