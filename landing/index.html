@@ -1127,10 +1127,94 @@
   .sync-step-pill .step-text{display:flex;flex-direction:column;gap:2px;font-size:11.5px;color:var(--muted);line-height:1.4}
   .sync-step-pill .step-text b{color:var(--ink);font-size:12px;font-weight:600}
 
+  /* 7 · Dolby Vision & True HDR Demo */
+  .demo-dv-hdr{
+    display:flex;flex-direction:column;justify-content:space-between;
+    padding:14px 18px;position:relative;overflow:hidden;
+  }
+  .dv-hdr-header{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    z-index:2;position:relative;
+  }
+  .dv-pill-group{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .dv-badge-dv{
+    display:inline-flex;align-items:center;gap:6px;
+    background:linear-gradient(135deg,rgba(255,255,255,.14),rgba(255,255,255,.05));
+    border:1px solid rgba(255,255,255,.25);
+    border-radius:8px;padding:4px 9px;
+    font-family:var(--font-d);font-size:11px;font-weight:800;letter-spacing:.06em;
+    color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.4);
+  }
+  .dv-badge-hdr{
+    display:inline-flex;align-items:center;gap:5px;
+    background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);
+    border-radius:8px;padding:4px 8px;
+    font-family:var(--font-d);font-size:11px;font-weight:700;color:var(--amber);
+  }
+  .dv-switch-tag{
+    display:inline-flex;align-items:center;gap:5px;
+    background:rgba(56,189,248,.12);border:1px solid rgba(56,189,248,.35);
+    border-radius:999px;padding:3px 9px;
+    font-family:var(--font-d);font-size:10px;font-weight:700;color:#38bdf8;
+  }
+  .dv-hdr-stage{
+    display:grid;grid-template-columns:1fr 1fr;gap:12px;
+    align-items:center;z-index:2;position:relative;margin-top:4px;
+  }
+  .dv-mode-card{
+    background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.08);
+    border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:5px;
+    transition:transform .25s ease,border-color .25s ease;
+  }
+  .card:hover .dv-mode-card{transform:translateY(-2px);border-color:rgba(255,138,60,.35)}
+  .dv-mode-title{display:flex;align-items:center;justify-content:space-between;font-size:11.5px;font-weight:700;color:var(--ink)}
+  .dv-mode-sub{font-size:10px;color:var(--muted);line-height:1.35}
+  .dv-mode-chip{
+    font-family:var(--font-d);font-size:9px;font-weight:700;padding:2px 6px;border-radius:999px;
+    background:rgba(255,255,255,.08);color:var(--muted);
+  }
+  .dv-mode-chip.active{background:rgba(229,35,26,.2);color:#ff9e7d;border:1px solid rgba(229,35,26,.4)}
+  .dv-features-row{display:flex;gap:8px;flex-wrap:wrap;z-index:2;position:relative}
+  .dv-feat-pill{
+    display:inline-flex;align-items:center;gap:5px;
+    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);
+    border-radius:6px;padding:3px 8px;font-family:var(--font-d);font-size:10.5px;color:var(--muted);
+  }
+  .dv-feat-pill svg{width:12px;height:12px;color:var(--amber)}
+
+  /* 8 · Android TV Big Screen Demo */
+  .demo-tv{
+    display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;position:relative;
+  }
+  .tv-frame-wrap{
+    display:flex;flex-direction:column;align-items:center;gap:4px;
+  }
+  .tv-screen{
+    width:130px;height:74px;border-radius:8px;
+    background:linear-gradient(135deg,#1f1610,#0d0805);
+    border:2px solid rgba(255,255,255,.15);box-shadow:0 8px 24px rgba(0,0,0,.6);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+    position:relative;overflow:hidden;
+    transition:transform .25s ease,border-color .25s ease,box-shadow .25s ease;
+  }
+  .card:hover .tv-screen{
+    transform:scale(1.05);border-color:rgba(129,140,248,.6);box-shadow:0 0 24px rgba(129,140,248,.35);
+  }
+  .tv-stand{
+    width:42px;height:4px;border-radius:2px;background:rgba(255,255,255,.2);
+  }
+  .tv-badge-pill{
+    display:inline-flex;align-items:center;gap:5px;
+    padding:3px 10px;border-radius:999px;
+    background:rgba(129,140,248,.12);border:1px solid rgba(129,140,248,.35);
+    font-family:var(--font-d);font-size:10.5px;font-weight:700;color:#818cf8;
+  }
+
   @media(max-width:768px){
     /* Allow rich featured demo dashboards to size naturally on mobile */
     .card.card-featured .demo.demo-party-featured,
-    .card.card-featured .demo.demo-sync-featured{
+    .card.card-featured .demo.demo-sync-featured,
+    .card.card-featured .demo.demo-dv-hdr{
       height:auto!important;
       min-height:0!important;
       padding:10px 10px 12px;
@@ -2243,7 +2327,7 @@
   }
   .dl-platforms-divider span{padding:0 16px}
   .dl-cards-grid{
-    display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:12px;text-align:left;
+    display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:12px;text-align:left;
   }
   .dl-card{
     background:rgba(23,17,12,.75);
@@ -2278,6 +2362,7 @@
   .dl-card-icon svg{width:22px;height:22px}
   .dl-card-icon.win{color:#00a4ef;border-color:rgba(0,164,239,.3);background:rgba(0,164,239,.08)}
   .dl-card-icon.android{color:#3ddc84;border-color:rgba(61,220,132,.3);background:rgba(61,220,132,.08)}
+  .dl-card-icon.tv{color:#818cf8;border-color:rgba(129,140,248,.3);background:rgba(129,140,248,.08)}
   .dl-card-icon.linux{color:#f59e0b;border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.08)}
   .dl-card-head h4{font-size:18px;font-weight:700;margin:0 0 2px;color:var(--ink)}
   .dl-card-sub{font-size:12px;color:var(--muted-dim);display:block}
@@ -2295,7 +2380,8 @@
   .dl-card-btn.primary:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(229,35,26,.45)}
   .dl-card-btn.secondary{background:rgba(255,255,255,.05);color:var(--ink);border:1px solid var(--line)}
   .dl-card-btn.secondary:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);transform:translateY(-2px)}
-  @media(max-width:960px){.dl-cards-grid{grid-template-columns:1fr}}
+  @media(max-width:1160px){.dl-cards-grid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:680px){.dl-cards-grid{grid-template-columns:1fr}}
   @media(max-width:480px){.dl-card-actions.dual{grid-template-columns:1fr}}
 
   /* footer */
@@ -2542,7 +2628,7 @@
 <div class="wrap hero">
   <div class="hero-grid">
     <div class="reveal in">
-      <span class="badge"><b data-release-tag>v2.2.4</b> Movies · Shows · Anime · Live TV</span>
+      <span class="badge"><b data-release-tag>v2.2.6</b> Movies · Shows · Anime · Live TV</span>
       <h1><span class="nowrap">Everything you</span><br>watch in <span class="grad-text">One&nbsp;app.</span></h1>
       <p class="lead">A beautiful all-in-one streaming home for Movies, TV, Anime and Live IPTV — with real-time Watch Parties and offline downloads.</p>
       <div class="cta-row">
@@ -2593,7 +2679,7 @@
     <div class="sec-head reveal">
       <span class="eyebrow">Engineered for cinematic performance</span>
       <h2>The Player. Built from scratch on libmpv.</h2>
-      <p>Not another sluggish web wrapper. Nivio features a custom C-native media engine with GPU hardware decoding, instant P2P swarm streaming, and low-latency synchronized watch parties — complete with custom-built gestures, double-tap seek, timeline scrubber, quick episode switching, and lockable player controls.</p>
+      <p>Not another sluggish web wrapper. Nivio features a custom C-native media engine with Qualcomm DPU hardware tunneling, direct Dolby Vision (Profiles 5/7/8) with on-the-fly HDR10 tone-mapping, instant P2P swarm streaming, and low-latency synchronized watch parties — complete with custom gestures, native surface aspect ratio controls, and lockable player HUD.</p>
     </div>
   </div>
 
@@ -2679,10 +2765,10 @@
           <div class="p-feat-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
           </div>
-          <span class="p-card-tag">GPU Accelerated</span>
+          <span class="p-card-tag highlight">Dolby Vision &amp; HDR</span>
         </div>
-        <h4>Hardware Acceleration</h4>
-        <p>Built on libmpv with zero-overhead GPU decoding. Native playback for 4K HEVC, AV1, VP9, and H.264 with picture-in-picture and granular 0.25× to 3× speed.</p>
+        <h4>Dolby Vision &amp; True HDR</h4>
+        <p>Custom libmpv engine with Qualcomm DPU &amp; MediaCodec hardware tunneling (<code>vo=mediacodec_embed</code>). Native Dolby Vision Profile 5/7/8 decoding, on-the-fly dynamic tone mapping to HDR10, and native surface aspect ratio scaling.</p>
       </div>
 
       <div class="p-feat-card reveal">
@@ -3004,6 +3090,67 @@
         </div>
       </div>
     </div>
+
+    <div class="card card-featured reveal">
+      <div class="demo demo-dv-hdr">
+        <div class="dv-hdr-header">
+          <div class="dv-pill-group">
+            <span class="dv-badge-dv">
+              <svg viewBox="0 0 24 24" fill="currentColor" style="width:14px;height:14px"><path d="M4 4h5.5C12.5 4 14 5.8 14 8s-1.5 4-4.5 4H6v8H4V4zm2 6h3.5c1.4 0 2.5-.8 2.5-2s-1.1-2-2.5-2H6v4zm14 10h-5.5C11.5 20 10 18.2 10 16s1.5-4 4.5-4H18V4h2v16zm-2-6h-3.5c-1.4 0-2.5.8-2.5 2s1.1 2 2.5 2H18v-4z"/></svg>
+              DOLBY VISION
+            </span>
+            <span class="dv-badge-hdr">10-Bit HDR10</span>
+          </div>
+          <span class="dv-switch-tag">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><path d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4"/></svg>
+            On-The-Fly Conversion
+          </span>
+        </div>
+
+        <div class="dv-hdr-stage">
+          <div class="dv-mode-card">
+            <div class="dv-mode-title">
+              <span>Dolby Vision Direct</span>
+              <span class="dv-mode-chip active">Profiles 5, 7, 8</span>
+            </div>
+            <span class="dv-mode-sub">Qualcomm DPU / MediaCodec hardware tunnel. Zero green/purple tinting and true peak brightness.</span>
+          </div>
+          <div class="dv-mode-card">
+            <div class="dv-mode-title">
+              <span>Dynamic Tone Mapping</span>
+              <span class="dv-mode-chip">DV ⇄ HDR10 ⇄ SDR</span>
+            </div>
+            <span class="dv-mode-sub">Instantly converts DV to HDR10 or standard color spaces on the fly to match any display perfectly.</span>
+          </div>
+        </div>
+
+        <div class="dv-features-row">
+          <span class="dv-feat-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Qualcomm DPU Hardware Tunnel</span>
+          <span class="dv-feat-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Native Surface Aspect Ratio (16:9, 21:9, Fit, Fill)</span>
+          <span class="dv-feat-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Zero Color Distortion</span>
+        </div>
+      </div>
+
+      <h3>Dolby Vision &amp; True HDR Engine (On-The-Fly Tone Mapping)</h3>
+      <p>Cinematic high dynamic range built on a custom libmpv native engine. Enjoy flawless hardware playback for Dolby Vision (Profiles 5, 7, and 8) and 10-bit HDR10 via direct MediaCodec surface tunneling — with zero green/purple tinting, full panel peak luminance, native aspect ratio controls (Fit, Fill, Stretch, 16:9, 21:9), and instant on-the-fly conversion between Dolby Vision and HDR10.</p>
+    </div>
+
+    <div class="card card-fit reveal">
+      <div class="demo demo-tv">
+        <div class="tv-frame-wrap">
+          <div class="tv-screen">
+            <svg viewBox="0 0 24 24" fill="currentColor" style="width:24px;height:24px;color:#818cf8"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg>
+            <span style="font-family:var(--font-d);font-size:9.5px;font-weight:700;color:var(--ink)">Android TV</span>
+          </div>
+          <div class="tv-stand"></div>
+        </div>
+        <div class="tv-badge-pill">
+          <i class="pv-dot online"></i> D-Pad &amp; Leanback Ready
+        </div>
+      </div>
+      <h3>Android TV &amp; Big Screens</h3>
+      <p>Built for the living room. Features a dedicated TV interface with full D-pad remote navigation, Leanback launcher integration, and 4K Dolby Vision &amp; HDR playback.</p>
+    </div>
   </div>
 </section>
 
@@ -3317,25 +3464,26 @@
       <div class="rel-card">
         <div class="rel-card-header">
           <div class="rel-badge-group">
-            <span class="rel-tag latest" data-release-tag>v2.2.4</span>
+            <span class="rel-tag latest" data-release-tag>v2.2.6</span>
             <span class="rel-status-pill">Latest Release</span>
-            <span class="rel-plat-pill" data-release-plat-pill>Android · Windows · Linux</span>
+            <span class="rel-plat-pill" data-release-plat-pill>Android · Android TV · Windows · Linux</span>
           </div>
-          <div class="rel-date" data-release-date>October 2026 · <a href="https://github.com/nirmaleeswar30/Nivio/releases/tag/v2.2.4" target="_blank" rel="noopener noreferrer">v2.2.4</a></div>
+          <div class="rel-date" data-release-date>October 2026 · <a href="https://github.com/nirmaleeswar30/Nivio/releases/tag/v2.2.6" target="_blank" rel="noopener noreferrer">v2.2.6</a></div>
         </div>
-        <h4 data-release-title>Desktop Launch, Torrent Streaming, Discord RPC &amp; More!</h4>
-        <p data-release-desc>A massive milestone introducing official Windows &amp; Linux Desktop support, integrated P2P Torrent streaming, real-time Discord Rich Presence, and hardware-accelerated playback.</p>
+        <h4 data-release-title>Dolby Vision, True 10-Bit HDR, Android TV &amp; Custom Subtitle Fonts</h4>
+        <p data-release-desc>A groundbreaking media engine release introducing hardware-accelerated Dolby Vision (Profiles 5/7/8), on-the-fly DV-to-HDR tone-mapping, native surface aspect ratio controls, big-screen Android TV support, and custom subtitle fonts.</p>
         <ul class="rel-notes" data-release-notes>
-          <li><b>First-Class Desktop:</b> Official release for Windows (.exe installer) and Linux (portable AppImage) with MPV hardware acceleration.</li>
-          <li><b>P2P Torrent Streaming:</b> Integrated <code>rqbit_ffi</code> Rust torrent engine with live subtitle parsing and instant playback.</li>
-          <li><b>Discord Rich Presence:</b> Real-time movie, episode, and anime status broadcasting with poster art and progress.</li>
+          <li><b>Dolby Vision &amp; True HDR:</b> Native Qualcomm DPU &amp; MediaCodec hardware tunneling (<code>vo=mediacodec_embed</code>) for Profile 5/7/8 with zero purple/green tinting.</li>
+          <li><b>On-The-Fly Tone Mapping:</b> Convert Dolby Vision to HDR10 or SDR dynamically on the fly to match any display perfectly without stopping playback.</li>
+          <li><b>Android TV &amp; Big Screens:</b> Full D-pad remote navigation, Leanback launcher integration, and Universal APK distribution.</li>
+          <li><b>Custom Subtitle Fonts:</b> Load custom TTF/OTF subtitle fonts and switch aspect ratios (Fit, Fill, Stretch, 16:9, 21:9) on hardware video surfaces.</li>
         </ul>
         <div class="rel-actions">
-          <a class="rel-dl-btn" data-apk-download href="https://github.com/nirmaleeswar30/Nivio/releases/download/v2.2.4/nivio-2.2.4.apk" target="_blank" rel="noopener noreferrer">
+          <a class="rel-dl-btn" data-apk-download href="https://github.com/nirmaleeswar30/Nivio/releases/download/v2.2.6/nivio.apk" target="_blank" rel="noopener noreferrer">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>
-            <span data-apk-label>Download v2.2.4 APK</span>
+            <span data-apk-label>Download v2.2.6 APK</span>
           </a>
-          <a class="rel-sub-btn" data-release-notes-link href="https://github.com/nirmaleeswar30/Nivio/releases/tag/v2.2.4" target="_blank" rel="noopener noreferrer">Release Notes ↗</a>
+          <a class="rel-sub-btn" data-release-notes-link href="https://github.com/nirmaleeswar30/Nivio/releases/tag/v2.2.6" target="_blank" rel="noopener noreferrer">Release Notes ↗</a>
         </div>
       </div>
     </div>
@@ -3513,10 +3661,10 @@
           </div>
           <div>
             <h4>Android</h4>
-            <span class="dl-card-sub">Phone, Tablet &amp; TV · Android 8.0+</span>
+            <span class="dl-card-sub">Phone &amp; Tablet · Android 8.0+</span>
           </div>
         </div>
-        <p class="dl-card-desc">Choose nivio.apk for standard devices or Universal for all device architectures.</p>
+        <p class="dl-card-desc">Choose standard nivio.apk for modern ARM64 devices or Universal for all device architectures.</p>
         <div class="dl-card-actions dual">
           <a class="dl-card-btn primary" data-apk-download href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>
@@ -3524,6 +3672,26 @@
           </a>
           <a class="dl-card-btn secondary" data-universal-apk-download href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">
             Universal APK
+          </a>
+        </div>
+      </div>
+
+      <!-- Android TV Card -->
+      <div class="dl-card" data-card-platform="android-tv">
+        <div class="dl-card-head">
+          <div class="dl-card-icon tv">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg>
+          </div>
+          <div>
+            <h4>Android TV</h4>
+            <span class="dl-card-sub">Google TV, Fire TV, Shield · Android 8.0+</span>
+          </div>
+        </div>
+        <p class="dl-card-desc">Living-room experience with D-pad navigation, Leanback launcher, and direct 4K Dolby Vision &amp; HDR playback.</p>
+        <div class="dl-card-actions">
+          <a class="dl-card-btn primary" data-universal-apk-download href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>
+            Download Universal APK
           </a>
         </div>
       </div>
@@ -3549,7 +3717,7 @@
       </div>
     </div>
 
-    <p class="note" style="margin-top:28px">Latest Version: <span data-release-tag>v2.2.4</span> · Free &amp; Open Source under MIT License · No account required</p>
+    <p class="note" style="margin-top:28px">Latest Version: <span data-release-tag>v2.2.6</span> · Free &amp; Open Source under MIT License · No account required</p>
   </div>
 </section>
 
@@ -3646,6 +3814,12 @@
     const ua = (navigator.userAgent || '').toLowerCase();
     const uadPlatform = (navigator.userAgentData && navigator.userAgentData.platform ? navigator.userAgentData.platform : '').toLowerCase();
     const navPlatform = (navigator.platform || '').toLowerCase();
+
+    // 0. Android TV / Google TV / Fire TV check (MUST be before standard Android/Linux)
+    const isTv = /googletv|google-tv|android tv|androidtv|smart-tv|smarttv|large-screen|\btv\b|crkey|aft[a-z0-9]+|bravia|shield android tv|tv bro|firetv/i.test(ua);
+    if (isTv && (ua.includes('android') || ua.includes('linux') || uadPlatform.includes('android'))) {
+      return 'android-tv';
+    }
 
     // 1. Android check (UA or client hints) - MUST be first because Android UA contains 'Linux' and desktop emulation may still report Win32 platform
     if (ua.includes('android') || uadPlatform.includes('android') || navPlatform.includes('android')) {
@@ -4288,6 +4462,7 @@
       windows: `<svg viewBox="0 0 24 24" fill="currentColor" style="width:17px;height:17px"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.949-1.801"/></svg>`,
       linux: `<svg viewBox="0 0 24 24" fill="currentColor" style="width:17px;height:17px"><path d="M12.003 2c-2.485 0-4.102 2.05-4.102 4.57 0 .843.197 1.875.525 2.94-.48.27-.923.633-1.287 1.07-.633.76-.94 1.706-.94 2.82 0 1.25.437 2.375 1.25 3.125.13.12.27.227.42.32-.42 1.3-.9 2.535-1.55 3.32-.32.39-.73.665-1.22.75-.38.07-.8.02-1.24-.13-.24-.08-.49.07-.56.32-.08.24.06.49.3.57.57.19 1.13.25 1.66.16.73-.13 1.36-.55 1.83-1.12.79-.96 1.34-2.35 1.82-3.83.69.24 1.45.38 2.27.38.83 0 1.58-.14 2.27-.38.48 1.48 1.03 2.87 1.82 3.83.47.57 1.1.99 1.83 1.12.53.09 1.09.03 1.66-.16.24-.08.38-.33.3-.57-.07-.25-.32-.4-.56-.32-.44.15-.86.2-1.24.13-.49-.085-.9-.36-1.22-.75-.65-.785-1.13-2.02-1.55-3.32.15-.093.29-.2.42-.32.813-.75 1.25-1.875 1.25-3.125 0-1.114-.307-2.06-.94-2.82-.364-.437-.807-.8-1.287-1.07.328-1.065.525-2.097.525-2.94C16.105 4.05 14.488 2 12.003 2zm-.9 4.3a.8.8 0 110 1.6.8.8 0 010-1.6zm1.8 0a.8.8 0 110 1.6.8.8 0 010-1.6z"/></svg>`,
       android: `<svg viewBox="0 0 24 24" fill="currentColor" style="width:17px;height:17px"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.551 0 .9993.4482.9993.9993.0001.5511-.4482.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4482.9997-.9993.9997m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.4116 13.8533 8.0805 12 8.0805s-3.5902.3311-5.1367.8692L4.841 5.4467a.4161.4161 0 00-.5677-.1521.4157.4157 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3432-4.1021-2.6889-7.5743-6.1185-9.4396"/></svg>`,
+      tv: `<svg viewBox="0 0 24 24" fill="currentColor" style="width:17px;height:17px"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg>`,
       generic: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 19h16"/></svg>`
     };
 
@@ -4316,6 +4491,12 @@
         navLabel = 'Download APK';
         badge = 'Detected: Android · Direct APK ready';
         icon = OS_ICONS.android;
+      } else if (detectedOS === 'android-tv') {
+        targetUrl = urls.universal || urls.apk;
+        label = 'Download Android TV (Universal APK)';
+        navLabel = 'Download (TV)';
+        badge = 'Detected: Android TV · Universal APK ready for big screens';
+        icon = OS_ICONS.tv;
       } else if (detectedOS === 'mac') {
         targetUrl = urls.apk;
         label = 'Download Android APK';
@@ -4384,7 +4565,7 @@
           apkUrl = chosenAsset.browser_download_url;
         }
 
-        const universalAsset = release.assets.find(a => a.name && a.name.toLowerCase().endsWith('.apk') && a.name.toLowerCase().includes('universal'));
+        const universalAsset = release.assets.find(a => a.name && a.name.toLowerCase().endsWith('.apk') && (a.name.toLowerCase().includes('universal') || a.name.toLowerCase().includes('tv')));
         if (universalAsset && universalAsset.browser_download_url) {
           universalApkUrl = universalAsset.browser_download_url;
         }
@@ -4506,13 +4687,13 @@
         const hasWindows = release.assets.some(a => a.name && a.name.toLowerCase().endsWith('.exe'));
         const hasLinux = release.assets.some(a => a.name && a.name.toLowerCase().endsWith('.appimage'));
         if (hasWindows && hasLinux) {
-          platPillEl.textContent = 'Android · Windows · Linux';
+          platPillEl.textContent = 'Android · Android TV · Windows · Linux';
         } else if (hasWindows) {
-          platPillEl.textContent = 'Android · Windows';
+          platPillEl.textContent = 'Android · Android TV · Windows';
         } else if (hasLinux) {
-          platPillEl.textContent = 'Android · Linux';
+          platPillEl.textContent = 'Android · Android TV · Linux';
         } else {
-          platPillEl.textContent = 'Android APK';
+          platPillEl.textContent = 'Android & Android TV APK';
         }
       }
 

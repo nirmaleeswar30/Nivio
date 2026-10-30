@@ -1194,10 +1194,10 @@ class AmbientModeNotifier extends StateNotifier<bool> {
   }
 }
 
-// Ambient Style Provider: 'fade' (default) also fades the video's edges into
-// the glow; 'glow' keeps the glow in the bars only, with sharp video edges.
-const ambientStyles = ['fade', 'glow'];
-const ambientStyleLabels = {'fade': 'Glow + edge fade', 'glow': 'Glow only'};
+// Ambient Style Provider: 'glow' (default) keeps the glow in the bars only,
+// with sharp video edges; 'fade' also fades the video's edges into the glow.
+const ambientStyles = ['glow', 'fade'];
+const ambientStyleLabels = {'glow': 'Glow only', 'fade': 'Glow + edge fade'};
 
 final ambientStyleProvider = StateNotifierProvider<AmbientStyleNotifier, String>((ref) {
   return AmbientStyleNotifier();
@@ -1208,7 +1208,7 @@ class AmbientStyleNotifier extends StateNotifier<String> {
     _loadPreference();
   }
 
-  static String _valid(String? style) => ambientStyles.contains(style) ? style! : 'fade';
+  static String _valid(String? style) => ambientStyles.contains(style) ? style! : 'glow';
 
   Future<void> _loadPreference() async {
     final prefs = await SharedPreferences.getInstance();

@@ -35,7 +35,7 @@ class VideoAmbientBackground extends StatefulWidget {
     required this.captureKey,
     required this.child,
     this.blurStrength = 10,
-    this.edgeFade = true,
+    this.edgeFade = false,
   });
 
   final Player player;
