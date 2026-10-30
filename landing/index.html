@@ -90,32 +90,50 @@
     border-bottom:1px solid var(--line);
     padding-top:max(env(safe-area-inset-top,0px), 6px)}
   header.nav-hidden{transform:translateY(-100%)}
-  nav{display:flex;align-items:center;justify-content:space-between;height:70px}
-  .brand{display:flex;align-items:center;gap:10px;font-family:var(--font-d);font-weight:700;font-size:19px;letter-spacing:-.01em}
+  nav{display:flex;align-items:center;justify-content:space-between;height:70px;gap:12px}
+  .brand{display:flex;align-items:center;gap:10px;font-family:var(--font-d);font-weight:700;font-size:19px;letter-spacing:-.01em;flex-shrink:0}
   .brand-mark{width:38px;height:38px;display:block;transition:transform .2s,filter .2s}
   header .brand-mark{filter:drop-shadow(0 3px 10px rgba(229,35,26,.4))}
   .brand-word{height:24px;width:auto;display:block;transition:transform .2s;filter:drop-shadow(0 2px 6px rgba(0,0,0,.45))}
   .brand:hover .brand-mark{transform:scale(1.06)}
   header .brand:hover .brand-mark{filter:drop-shadow(0 4px 14px rgba(229,35,26,.6))}
   .brand:hover .brand-word{transform:translateX(1px)}
-  @media(max-width:400px){.brand-word{height:20px}}
   .nav-links{display:flex;gap:30px;align-items:center;font-size:14.5px;color:var(--muted);font-weight:500}
   .nav-links a{transition:color .18s}
   .nav-links a:hover{color:var(--ink)}
   .btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--font-d);font-weight:600;font-size:14.5px;
-    padding:11px 20px;border-radius:999px;cursor:pointer;border:1px solid transparent;transition:transform .18s,box-shadow .18s,background .18s}
+    padding:11px 20px;border-radius:999px;cursor:pointer;border:1px solid transparent;transition:transform .18s,box-shadow .18s,background .18s;white-space:nowrap;flex-shrink:0}
   .btn svg{width:17px;height:17px}
   .btn-primary{background:var(--grad);color:#1a0e00;box-shadow:0 8px 26px rgba(229,35,26,.34)}
   .btn-primary:hover{transform:translateY(-2px);box-shadow:0 12px 34px rgba(229,35,26,.46)}
   .btn-ghost{background:rgba(255,255,255,.04);border-color:var(--line);color:var(--ink)}
   .btn-ghost:hover{background:rgba(255,255,255,.09);transform:translateY(-2px)}
-  .nav-actions{display:flex;gap:10px;align-items:center}
+  .nav-actions{display:flex;gap:10px;align-items:center;flex-shrink:0}
   .btn-star{padding-left:16px}
   .btn-star .star{width:16px;height:16px;fill:var(--amber);stroke:none}
   .btn-star .count{font-size:12px;color:var(--muted);padding-left:8px;margin-left:4px;border-left:1px solid var(--line)}
   .btn-star:hover .count{color:var(--ink)}
-  @media(max-width:720px){.nav-links{display:none}}
-  @media(max-width:520px){.hide-sm{display:none}.btn-star{padding-left:12px}}
+  @media(max-width:720px){
+    .nav-links{display:none}
+    header .wrap{padding-inline:clamp(12px,3.5vw,20px)}
+    nav{height:60px;gap:8px}
+    .brand{gap:8px}
+    .brand-mark{width:32px;height:32px}
+    .brand-word{height:19px}
+    .nav-actions{gap:6px}
+    .nav-actions .btn{padding:8px 12px;font-size:13px;gap:6px}
+    .nav-actions .btn svg{width:15px;height:15px}
+    .btn-star{padding:8px 10px;padding-left:10px}
+    .btn-star .star{width:14px;height:14px}
+    .btn-star .count{font-size:11.5px;padding-left:6px;margin-left:3px}
+    .hide-sm{display:none}
+  }
+  @media(max-width:390px){
+    header .wrap{padding-inline:10px}
+    .brand-word{display:none}
+    .nav-actions{gap:5px}
+    .nav-actions .btn{padding:7px 10px;font-size:12px}
+  }
 
   /* hero */
   .hero{padding-top:clamp(14px, 1.8vw, 24px);padding-bottom:40px;max-width:min(96vw,1540px);box-sizing:border-box;padding-inline:clamp(24px,4vw,56px)}
@@ -2415,7 +2433,6 @@
   .reveal{opacity:0;transform:translateY(22px);transition:opacity .7s ease,transform .7s ease}
   .reveal.in{opacity:1;transform:none}
   @media(max-width:900px){
-    header .wrap,
     .hero{padding-inline:20px}
     .hero-grid{grid-template-columns:1fr;gap:20px}
     .stage{height:420px;order:2;width:100%;max-width:100%;overflow:hidden}
@@ -4453,7 +4470,7 @@
   (function initGitHubReleasesUpdater() {
     const REPO_OWNER = 'nirmaleeswar30';
     const REPO_NAME = 'Nivio';
-    const CACHE_KEY = 'nivio_gh_releases_cache_v4';
+    const CACHE_KEY = 'nivio_gh_releases_cache_v5';
     const CACHE_TTL_MS = 15 * 60 * 1000; // 15-minute cache to respect GitHub rate limits
 
     // Uses outer detectedOS resolved at script initialization with Android/mobile UA precedence
@@ -4550,22 +4567,45 @@
       const tagName = release.tag_name;
       const releaseUrl = release.html_url || `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/tag/${tagName}`;
 
-      // Find assets: standard nivio.apk, universal.apk, windows exe, linux appimage
-      let apkUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${tagName}/nivio.apk`;
-      let universalApkUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${tagName}/universal.apk`;
+      // Find assets: standard ARM64 phone APK, universal.apk, windows exe, linux appimage
+      const cleanTag = tagName.replace(/^v/, '');
+      let apkUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${tagName}/nivio-${cleanTag}.apk`;
+      let universalApkUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${tagName}/nivio-${cleanTag}-universal.apk`;
       let windowsUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
       let linuxUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
 
       if (Array.isArray(release.assets) && release.assets.length > 0) {
-        const exactApk = release.assets.find(a => a.name && a.name.toLowerCase() === 'nivio.apk');
-        const nonUniversalApk = release.assets.find(a => a.name && a.name.toLowerCase().endsWith('.apk') && !a.name.toLowerCase().includes('universal'));
-        const anyApk = release.assets.find(a => a.name && a.name.toLowerCase().endsWith('.apk'));
-        const chosenAsset = exactApk || nonUniversalApk || anyApk;
+        // 1. Primary mobile ARM64 APK (for modern phones like OnePlus, Pixel, Galaxy):
+        // Prioritizes:
+        // - Exact 'nivio.apk'
+        // - Asset explicitly containing 'arm64'
+        // - Clean base release APK (e.g. 'nivio-2.2.6.apk') that excludes 'armeabi', 'x86', 'universal', or 'tv'
+        const arm64Apk = release.assets.find(a => {
+          const n = (a.name || '').toLowerCase();
+          return n.endsWith('.apk') && (
+            n === 'nivio.apk' ||
+            n.includes('arm64') ||
+            (!n.includes('armeabi') && !n.includes('x86') && !n.includes('universal') && !n.includes('tv'))
+          );
+        });
+
+        // 2. Universal APK (for Android TV, older 32-bit devices, emulators):
+        const universalAsset = release.assets.find(a => {
+          const n = (a.name || '').toLowerCase();
+          return n.endsWith('.apk') && (n.includes('universal') || n.includes('tv'));
+        });
+
+        const nonUniversalApk = release.assets.find(a => {
+          const n = (a.name || '').toLowerCase();
+          return n.endsWith('.apk') && !n.includes('universal') && !n.includes('tv') && !n.includes('armeabi') && !n.includes('x86');
+        });
+
+        const anyApk = release.assets.find(a => (a.name || '').toLowerCase().endsWith('.apk'));
+        const chosenAsset = arm64Apk || nonUniversalApk || anyApk;
         if (chosenAsset && chosenAsset.browser_download_url) {
           apkUrl = chosenAsset.browser_download_url;
         }
 
-        const universalAsset = release.assets.find(a => a.name && a.name.toLowerCase().endsWith('.apk') && (a.name.toLowerCase().includes('universal') || a.name.toLowerCase().includes('tv')));
         if (universalAsset && universalAsset.browser_download_url) {
           universalApkUrl = universalAsset.browser_download_url;
         }
