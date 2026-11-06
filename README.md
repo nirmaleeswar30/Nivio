@@ -21,7 +21,7 @@
 
 <div align="center">
 
-[Features](#features) • [HDR & Dolby Vision](#hdr) • [Screenshots](#screenshots) • [Docs](https://nivio.nirmaleeswar.dev/docs/) • [Roadmap](#roadmap) • [Installation](#installation) • [Build from Source](#build-from-source) • [Contributing](#contributing)
+[Website](https://nivio.nirmaleeswar.dev/) • [Features](#features) • [HDR & Dolby Vision](#hdr) • [Screenshots](#screenshots) • [Docs](https://nivio.nirmaleeswar.dev/docs/) • [Roadmap](#roadmap) • [Installation](#installation) • [Build from Source](#build-from-source) • [Contributing](#contributing)
 
 </div>
 
