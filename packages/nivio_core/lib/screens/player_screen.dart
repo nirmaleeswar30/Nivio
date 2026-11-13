@@ -20,6 +20,7 @@ import 'package:nivio/widgets/video_ambient_background.dart';
 import 'package:nivio/widgets/seek_preview.dart';
 import 'package:nivio/core/mpv_android_setup.dart';
 import 'package:nivio/widgets/hdr_video_surface.dart';
+import 'package:nivio/widgets/windows_hdr_video_surface.dart';
 import 'package:nivio/widgets/player_stats_overlay.dart';
 import 'package:nivio/services/hdr_tone_mapping.dart';
 import 'package:nivio/models/search_result.dart';
@@ -2067,9 +2068,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // HDR video (PQ / HLG transfer) on an HDR screen plays through the HDR
     // surface instead of media_kit's SDR texture (see _useHdrSurface);
     // otherwise it is tone-mapped to SDR (see _syncToneMapping).
-    if (Platform.isAndroid) {
-      unawaited(AppPlatform.hdrDisplay().then((info) {
-        if (mounted && info.isHdr != _hdrDisplay) setState(() => _hdrDisplay = info.isHdr);
+    if (Platform.isAndroid || Platform.isWindows) {
+      _refreshHdrDisplay();
+    }
+    if (Platform.isWindows) {
+      // Windows HDR switched on/off, or the window moved to another monitor.
+      _subscriptions.add(AppPlatform.hdrDisplayChanges.listen((_) {
+        appDebugLog('🌈 Display changed (Windows HDR toggled or window moved); checking HDR again');
+        _refreshHdrDisplay();
       }));
     }
     // Keep the screen awake for the whole player session; re-asserted on each
@@ -3852,6 +3858,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // True HDR output (Android): the screen supports HDR, the current video is
   // HDR, and the HDR surface hasn't failed for this video.
   bool _hdrDisplay = false;
+  // Windows: the GPU driving the window's monitor (mpv's d3d11-adapter).
+  String? _hdrAdapter;
+  // Windows: the monitor can do HDR (Windows HDR may still be off). Null if unknown.
+  bool? _hdrScreenSupported;
   bool _hdrVideo = false;
   bool _hdrSurfaceFailed = false;
   int? _doviProfile;
@@ -3918,8 +3928,32 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  void _refreshHdrDisplay() {
+    unawaited(AppPlatform.hdrDisplay().then((info) {
+      if (!mounted) return;
+      if (info.isHdr == _hdrDisplay && info.adapter == _hdrAdapter && info.hdrSupported == _hdrScreenSupported) return;
+      appDebugLog('🌈 HDR display: ${info.isHdr} (supported=${info.hdrSupported}, adapter=${info.adapter}, peak=${info.maxLuminance})');
+      setState(() {
+        _hdrDisplay = info.isHdr;
+        _hdrAdapter = info.adapter;
+        _hdrScreenSupported = info.hdrSupported;
+        if (info.isHdr) _hdrSurfaceFailed = false;
+      });
+    }));
+  }
+
   /// HDR video on an HDR screen with HDR output on.
-  bool get _trueHdr => Platform.isAndroid && _hdrDisplay && _hdrVideo && ref.read(hdrOutputProvider);
+  bool get _trueHdr =>
+      (Platform.isAndroid || Platform.isWindows) && _hdrDisplay && _hdrVideo && ref.read(hdrOutputProvider);
+
+  /// Windows true HDR: mpv renders with gpu-next into a native window behind
+  /// the (then see-through) app window, see WindowsHdrVideoSurface.
+  bool get _useWindowsHdrSurface =>
+      Platform.isWindows && _trueHdr && !_hdrSurfaceFailed && !_videoDetached && !_isPipMode;
+
+  /// Video plays through an HDR surface (Android SurfaceView or the Windows
+  /// HDR window) rather than media_kit's texture.
+  bool get _hdrSurfaceActive => _useHdrSurface || _useWindowsHdrSurface;
 
   /// Tone-mapping settings for the current video and mode (null while loading).
   Map<String, String>? _toneMappingProps;
@@ -3953,7 +3987,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     final props = _toneMappingProps;
     if (props == null) return;
-    final hdrSurface = _useHdrSurface;
+    final hdrSurface = _hdrSurfaceActive;
     final key = '$propsKey|$hdrSurface';
     if (key == _toneMappingAppliedKey) return;
     _toneMappingAppliedKey = key;
@@ -5829,7 +5863,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
                           String hdrValue() {
                             final isDv = _doviProfile != null;
-                            if (_useHdrSurface && _trueHdr) {
+                            if (_hdrSurfaceActive && _trueHdr) {
+                              if (Platform.isWindows) return isDv ? 'True HDR (DV → HDR10)' : 'True HDR';
                               if (surfaceBackend == 'mediacodecEmbed') {
                                 return isDv ? 'True DV · MediaCodec' : 'True HDR · MediaCodec';
                               }
@@ -5845,9 +5880,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                               'standard': "mpv's tone mapping with per-scene brightness detection",
                               'hdrToys': 'hdr-toys shaders: PQ, HLG and BT.2020 profiles picked from the video. Ambient mode is off while they run',
                             };
-                            final trueHdrNow = _useHdrSurface && _trueHdr;
+                            final trueHdrNow = _hdrSurfaceActive && _trueHdr;
                             final String status;
-                            if (trueHdrNow) {
+                            if (trueHdrNow && Platform.isWindows) {
+                              status = _doviProfile != null
+                                  ? 'Playing in HDR on this screen (Direct3D 11). Dolby Vision is converted to HDR10.'
+                                  : 'Playing in HDR on this screen (Direct3D 11).';
+                            } else if (trueHdrNow) {
                               if (surfaceBackend == 'mediacodecEmbed') {
                                 status = _doviProfile != null
                                     ? 'Playing in Dolby Vision (Profile ${_doviProfile == 8 ? '8.1' : '$_doviProfile'}) direct to screen.'
@@ -5860,7 +5899,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             } else if (!_hdrVideo) {
                               status = 'This video is ${videoColourLabel()}${_videoPrimaries == 'bt.2020' ? ', its colours are mapped to the screen.' : ', nothing to convert.'}';
                             } else if (!_hdrDisplay) {
-                              status = "This screen isn't HDR, so the video is tone mapped to SDR.";
+                              status = Platform.isWindows && _hdrScreenSupported != false
+                                  ? 'HDR is off for this screen in Windows, so the video is tone mapped to SDR. Turn on "Use HDR" in Settings → System → Display.'
+                                  : "This screen isn't HDR, so the video is tone mapped to SDR.";
                             } else if (!hdrOutput) {
                               status = 'HDR output is off, so the video is tone mapped to SDR.';
                             } else {
@@ -5877,7 +5918,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                 activeThumbColor: accent,
                                 title: const Text('HDR output', style: TextStyle(color: Colors.white)),
                                 subtitle: Text(
-                                  _hdrDisplay ? 'Show HDR videos in HDR on this screen' : "This screen doesn't support HDR",
+                                  _hdrDisplay
+                                      ? 'Show HDR videos in HDR on this screen'
+                                      : Platform.isWindows && _hdrScreenSupported != false
+                                          ? 'Turn on HDR for this screen in Windows display settings'
+                                          : "This screen doesn't support HDR",
                                   style: const TextStyle(color: Colors.white38, fontSize: 11),
                                 ),
                                 value: hdrOutput,
@@ -5889,7 +5934,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                       }
                                     : null,
                               ),
-                              if (trueHdrNow) ...[
+                              if (trueHdrNow && Platform.isAndroid) ...[
                                 const Padding(
                                   padding: EdgeInsets.fromLTRB(24, 12, 24, 4),
                                   child: Text('Surface output (Experimental)', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
@@ -5917,6 +5962,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                   );
                                 }),
                               ],
+                              // Desktop always uses Standard tone mapping.
+                              if (Platform.isAndroid) ...[
                               const Padding(
                                 padding: EdgeInsets.fromLTRB(24, 12, 24, 4),
                                 child: Text('Tone mapping (HDR on SDR)', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
@@ -5945,6 +5992,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                 );
                                 return trueHdrNow ? Opacity(opacity: 0.4, child: tileWidget) : tileWidget;
                               }),
+                              ],
                             ];
                           }
 
@@ -6025,9 +6073,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                     onTap: () => openPage('sync'),
                                   ),
                                   tile(icon: Icons.memory, title: 'Decoder', value: decoderValue(), onTap: () => openPage('decoder')),
-                                  // True HDR and the tone-mapping choice are Android-only;
-                                  // desktop always uses Standard tone mapping.
-                                  if (Platform.isAndroid)
+                                  // True HDR on Android and Windows; the tone-mapping
+                                  // choice is Android-only (desktop uses Standard).
+                                  if (Platform.isAndroid || Platform.isWindows)
                                     tile(
                                       icon: _doviProfile != null ? Icons.branding_watermark_rounded : Icons.hdr_on_outlined,
                                       title: _doviProfile != null ? 'Dolby Vision' : 'HDR',
@@ -6251,7 +6299,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           child: ScaffoldMessenger(
             key: _messengerKey,
             child: Scaffold(
-              backgroundColor: Colors.black,
+              // See-through over the Windows HDR video window.
+              backgroundColor: _useWindowsHdrSurface ? Colors.transparent : Colors.black,
               extendBodyBehindAppBar: false,
               appBar: null,
               body: _buildPlayerBody(isPortrait),
@@ -7459,6 +7508,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     Widget videoWidget = _videoDetached
         ? Container(color: Colors.black)
+        : _useWindowsHdrSurface
+            ? WindowsHdrVideoSurface(
+                player: _player,
+                adapter: _hdrAdapter,
+                fit: _displayFitOptions[_selectedDisplayFitKey] ?? BoxFit.contain,
+                onFailed: () {
+                  appDebugLog('🌈 Windows HDR surface failed; back to normal video output');
+                  if (mounted) setState(() => _hdrSurfaceFailed = true);
+                },
+              )
         : hdrSurface
             ? HdrVideoSurface(
                 player: _player,
@@ -7625,7 +7684,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               player: _player,
               doviProfile: _doviProfile,
               isHdr: _hdrVideo,
-              isHdrOutput: _trueHdr && _useHdrSurface,
+              isHdrOutput: _trueHdr && _hdrSurfaceActive,
               toneMappingMode: ref.watch(toneMappingProvider),
               onClose: () => setState(() => _showStatsOverlay = false),
             ),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -27,9 +28,31 @@ class AppPlatform {
 
   static Future<HdrDisplayInfo>? _hdrDisplay;
 
-  /// Whether the screen can show HDR (Android only; asked once, then cached).
-  /// A TV box reports what the connected TV supports.
+  static const MethodChannel _hdrWindowChannel = MethodChannel('com.nivio/hdr_window');
+  static StreamController<void>? _hdrDisplayChanges;
+
+  /// Fires when the HDR state of the app's screen may have changed (Windows:
+  /// HDR switched on/off, or the window moved to another monitor). Call
+  /// [hdrDisplay] again for the new state.
+  static Stream<void> get hdrDisplayChanges {
+    var controller = _hdrDisplayChanges;
+    if (controller == null) {
+      controller = _hdrDisplayChanges = StreamController<void>.broadcast();
+      if (Platform.isWindows) {
+        _hdrWindowChannel.setMethodCallHandler((call) async {
+          if (call.method == 'displayChanged') _hdrDisplayChanges?.add(null);
+          return null;
+        });
+      }
+    }
+    return controller.stream;
+  }
+
+  /// Whether the screen can show HDR. Android: asked once, then cached (a TV
+  /// box reports what the connected TV supports). Windows: the monitor the
+  /// app window is on, with Windows HDR switched on; asked fresh each time.
   static Future<HdrDisplayInfo> hdrDisplay() {
+    if (Platform.isWindows) return _windowsHdrDisplay();
     return _hdrDisplay ??= () async {
       if (!Platform.isAndroid) return const HdrDisplayInfo();
       try {
@@ -43,6 +66,23 @@ class AppPlatform {
         return const HdrDisplayInfo();
       }
     }();
+  }
+
+  static Future<HdrDisplayInfo> _windowsHdrDisplay() async {
+    try {
+      final info = await _hdrWindowChannel.invokeMapMethod<String, dynamic>('displayInfo');
+      final isHdr = info?['isHdr'] == true;
+      return HdrDisplayInfo(
+        isHdr: isHdr,
+        types: isHdr ? const ['hdr10'] : const [],
+        maxLuminance: (info?['maxLuminance'] as num?)?.toDouble(),
+        adapter: info?['adapter'] as String?,
+        hdrSupported: info?['hdrSupported'] as bool?,
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('hdrDisplay (Windows) failed: $e');
+      return const HdrDisplayInfo();
+    }
   }
 
   /// Hands the screen brightness back to the system setting after the
@@ -93,5 +133,12 @@ class HdrDisplayInfo {
   /// Desired peak brightness in nits, if the system reports it.
   final double? maxLuminance;
 
-  const HdrDisplayInfo({this.isHdr = false, this.types = const [], this.maxLuminance});
+  /// Windows: the GPU driving the screen (for mpv's d3d11-adapter).
+  final String? adapter;
+
+  /// Windows: whether the screen can do HDR at all, even while Windows HDR is
+  /// switched off for it ([isHdr] is whether it's on). Null if unknown.
+  final bool? hdrSupported;
+
+  const HdrDisplayInfo({this.isHdr = false, this.types = const [], this.maxLuminance, this.adapter, this.hdrSupported});
 }

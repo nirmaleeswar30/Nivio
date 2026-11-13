@@ -8,7 +8,7 @@
     ] },
     { title: 'Watching', pages: [
       { slug: 'player', title: 'The player', keys: 'controls gestures keyboard shortcuts lock brightness volume subtitles audio quality server decoder ambient stats pip skip intro next episode' },
-      { slug: 'hdr', title: 'HDR & Dolby Vision', keys: 'hdr10 hlg dolby vision dv tone mapping sdr hdr toys bt2020 surface vulkan mediacodec' },
+      { slug: 'hdr', title: 'HDR & Dolby Vision', keys: 'hdr10 hlg dolby vision dv tone mapping sdr hdr toys bt2020 surface vulkan mediacodec windows monitor d3d11' },
       { slug: 'downloads', title: 'Downloads', keys: 'offline save download watch while downloading resume connections' },
     ] },
     { title: 'What to watch', pages: [

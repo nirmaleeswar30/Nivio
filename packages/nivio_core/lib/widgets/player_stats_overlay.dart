@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
@@ -63,8 +64,9 @@ class _PlayerStatsOverlayState extends State<PlayerStatsOverlay> {
         'estimated-vf-fps',
         'container-fps',
         'video-fps',
-        'vo-drop-frame-count',
         'frame-drop-count',
+        'decoder-frame-drop-count',
+        'vo-drop-frame-count',
         'dwidth',
         'dheight',
         'video-codec',
@@ -125,8 +127,13 @@ class _PlayerStatsOverlayState extends State<PlayerStatsOverlay> {
     final hwdec = _stats['hwdec-current'] ?? 'none';
     final fps = _stats['estimated-vf-fps']?.trim() ?? '';
     final containerFps = _stats['container-fps']?.trim() ?? '';
-    final voDrops = _stats['vo-drop-frame-count'] ?? '0';
-    final frameDrops = _stats['frame-drop-count'] ?? '0';
+    // frame-drop-count: frames the video output dropped; decoder-frame-drop-count:
+    // frames the decoder dropped. (vo-drop-frame-count is the old name of the
+    // first, gone in newer mpv.)
+    String count(String? v) => (v == null || v.trim().isEmpty) ? '' : v.trim();
+    final voDrops = [count(_stats['frame-drop-count']), count(_stats['vo-drop-frame-count']), '0']
+        .firstWhere((v) => v.isNotEmpty);
+    final frameDrops = count(_stats['decoder-frame-drop-count']).isEmpty ? '0' : count(_stats['decoder-frame-drop-count']);
     final w = _stats['dwidth'] ?? '';
     final h = _stats['dheight'] ?? '';
     final codec = _stats['video-codec'] ?? '';
@@ -149,7 +156,11 @@ class _PlayerStatsOverlayState extends State<PlayerStatsOverlay> {
     final String outputFormat;
     if (widget.isHdrOutput) {
       if (widget.doviProfile != null) {
-        outputFormat = vo == 'mediacodec_embed' ? 'Dolby Vision (Direct)' : 'True HDR (DV Base)';
+        outputFormat = vo == 'mediacodec_embed'
+            ? 'Dolby Vision (Direct)'
+            : Platform.isWindows
+                ? 'True HDR (DV → HDR10)'
+                : 'True HDR (DV Base)';
       } else {
         outputFormat = gamma == 'hlg' ? 'True HDR (HLG)' : 'True HDR (HDR10)';
       }

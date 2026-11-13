@@ -27,6 +27,8 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   media_session_ = std::make_unique<MediaSession>(
       GetHandle(), flutter_controller_->engine()->messenger());
+  hdr_video_host_ = std::make_unique<HdrVideoHost>(
+      GetHandle(), flutter_controller_->engine()->messenger());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -43,6 +45,7 @@ bool FlutterWindow::OnCreate() {
 
 void FlutterWindow::OnDestroy() {
   media_session_ = nullptr;
+  hdr_video_host_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -54,6 +57,9 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (hdr_video_host_) {
+    hdr_video_host_->HandleMessage(message, wparam, lparam);
+  }
   if (media_session_ && media_session_->HandleMessage(message, wparam, lparam)) {
     return 0;
   }

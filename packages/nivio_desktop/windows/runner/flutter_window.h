@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "hdr_video_host.h"
 #include "media_session.h"
 #include "win32_window.h"
 
@@ -32,6 +33,9 @@ class FlutterWindow : public Win32Window {
 
   // OS media session (SMTC) for hardware / Bluetooth media buttons.
   std::unique_ptr<MediaSession> media_session_;
+
+  // Native video window behind the app window for true HDR playback.
+  std::unique_ptr<HdrVideoHost> hdr_video_host_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

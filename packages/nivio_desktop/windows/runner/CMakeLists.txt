@@ -8,6 +8,7 @@ project(runner LANGUAGES CXX)
 # Any new source files that you add to the application should be added here.
 add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
+  "hdr_video_host.cpp"
   "media_session.cpp"
   "main.cpp"
   "utils.cpp"
@@ -35,6 +36,8 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
+# DXGI: HDR state of the monitor the window is on (hdr_video_host.cpp).
+target_link_libraries(${BINARY_NAME} PRIVATE "dxgi.lib")
 # WinRT activation for System Media Transport Controls (media keys).
 target_link_libraries(${BINARY_NAME} PRIVATE "runtimeobject.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")

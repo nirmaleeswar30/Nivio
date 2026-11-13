@@ -88,6 +88,41 @@ if(PLUGIN_BUNDLED_LIBRARIES)
     COMPONENT Runtime)
 endif()
 
+# === Newer libmpv ===
+# media_kit_libs_windows_video ships a 2023 libmpv (mpv 0.36) without the
+# gpu-next renderer, so it can't output HDR. Replace it with a current build
+# (installed after the plugin's copy, so it overwrites it). The client API is
+# backwards compatible, so media_kit's import library still links against it.
+#
+# The archive is shinchiro/mpv-winbuild-cmake's 20261111 build (mpv 0.42),
+# unmodified, re-hosted on our own release because shinchiro only keeps the
+# last 30 daily builds. To move to a newer mpv: download and test a new build,
+# upload it as a new release there, and update the URL and SHA-256 here.
+set(NIVIO_LIBMPV_URL
+  "https://github.com/nirmaleeswar30/mpvlibAndroid/releases/download/windows-libmpv-20261111/mpv-dev-x86_64-20261111-git-bcde6b93cc.7z")
+set(NIVIO_LIBMPV_SHA256
+  "273c079b11ea5575822f972756f4c9a71149a5c10130353abeb8586738938452")
+set(NIVIO_LIBMPV_ARCHIVE "${CMAKE_BINARY_DIR}/nivio-libmpv.7z")
+set(NIVIO_LIBMPV_DIR "${CMAKE_BINARY_DIR}/nivio-libmpv-${NIVIO_LIBMPV_SHA256}")
+if(NOT EXISTS "${NIVIO_LIBMPV_DIR}/libmpv-2.dll")
+  message(STATUS "Downloading libmpv: ${NIVIO_LIBMPV_URL}")
+  file(DOWNLOAD "${NIVIO_LIBMPV_URL}" "${NIVIO_LIBMPV_ARCHIVE}"
+    EXPECTED_HASH SHA256=${NIVIO_LIBMPV_SHA256}
+    SHOW_PROGRESS)
+  file(MAKE_DIRECTORY "${NIVIO_LIBMPV_DIR}")
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}" -E tar xf "${NIVIO_LIBMPV_ARCHIVE}"
+    WORKING_DIRECTORY "${NIVIO_LIBMPV_DIR}"
+    RESULT_VARIABLE NIVIO_LIBMPV_EXTRACT_RESULT)
+  if(NOT NIVIO_LIBMPV_EXTRACT_RESULT EQUAL 0 OR NOT EXISTS "${NIVIO_LIBMPV_DIR}/libmpv-2.dll")
+    message(FATAL_ERROR "Could not extract libmpv-2.dll from ${NIVIO_LIBMPV_ARCHIVE}")
+  endif()
+  file(REMOVE "${NIVIO_LIBMPV_ARCHIVE}")
+endif()
+install(FILES "${NIVIO_LIBMPV_DIR}/libmpv-2.dll"
+  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/windows/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"

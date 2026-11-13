@@ -607,12 +607,15 @@ class CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
               // 1. Background (Darken when controls are shown)
               IgnorePointer(
                 ignoring: !_showControls || _isLocked,
-                child: AnimatedOpacity(
+                // A translucent colour, not an opacity layer: over the
+                // Windows HDR video window, an opacity layer turned the
+                // whole video black, while a plain translucent fill blends.
+                child: TweenAnimationBuilder<double>(
                   duration: const Duration(milliseconds: 200),
-                  opacity: (_showControls && !_isLocked) ? 0.5 : 0.0,
-                  child: Container(
-                    color: Colors.black,
-                  ),
+                  tween: Tween(end: (_showControls && !_isLocked) ? 0.5 : 0.0),
+                  builder: (context, alpha, _) => alpha <= 0
+                      ? const SizedBox.expand()
+                      : ColoredBox(color: Colors.black.withValues(alpha: alpha), child: const SizedBox.expand()),
                 ),
               ),
 

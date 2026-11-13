@@ -5,11 +5,11 @@
 <script>/* Relative links need /docs/ (with the slash) to resolve inside docs/. */if(location.pathname.slice(-5)==="/docs")location.replace(location.pathname+"/"+location.search+location.hash);</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>HDR & Dolby Vision · Nivio Docs</title>
-<meta name="description" content="How Nivio plays true HDR10, HLG and hardware Dolby Vision on Android, how tone mapping works on SDR screens, and what each HDR setting does.">
+<meta name="description" content="How Nivio plays true HDR10, HLG and Dolby Vision on Android and Windows, how tone mapping works on SDR screens, and what each HDR setting does.">
 <link rel="canonical" href="https://nivio.nirmaleeswar.dev/docs/hdr">
 <meta property="og:url" content="https://nivio.nirmaleeswar.dev/docs/hdr">
 <meta property="og:title" content="HDR & Dolby Vision · Nivio Docs">
-<meta property="og:description" content="How Nivio plays true HDR10, HLG and hardware Dolby Vision on Android, how tone mapping works on SDR screens, and what each HDR setting does.">
+<meta property="og:description" content="How Nivio plays true HDR10, HLG and Dolby Vision on Android and Windows, how tone mapping works on SDR screens, and what each HDR setting does.">
 <meta property="og:image" content="https://nivio.nirmaleeswar.dev/appicon.png">
 <link rel="icon" type="image/png" href="../nivio.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -34,10 +34,14 @@
     <article class="prose">
 <span class="crumb">Watching</span>
 <h1>HDR & Dolby Vision</h1>
-<p class="lead">On Android, Nivio plays HDR video in real HDR and Dolby Vision in hardware Dolby Vision, on phones and screens that support them. As far as we know, no other Flutter app does this. Everywhere else, HDR video is tone-mapped so it still looks right on a normal screen.</p>
+<p class="lead">On Android and Windows, Nivio plays HDR video in real HDR on screens that support it, and on Android, Dolby Vision in hardware Dolby Vision. As far as we know, no other Flutter app does this. Everywhere else, HDR video is tone-mapped so it still looks right on a normal screen.</p>
 
 <h2 id="why">Why this is unusual</h2>
-<p>Flutter apps draw everything, video included, as standard-range (SDR) pictures. Play an HDR movie in a typical Flutter app and it comes out flat, grey and washed out. Nivio gives the video its own Android surface outside Flutter's drawing and renders it with a custom build of mpv. Android can then put the screen into HDR mode for that video while the controls stay on top as usual.</p>
+<p>Flutter apps draw everything, video included, as standard-range (SDR) pictures. Play an HDR movie in a typical Flutter app and it comes out flat, grey and washed out. Nivio takes the video out of Flutter's drawing and renders it with mpv instead, while the controls stay on top as usual:</p>
+<ul>
+  <li><strong>Android</strong>: the video gets its own Android surface, rendered by a custom build of mpv, so Android can put the screen into HDR mode for it.</li>
+  <li><strong>Windows</strong>: mpv draws the video in HDR10 into its own window, kept just behind Nivio's window, and Nivio's window turns see-through over the video. Windows then shows the video in HDR and the controls and subtitles at normal brightness on top.</li>
+</ul>
 
 <h2 id="modes">What you'll see</h2>
 <p>The <strong>HDR</strong> tile in the player settings tells you exactly how the current video is playing:</p>
@@ -47,6 +51,7 @@
     <tr><td>True HDR</td><td>HDR10 or HLG video on an HDR screen. The screen is in HDR mode, with real highlights and the video's full colour range.</td></tr>
     <tr><td>True DV</td><td>Dolby Vision decoded by your phone's Dolby Vision hardware and sent straight to the screen, so the display's own Dolby Vision processing kicks in.</td></tr>
     <tr><td>True HDR (DV Base)</td><td>A Dolby Vision video played through its HDR10 layer, in HDR. You'll see this with the Vulkan surface output, or with profile 7 files (see below).</td></tr>
+    <tr><td>True HDR (DV → HDR10)</td><td>Windows: a Dolby Vision video (profile 5 or 8) converted to HDR10 by mpv, with correct colours, and shown in HDR.</td></tr>
     <tr><td>Tone mapped</td><td>HDR video converted to SDR, because the screen has no HDR or HDR output is off.</td></tr>
     <tr><td>SDR</td><td>A normal video. Nothing to convert.</td></tr>
   </tbody>
@@ -56,6 +61,7 @@
 <h2 id="requirements">What you need</h2>
 <ul>
   <li><strong>For true HDR</strong>: an Android phone or tablet with an HDR screen. Most recent mid-range and flagship phones have one. On Android TV, the TV box reports what your TV supports.</li>
+  <li><strong>For true HDR on Windows</strong>: Windows 10 or 11 and an HDR monitor with <strong>Use HDR</strong> turned on in <em>Settings → System → Display</em> (or press <kbd>Win</kbd>+<kbd>Alt</kbd>+<kbd>B</kbd>). Nivio checks the monitor its window is on, so with several monitors, put it on the HDR one.</li>
   <li><strong>For Dolby Vision</strong>: a phone with a hardware Dolby Vision decoder, which most recent Snapdragon flagships have. These decode profiles 5 and 8, the profiles used by streaming services and most web releases.</li>
   <li><strong>For tone mapping</strong>: nothing. It works on every device.</li>
 </ul>
@@ -64,7 +70,7 @@
 <h2 id="settings">HDR settings</h2>
 <p>These are in the player's <strong>HDR</strong> tile and in <strong>Settings → Playback</strong>. They're the same settings in both places.</p>
 <h3>HDR Output</h3>
-<p>On by default. Turn it off to always tone-map HDR to SDR, for example to save battery or if HDR looks too dim or bright on your screen. It's greyed out on screens without HDR.</p>
+<p>On by default. Turn it off to always tone-map HDR to SDR, for example to save battery or if HDR looks too dim or bright on your screen. It's greyed out on screens without HDR. On Windows this is the only HDR setting; the surface output and tone-mapping choices below are Android-only.</p>
 <h3>HDR Surface Output</h3>
 <div class="table-wrap"><table>
   <thead><tr><th>Option</th><th>How it works</th></tr></thead>
@@ -85,9 +91,11 @@
 
 <h2 id="screen-check">Is my screen HDR?</h2>
 <p>Play an HDR video and open the HDR tile. If HDR Output is greyed out and says <em>This screen doesn't support HDR</em>, Android reports no HDR for your screen and Nivio tone-maps instead. Some phones also need <em>Vivid</em> or <em>HDR video enhancement</em> settings turned on in the system display settings.</p>
+<p>On Windows, Nivio checks the monitor its window is on. If the monitor can do HDR but Windows HDR is off, the HDR tile says <em>Turn on HDR for this screen in Windows display settings</em>: switch on <strong>Use HDR</strong> (or press <kbd>Win</kbd>+<kbd>Alt</kbd>+<kbd>B</kbd>) and Nivio switches the video to HDR by itself. If the monitor can't do HDR at all, it says <em>This screen doesn't support HDR</em>, as on Android.</p>
 
 <h2 id="desktop">Windows and Linux</h2>
-<p>On desktop, HDR video is always tone-mapped to SDR with Standard tone mapping. True HDR on Windows and Linux is planned: mpv will draw into its own window beneath Nivio's controls, so HDR monitors get real HDR and SDR screens get better tone mapping and correct Dolby Vision colours. Follow progress on the <a href="https://github.com/nirmaleeswar30/Nivio#roadmap" target="_blank" rel="noopener noreferrer">roadmap</a>.</p>
+<p><strong>Windows</strong> plays true HDR on HDR monitors, as described above. If Windows HDR is off or the monitor isn't HDR, HDR video is tone-mapped to SDR with Standard tone mapping. The player's controls dim the video slightly while they're shown, just like with SDR video.</p>
+<p><strong>Linux</strong> always tone-maps HDR to SDR for now. True HDR on Wayland compositors with HDR support (KDE Plasma 6, recent GNOME) is on the <a href="https://github.com/nirmaleeswar30/Nivio#roadmap" target="_blank" rel="noopener noreferrer">roadmap</a>.</p>
 
 <h2 id="troubleshooting">Troubleshooting</h2>
 <ul>
@@ -95,6 +103,8 @@
   <li><strong>Dolby Vision has green or purple colours.</strong> Switch HDR Surface Output to MediaCodec Direct. If it still happens, your phone may not decode that Dolby Vision profile; turn HDR Output off to tone-map it instead.</li>
   <li><strong>HDR is too dark.</strong> HDR is mastered for dark rooms. Raise your screen brightness, or turn HDR Output off and use HDR Toys tone mapping.</li>
   <li><strong>The video is black but there's sound.</strong> Switch the HDR Surface Output, or set the Decoder to HW or SW.</li>
+  <li><strong>Windows: HDR video looks washed out or the HDR tile says Tone mapped.</strong> Check that <strong>Use HDR</strong> is on for the monitor Nivio is on, and that HDR Output is on in the HDR tile. On a laptop with two GPUs, Nivio renders on the GPU that drives that monitor.</li>
+  <li><strong>Windows: the desktop UI looks too bright or too dim next to HDR video.</strong> That's the <em>SDR content brightness</em> slider in Windows' HDR settings, which sets how bright Nivio's controls and other apps look while HDR is on.</li>
 </ul>
     </article>
     <nav class="pager" id="pager" aria-label="Previous and next page"></nav>
