@@ -21,6 +21,7 @@ import 'package:nivio/widgets/seek_preview.dart';
 import 'package:nivio/core/mpv_android_setup.dart';
 import 'package:nivio/widgets/hdr_video_surface.dart';
 import 'package:nivio/widgets/windows_hdr_video_surface.dart';
+import 'package:nivio/widgets/linux_hdr_video_surface.dart';
 import 'package:nivio/widgets/player_stats_overlay.dart';
 import 'package:nivio/services/hdr_tone_mapping.dart';
 import 'package:nivio/models/search_result.dart';
@@ -2068,13 +2069,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // HDR video (PQ / HLG transfer) on an HDR screen plays through the HDR
     // surface instead of media_kit's SDR texture (see _useHdrSurface);
     // otherwise it is tone-mapped to SDR (see _syncToneMapping).
-    if (Platform.isAndroid || Platform.isWindows) {
+    if (Platform.isAndroid || Platform.isWindows || Platform.isLinux) {
       _refreshHdrDisplay();
     }
-    if (Platform.isWindows) {
-      // Windows HDR switched on/off, or the window moved to another monitor.
+    if (Platform.isWindows || Platform.isLinux) {
+      // HDR switched on/off for the screen, or the window moved to another one.
       _subscriptions.add(AppPlatform.hdrDisplayChanges.listen((_) {
-        appDebugLog('🌈 Display changed (Windows HDR toggled or window moved); checking HDR again');
+        appDebugLog('🌈 Display changed (HDR toggled or window moved); checking HDR again');
         _refreshHdrDisplay();
       }));
     }
@@ -3860,8 +3861,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _hdrDisplay = false;
   // Windows: the GPU driving the window's monitor (mpv's d3d11-adapter).
   String? _hdrAdapter;
-  // Windows: the monitor can do HDR (Windows HDR may still be off). Null if unknown.
+  // Windows: the monitor can do HDR (Windows HDR may still be off). Linux:
+  // false without HDR support in the desktop. Null if unknown.
   bool? _hdrScreenSupported;
+  // Linux: the screen's peak brightness in nits (mpv tone-maps to it).
+  double? _hdrPeak;
   bool _hdrVideo = false;
   bool _hdrSurfaceFailed = false;
   int? _doviProfile;
@@ -3931,12 +3935,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _refreshHdrDisplay() {
     unawaited(AppPlatform.hdrDisplay().then((info) {
       if (!mounted) return;
-      if (info.isHdr == _hdrDisplay && info.adapter == _hdrAdapter && info.hdrSupported == _hdrScreenSupported) return;
+      if (info.isHdr == _hdrDisplay &&
+          info.adapter == _hdrAdapter &&
+          info.hdrSupported == _hdrScreenSupported &&
+          info.maxLuminance == _hdrPeak) {
+        return;
+      }
       appDebugLog('🌈 HDR display: ${info.isHdr} (supported=${info.hdrSupported}, adapter=${info.adapter}, peak=${info.maxLuminance})');
       setState(() {
         _hdrDisplay = info.isHdr;
         _hdrAdapter = info.adapter;
         _hdrScreenSupported = info.hdrSupported;
+        _hdrPeak = info.maxLuminance;
         if (info.isHdr) _hdrSurfaceFailed = false;
       });
     }));
@@ -3944,16 +3954,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// HDR video on an HDR screen with HDR output on.
   bool get _trueHdr =>
-      (Platform.isAndroid || Platform.isWindows) && _hdrDisplay && _hdrVideo && ref.read(hdrOutputProvider);
+      (Platform.isAndroid || Platform.isWindows || Platform.isLinux) &&
+      _hdrDisplay &&
+      _hdrVideo &&
+      ref.read(hdrOutputProvider);
 
   /// Windows true HDR: mpv renders with gpu-next into a native window behind
   /// the (then see-through) app window, see WindowsHdrVideoSurface.
   bool get _useWindowsHdrSurface =>
       Platform.isWindows && _trueHdr && !_hdrSurfaceFailed && !_videoDetached && !_isPipMode;
 
-  /// Video plays through an HDR surface (Android SurfaceView or the Windows
-  /// HDR window) rather than media_kit's texture.
-  bool get _hdrSurfaceActive => _useHdrSurface || _useWindowsHdrSurface;
+  /// Linux true HDR (Wayland): mpv renders into an HDR10 subsurface below the
+  /// (then see-through) app window, see LinuxHdrVideoSurface.
+  bool get _useLinuxHdrSurface =>
+      Platform.isLinux && _trueHdr && !_hdrSurfaceFailed && !_videoDetached && !_isPipMode;
+
+  /// Desktop true HDR: the video is behind the app window, which is
+  /// see-through over it.
+  bool get _useDesktopHdrSurface => _useWindowsHdrSurface || _useLinuxHdrSurface;
+
+  /// Video plays through an HDR surface (Android SurfaceView, the Windows HDR
+  /// window or the Linux HDR subsurface) rather than media_kit's texture.
+  bool get _hdrSurfaceActive => _useHdrSurface || _useDesktopHdrSurface;
 
   /// Tone-mapping settings for the current video and mode (null while loading).
   Map<String, String>? _toneMappingProps;
@@ -5865,6 +5887,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             final isDv = _doviProfile != null;
                             if (_hdrSurfaceActive && _trueHdr) {
                               if (Platform.isWindows) return isDv ? 'True HDR (DV → HDR10)' : 'True HDR';
+                              if (Platform.isLinux) return isDv ? 'True HDR (DV Base)' : 'True HDR';
                               if (surfaceBackend == 'mediacodecEmbed') {
                                 return isDv ? 'True DV · MediaCodec' : 'True HDR · MediaCodec';
                               }
@@ -5886,6 +5909,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                               status = _doviProfile != null
                                   ? 'Playing in HDR on this screen (Direct3D 11). Dolby Vision is converted to HDR10.'
                                   : 'Playing in HDR on this screen (Direct3D 11).';
+                            } else if (trueHdrNow && Platform.isLinux) {
+                              status = _doviProfile != null
+                                  ? 'Playing in HDR10 on this screen (Wayland). Dolby Vision plays its HDR10 base layer.'
+                                  : 'Playing in HDR10 on this screen (Wayland).';
                             } else if (trueHdrNow) {
                               if (surfaceBackend == 'mediacodecEmbed') {
                                 status = _doviProfile != null
@@ -5901,7 +5928,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             } else if (!_hdrDisplay) {
                               status = Platform.isWindows && _hdrScreenSupported != false
                                   ? 'HDR is off for this screen in Windows, so the video is tone mapped to SDR. Turn on "Use HDR" in Settings → System → Display.'
-                                  : "This screen isn't HDR, so the video is tone mapped to SDR.";
+                                  : Platform.isLinux && _hdrScreenSupported == false
+                                      ? "This desktop doesn't support HDR, so the video is tone mapped to SDR. True HDR needs a Wayland session on KDE Plasma 6, GNOME 48+ or Hyprland."
+                                      : Platform.isLinux
+                                          ? "This screen isn't in HDR mode, so the video is tone mapped to SDR. If it supports HDR, turn HDR on for it in your desktop's display settings."
+                                          : "This screen isn't HDR, so the video is tone mapped to SDR.";
                             } else if (!hdrOutput) {
                               status = 'HDR output is off, so the video is tone mapped to SDR.';
                             } else {
@@ -5922,7 +5953,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                       ? 'Show HDR videos in HDR on this screen'
                                       : Platform.isWindows && _hdrScreenSupported != false
                                           ? 'Turn on HDR for this screen in Windows display settings'
-                                          : "This screen doesn't support HDR",
+                                          : Platform.isLinux && _hdrScreenSupported != false
+                                              ? 'Turn on HDR for this screen in your display settings'
+                                              : "This screen doesn't support HDR",
                                   style: const TextStyle(color: Colors.white38, fontSize: 11),
                                 ),
                                 value: hdrOutput,
@@ -6073,9 +6106,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                     onTap: () => openPage('sync'),
                                   ),
                                   tile(icon: Icons.memory, title: 'Decoder', value: decoderValue(), onTap: () => openPage('decoder')),
-                                  // True HDR on Android and Windows; the tone-mapping
+                                  // True HDR on Android, Windows and Linux; the tone-mapping
                                   // choice is Android-only (desktop uses Standard).
-                                  if (Platform.isAndroid || Platform.isWindows)
+                                  if (Platform.isAndroid || Platform.isWindows || Platform.isLinux)
                                     tile(
                                       icon: _doviProfile != null ? Icons.branding_watermark_rounded : Icons.hdr_on_outlined,
                                       title: _doviProfile != null ? 'Dolby Vision' : 'HDR',
@@ -6299,8 +6332,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           child: ScaffoldMessenger(
             key: _messengerKey,
             child: Scaffold(
-              // See-through over the Windows HDR video window.
-              backgroundColor: _useWindowsHdrSurface ? Colors.transparent : Colors.black,
+              // See-through over the Windows HDR video window / Linux HDR subsurface.
+              backgroundColor: _useDesktopHdrSurface ? Colors.transparent : Colors.black,
               extendBodyBehindAppBar: false,
               appBar: null,
               body: _buildPlayerBody(isPortrait),
@@ -7515,6 +7548,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 fit: _displayFitOptions[_selectedDisplayFitKey] ?? BoxFit.contain,
                 onFailed: () {
                   appDebugLog('🌈 Windows HDR surface failed; back to normal video output');
+                  if (mounted) setState(() => _hdrSurfaceFailed = true);
+                },
+              )
+        : _useLinuxHdrSurface
+            ? LinuxHdrVideoSurface(
+                player: _player,
+                videoController: _videoController,
+                peak: _hdrPeak,
+                fit: _displayFitOptions[_selectedDisplayFitKey] ?? BoxFit.contain,
+                onFailed: () {
+                  appDebugLog('🌈 Linux HDR surface failed; back to normal video output');
                   if (mounted) setState(() => _hdrSurfaceFailed = true);
                 },
               )

@@ -6,10 +6,13 @@
 #endif
 
 #include "flutter/generated_plugin_registrant.h"
+#include "hdr_video_host.h"
 
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  // Native video surface behind the app window for true HDR playback.
+  HdrVideoHost* hdr_video_host;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
@@ -17,6 +20,12 @@ G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
+}
+
+// Called when the window is destroyed (the HDR host uses its surface).
+static void window_destroy_cb(MyApplication* self) {
+  delete self->hdr_video_host;
+  self->hdr_video_host = nullptr;
 }
 
 // Implements GApplication::activate.
@@ -87,6 +96,10 @@ static void my_application_activate(GApplication* application) {
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 
+  self->hdr_video_host = new HdrVideoHost(window, view);
+  g_signal_connect_swapped(window, "destroy", G_CALLBACK(window_destroy_cb),
+                           self);
+
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
 
@@ -133,6 +146,8 @@ static void my_application_shutdown(GApplication* application) {
 static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
+  delete self->hdr_video_host;
+  self->hdr_video_host = nullptr;
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 
@@ -145,7 +160,9 @@ static void my_application_class_init(MyApplicationClass* klass) {
   G_OBJECT_CLASS(klass)->dispose = my_application_dispose;
 }
 
-static void my_application_init(MyApplication* self) {}
+static void my_application_init(MyApplication* self) {
+  self->hdr_video_host = nullptr;
+}
 
 MyApplication* my_application_new() {
   // Set the program name to the application ID, which helps various systems

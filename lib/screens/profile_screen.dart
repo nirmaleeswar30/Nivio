@@ -27,6 +27,7 @@ import 'package:nivio/services/discord_gateway_service.dart';
 import 'package:nivio/services/discord_rpc_service.dart';
 import 'package:nivio/providers/changelog_provider.dart';
 import 'package:nivio/providers/home_layout_provider.dart';
+import 'package:nivio/services/download_service.dart';
 import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/github_release_update_service.dart';
 import 'package:nivio/services/desktop_self_updater.dart';
@@ -54,6 +55,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   int _selectedCategoryIndex = 0;
   double? _tempUiScale;
   bool _isSyncingAnime = false;
+  // Shown under Settings → Downloads.
+  Future<String>? _downloadLocation;
 
   static const List<String> _categories = [
     'Profile & Activity',
@@ -517,6 +520,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                             subtitle: '${ref.watch(downloadConcurrencyProvider)}',
                             onTap: _showDownloadConcurrencyDialog,
                           ),
+                        _buildDownloadLocationNote(),
                       ],
                     ),
                   ),
@@ -1992,6 +1996,49 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDownloadLocationNote() {
+    return FutureBuilder<String>(
+      future: _downloadLocation ??= DownloadService.downloadDirectoryPath(),
+      builder: (context, snapshot) {
+        final path = snapshot.data;
+        if (path == null) return const SizedBox.shrink();
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.04),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.08),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.folder_outlined,
+                size: 18,
+                color: Colors.white.withValues(alpha: 0.6),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                // Selectable so the path can be copied.
+                child: SelectableText(
+                  'Downloads, including torrents, are saved to:\n$path',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -4716,6 +4763,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
               subtitle: '${ref.watch(downloadConcurrencyProvider)}',
               onTap: _showDownloadConcurrencyDialog,
             ),
+            _buildDownloadLocationNote(),
           ],
         );
       case 5: // Network

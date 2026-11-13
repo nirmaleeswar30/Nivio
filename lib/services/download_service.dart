@@ -90,6 +90,10 @@ class DownloadService {
   // Active download cancellation tokens
   static final Map<String, CancelToken> _activeDownloads = {};
 
+  // Each download's current run, including a paused one that is still
+  // winding down.
+  static final Map<String, Future<void>> _runs = {};
+
   static Future<void> init() async {
     if (_isInitialized) return;
 
@@ -340,17 +344,21 @@ class DownloadService {
     return true; // iOS usually manages this per app
   }
 
+  /// Where downloads (direct and torrent) are saved. Doesn't ask for storage
+  /// permission or create the folder; see [getDownloadDirectory].
+  static Future<String> downloadDirectoryPath() async {
+    if (Platform.isAndroid) {
+      // Use public Downloads directory
+      return '/storage/emulated/0/Download/Nivio';
+    }
+    final documents = await getApplicationDocumentsDirectory();
+    return '${documents.path}${Platform.pathSeparator}Downloads';
+  }
+
   static Future<String?> getDownloadDirectory() async {
     if (!await requestPermissions()) return null;
 
-    Directory? directory;
-    if (Platform.isAndroid) {
-      // Use public Downloads directory
-      directory = Directory('/storage/emulated/0/Download/Nivio');
-    } else {
-      directory = await getApplicationDocumentsDirectory();
-      directory = Directory('${directory.path}/Downloads');
-    }
+    final directory = Directory(await downloadDirectoryPath());
 
     if (!await directory.exists()) {
       await directory.create(recursive: true);
@@ -368,31 +376,70 @@ class DownloadService {
 
   static Future<void> _acquireWakelock() async {
     if (_activeDownloads.isNotEmpty) ScreenWakeLock.acquire('downloads');
+    _syncKeepAlive();
   }
 
   static Future<void> _releaseWakelock() async {
     if (_activeDownloads.isEmpty) ScreenWakeLock.release('downloads');
+    _syncKeepAlive();
+  }
+
+  /// Android freezes or kills an app soon after it goes to the background,
+  /// which stalls every download; a foreground service (with its ongoing
+  /// notification) keeps the process running while anything downloads.
+  static void _syncKeepAlive() {
+    final count = _activeDownloads.length;
+    if (count == 0) {
+      unawaited(TorrentForegroundService.instance.stop(key: 'downloads'));
+    } else {
+      unawaited(TorrentForegroundService.instance.start(
+        key: 'downloads',
+        text: count == 1 ? 'Downloading 1 item' : 'Downloading $count items',
+      ));
+    }
   }
 
   static Future<void> startDownload(DownloadItem item) async {
     if (item.streamUrl == null) return;
-
-    final dir = await getDownloadDirectory();
-    if (dir == null) {
-      _updateStatus(item, DownloadStatus.failed);
-      return;
+    // Already downloading (e.g. resume tapped twice): one run per item.
+    final current = _activeDownloads[item.id];
+    if (current != null && !current.isCancelled) return;
+    // A paused run may still be winding down, and pauses its torrent on the
+    // way out; let it finish first so it can't pause the new run's torrent.
+    final previous = _runs[item.id];
+    if (previous != null) {
+      try {
+        await previous;
+      } catch (_) {}
     }
+    if (_activeDownloads.containsKey(item.id)) return; // another resume won
+    final run = _runDownload(item);
+    _runs[item.id] = run;
+    try {
+      await run;
+    } finally {
+      if (identical(_runs[item.id], run)) _runs.remove(item.id);
+    }
+  }
 
-    final filePath = '$dir/${generateFileName(item)}';
-    item.savePath = filePath;
-    _updateStatus(item, DownloadStatus.downloading);
-    await box.put(item.id, item);
-
+  static Future<void> _runDownload(DownloadItem item) async {
+    // Registered before any await, so startDownload sees this run at once.
     final cancelToken = CancelToken();
     _activeDownloads[item.id] = cancelToken;
     await _acquireWakelock();
 
     try {
+      final dir = await getDownloadDirectory();
+      if (dir == null) {
+        _updateStatus(item, DownloadStatus.failed);
+        return;
+      }
+
+      final filePath = '$dir/${generateFileName(item)}';
+      item.savePath = filePath;
+      _updateStatus(item, DownloadStatus.downloading);
+      await box.put(item.id, item);
+
       String streamUrl = item.streamUrl!;
 
       _updateStatus(item, DownloadStatus.downloading);
@@ -430,7 +477,10 @@ class DownloadService {
         _updateStatus(item, DownloadStatus.failed);
       }
     } finally {
-      _activeDownloads.remove(item.id);
+      // A newer run may have taken this item's slot; leave its token alone.
+      if (identical(_activeDownloads[item.id], cancelToken)) {
+        _activeDownloads.remove(item.id);
+      }
       await _releaseWakelock();
     }
   }
@@ -462,8 +512,36 @@ class DownloadService {
     item.torrentId = torrentId;
     await box.put(item.id, item);
 
+    // Resuming a paused download: rqbit hands back the torrent it already
+    // has, still paused, so nothing would download (until "watch while
+    // downloading" happened to start it). Start it.
+    try {
+      await client.start(torrentId);
+    } catch (_) {} // already live, or still initializing
+
+    try {
+      await _monitorTorrent(item, client, torrentId, addResponse.details,
+          downloadDir, cancelToken);
+    } finally {
+      // Paused by the user, at any step: stop rqbit downloading it too.
+      if (cancelToken.isCancelled) {
+        try {
+          await client.pause(torrentId);
+        } catch (_) {}
+      }
+    }
+  }
+
+  static Future<void> _monitorTorrent(
+    DownloadItem item,
+    RqbitClient client,
+    int torrentId,
+    TorrentDetails? initialDetails,
+    String downloadDir,
+    CancelToken cancelToken,
+  ) async {
     // 2. Wait for metadata / file list
-    TorrentDetails? details = addResponse.details;
+    TorrentDetails? details = initialDetails;
     int attempts = 0;
     while (!cancelToken.isCancelled && (details == null || details.files.isEmpty)) {
       if (attempts++ > 60) {
@@ -544,7 +622,14 @@ class DownloadService {
         await Future.delayed(const Duration(seconds: 1));
         continue;
       }
-      
+
+      // Paused under this run by something else on the shared engine: this
+      // run means to download, so start it again.
+      if (stats.state == 'paused' && !stats.finished) {
+        try {
+          await client.start(torrentId);
+        } catch (_) {}
+      }
 
       // rqbit gives progressBytes for the WHOLE torrent, or just the file?
       // actually, the file size is `fileInfo.length`.
@@ -594,13 +679,6 @@ class DownloadService {
       }
 
       await Future.delayed(const Duration(seconds: 1));
-    }
-
-    if (cancelToken.isCancelled) {
-      // Pause torrent
-      try {
-        await client.pause(torrentId);
-      } catch (_) {}
     }
   }
 

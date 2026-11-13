@@ -29,18 +29,16 @@ class AppPlatform {
   static Future<HdrDisplayInfo>? _hdrDisplay;
 
   static const MethodChannel _hdrWindowChannel = MethodChannel('com.nivio/hdr_window');
-  static StreamController<void>? _hdrDisplayChanges;
+  static StreamController<String>? _hdrWindowEvents;
 
-  /// Fires when the HDR state of the app's screen may have changed (Windows:
-  /// HDR switched on/off, or the window moved to another monitor). Call
-  /// [hdrDisplay] again for the new state.
-  static Stream<void> get hdrDisplayChanges {
-    var controller = _hdrDisplayChanges;
+  /// Calls from the native HDR video host (Windows, Linux).
+  static Stream<String> get _hdrEvents {
+    var controller = _hdrWindowEvents;
     if (controller == null) {
-      controller = _hdrDisplayChanges = StreamController<void>.broadcast();
-      if (Platform.isWindows) {
+      controller = _hdrWindowEvents = StreamController<String>.broadcast();
+      if (Platform.isWindows || Platform.isLinux) {
         _hdrWindowChannel.setMethodCallHandler((call) async {
-          if (call.method == 'displayChanged') _hdrDisplayChanges?.add(null);
+          _hdrWindowEvents?.add(call.method);
           return null;
         });
       }
@@ -48,11 +46,22 @@ class AppPlatform {
     return controller.stream;
   }
 
+  /// Fires when the HDR state of the app's screen may have changed (HDR
+  /// switched on/off, or the window moved to another monitor; Windows and
+  /// Linux). Call [hdrDisplay] again for the new state.
+  static Stream<void> get hdrDisplayChanges => _hdrEvents.where((m) => m == 'displayChanged');
+
+  /// Linux: the app window was hidden, which takes the HDR video surface
+  /// (a subsurface of the window's) with it.
+  static Stream<void> get hdrSurfaceLost => _hdrEvents.where((m) => m == 'surfaceLost');
+
   /// Whether the screen can show HDR. Android: asked once, then cached (a TV
   /// box reports what the connected TV supports). Windows: the monitor the
-  /// app window is on, with Windows HDR switched on; asked fresh each time.
+  /// app window is on, with Windows HDR switched on. Linux: the screen the
+  /// window is on, with the compositor's HDR mode on (Wayland). Windows and
+  /// Linux are asked fresh each time.
   static Future<HdrDisplayInfo> hdrDisplay() {
-    if (Platform.isWindows) return _windowsHdrDisplay();
+    if (Platform.isWindows || Platform.isLinux) return _desktopHdrDisplay();
     return _hdrDisplay ??= () async {
       if (!Platform.isAndroid) return const HdrDisplayInfo();
       try {
@@ -68,7 +77,7 @@ class AppPlatform {
     }();
   }
 
-  static Future<HdrDisplayInfo> _windowsHdrDisplay() async {
+  static Future<HdrDisplayInfo> _desktopHdrDisplay() async {
     try {
       final info = await _hdrWindowChannel.invokeMapMethod<String, dynamic>('displayInfo');
       final isHdr = info?['isHdr'] == true;
@@ -80,7 +89,7 @@ class AppPlatform {
         hdrSupported: info?['hdrSupported'] as bool?,
       );
     } catch (e) {
-      if (kDebugMode) debugPrint('hdrDisplay (Windows) failed: $e');
+      if (kDebugMode) debugPrint('hdrDisplay (${Platform.operatingSystem}) failed: $e');
       return const HdrDisplayInfo();
     }
   }
@@ -137,7 +146,9 @@ class HdrDisplayInfo {
   final String? adapter;
 
   /// Windows: whether the screen can do HDR at all, even while Windows HDR is
-  /// switched off for it ([isHdr] is whether it's on). Null if unknown.
+  /// switched off for it ([isHdr] is whether it's on). Linux: false when the
+  /// desktop has no HDR support at all (X11, or a Wayland compositor without
+  /// colour management). Null if unknown.
   final bool? hdrSupported;
 
   const HdrDisplayInfo({this.isHdr = false, this.types = const [], this.maxLuminance, this.adapter, this.hdrSupported});

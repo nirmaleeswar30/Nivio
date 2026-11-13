@@ -9,12 +9,19 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 /// It runs the service *without* a task-handler isolate — the engine lives in
 /// the main isolate, so we only need the service to hold the process at
 /// foreground priority. All calls are defensive: failures never propagate.
+///
+/// Several users share the one service, each under its own key (torrent
+/// streaming, downloads): it runs while any of them holds it, so one stopping
+/// doesn't take the process down under the other.
 class TorrentForegroundService {
   TorrentForegroundService._();
   static final TorrentForegroundService instance = TorrentForegroundService._();
 
   bool _initialized = false;
   bool _running = false;
+
+  /// Current holders and their notification text, most recent last.
+  final Map<String, String> _holders = {};
 
   void _ensureInitialized() {
     if (_initialized || !Platform.isAndroid) return;
@@ -38,33 +45,54 @@ class TorrentForegroundService {
     _initialized = true;
   }
 
-  /// Starts the foreground service if not already running (Android only).
+  /// Holds the foreground service for [key] (Android only), starting it if
+  /// needed; [text] becomes the notification text.
   Future<void> start({
+    String key = 'stream',
     String title = 'Nivio',
     String text = 'Streaming torrent…',
   }) async {
-    if (!Platform.isAndroid || _running) return;
+    if (!Platform.isAndroid) return;
+    _holders.remove(key);
+    _holders[key] = text;
     try {
       _ensureInitialized();
-      if (await FlutterForegroundTask.isRunningService) {
+      if (_running || await FlutterForegroundTask.isRunningService) {
         _running = true;
+        await FlutterForegroundTask.updateService(
+          notificationTitle: title,
+          notificationText: text,
+        );
         return;
       }
-      await FlutterForegroundTask.startService(
+      final result = await FlutterForegroundTask.startService(
         serviceId: 2718,
         serviceTypes: [ForegroundServiceTypes.dataSync],
         notificationTitle: title,
         notificationText: text,
       );
-      _running = true;
+      // Fails e.g. when asked while the app is in the background; the next
+      // start() tries again.
+      _running = result is ServiceRequestSuccess;
     } catch (_) {
-      // Non-fatal: streaming still works in the foreground without the service.
+      // Non-fatal: everything still works in the foreground without it.
     }
   }
 
-  /// Stops the foreground service if running.
-  Future<void> stop() async {
-    if (!Platform.isAndroid || !_running) return;
+  /// Releases [key]'s hold; the service stops once nothing holds it.
+  Future<void> stop({String key = 'stream'}) async {
+    if (!Platform.isAndroid) return;
+    if (_holders.remove(key) == null) return;
+    if (_holders.isNotEmpty) {
+      if (!_running) return;
+      try {
+        await FlutterForegroundTask.updateService(
+          notificationText: _holders.values.last,
+        );
+      } catch (_) {}
+      return;
+    }
+    if (!_running) return;
     _running = false;
     try {
       await FlutterForegroundTask.stopService();
