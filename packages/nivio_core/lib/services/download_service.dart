@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'windows_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -104,9 +105,11 @@ class DownloadService {
     const linuxSettings = LinuxInitializationSettings(
       defaultActionName: 'Open',
     );
-    const initSettings = InitializationSettings(
+    // Windows needs its own settings, or nothing is ever shown there.
+    final initSettings = InitializationSettings(
       android: androidSettings,
       linux: linuxSettings,
+      windows: nivioWindowsInitSettings(),
     );
     await _notifications.initialize(
       settings: initSettings,
@@ -1571,12 +1574,63 @@ class DownloadService {
     _completeDownload(item);
   }
 
+  /// Downloads whose Windows toast (with its progress bar) is up. Windows
+  /// re-pops a toast every time it's shown again, so after the first one
+  /// only the bar is updated, in place.
+  static final Set<int> _windowsToasts = {};
+  static const String _windowsProgressId = 'download';
+
+  /// Shows or updates a download's Windows toast. True when handled.
+  static Future<bool> _showWindowsProgress(
+    DownloadItem item,
+    String title,
+    String status,
+  ) async {
+    if (!Platform.isWindows) return false;
+    final id = item.id.hashCode;
+    final value = item.progress >= 0 ? item.progress.clamp(0.0, 1.0) : null;
+    final bar = WindowsProgressBar(
+      id: _windowsProgressId,
+      status: status,
+      value: value,
+      label: value == null ? '' : '${(value * 100).toInt()}%',
+    );
+    final windows = _notifications
+        .resolvePlatformSpecificImplementation<FlutterLocalNotificationsWindows>();
+    if (_windowsToasts.contains(id) && windows != null) {
+      await windows.updateProgressBar(notificationId: id, progressBar: bar);
+      return true;
+    }
+    _windowsToasts.add(id);
+    await _notifications.show(
+      id: id,
+      title: title,
+      notificationDetails: NotificationDetails(
+        windows: WindowsNotificationDetails(progressBars: [bar]),
+      ),
+      payload: 'open_downloads',
+    );
+    return true;
+  }
+
   static Future<void> _showProgressNotification(DownloadItem item) async {
     int progressPercentage = item.progress >= 0
         ? (item.progress * 100).toInt()
         : 0;
 
     final title = item.formattedDisplayTitle;
+
+    if (await _showWindowsProgress(
+      item,
+      title,
+      item.status == DownloadStatus.extracting
+          ? (item.progress >= 1.0 || item.downloadedBytes > 0
+                ? 'Merging files...'
+                : 'Extracting video link...')
+          : 'Downloading...',
+    )) {
+      return;
+    }
 
     final androidDetails = AndroidNotificationDetails(
       'download_channel',
@@ -1672,11 +1726,15 @@ class DownloadService {
       priority: Priority.high,
     );
 
+    _windowsToasts.remove(item.id.hashCode);
     await _notifications.show(
       id: item.id.hashCode,
       title: 'Download Complete',
       body: title,
-      notificationDetails: const NotificationDetails(android: androidDetails),
+      notificationDetails: const NotificationDetails(
+        android: androidDetails,
+        windows: WindowsNotificationDetails(),
+      ),
       payload: 'open_downloads',
     );
   }
@@ -1855,6 +1913,7 @@ class DownloadService {
       await box.delete(id);
     }
     // Ensure any stuck progress notification is scrubbed
+    _windowsToasts.remove(id.hashCode);
     await _notifications.cancel(id: id.hashCode);
   }
 
