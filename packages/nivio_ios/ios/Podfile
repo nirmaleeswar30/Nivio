@@ -1,0 +1,97 @@
+# Nivio iOS. CocoaPods only: Swift Package Manager is switched off for this
+# app in pubspec.yaml (flutter.config.enable-swift-package-manager), because
+# media_kit_libs_ios_video and rqbit_ffi have no SPM manifest and
+# permission_handler_apple reads its feature switches from GCC macros set
+# below, which only CocoaPods can pass.
+
+# Firebase iOS SDK 12 (cloud_firestore / firebase_auth) needs iOS 15.
+platform :ios, '15.0'
+
+# CocoaPods analytics sends network stats synchronously affecting flutter build latency.
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+def flutter_root
+  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+  unless File.exist?(generated_xcode_build_settings_path)
+    raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+  end
+
+  File.foreach(generated_xcode_build_settings_path) do |line|
+    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
+
+# ffmpeg_kit_flutter_new downloads its FFmpeg xcframeworks from a podspec
+# prepare_command, which CocoaPods never runs for local (:path) pods, and
+# Flutter plugins are always local pods. Run the plugin's own setup script
+# here instead (it is idempotent and skips when the frameworks exist).
+def ensure_ffmpeg_kit_frameworks
+  plugin_ios = File.expand_path(File.join('.symlinks', 'plugins', 'ffmpeg_kit_flutter_new', 'ios'), __dir__)
+  return unless File.directory?(plugin_ios)
+  return if File.directory?(File.join(plugin_ios, 'Frameworks', 'ffmpegkit.xcframework'))
+
+  script = File.join(plugin_ios, '..', 'scripts', 'setup_ios.sh')
+  Pod::UI.puts "[Nivio] Fetching FFmpegKit iOS frameworks via #{script}"
+  ok = system('/bin/bash', script, chdir: plugin_ios)
+  raise '[Nivio] ffmpeg_kit_flutter_new iOS framework setup failed' unless ok
+end
+
+# rqbit_ffi vendors a prebuilt Rust framework. Build it if it is missing
+# (needs rustup with the aarch64-apple-ios target; see
+# packages/rqbit_ffi/ios/build_xcframework.sh).
+def ensure_rqbit_framework
+  plugin_ios = File.expand_path(File.join('.symlinks', 'plugins', 'rqbit_ffi', 'ios'), __dir__)
+  return unless File.directory?(plugin_ios)
+  return if File.directory?(File.join(plugin_ios, 'Frameworks', 'rqbit_ffi.xcframework'))
+
+  script = File.join(plugin_ios, 'build_xcframework.sh')
+  Pod::UI.puts "[Nivio] Building rqbit_ffi.xcframework via #{script}"
+  ok = system('/bin/bash', script)
+  unless ok
+    Pod::UI.warn '[Nivio] rqbit_ffi.xcframework could not be built; torrent streaming will be unavailable in this build.'
+  end
+end
+
+target 'Runner' do
+  use_frameworks!
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  ensure_ffmpeg_kit_frameworks
+  ensure_rqbit_framework
+
+  target 'RunnerTests' do
+    inherit! :search_paths
+  end
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+    target.build_configurations.each do |config|
+      # Some plugin podspecs still declare iOS 9-12, which current Xcode no
+      # longer builds for; keep every pod on the app's target.
+      if config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_f < 15.0
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      end
+
+      # permission_handler_apple compiles every permission out unless it is
+      # switched on here. Nivio only asks for notifications on iOS (downloads
+      # and new-episode alerts); everything else stays off so the binary
+      # doesn't reference APIs that need usage-description strings.
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_NOTIFICATIONS=1'
+    end
+  end
+end

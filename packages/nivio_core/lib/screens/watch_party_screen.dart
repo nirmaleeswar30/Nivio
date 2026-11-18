@@ -12,6 +12,7 @@ import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/services/watch_party/watch_party_models.dart';
 import 'package:nivio/services/watch_party/watch_party_service_supabase.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:nivio/core/share_origin.dart';
 
 class WatchPartyScreen extends ConsumerStatefulWidget {
   const WatchPartyScreen({
@@ -308,7 +309,11 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
       return;
     }
 
-    await Share.share(shareText, subject: 'Join Nivio Watch Party ($code)');
+    await Share.share(
+      shareText,
+      subject: 'Join Nivio Watch Party ($code)',
+      sharePositionOrigin: shareOriginFor(context),
+    );
   }
 
   Future<void> _setPlaybackController(

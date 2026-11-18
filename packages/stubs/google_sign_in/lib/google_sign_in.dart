@@ -1,5 +1,6 @@
 library google_sign_in;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -29,7 +30,9 @@ class GoogleSignIn {
             'and add it to your .env file.',
       );
     }
-    final redirectUri = "http://localhost:$port";
+    // iOS: the literal loopback address, so Safari can't try ::1 first
+    // (the server only listens on IPv4).
+    final redirectUri = Platform.isIOS ? "http://127.0.0.1:$port" : "http://localhost:$port";
     
     // Scopes required for Google Sign-In
     final authUrl = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -38,10 +41,28 @@ class GoogleSignIn {
         "&response_type=code"
         "&scope=openid%20profile%20email";
 
-    await launchUrl(Uri.parse(authUrl), mode: LaunchMode.externalApplication);
+    // iOS suspends an app soon after it goes to the background, and with it
+    // this loopback server, so the sign-in page has to open in-app
+    // (SFSafariViewController, which Google allows for OAuth) for Nivio to
+    // still be running when Google redirects back.
+    await launchUrl(
+      Uri.parse(authUrl),
+      mode: Platform.isIOS ? LaunchMode.inAppBrowserView : LaunchMode.externalApplication,
+    );
 
-    // Wait for redirect request
-    final request = await server.first;
+    // Wait for redirect request. iOS: the user can close the sheet without
+    // finishing, which nothing reports, so don't wait forever.
+    final HttpRequest request;
+    try {
+      request = await server.first.timeout(const Duration(minutes: 5));
+    } on TimeoutException {
+      await server.close(force: true);
+      if (Platform.isIOS) await _closeInAppBrowser();
+      throw GoogleSignInException(
+        code: GoogleSignInExceptionCode.canceled,
+        message: 'Google sign-in timed out.',
+      );
+    }
     final code = request.uri.queryParameters['code'];
 
     // Send visual confirmation to browser
@@ -68,6 +89,7 @@ class GoogleSignIn {
     ''');
     await request.response.close();
     await server.close();
+    if (Platform.isIOS) await _closeInAppBrowser();
 
     if (code == null) {
       throw GoogleSignInException(
@@ -159,6 +181,12 @@ class GoogleSignInException implements Exception {
 
 class GoogleSignInExceptionCode {
   static const String canceled = 'canceled';
+}
+
+Future<void> _closeInAppBrowser() async {
+  try {
+    await closeInAppWebView();
+  } catch (_) {}
 }
 
 Map<String, dynamic> _decodeJwt(String token) {

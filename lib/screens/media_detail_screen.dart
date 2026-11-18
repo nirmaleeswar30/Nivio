@@ -42,6 +42,7 @@ import 'package:nivio/services/streaming_service.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:nivio/core/share_origin.dart';
 
 class _TrailerSource {
   const _TrailerSource({
@@ -1447,7 +1448,11 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       return;
     }
 
-    Share.share(shareText, subject: title);
+    Share.share(
+      shareText,
+      subject: title,
+      sharePositionOrigin: shareOriginFor(context),
+    );
   }
 
   Future<void> _handleDownload(SearchResult media) async {

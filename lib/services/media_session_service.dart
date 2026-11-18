@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:nivio/services/ios_background_video.dart';
 import 'package:dbus/dbus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -33,6 +34,8 @@ class MediaSessionMetadata {
 ///
 ///  * Windows: System Media Transport Controls (runner, `com.nivio/media_session`)
 ///  * Android: framework MediaSession (MainActivity, same channel)
+///  * iOS:     MPNowPlayingInfoCenter / MPRemoteCommandCenter (lock screen,
+///             Control Center, AirPods; NivioPlugin.swift, same channel)
 ///  * Linux:   MPRIS on the session bus (what desktop media keys and bluez's
 ///             mpris-proxy talk to)
 ///
@@ -59,7 +62,7 @@ class MediaSessionService {
   String? _lastCommandGroup;
   DateTime _lastCommandAt = DateTime.fromMillisecondsSinceEpoch(0);
 
-  bool get _usesChannel => Platform.isWindows || Platform.isAndroid;
+  bool get _usesChannel => Platform.isWindows || Platform.isAndroid || Platform.isIOS;
 
   /// Makes [player] the session's target. [owner] is whoever drives the
   /// player (the player screen); only the current owner can [detach].
@@ -76,7 +79,10 @@ class MediaSessionService {
 
     if (!identical(player, _player)) {
       _cancelPlayerListeners();
+      final previous = _player;
+      if (previous != null) IosBackgroundVideo.instance.untrack(previous);
       _player = player;
+      IosBackgroundVideo.instance.track(player);
       _subs
         ..add(player.stream.playing.listen((_) => _push()))
         ..add(player.stream.duration.listen((_) => _push()))
@@ -122,6 +128,8 @@ class MediaSessionService {
   }
 
   void _teardown() {
+    final player = _player;
+    if (player != null) IosBackgroundVideo.instance.untrack(player);
     _owner = null;
     _player = null;
     _metadata = null;
@@ -276,6 +284,8 @@ class MediaSessionService {
       'durationMs': state.duration.inMilliseconds,
       'positionMs': state.position.inMilliseconds,
       'playing': state.playing,
+      // iOS shows ±N second skip buttons; the others ignore it.
+      'seekStepMs': _seekStep.inMilliseconds,
     }).catchError((Object e) {
       debugPrint('MediaSession update failed: $e');
     });

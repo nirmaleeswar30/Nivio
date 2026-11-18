@@ -9,3 +9,7 @@ android/src/main/jniLibs/
 .packages
 build/
 pubspec.lock
+
+# iOS: built by ios/build_xcframework.sh
+ios/Frameworks/
+ios/.build/

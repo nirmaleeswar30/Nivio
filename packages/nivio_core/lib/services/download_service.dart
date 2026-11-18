@@ -105,9 +105,12 @@ class DownloadService {
     const linuxSettings = LinuxInitializationSettings(
       defaultActionName: 'Open',
     );
+    // iOS: permission is asked for here, on first launch.
+    const darwinSettings = DarwinInitializationSettings();
     // Windows needs its own settings, or nothing is ever shown there.
     final initSettings = InitializationSettings(
       android: androidSettings,
+      iOS: darwinSettings,
       linux: linuxSettings,
       windows: nivioWindowsInitSettings(),
     );
@@ -1631,6 +1634,11 @@ class DownloadService {
     )) {
       return;
     }
+
+    // iOS notifications have no progress bar and every update would pop a
+    // new banner; progress stays in the Downloads screen, and only the
+    // "Download Complete" notification is shown.
+    if (Platform.isIOS) return;
 
     final androidDetails = AndroidNotificationDetails(
       'download_channel',

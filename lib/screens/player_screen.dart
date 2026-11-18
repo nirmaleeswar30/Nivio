@@ -4060,17 +4060,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       case 'hwplus':
         if (Platform.isAndroid) return 'mediacodec';
         if (Platform.isWindows) return 'd3d11va';
-        if (Platform.isMacOS) return 'videotoolbox';
+        if (Platform.isMacOS || Platform.isIOS) return 'videotoolbox';
         return 'vaapi,nvdec';
       case 'hw':
         if (Platform.isAndroid) return 'mediacodec-copy';
         if (Platform.isWindows) return 'd3d11va-copy';
-        if (Platform.isMacOS) return 'videotoolbox-copy';
+        if (Platform.isMacOS || Platform.isIOS) return 'videotoolbox-copy';
         return 'vaapi-copy,nvdec-copy';
       default:
         if (Platform.isAndroid) {
           return 'mediacodec,mediacodec-copy,no';
         }
+        if (Platform.isIOS) return 'videotoolbox,videotoolbox-copy,no';
         return 'auto-safe';
     }
   }

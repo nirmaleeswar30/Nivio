@@ -1,0 +1,104 @@
+name: nivio_ios
+description: "iOS target application for Nivio (iPhone & iPad)."
+publish_to: 'none'
+version: 2.2.7
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  nivio:
+    path: ../nivio_core
+
+  # Embedded rqbit torrent streaming engine (P2P anime)
+  rqbit_ffi:
+    path: ../rqbit_ffi
+
+  # iOS-specific dependencies
+  cupertino_http: ^3.1.1  # NSURLSession client (see lib/main.dart)
+  http: ^1.6.0
+  device_screen_brightness: ^0.2.1
+  flutter_volume_controller: ^2.0.1
+  flutter_native_splash: ^2.4.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.2
+
+flutter:
+  uses-material-design: true
+
+  # iOS plugins are integrated through CocoaPods only (see ios/Podfile):
+  # media_kit_libs_ios_video and rqbit_ffi have no Swift package, and
+  # permission_handler_apple's feature macros can only be set from the Podfile.
+  config:
+    enable-swift-package-manager: false
+
+  assets:
+    - assets/images/
+    - assets/nivio-preload.mpeg
+    - shorebird.yaml
+    - assets/fonts/satoshi/
+    - .env
+
+  fonts:
+    - family: Satoshi
+      fonts:
+        - asset: assets/fonts/satoshi/Satoshi-Light.otf
+          weight: 300
+        - asset: assets/fonts/satoshi/Satoshi-LightItalic.otf
+          weight: 300
+          style: italic
+        - asset: assets/fonts/satoshi/Satoshi-Regular.otf
+          weight: 400
+        - asset: assets/fonts/satoshi/Satoshi-Medium.otf
+          weight: 500
+        - asset: assets/fonts/satoshi/Satoshi-MediumItalic.otf
+          weight: 500
+          style: italic
+        - asset: assets/fonts/satoshi/Satoshi-Bold.otf
+          weight: 700
+        - asset: assets/fonts/satoshi/Satoshi-BoldItalic.otf
+          weight: 700
+          style: italic
+        - asset: assets/fonts/satoshi/Satoshi-Black.otf
+          weight: 900
+        - asset: assets/fonts/satoshi/Satoshi-Italic.otf
+          style: italic
+        - asset: assets/fonts/satoshi/Satoshi-BlackItalic.otf
+          weight: 900
+          style: italic
+
+flutter_launcher_icons:
+  android: false
+  ios: true
+  remove_alpha_ios: true
+  background_color_ios: "#000000"
+  image_path: "assets/images/nivio.png"
+
+flutter_native_splash:
+  color: "#05070B"
+  android: false
+  ios: true
+  web: false
+
+dependency_overrides:
+  freezed_annotation: ^3.1.0
+  # Like the desktop app, iOS talks to Firebase (Auth + Firestore) over REST
+  # through these pure-Dart stubs instead of the native SDKs: no separate iOS
+  # app registration / GoogleService-Info.plist is needed, the same Firebase
+  # accounts and data are used, and the heavy Firestore/gRPC pods are avoided.
+  # Google sign-in uses the loopback OAuth flow (DESKTOP_GOOGLE_CLIENT_ID).
+  firebase_core:
+    path: ../stubs/firebase_core
+  firebase_auth:
+    path: ../stubs/firebase_auth
+  cloud_firestore:
+    path: ../stubs/cloud_firestore
+  google_sign_in:
+    path: ../stubs/google_sign_in

@@ -94,10 +94,25 @@ class AppPlatform {
     }
   }
 
+  /// Call before the player's brightness gesture first changes the
+  /// brightness. iOS has no per-window brightness: the gesture changes the
+  /// system brightness itself, so the level it had is saved natively to be
+  /// put back by [resetWindowBrightness] (and while Nivio is in the
+  /// background). No-op elsewhere.
+  static Future<void> rememberSystemBrightness() async {
+    if (!Platform.isIOS) return;
+    try {
+      await _channel.invokeMethod<void>('rememberBrightness');
+    } catch (e) {
+      if (kDebugMode) debugPrint('rememberSystemBrightness failed: $e');
+    }
+  }
+
   /// Hands the screen brightness back to the system setting after the
-  /// player's brightness gesture overrode it for the app window (Android).
+  /// player's brightness gesture overrode it for the app window (Android),
+  /// or restores the brightness saved by [rememberSystemBrightness] (iOS).
   static Future<void> resetWindowBrightness() async {
-    if (!Platform.isAndroid) return;
+    if (!Platform.isAndroid && !Platform.isIOS) return;
     try {
       await _channel.invokeMethod<void>('resetWindowBrightness');
     } catch (e) {
