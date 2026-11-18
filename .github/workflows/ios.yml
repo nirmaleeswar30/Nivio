@@ -76,7 +76,7 @@ jobs:
         working-directory: packages/nivio_ios
         run: dart run tool/patch_ios_plugins.dart
 
-      - name: Build rqbit_ffi.xcframework
+      - name: Build RqbitEngine.xcframework (rqbit_ffi)
         run: bash packages/rqbit_ffi/ios/build_xcframework.sh
 
       - name: Build iOS app (no codesign)

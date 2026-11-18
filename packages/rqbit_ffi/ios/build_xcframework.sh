@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds Frameworks/rqbit_ffi.xcframework from ../rust for iOS.
+# Builds Frameworks/RqbitEngine.xcframework from ../rust for iOS.
 #
 #   ./build_xcframework.sh            device (arm64) only
 #   ./build_xcframework.sh --sim      device + simulator (arm64 + x86_64)
@@ -8,8 +8,10 @@
 #   rustup target add aarch64-apple-ios [aarch64-apple-ios-sim x86_64-apple-ios]
 #
 # The Rust crate is a cdylib; each slice is wrapped as a dynamic
-# rqbit_ffi.framework whose install name is @rpath/rqbit_ffi.framework/rqbit_ffi,
-# which CocoaPods embeds in Runner.app/Frameworks.
+# RqbitEngine.framework whose install name is
+# @rpath/RqbitEngine.framework/RqbitEngine, which CocoaPods embeds in
+# Runner.app/Frameworks. (Not "rqbit_ffi": with use_frameworks! the plugin pod
+# itself already produces a rqbit_ffi.framework.)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -40,7 +42,8 @@ TARGETS=(aarch64-apple-ios)
 unset SDKROOT PLATFORM_NAME ARCHS
 
 export IPHONEOS_DEPLOYMENT_TARGET="$MIN_IOS"
-INSTALL_NAME="@rpath/rqbit_ffi.framework/rqbit_ffi"
+NAME="RqbitEngine"
+INSTALL_NAME="@rpath/$NAME.framework/$NAME"
 
 for T in "${TARGETS[@]}"; do
   echo "[rqbit_ffi] cargo build --release --target $T"
@@ -52,18 +55,18 @@ make_framework() {
   local dylib="$1" dest="$2" platform="$3"
   rm -rf "$dest"
   mkdir -p "$dest"
-  cp "$dylib" "$dest/rqbit_ffi"
-  install_name_tool -id "$INSTALL_NAME" "$dest/rqbit_ffi"
+  cp "$dylib" "$dest/$NAME"
+  install_name_tool -id "$INSTALL_NAME" "$dest/$NAME"
   cat > "$dest/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleExecutable</key><string>rqbit_ffi</string>
-  <key>CFBundleIdentifier</key><string>com.nivio.rqbit-ffi</string>
+  <key>CFBundleExecutable</key><string>$NAME</string>
+  <key>CFBundleIdentifier</key><string>com.nivio.RqbitEngine</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>rqbit_ffi</string>
+  <key>CFBundleName</key><string>$NAME</string>
   <key>CFBundlePackageType</key><string>FMWK</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>
@@ -77,8 +80,8 @@ PLIST
 TGT="$RUST_DIR/target"
 rm -rf "$WORK"
 mkdir -p "$WORK"
-make_framework "$TGT/aarch64-apple-ios/release/librqbit_ffi.dylib" "$WORK/ios/rqbit_ffi.framework" iPhoneOS
-ARGS=(-framework "$WORK/ios/rqbit_ffi.framework")
+make_framework "$TGT/aarch64-apple-ios/release/librqbit_ffi.dylib" "$WORK/ios/$NAME.framework" iPhoneOS
+ARGS=(-framework "$WORK/ios/$NAME.framework")
 
 if [ $WITH_SIM = 1 ]; then
   mkdir -p "$WORK/sim"
@@ -86,12 +89,12 @@ if [ $WITH_SIM = 1 ]; then
     "$TGT/aarch64-apple-ios-sim/release/librqbit_ffi.dylib" \
     "$TGT/x86_64-apple-ios/release/librqbit_ffi.dylib" \
     -output "$WORK/sim/librqbit_ffi.dylib"
-  make_framework "$WORK/sim/librqbit_ffi.dylib" "$WORK/sim/rqbit_ffi.framework" iPhoneSimulator
-  ARGS+=(-framework "$WORK/sim/rqbit_ffi.framework")
+  make_framework "$WORK/sim/librqbit_ffi.dylib" "$WORK/sim/$NAME.framework" iPhoneSimulator
+  ARGS+=(-framework "$WORK/sim/$NAME.framework")
 fi
 
-rm -rf "$OUT/rqbit_ffi.xcframework"
+rm -rf "$OUT/rqbit_ffi.xcframework" "$OUT/$NAME.xcframework"
 mkdir -p "$OUT"
-xcodebuild -create-xcframework "${ARGS[@]}" -output "$OUT/rqbit_ffi.xcframework"
+xcodebuild -create-xcframework "${ARGS[@]}" -output "$OUT/$NAME.xcframework"
 rm -rf "$WORK"
-echo "[rqbit_ffi] Built $OUT/rqbit_ffi.xcframework"
+echo "[rqbit_ffi] Built $OUT/$NAME.xcframework"

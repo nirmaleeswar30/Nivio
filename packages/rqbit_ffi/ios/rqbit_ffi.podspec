@@ -1,7 +1,7 @@
-# rqbit_ffi for iOS: vendors rqbit_ffi.xcframework, a dynamic framework
+# rqbit_ffi for iOS: vendors RqbitEngine.xcframework, a dynamic framework
 # wrapping the Rust cdylib (librqbit). Build it with build_xcframework.sh
 # (the Nivio Podfile does that automatically when it is missing). Dart loads
-# it with DynamicLibrary.open('rqbit_ffi.framework/rqbit_ffi').
+# it with DynamicLibrary.open('RqbitEngine.framework/RqbitEngine').
 Pod::Spec.new do |s|
   s.name             = 'rqbit_ffi'
   s.version          = '0.1.0'
@@ -14,7 +14,7 @@ Pod::Spec.new do |s|
   s.source_files     = 'Classes/**/*'
   s.dependency 'Flutter'
   s.platform         = :ios, '15.0'
-  s.vendored_frameworks = 'Frameworks/rqbit_ffi.xcframework'
+  s.vendored_frameworks = 'Frameworks/RqbitEngine.xcframework'
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',

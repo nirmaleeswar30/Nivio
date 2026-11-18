@@ -32,7 +32,7 @@ bash ../rqbit_ffi/ios/build_xcframework.sh   # add --sim for simulator slices
 flutter build ios --release --no-codesign    # or: flutter run -d <iphone>
 ```
 
-`pod install` (run by Flutter) also builds `rqbit_ffi.xcframework` if it is
+`pod install` (run by Flutter) also builds `RqbitEngine.xcframework` if it is
 missing and fetches the FFmpegKit frameworks (see the `Podfile`).
 
 To make an unsigned IPA by hand:
@@ -57,7 +57,7 @@ To make an unsigned IPA by hand:
 | Google sign-in through the loopback OAuth flow in an in-app Safari sheet | The stub's flow (`DESKTOP_GOOGLE_CLIENT_ID`) waits on a `127.0.0.1` server. iOS suspends a backgrounded app, so the page opens in `SFSafariViewController`, which Google allows for OAuth. Nivio stays in the foreground and the sheet closes itself afterwards. |
 | `cupertino_http` (NSURLSession) as the HTTP client | Cronet is Android-only. NSURLSession has Safari's TLS/HTTP2 fingerprint, which Cloudflare-fronted sources accept, unlike `dart:io`. |
 | CocoaPods only (`enable-swift-package-manager: false`) | `media_kit_libs_ios_video` and `rqbit_ffi` have no Swift package. `permission_handler_apple`'s feature macros can only be set from the Podfile. |
-| `rqbit_ffi` as a dynamic framework | A static library would need special strip/`-force_load` settings for `dlsym`. A framework with install name `@rpath/rqbit_ffi.framework/rqbit_ffi` loads with `DynamicLibrary.open` like on the other platforms. |
+| `rqbit_ffi`'s Rust library as a dynamic framework (`RqbitEngine.framework`) | A static library would need special strip/`-force_load` settings for `dlsym`. A framework loads with `DynamicLibrary.open` like on the other platforms. It isn't named `rqbit_ffi` because the plugin pod already builds a `rqbit_ffi.framework`. |
 
 ## Audit: plugins on iOS
 

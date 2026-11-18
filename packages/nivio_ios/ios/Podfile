@@ -54,13 +54,13 @@ end
 def ensure_rqbit_framework
   plugin_ios = File.expand_path(File.join('.symlinks', 'plugins', 'rqbit_ffi', 'ios'), __dir__)
   return unless File.directory?(plugin_ios)
-  return if File.directory?(File.join(plugin_ios, 'Frameworks', 'rqbit_ffi.xcframework'))
+  return if File.directory?(File.join(plugin_ios, 'Frameworks', 'RqbitEngine.xcframework'))
 
   script = File.join(plugin_ios, 'build_xcframework.sh')
-  Pod::UI.puts "[Nivio] Building rqbit_ffi.xcframework via #{script}"
+  Pod::UI.puts "[Nivio] Building RqbitEngine.xcframework via #{script}"
   ok = system('/bin/bash', script)
   unless ok
-    Pod::UI.warn '[Nivio] rqbit_ffi.xcframework could not be built; torrent streaming will be unavailable in this build.'
+    Pod::UI.warn '[Nivio] RqbitEngine.xcframework could not be built; torrent streaming will be unavailable in this build.'
   end
 end
 
