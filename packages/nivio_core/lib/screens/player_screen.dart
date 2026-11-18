@@ -2081,7 +2081,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // HDR video (PQ / HLG transfer) on an HDR screen plays through the HDR
     // surface instead of media_kit's SDR texture (see _useHdrSurface);
     // otherwise it is tone-mapped to SDR (see _syncToneMapping).
-    if (Platform.isAndroid || Platform.isWindows || Platform.isLinux) {
+    if (Platform.isAndroid || Platform.isWindows || Platform.isLinux || Platform.isIOS) {
       _refreshHdrDisplay();
     }
     if (Platform.isWindows || Platform.isLinux) {
@@ -7751,7 +7751,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               player: _player,
               doviProfile: _doviProfile,
               isHdr: _hdrVideo,
-              isHdrOutput: _trueHdr && _hdrSurfaceActive,
+              // iOS: the display layer shows HDR itself on an HDR screen.
+              isHdrOutput: Platform.isIOS
+                  ? _hdrDisplay && _hdrVideo && ref.watch(hdrOutputProvider)
+                  : _trueHdr && _hdrSurfaceActive,
+              screen: Platform.isIOS
+                  ? (_hdrDisplay
+                      ? 'HDR${_hdrPeak != null ? ' (up to ${_hdrPeak!.round()} nits)' : ''}'
+                      : 'SDR (HDR video is tone-mapped by iOS)')
+                  : null,
               toneMappingMode: ref.watch(toneMappingProvider),
               onClose: () => setState(() => _showStatsOverlay = false),
             ),

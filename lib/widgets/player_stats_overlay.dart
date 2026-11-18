@@ -7,6 +7,9 @@ import 'package:media_kit/media_kit.dart';
 class PlayerStatsOverlay extends StatefulWidget {
   final Player player;
   final int? doviProfile;
+
+  /// iOS: what the screen can show (HDR with its peak brightness, or SDR).
+  final String? screen;
   final bool isHdr;
   final bool isHdrOutput;
   final String? toneMappingMode;
@@ -16,6 +19,7 @@ class PlayerStatsOverlay extends StatefulWidget {
     super.key,
     required this.player,
     this.doviProfile,
+    this.screen,
     this.isHdr = false,
     this.isHdrOutput = false,
     this.toneMappingMode,
@@ -154,7 +158,20 @@ class _PlayerStatsOverlayState extends State<PlayerStatsOverlay> {
     }
 
     final String outputFormat;
-    if (widget.isHdrOutput) {
+    if (Platform.isIOS) {
+      // vo=avfoundation: iOS presents the frames itself (see IosVideoOutput).
+      if (widget.isHdrOutput) {
+        outputFormat = widget.doviProfile != null
+            ? 'Dolby Vision (iOS)'
+            : gamma == 'hlg'
+                ? 'HDR (HLG)'
+                : 'HDR (HDR10)';
+      } else if (widget.doviProfile != null || widget.isHdr) {
+        outputFormat = 'SDR (tone-mapped by iOS)';
+      } else {
+        outputFormat = 'SDR';
+      }
+    } else if (widget.isHdrOutput) {
       if (widget.doviProfile != null) {
         outputFormat = vo == 'mediacodec_embed'
             ? 'Dolby Vision (Direct)'
@@ -235,6 +252,7 @@ class _PlayerStatsOverlayState extends State<PlayerStatsOverlay> {
               _statRow('Resolution', w.isNotEmpty ? '${w}x$h ($codec)' : '--'),
               _statRow('Source Format', sourceFormat, isAccent: widget.doviProfile != null),
               _statRow('Display Output', outputFormat, isHighlight: widget.isHdrOutput),
+              if (widget.screen != null) _statRow('Screen', widget.screen!),
               _statRow('Source Colors', (gamma.isNotEmpty || primaries.isNotEmpty) ? (matrix.isNotEmpty ? '$gamma / $primaries ($matrix)' : '$gamma / $primaries') : '--'),
               _statRow('A/V Sync', avsync.isNotEmpty ? '$avsync s' : '--'),
               _statRow('Buffering', isBuffering ? 'YES (paused for cache)' : 'No', isWarning: isBuffering),

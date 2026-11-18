@@ -81,13 +81,18 @@ final class NivioPlugin: NSObject, FlutterPlugin {
       if modes.contains(.hdr10) { types.append("hdr10") }
       if modes.contains(.hlg) { types.append("hlg") }
       if modes.contains(.dolbyVision) { types.append("dolbyVision") }
-      var info: [String: Any] = ["isHdr": AVPlayer.eligibleForHDRPlayback, "types": types]
+      // eligibleForHDRPlayback is also true on SDR screens that can decode
+      // HDR (e.g. iPhone SE); an HDR screen also has EDR headroom above 1x.
+      var isHdr = AVPlayer.eligibleForHDRPlayback
+      var info: [String: Any] = ["types": types]
       if #available(iOS 16.0, *) {
         let headroom = Double(UIScreen.main.potentialEDRHeadroom)
         info["edrHeadroom"] = headroom
+        isHdr = isHdr && headroom > 1.0
         // Reference white is 100 nits on Apple's EDR scale.
         if headroom > 1 { info["maxLuminance"] = headroom * 100 }
       }
+      info["isHdr"] = isHdr
       result(info)
     case "rememberBrightness":
       if systemBrightness == nil {

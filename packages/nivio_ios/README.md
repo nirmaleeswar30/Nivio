@@ -160,3 +160,16 @@ These would have crashed the app or broken a feature on iOS.
 - [ ] Watch party: create/join, share link (iPad: share popover), switching apps briefly keeps the party
 - [ ] AniList / MAL / Simkl / Discord sign-in returns to the app
 - [ ] IPTV (http playlists), YouTube trailers, iPad layout and rotation
+
+## Testing HDR / Dolby Vision
+
+1. IPTV tab → add playlist → M3U link:
+   `https://raw.githubusercontent.com/nirmaleeswar30/Nivio/ios-support/packages/nivio_ios/test-media/hdr-test.m3u`
+   (Jellyfin's public test clips: SDR control, HDR10, Dolby Vision P5 / P8.1 / P8.4.)
+2. Play a clip, open the player settings → **Stats for Nerds**. Expected:
+   - VO Driver `avfoundation`, Hardware Dec `videotoolbox`.
+   - Source Format names the clip's format (e.g. `Dolby Vision P5`).
+   - Display Output `HDR (HDR10)` / `Dolby Vision (iOS)` on an HDR screen with HDR Output on; otherwise `SDR (tone-mapped by iOS)`.
+   - Screen shows whether iOS reports the screen as HDR and its peak brightness.
+3. Dolby Vision P5 is the telling one: its picture has no SDR/HDR10 fallback, so wrong handling shows purple/green colours. Correct colours mean Dolby Vision is being processed.
+4. On an SDR screen (e.g. iPhone SE 2nd gen, whatever panel is fitted) HDR files should play with normal, correctly tone-mapped colours; true HDR brightness needs an HDR iPhone (iPhone X/XS/11 Pro, or iPhone 12 and later except SE models).
