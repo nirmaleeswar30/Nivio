@@ -67,7 +67,7 @@ jobs:
       # build with the newest Xcode 26 on the runner (the default is 16.x).
       - name: Select Xcode 26
         run: |
-          XCODE=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          XCODE=$(ls -d /Applications/Xcode_26*.app | sort -t_ -k2 -n | tail -1)
           sudo xcode-select -s "$XCODE"
           xcodebuild -version
 
