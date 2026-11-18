@@ -21,6 +21,9 @@ builds.
 
 ### On a Mac
 
+Needs **Xcode 26** or newer: current plugins (e.g. connectivity_plus 7.3) use
+iOS 26 SDK APIs.
+
 ```bash
 # once
 rustup target add aarch64-apple-ios          # add aarch64-apple-ios-sim x86_64-apple-ios for the simulator
