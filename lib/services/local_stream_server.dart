@@ -6,6 +6,7 @@ import 'package:hive/hive.dart';
 
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/models/download_item.dart';
+import 'package:nivio/services/loopback_server.dart';
 import 'package:nivio/services/m3u8_parser.dart';
 
 /// A tiny localhost HTTP server that serves a *still-downloading* direct video
@@ -29,6 +30,23 @@ class LocalStreamServer {
 
   HttpServer? _server;
   int? _port;
+  int? _lastPort;
+  bool _resumeHooked = false;
+
+  /// iOS: the listening socket may have been reclaimed while suspended.
+  Future<void> _reviveIfDead() async {
+    final server = _server;
+    final port = _port;
+    if (server == null || port == null) return;
+    if (await loopbackPortAccepts(port)) return;
+    appDebugLog('[LocalStreamServer] socket was reclaimed; rebinding on $port');
+    _server = null;
+    _port = null;
+    try {
+      await server.close(force: true);
+    } catch (_) {}
+    await _ensureStarted();
+  }
 
   static const String _boxName = 'downloads';
 
@@ -75,12 +93,25 @@ class LocalStreamServer {
   Future<int?> _ensureStarted() async {
     if (_server != null && _port != null) return _port;
     try {
-      _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      _port = _server!.port;
+      // Rebinding after iOS reclaimed the socket: keep the old port so URLs
+      // the player already has keep working.
+      final server = await bindLoopback(preferredPort: _lastPort ?? 0);
+      _server = server;
+      _port = server.port;
+      _lastPort = server.port;
       appDebugLog('[LocalStreamServer] listening on 127.0.0.1:$_port');
-      _server!.listen(_handle, onError: (e) {
+      server.listen(_handle, onError: (e) {
         appDebugLog('[LocalStreamServer] listen error: $e');
+      }, onDone: () {
+        if (identical(_server, server)) {
+          _server = null;
+          _port = null;
+        }
       });
+      if (!_resumeHooked) {
+        _resumeHooked = true;
+        onIosResume(_reviveIfDead);
+      }
       return _port;
     } catch (e) {
       appDebugLog('[LocalStreamServer] failed to start: $e');

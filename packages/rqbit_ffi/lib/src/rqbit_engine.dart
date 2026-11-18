@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/widgets.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'bindings.dart';
@@ -59,7 +60,30 @@ class RqbitEngine {
     _downloadDir = dir;
     final client = RqbitClient('http://127.0.0.1:$chosenPort');
     _client = client;
+    if (Platform.isIOS) {
+      _resumeListener ??= AppLifecycleListener(onResume: _checkAfterResume);
+    }
     return client;
+  }
+
+  AppLifecycleListener? _resumeListener;
+
+  /// iOS may reclaim a suspended app's listening sockets (Apple TN2277),
+  /// leaving the engine's HTTP API unreachable. Restart it then, so the next
+  /// [ensureStarted] gets a working engine.
+  Future<void> _checkAfterResume() async {
+    final port = _port;
+    if (_client == null || port == null) return;
+    try {
+      final socket = await Socket.connect(
+        InternetAddress.loopbackIPv4,
+        port,
+        timeout: const Duration(seconds: 1),
+      );
+      socket.destroy();
+    } catch (_) {
+      await stop();
+    }
   }
 
   /// Stops the engine and releases the native runtime.

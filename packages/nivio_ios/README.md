@@ -112,6 +112,10 @@ These would have crashed the app or broken a feature on iOS.
 9. **Share sheet failing on iPad** without an anchor rect.
 10. **Deep links / OAuth callbacks** (AniList, MAL, Simkl, Discord) need the URL types.
 11. **Plain-http streams, IPTV and the localhost proxy/servers** blocked by ATS.
+12. **Localhost servers dead after a long background:** iOS can reclaim a
+    suspended app's listening sockets (Apple TN2277). The HLS proxy and the
+    local stream server now check themselves on resume and rebind on the same
+    port; the torrent engine restarts.
 
 ## Known iOS limitations
 
