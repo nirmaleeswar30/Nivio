@@ -81,7 +81,11 @@ SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 echo "_mpv_*" > "$WORK/exports.txt"
 : > "$WORK/empty.swift"
 
-LINK_INPUTS=(-Xlinker -force_load -Xlinker "$LIBMPV")
+# dispatch_sync shim (see shim/nivio_dispatch_sync.m): defined in this image,
+# so libmpv's dispatch_sync calls bind to it instead of libdispatch's.
+xcrun --sdk iphoneos clang -c -arch arm64 -miphoneos-version-min="$MIN_IOS"   -isysroot "$SDK" -fno-objc-arc -fblocks -O2   "$HERE/shim/nivio_dispatch_sync.m" -o "$WORK/nivio_dispatch_sync.o"
+
+LINK_INPUTS=(-Xlinker "$WORK/nivio_dispatch_sync.o" -Xlinker -force_load -Xlinker "$LIBMPV")
 for a in "${OTHERS[@]}"; do
   LINK_INPUTS+=(-Xlinker "$a")
 done
@@ -150,7 +154,13 @@ SLICE="$(cd "$OUT/Mpv.xcframework" && ls -d ios-arm64* | grep -v simulator | hea
 mkdir -p "$OUT/.symlinks/mpv/ios"
 ln -sfn "../../../Mpv.xcframework/$SLICE/Mpv.framework" "$OUT/.symlinks/mpv/ios/Mpv.framework"
 
-nm -gU "$OUT/Mpv.xcframework/$SLICE/Mpv.framework/Mpv" | grep -c ' _mpv_' | xargs echo "[mpv] exported mpv_* symbols:"
+BIN="$OUT/Mpv.xcframework/$SLICE/Mpv.framework/Mpv"
+nm -gU "$BIN" | grep -c ' _mpv_' | xargs echo "[mpv] exported mpv_* symbols:"
+# libmpv must use the shim, not libdispatch's dispatch_sync.
+if nm -m "$BIN" | grep -q '(undefined) external _dispatch_sync '; then
+  echo "error: Mpv.framework still imports dispatch_sync; the shim was not linked in" >&2
+  exit 1
+fi
 du -sh "$OUT/Mpv.xcframework"
 rm -rf "$WORK"
 echo "[mpv] Built $OUT/Mpv.xcframework"
