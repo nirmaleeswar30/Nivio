@@ -63,10 +63,13 @@ jobs:
           workspaces: packages/rqbit_ffi/rust -> target
           key: ios
 
-      - name: Xcode version
+      # Current plugins (e.g. connectivity_plus 7.3) use iOS 26 SDK APIs, so
+      # build with the newest Xcode 26 on the runner (the default is 16.x).
+      - name: Select Xcode 26
         run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
           xcodebuild -version
-          ls -d /Applications/Xcode*.app
 
       - name: flutter pub get
         working-directory: packages/nivio_ios
