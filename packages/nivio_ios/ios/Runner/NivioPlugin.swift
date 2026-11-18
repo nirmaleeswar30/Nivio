@@ -197,9 +197,10 @@ final class NivioPlugin: NSObject, FlutterPlugin {
     if let artwork = artwork {
       info[MPMediaItemPropertyArtwork] = artwork
     }
+    // iOS derives playing/paused from the playback rate (playbackState is
+    // macOS-only).
     nowPlaying = info
     MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-    MPNowPlayingInfoCenter.default().playbackState = playing ? .playing : .paused
   }
 
   private func loadArtwork(_ url: String) {
@@ -231,7 +232,6 @@ final class NivioPlugin: NSObject, FlutterPlugin {
     artwork = nil
     nowPlaying = [:]
     MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-    MPNowPlayingInfoCenter.default().playbackState = .stopped
     if remoteCommandsInstalled {
       applyCommandState(enabled: false)
     }
