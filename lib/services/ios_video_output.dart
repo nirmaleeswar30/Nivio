@@ -101,8 +101,15 @@ class IosVideoOutput {
   /// How the video fills its view ("contain", "cover", "fill").
   Future<void> setFit(Player player, String fit) => _call(player, 'setGravity', {'fit': fit});
 
-  /// HDR video uses the screen's HDR range (on) or is tone-mapped to SDR (off).
-  Future<void> setHdr(Player player, bool enabled) => _call(player, 'setHdr', {'enabled': enabled});
+  final Expando<bool> _hdr = Expando('IosVideoOutput.hdr');
+
+  /// Pass true while an HDR video plays with HDR Output on: it then uses the
+  /// screen's HDR range. Otherwise iOS tone-maps HDR to SDR.
+  Future<void> setHdr(Player player, bool enabled) async {
+    if (!Platform.isIOS || _hdr[player] == enabled) return;
+    _hdr[player] = enabled;
+    await _call(player, 'setHdr', {'enabled': enabled});
+  }
 
   /// Picture-in-picture starts by itself when Nivio goes to the background
   /// while [player] plays ("PiP on Lost Visibility").

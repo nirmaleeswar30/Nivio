@@ -25,7 +25,7 @@ final class NivioVideoPlugin: NSObject, FlutterPlugin {
     let instance = NivioVideoPlugin(channel: channel)
     shared = instance
     channel.setMethodCallHandler { [weak instance] call, result in
-      instance?.handle(call, result: result)
+      instance?.onMethodCall(call, result: result)
     }
     registrar.register(NivioVideoViewFactory(plugin: instance), withId: "nivio/ios_video")
   }
@@ -42,7 +42,7 @@ final class NivioVideoPlugin: NSObject, FlutterPlugin {
     channel.invokeMethod(method, arguments: args)
   }
 
-  private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+  private func onMethodCall(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     let args = call.arguments as? [String: Any] ?? [:]
     let handle = (args["handle"] as? NSNumber)?.int64Value ?? 0
     switch call.method {
@@ -158,12 +158,17 @@ final class NivioVideoEntry: NSObject {
     }
   }
 
-  /// HDR on: HDR video uses the screen's extra brightness (EDR). Off: iOS
-  /// tone-maps it to SDR. SDR video looks the same either way.
+  /// On (HDR Output enabled and an HDR video playing): the layer uses the
+  /// screen's extra brightness (EDR). Off: iOS tone-maps HDR to SDR.
   func setHdr(_ enabled: Bool) {
-    if #available(iOS 17.0, *) {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    if #available(iOS 26.0, *) {
       displayLayer.preferredDynamicRange = enabled ? .high : .standard
+    } else if #available(iOS 17.0, *) {
+      displayLayer.wantsExtendedDynamicRangeContent = enabled
     }
+    CATransaction.commit()
   }
 
   func setAutoPip(_ enabled: Bool) {

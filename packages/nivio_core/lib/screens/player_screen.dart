@@ -634,7 +634,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (Platform.isIOS) {
       // Picture-in-picture when leaving Nivio, like Android's auto PiP.
       unawaited(IosVideoOutput.instance.setAutoPip(_player, ref.read(pipOnLostVisibilityProvider)));
-      unawaited(IosVideoOutput.instance.setHdr(_player, ref.read(hdrOutputProvider)));
     }
     _currentEpisode = widget.episode;
     _currentProviderIndex = math.max(0, widget.providerIndex ?? 0);
@@ -7556,7 +7555,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ref.watch(ambientModeProvider);
 
     if (Platform.isIOS) {
-      unawaited(IosVideoOutput.instance.setHdr(_player, ref.watch(hdrOutputProvider)));
+      unawaited(IosVideoOutput.instance.setHdr(_player, ref.watch(hdrOutputProvider) && _hdrVideo));
     }
     Widget videoWidget = _videoDetached
         ? Container(color: Colors.black)
