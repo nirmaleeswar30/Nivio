@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:nivio/widgets/ios_video_surface.dart';
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/main.dart'; // To access appRouter
 import 'package:nivio/providers/mini_player_provider.dart';
@@ -326,6 +327,8 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay>
                   Positioned.fill(
                     child: _videoDetached
                         ? Container(color: Colors.black)
+                        : Platform.isIOS && miniState.player != null
+                            ? IosVideoSurface(player: miniState.player!)
                         : Video(
                             controller: miniState.videoController!,
                             controls: NoVideoControls,

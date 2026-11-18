@@ -18,7 +18,11 @@ dependencies:
     path: ../rqbit_ffi
 
   # iOS-specific dependencies
-  cupertino_http: ^3.1.1  # NSURLSession client (see lib/main.dart)
+  # Chrome-fingerprinted HTTP (libcurl-impersonate), the iOS stand-in for
+  # Cronet; see lib/main.dart.
+  nivio_curl:
+    path: third_party/nivio_curl
+  cupertino_http: ^3.1.1  # NSURLSession client, fallback (see lib/main.dart)
   http: ^1.6.0
   device_screen_brightness: ^0.2.1
   flutter_volume_controller: ^2.0.1
@@ -89,6 +93,11 @@ flutter_native_splash:
 
 dependency_overrides:
   freezed_annotation: ^3.1.0
+  # libmpv from edde746/mpv-build instead of media_kit's: it has the
+  # AVFoundation video output (AVSampleBufferDisplayLayer), which gives HDR /
+  # Dolby Vision passthrough and picture-in-picture without OpenGL.
+  media_kit_libs_ios_video:
+    path: third_party/media_kit_libs_ios_video
   # Like the desktop app, iOS talks to Firebase (Auth + Firestore) over REST
   # through these pure-Dart stubs instead of the native SDKs: no separate iOS
   # app registration / GoogleService-Info.plist is needed, the same Firebase

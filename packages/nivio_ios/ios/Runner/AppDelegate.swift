@@ -26,5 +26,8 @@ import UIKit
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "NivioPlugin") {
       NivioPlugin.register(with: registrar)
     }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "NivioVideoPlugin") {
+      NivioVideoPlugin.register(with: registrar)
+    }
   }
 }

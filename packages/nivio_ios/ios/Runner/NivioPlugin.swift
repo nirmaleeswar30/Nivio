@@ -74,11 +74,19 @@ final class NivioPlugin: NSObject, FlutterPlugin {
     case "isTv":
       result(false)
     case "hdrInfo":
-      // The iOS player renders through an SDR Flutter texture, so HDR output
-      // isn't offered; report the screen's EDR capability for diagnostics.
-      var info: [String: Any] = ["isHdr": false, "types": [String]()]
+      // The player shows video through AVSampleBufferDisplayLayer
+      // (NivioVideoPlugin), which plays HDR formats the device supports.
+      var types: [String] = []
+      let modes = AVPlayer.availableHDRModes
+      if modes.contains(.hdr10) { types.append("hdr10") }
+      if modes.contains(.hlg) { types.append("hlg") }
+      if modes.contains(.dolbyVision) { types.append("dolbyVision") }
+      var info: [String: Any] = ["isHdr": AVPlayer.eligibleForHDRPlayback, "types": types]
       if #available(iOS 16.0, *) {
-        info["edrHeadroom"] = Double(UIScreen.main.potentialEDRHeadroom)
+        let headroom = Double(UIScreen.main.potentialEDRHeadroom)
+        info["edrHeadroom"] = headroom
+        // Reference white is 100 nits on Apple's EDR scale.
+        if headroom > 1 { info["maxLuminance"] = headroom * 100 }
       }
       result(info)
     case "rememberBrightness":

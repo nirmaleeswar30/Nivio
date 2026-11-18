@@ -1,18 +1,22 @@
 import 'package:cupertino_http/cupertino_http.dart';
+import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 import 'package:nivio/main.dart' as core_main;
 import 'package:nivio/services/network_client_factory.dart';
+import 'package:nivio_curl/nivio_curl.dart';
 
 void main() async {
-  NetworkClientFactory.registerClientBuilder(() => _client);
+  WidgetsFlutterBinding.ensureInitialized();
+  // libcurl-impersonate: a real Chrome TLS/HTTP2 fingerprint, like Cronet on
+  // Android. NSURLSession (Safari's fingerprint) if it can't be loaded.
+  final curl = await CurlImpersonateClient.create();
+  NetworkClientFactory.registerClientBuilder(() => curl ?? _urlSessionClient);
   core_main.main();
 }
 
-/// Apple's own network stack (NSURLSession), the iOS counterpart of Cronet on
-/// Android: a real browser's TLS/HTTP2 fingerprint (Safari's), which
-/// Cloudflare-fronted sources check, unlike dart:io's HttpClient. One session
-/// is shared by every caller.
-final http.Client _client = _SharedClient(() {
+/// Apple's own network stack (NSURLSession). One session is shared by every
+/// caller.
+final http.Client _urlSessionClient = _SharedClient(() {
   final config = URLSessionConfiguration.ephemeralSessionConfiguration()
     // Callers send their own Cookie headers (as with Cronet, which keeps no
     // cookie jar); don't let NSURLSession add stored ones on top.

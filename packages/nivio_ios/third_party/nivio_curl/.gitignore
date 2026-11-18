@@ -1,0 +1,5 @@
+ios/Frameworks/
+ios/.build/
+ios/.cache/
+.dart_tool/
+pubspec.lock

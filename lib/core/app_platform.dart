@@ -63,7 +63,7 @@ class AppPlatform {
   static Future<HdrDisplayInfo> hdrDisplay() {
     if (Platform.isWindows || Platform.isLinux) return _desktopHdrDisplay();
     return _hdrDisplay ??= () async {
-      if (!Platform.isAndroid) return const HdrDisplayInfo();
+      if (!Platform.isAndroid && !Platform.isIOS) return const HdrDisplayInfo();
       try {
         final info = await _channel.invokeMapMethod<String, dynamic>('hdrInfo');
         return HdrDisplayInfo(

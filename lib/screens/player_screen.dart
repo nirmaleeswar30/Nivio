@@ -2,6 +2,8 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:media_kit_video/src/video_controller/android_video_controller/android_video_controller.dart';
 import 'package:simple_pip_mode/actions/pip_actions_layout.dart';
+import 'package:nivio/services/ios_video_output.dart';
+import 'package:nivio/widgets/ios_video_surface.dart';
 import 'package:nivio/services/window_fullscreen.dart';
 import 'dart:io';
 import 'package:nivio/core/screen_wake_lock.dart';
@@ -559,14 +561,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _player = Player();
       _videoController = VideoController(
         _player,
-        configuration: VideoControllerConfiguration(
-          enableHardwareAcceleration: !Platform.isLinux,
-          // Android ships mpvlibAndroid's mpv (see android/app/build.gradle.kts),
-          // whose libplacebo renderer tone-maps HDR far better and runs the
-          // hdr-toys shaders (see HdrToneMapping).
-          vo: Platform.isAndroid ? 'gpu-next' : null,
-        ),
+        configuration: Platform.isIOS
+            // iOS: mpv draws into a native display layer (IosVideoOutput).
+            ? IosVideoOutput.controllerConfiguration
+            : VideoControllerConfiguration(
+                enableHardwareAcceleration: !Platform.isLinux,
+                // Android ships mpvlibAndroid's mpv (see android/app/build.gradle.kts),
+                // whose libplacebo renderer tone-maps HDR far better and runs the
+                // hdr-toys shaders (see HdrToneMapping).
+                vo: Platform.isAndroid ? 'gpu-next' : null,
+              ),
       );
+      unawaited(IosVideoOutput.instance.prepare(_player));
       _guardVideoControllerWid(_videoController);
       appDebugLog(
         '🧪 [CW_DEBUG] PlayerScreen#$_sid created NEW player=${_hash(_player)} ctrl=${_hash(_videoController)}',
@@ -624,6 +630,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _syncPipPlayingState();
         }();
       } catch (_) {}
+    }
+    if (Platform.isIOS) {
+      // Picture-in-picture when leaving Nivio, like Android's auto PiP.
+      unawaited(IosVideoOutput.instance.setAutoPip(_player, ref.read(pipOnLostVisibilityProvider)));
+      unawaited(IosVideoOutput.instance.setHdr(_player, ref.read(hdrOutputProvider)));
     }
     _currentEpisode = widget.episode;
     _currentProviderIndex = math.max(0, widget.providerIndex ?? 0);
@@ -1618,6 +1629,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _hdrVideo = false;
       }
       _hdrSurfaceFailed = false;
+      // iOS: mpv must know its display layer before the video output starts.
+      await IosVideoOutput.instance.prepare(_player);
       await _player.open(
         Media(
           targetUrl,
@@ -4071,6 +4084,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (Platform.isAndroid) {
           return 'mediacodec,mediacodec-copy,no';
         }
+        // iOS: VideoToolbox frames go to the display layer untouched, which
+        // keeps HDR / Dolby Vision metadata intact.
         if (Platform.isIOS) return 'videotoolbox,videotoolbox-copy,no';
         return 'auto-safe';
     }
@@ -7540,8 +7555,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _selectedDisplayFitKey == 'bestFit' &&
         ref.watch(ambientModeProvider);
 
+    if (Platform.isIOS) {
+      unawaited(IosVideoOutput.instance.setHdr(_player, ref.watch(hdrOutputProvider)));
+    }
     Widget videoWidget = _videoDetached
         ? Container(color: Colors.black)
+        : Platform.isIOS
+            ? IosVideoSurface(
+                player: _player,
+                fit: _displayFitOptions[_selectedDisplayFitKey] ?? BoxFit.contain,
+              )
         : _useWindowsHdrSurface
             ? WindowsHdrVideoSurface(
                 player: _player,

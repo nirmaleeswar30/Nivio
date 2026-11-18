@@ -64,12 +64,26 @@ def ensure_rqbit_framework
   end
 end
 
+# Nivio's own iOS frameworks (built from pinned prebuilt binaries; see each
+# script): libmpv with the AVFoundation video output, and libcurl-impersonate.
+def ensure_built(plugin, framework, script)
+  plugin_ios = File.expand_path(File.join('.symlinks', 'plugins', plugin, 'ios'), __dir__)
+  return unless File.directory?(plugin_ios)
+  return if File.directory?(File.join(plugin_ios, 'Frameworks', framework))
+
+  Pod::UI.puts "[Nivio] Building #{framework} via #{script}"
+  ok = system('/bin/bash', File.join(plugin_ios, script))
+  raise "[Nivio] #{framework} could not be built (#{script})" unless ok
+end
+
 target 'Runner' do
   use_frameworks!
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   ensure_ffmpeg_kit_frameworks
   ensure_rqbit_framework
+  ensure_built('media_kit_libs_ios_video', 'Mpv.xcframework', 'build_mpv_framework.sh')
+  ensure_built('nivio_curl', 'CurlImpersonate.xcframework', 'build_curl_framework.sh')
 
   target 'RunnerTests' do
     inherit! :search_paths

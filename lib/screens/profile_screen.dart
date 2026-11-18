@@ -1720,7 +1720,9 @@ Widget _buildMobileLayout(BuildContext context, User user) {
 
   // True HDR, Dolby Vision and the tone-mapping choice are Android-only (the
   // player's HDR tile shows the same); desktop always uses Standard tone mapping.
-  bool get _showHdrSettings => Platform.isAndroid;
+  // iOS shows the HDR Output switch only: the system displays (or
+  // tone-maps) HDR itself, so the mpv-side choices below don't apply.
+  bool get _showHdrSettings => Platform.isAndroid || Platform.isIOS;
 
   static const _hdrSearchTerms =
       'hdr dolby vision dv tone mapping sdr hdr10 hlg bt2020 toys surface output mediacodec vulkan';
@@ -1761,6 +1763,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           );
         },
       ),
+      if (Platform.isAndroid) ...[
       _buildActionTile(
         icon: Icons.tonality_rounded,
         title: 'Tone Mapping',
@@ -1787,6 +1790,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           onSelected: (mode) => ref.read(hdrSurfaceBackendProvider.notifier).setBackend(mode),
         ),
       ),
+      ],
     ];
   }
 

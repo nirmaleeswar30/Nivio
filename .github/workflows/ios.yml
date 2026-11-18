@@ -82,6 +82,19 @@ jobs:
       - name: Build RqbitEngine.xcframework (rqbit_ffi)
         run: bash packages/rqbit_ffi/ios/build_xcframework.sh
 
+      # Pinned prebuilt binaries: libmpv + FFmpeg & co. from edde746/mpv-build
+      # (AVFoundation video output) and libcurl-impersonate.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/nivio-ios
+          key: ios-libs-${{ hashFiles('packages/nivio_ios/third_party/media_kit_libs_ios_video/ios/mpv-ios.lock', 'packages/nivio_ios/third_party/nivio_curl/ios/build_curl_framework.sh') }}
+
+      - name: Build Mpv.xcframework (mpv-build)
+        run: MPV_IOS_CACHE="$HOME/.cache/nivio-ios/mpv" bash packages/nivio_ios/third_party/media_kit_libs_ios_video/ios/build_mpv_framework.sh
+
+      - name: Build CurlImpersonate.xcframework
+        run: CURL_IOS_CACHE="$HOME/.cache/nivio-ios/curl" bash packages/nivio_ios/third_party/nivio_curl/ios/build_curl_framework.sh
+
       - name: Build iOS app (no codesign)
         working-directory: packages/nivio_ios
         run: flutter build ios --release --no-codesign
