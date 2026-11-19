@@ -5898,8 +5898,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             };
                           }
 
+                          // iOS: mpv hands the frames to an AVSampleBufferDisplayLayer, which
+                          // shows HDR / Dolby Vision itself on an HDR screen and tone-maps
+                          // them to SDR on any other (see IosVideoOutput.setHdr).
+                          final iosHdrNow = Platform.isIOS && _hdrDisplay && _hdrVideo && hdrOutput;
+
                           String hdrValue() {
                             final isDv = _doviProfile != null;
+                            if (Platform.isIOS) {
+                              if (iosHdrNow) return isDv ? 'Dolby Vision · iOS' : 'True HDR · iOS';
+                              return _hdrVideo ? 'Tone mapped by iOS' : videoColourLabel();
+                            }
                             if (_hdrSurfaceActive && _trueHdr) {
                               if (Platform.isWindows) return isDv ? 'True HDR (DV → HDR10)' : 'True HDR';
                               if (Platform.isLinux) return isDv ? 'True HDR (DV Base)' : 'True HDR';
@@ -5920,7 +5929,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             };
                             final trueHdrNow = _hdrSurfaceActive && _trueHdr;
                             final String status;
-                            if (trueHdrNow && Platform.isWindows) {
+                            if (iosHdrNow) {
+                              status = _doviProfile != null
+                                  ? 'Playing in Dolby Vision on this screen (AVFoundation).'
+                                  : 'Playing in HDR on this screen (AVFoundation).';
+                            } else if (Platform.isIOS && _hdrVideo && !_hdrDisplay) {
+                              status = _doviProfile != null
+                                  ? "This screen isn't HDR, so iOS tone maps the Dolby Vision video to SDR using its metadata."
+                                  : "This screen isn't HDR, so iOS tone maps the video to SDR.";
+                            } else if (trueHdrNow && Platform.isWindows) {
                               status = _doviProfile != null
                                   ? 'Playing in HDR on this screen (Direct3D 11). Dolby Vision is converted to HDR10.'
                                   : 'Playing in HDR on this screen (Direct3D 11).';
@@ -6121,9 +6138,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                     onTap: () => openPage('sync'),
                                   ),
                                   tile(icon: Icons.memory, title: 'Decoder', value: decoderValue(), onTap: () => openPage('decoder')),
-                                  // True HDR on Android, Windows and Linux; the tone-mapping
-                                  // choice is Android-only (desktop uses Standard).
-                                  if (Platform.isAndroid || Platform.isWindows || Platform.isLinux)
+                                  // True HDR on Android, Windows, Linux and iOS; the tone-mapping
+                                  // choice is Android-only (desktop uses Standard, iOS its own).
+                                  if (Platform.isAndroid || Platform.isWindows || Platform.isLinux || Platform.isIOS)
                                     tile(
                                       icon: _doviProfile != null ? Icons.branding_watermark_rounded : Icons.hdr_on_outlined,
                                       title: _doviProfile != null ? 'Dolby Vision' : 'HDR',

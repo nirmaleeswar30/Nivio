@@ -731,6 +731,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                           ),
                         if (_matches('ui scale zoom display interface size'))
                           _buildUiScaleTile(uiScale),
+                        if (_showLiquidGlassSetting && _matches(_liquidGlassSearchTerms))
+                          _buildLiquidGlassNavTile(),
                         if ((Platform.isWindows || Platform.isLinux || Platform.isMacOS) &&
                             _matches('discord rich presence rpc activity status'))
                           _buildDiscordDesktopTile(),
@@ -1493,6 +1495,9 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     if (_matches('ui scale zoom display interface size')) {
       results.add(_buildUiScaleTile(uiScale));
     }
+    if (_showLiquidGlassSetting && _matches(_liquidGlassSearchTerms)) {
+      results.add(_buildLiquidGlassNavTile());
+    }
     if ((Platform.isWindows || Platform.isLinux || Platform.isMacOS) &&
         _matches('discord rich presence rpc activity status')) {
       results.add(_buildDiscordDesktopTile());
@@ -1603,6 +1608,23 @@ Widget _buildMobileLayout(BuildContext context, User user) {
       subtitle: subtitle,
       onTap: onTap,
       titleColor: titleColor,
+    );
+  }
+
+  // The floating bottom nav only exists on phones (MainShellScreen).
+  bool get _showLiquidGlassSetting => (Platform.isAndroid || Platform.isIOS) && !AppPlatform.isTv;
+
+  static const _liquidGlassSearchTerms = 'liquid glass navigation bar bottom nav tab bar blur';
+
+  Widget _buildLiquidGlassNavTile() {
+    return _buildSwitchTile(
+      icon: Icons.water_drop_outlined,
+      title: 'Liquid Glass Navigation',
+      subtitle: 'Glass bottom bar with a lens that follows your tab',
+      value: ref.watch(liquidGlassNavProvider),
+      onChanged: (value) {
+        ref.read(liquidGlassNavProvider.notifier).setEnabled(value);
+      },
     );
   }
 
@@ -4893,6 +4915,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
               onTap: _showThemeDialog,
             ),
             _buildUiScaleTile(uiScale),
+            if (_showLiquidGlassSetting) _buildLiquidGlassNavTile(),
             if (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
               _buildDiscordDesktopTile(),
             if (Platform.isAndroid || Platform.isIOS) _buildDiscordMobileTile(),

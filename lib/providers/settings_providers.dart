@@ -1275,6 +1275,32 @@ class HdrOutputNotifier extends StateNotifier<bool> {
   }
 }
 
+// Liquid Glass Nav Provider (phones): the floating bottom nav as shader
+// liquid glass with a lens selection pill (lib/core/liquid_glass, from Inzx)
+// instead of the frosted bar. Defaults to on.
+final liquidGlassNavProvider = StateNotifierProvider<LiquidGlassNavNotifier, bool>((ref) {
+  return LiquidGlassNavNotifier();
+});
+
+class LiquidGlassNavNotifier extends StateNotifier<bool> {
+  static const _key = 'liquid_glass_nav_enabled';
+
+  LiquidGlassNavNotifier() : super(_startupPrefs?.getBool(_key) ?? true) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool(_key) ?? true;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, value);
+  }
+}
+
 // Tone Mapping Provider: how HDR (and wide-gamut BT.2020) video is converted
 // to SDR when it isn't shown as true HDR.
 //  'standard' — mpv/libplacebo's own tone mapping with per-scene peak detection.
