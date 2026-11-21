@@ -33,7 +33,7 @@ class TorrentPickerSheet extends StatefulWidget {
     this.isFullScreen = false,
   });
 
-  static Future<(TorrentResult, dynamic)?> show(
+  static Future<(TorrentResult, dynamic, {bool automatic})?> show(
     BuildContext context, {
     required SearchResult media,
     required int initialEpisode,
@@ -45,7 +45,7 @@ class TorrentPickerSheet extends StatefulWidget {
   }) {
     final isMobile = Platform.isAndroid || Platform.isIOS;
     if (isMobile) {
-      return Navigator.of(context).push<(TorrentResult, dynamic)>(
+      return Navigator.of(context).push<(TorrentResult, dynamic, {bool automatic})>(
         MaterialPageRoute(
           builder: (context) => Scaffold(
             backgroundColor: const Color(0xFF0F0F0F),
@@ -64,7 +64,7 @@ class TorrentPickerSheet extends StatefulWidget {
       );
     }
 
-    return showDialog<(TorrentResult, dynamic)>(
+    return showDialog<(TorrentResult, dynamic, {bool automatic})>(
       context: context,
       barrierDismissible: true,
       barrierColor: Colors.black.withOpacity(0.8), // Darker backdrop for cinematic feel
@@ -328,7 +328,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
       if (_countdown <= 0) {
         timer.cancel();
         if (_filteredResults != null && _filteredResults!.isNotEmpty) {
-          _playResult(_filteredResults!.first);
+          _playResult(_filteredResults!.first, automatic: true);
         }
       }
     });
@@ -343,10 +343,10 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
     }
   }
 
-  void _playResult(TorrentResult result) {
+  void _playResult(TorrentResult result, {bool automatic = false}) {
     if (_currentQuery == null) return;
     _autoPlayTimer?.cancel();
-    Navigator.of(context).pop((result, _currentQuery!));
+    Navigator.of(context).pop((result, _currentQuery!, automatic: automatic));
   }
   
   Future<void> _updateResolution(String? newRes) async {
@@ -647,7 +647,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
   Widget _buildAutoSelectButton(double spacing) {
     if (_filteredResults != null && _filteredResults!.isNotEmpty && !_isCancelled) {
       return ElevatedButton(
-        onPressed: () => _playResult(_filteredResults!.first),
+        onPressed: () => _playResult(_filteredResults!.first, automatic: true),
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF38Bdf8),
           foregroundColor: Colors.black,
@@ -662,7 +662,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
       );
     } else if (_filteredResults != null && _filteredResults!.isNotEmpty) {
       return ElevatedButton(
-        onPressed: () => _playResult(_filteredResults!.first),
+        onPressed: () => _playResult(_filteredResults!.first, automatic: true),
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF38Bdf8),
           foregroundColor: Colors.black,

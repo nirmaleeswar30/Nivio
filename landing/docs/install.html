@@ -5,11 +5,11 @@
 <script>/* Relative links need /docs/ (with the slash) to resolve inside docs/. */if(location.pathname.slice(-5)==="/docs")location.replace(location.pathname+"/"+location.search+location.hash);</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Install & update · Nivio Docs</title>
-<meta name="description" content="How to install Nivio on Android, Android TV, Windows and Linux, and how updates work on each.">
+<meta name="description" content="Install Nivio on Android, Android TV, Windows and Linux, or sideload the iPhone and iPad build with SideStore or AltStore Classic.">
 <link rel="canonical" href="https://nivio.nirmaleeswar.dev/docs/install">
 <meta property="og:url" content="https://nivio.nirmaleeswar.dev/docs/install">
 <meta property="og:title" content="Install & update · Nivio Docs">
-<meta property="og:description" content="How to install Nivio on Android, Android TV, Windows and Linux, and how updates work on each.">
+<meta property="og:description" content="Install Nivio on Android, Android TV, Windows and Linux, or sideload the iPhone and iPad build with SideStore or AltStore Classic.">
 <meta property="og:image" content="https://nivio.nirmaleeswar.dev/appicon.png">
 <link rel="icon" type="image/png" href="../nivio.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,6 +17,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="docs.css">
 <script src="docs.js" defer></script>
+<script src="../ios-download.js" defer></script>
 </head>
 <body>
 <div class="field" aria-hidden="true"></div>
@@ -38,12 +39,13 @@
 
 <h2 id="android">Android</h2>
 <div class="platforms"><span class="chip on">Android</span><span class="chip">Phones & tablets</span></div>
-<p>Each release has two Android files. Pick one:</p>
+<p>Pick the APK that matches your device:</p>
 <div class="table-wrap"><table>
   <thead><tr><th>File</th><th>Use it when</th></tr></thead>
   <tbody>
-    <tr><td><code>nivio.apk</code></td><td>Your phone is from the last several years (64-bit ARM). Smaller download. This is the right one for almost everybody.</td></tr>
-    <tr><td><code>universal.apk</code></td><td>You have an older 32-bit phone, an x86 device or an emulator, or <code>nivio.apk</code> won't install.</td></tr>
+    <tr><td><code>nivio-&lt;version&gt;.apk</code></td><td>The smaller build for most modern 64-bit ARM phones and tablets.</td></tr>
+    <tr><td><code>nivio-&lt;version&gt;-universal.apk</code></td><td>Use this for Android TV or when you are unsure which architecture your device uses.</td></tr>
+    <tr><td><code>nivio-&lt;version&gt;-armeabi-v7a.apk</code> or <code>nivio-&lt;version&gt;-x86_64.apk</code></td><td>Use the matching smaller build for a 32-bit ARM device or a 64-bit x86 device.</td></tr>
   </tbody>
 </table></div>
 <ol class="steps">
@@ -62,7 +64,23 @@
 <p>You can also check by hand in <strong>Settings → App & Updates → Check GitHub Release</strong>.</p>
 
 <h2 id="android-tv">Android TV</h2>
-<p>The same <code>nivio.apk</code> runs on Android TV and Google TV. Nivio detects the TV and switches to its TV layout. See <a href="android-tv.html">Android TV</a> for how to sideload it.</p>
+<p>Use the universal APK for Android TV and Google TV. Nivio detects the TV and switches to its TV layout. See <a href="android-tv.html">Android TV</a> for how to sideload it.</p>
+
+<h2 id="ios">iPhone and iPad</h2>
+<div class="platforms"><span class="chip on">iOS / iPadOS 15+</span><span class="chip">Sideloading</span></div>
+<p data-ios-status>The public iOS IPA is pending.</p>
+<h3 id="ios-source">Install from the Nivio source</h3>
+<ol class="steps">
+  <li>Set up <a href="https://docs.sidestore.io/docs/installation/install">SideStore</a> or <a href="https://faq.altstore.io/altstore-classic/your-altstore">AltStore Classic</a> using its installation guide.</li>
+  <li>Once the IPA is available, open <strong>Sources</strong>, choose <strong>Add Source</strong> and paste <code>https://nivio.nirmaleeswar.dev/altstore.json</code>.
+    <span data-ios-available hidden><a href="sidestore://source?url=https%3A%2F%2Fnivio.nirmaleeswar.dev%2Faltstore.json">Open in SideStore</a> · <a href="altstore-classic://source?url=https%3A%2F%2Fnivio.nirmaleeswar.dev%2Faltstore.json">Open in AltStore Classic</a></span>
+  </li>
+  <li>In <strong>Browse</strong>, search for <strong>Nivio</strong> and tap <strong>Install</strong>. Your sideloading app downloads and signs the IPA.</li>
+</ol>
+<p>Once available, you can also <a href="https://github.com/nirmaleeswar30/Nivio/releases">get the IPA from GitHub Releases</a> and import it manually. <a data-ios-ipa hidden>Download the current IPA</a></p>
+
+<h3 id="ios-updates">Updating and refreshing on iOS</h3>
+<p>Use the same sideloading app to install new IPA versions. Free Apple Accounts usually need to refresh their signature every seven days. Shorebird builds can receive Dart fixes in the app. Native changes and bundled assets require an updated IPA.</p>
 
 <h2 id="windows">Windows</h2>
 <div class="platforms"><span class="chip on">Windows 10 & 11</span><span class="chip">64-bit</span></div>

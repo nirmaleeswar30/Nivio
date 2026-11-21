@@ -878,18 +878,12 @@ class _NivioAppState extends ConsumerState<NivioApp> {
   Widget build(BuildContext context) {
     final themeKey = ref.watch(appThemeProvider);
     final uiScale = ref.watch(uiScaleProvider);
-    final platformBrightness = MediaQuery.platformBrightnessOf(context);
-    final appTheme = NivioTheme.buildTheme(
-      themeKey,
-      systemBrightness: platformBrightness,
-    );
 
     return MaterialApp.router(
       showPerformanceOverlay: false,
       scrollBehavior: DesktopScrollBehavior(),
       title: 'Nivio',
-      theme: appTheme,
-      darkTheme: appTheme,
+      theme: NivioTheme.buildTheme(themeKey),
       routerConfig: appRouter,
       builder: (context, child) {
         final Widget gate = _GitHubReleasePromptGate(

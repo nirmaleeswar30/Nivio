@@ -6258,56 +6258,7 @@ class _DesktopThemeCardState extends State<_DesktopThemeCard> {
     );
   }
 
-  Widget _buildSystemPreview(NivioAppTheme theme, bool isSelected) {
-    return Stack(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Container(
-                color: const Color(0xFF0D0F14),
-                alignment: Alignment.center,
-                child: const Icon(
-                  Icons.dark_mode_rounded,
-                  size: 18,
-                  color: Colors.white70,
-                ),
-              ),
-            ),
-            Container(width: 1, color: Colors.white24),
-            Expanded(
-              child: Container(
-                color: const Color(0xFFF1F5F9),
-                alignment: Alignment.center,
-                child: const Icon(
-                  Icons.light_mode_rounded,
-                  size: 18,
-                  color: Color(0xFF0F172A),
-                ),
-              ),
-            ),
-          ],
-        ),
-        Center(
-          child: Container(
-            padding: const EdgeInsets.all(5),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.75),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white38, width: 1),
-            ),
-            child: const Icon(
-              Icons.brightness_auto_rounded,
-              size: 15,
-              color: Colors.white,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildColorThemePreview(NivioAppTheme theme, bool isSelected) {
+  Widget _buildColorThemePreview(NivioAppTheme theme) {
     return Stack(
       children: [
         Positioned.fill(
@@ -6405,8 +6356,6 @@ class _DesktopThemeCardState extends State<_DesktopThemeCard> {
   }
 
   Widget _buildPreview(NivioAppTheme theme, bool isSelected) {
-    final isSystem = theme.key == 'system';
-
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -6427,9 +6376,7 @@ class _DesktopThemeCardState extends State<_DesktopThemeCard> {
         ),
       ),
       clipBehavior: Clip.antiAlias,
-      child: isSystem
-          ? _buildSystemPreview(theme, isSelected)
-          : _buildColorThemePreview(theme, isSelected),
+      child: _buildColorThemePreview(theme),
     );
   }
 

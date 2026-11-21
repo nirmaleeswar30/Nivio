@@ -34,7 +34,7 @@
     <article class="prose">
 <span class="crumb">Watching</span>
 <h1>HDR & Dolby Vision</h1>
-<p class="lead">On Android, Windows and Linux, Nivio plays HDR video in real HDR on screens that support it, and on Android, Dolby Vision in hardware Dolby Vision. As far as we know, no other Flutter app does this. Everywhere else, HDR video is tone-mapped so it still looks right on a normal screen.</p>
+<p class="lead">Nivio can output HDR on supported Android, Windows, Linux and iOS displays. How Dolby Vision plays depends on the platform, the video profile and the display. SDR screens use tone mapping.</p>
 
 <h2 id="why">Why this is unusual</h2>
 <p>Flutter apps draw everything, video included, as standard-range (SDR) pictures. Play an HDR movie in a typical Flutter app and it comes out flat, grey and washed out. Nivio takes the video out of Flutter's drawing and renders it with mpv instead, while the controls stay on top as usual:</p>
@@ -42,6 +42,7 @@
   <li><strong>Android</strong>: the video gets its own Android surface, rendered by a custom build of mpv, so Android can put the screen into HDR mode for it.</li>
   <li><strong>Windows</strong>: mpv draws the video in HDR10 into its own window, kept just behind Nivio's window, and Nivio's window turns see-through over the video. Windows then shows the video in HDR and the controls and subtitles at normal brightness on top.</li>
   <li><strong>Linux</strong> (Wayland): mpv draws the video in HDR10 into its own Wayland surface, kept just below Nivio's window and marked as HDR10 for the compositor, and Nivio's window turns see-through over the video. The compositor shows the video in HDR and the controls on top.</li>
+  <li><strong>iPhone and iPad</strong>: mpv sends video through Apple's AVFoundation display layer. iOS chooses how to display HDR and Dolby Vision based on your device and the video.</li>
 </ul>
 
 <h2 id="modes">What you'll see</h2>
@@ -72,7 +73,7 @@
 <h2 id="settings">HDR settings</h2>
 <p>These are in the player's <strong>HDR</strong> tile and in <strong>Settings → Playback</strong>. They're the same settings in both places.</p>
 <h3>HDR Output</h3>
-<p>On by default. Turn it off to always tone-map HDR to SDR, for example to save battery or if HDR looks too dim or bright on your screen. It's greyed out on screens without HDR. On Windows and Linux this is the only HDR setting; the surface output and tone-mapping choices below are Android-only.</p>
+<p>On by default. Turn it off to prefer SDR, for example if HDR looks too dim or bright on your screen. On Windows, Linux and iOS this is the only HDR setting. Android also has the surface output and tone-mapping choices below.</p>
 <h3>HDR Surface Output</h3>
 <div class="table-wrap"><table>
   <thead><tr><th>Option</th><th>How it works</th></tr></thead>
@@ -99,6 +100,10 @@
 <h2 id="desktop">Windows and Linux</h2>
 <p><strong>Windows</strong> plays true HDR on HDR monitors, as described above. If Windows HDR is off or the monitor isn't HDR, HDR video is tone-mapped to SDR with Standard tone mapping. The player's controls dim the video slightly while they're shown, just like with SDR video.</p>
 <p><strong>Linux</strong> plays true HDR on Wayland desktops with HDR turned on, as described above. Dolby Vision plays its HDR10 base layer (profile 8 looks right; profile 5 has no HDR10 layer, so its colours can be off). Otherwise, HDR video is tone-mapped to SDR with Standard tone mapping.</p>
+
+<h2 id="ios">iPhone and iPad</h2>
+<p>Open the <strong>HDR</strong> card in player settings for the source format and playback status. In <strong>Stats for Nerds</strong>, check <strong>Display Output</strong> and <strong>Screen</strong>. A file can say <strong>Dolby Vision</strong> under its video format while the output says <strong>SDR (tone-mapped by iOS)</strong>. That means the screen is showing the SDR conversion.</p>
+<p>To compare SDR, HDR10 and Dolby Vision, load the <a href="https://raw.githubusercontent.com/nirmaleeswar30/Nivio/main/packages/nivio_ios/test-media/hdr-test.m3u">HDR test playlist</a> from the Live TV tab. On an HDR-capable device, test with <strong>HDR Output</strong> on and off.</p>
 
 <h2 id="troubleshooting">Troubleshooting</h2>
 <ul>

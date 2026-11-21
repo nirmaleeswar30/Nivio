@@ -34,15 +34,16 @@
     <article class="prose">
 <span class="crumb">Nivio Docs</span>
 <h1>Everything Nivio can do, and how to use it</h1>
-<p class="lead">Nivio is a free, open-source app for Movies, TV Shows, Anime and Live TV, with Watch Parties and offline downloads. It runs on Android phones, Android TV, Windows and Linux. These pages explain how to set it up and get the most out of it.</p>
+<p class="lead">Nivio is a free, open-source app for movies, TV shows, anime and live TV, with Watch Parties and offline downloads. Get it for Android, Android TV, Windows and Linux, or check sideload availability for iPhone and iPad.</p>
 
 <div class="callout warn"><span class="ic">Note</span><div><p>Nivio doesn't host any media. It finds metadata and streams from third-party sources on the internet. You're responsible for following your local laws when you use it. Official downloads are only on <a href="https://github.com/nirmaleeswar30/Nivio/releases/latest" target="_blank" rel="noopener noreferrer">GitHub</a> and this site.</p></div></div>
 
 <h2 id="start">Start here</h2>
 <div class="cards">
   <a class="card" href="install.html"><b>Install & update</b><span>Get Nivio on your phone, TV or computer, and keep it up to date.</span></a>
+  <a class="card" href="install.html#ios"><b>iPhone and iPad</b><span>Check IPA availability and add the Nivio source in SideStore or AltStore Classic.</span></a>
   <a class="card" href="player.html"><b>The player</b><span>Gestures, shortcuts, servers, subtitles and every player setting.</span></a>
-  <a class="card" href="hdr.html"><b>HDR & Dolby Vision</b><span>True HDR on Android, Windows and Linux, and hardware Dolby Vision on Android, explained.</span></a>
+  <a class="card" href="hdr.html"><b>HDR & Dolby Vision</b><span>Check what your device can display and how HDR video plays on an SDR screen.</span></a>
   <a class="card" href="faq.html"><b>Troubleshooting</b><span>A video won't play, looks wrong, or something else is off.</span></a>
 </div>
 
@@ -57,19 +58,23 @@
   <a class="card" href="sync.html"><b>Sync & integrations</b><span>Cloud sync, AniList, MyAnimeList, Simkl and Discord.</span></a>
 </div>
 
+<h2 id="releases">What changed in v2.2.7</h2>
+<p>The public release adds HDR on Windows and supported Wayland desktops, Windows notifications, and more reliable background downloads on Android. Desktop HDR requires the new installer or AppImage. <a href="https://github.com/nirmaleeswar30/Nivio/releases/tag/v2.2.7">Read the release notes</a>.</p>
+<p>On newer phone builds, use <strong>Settings → App &amp; Updates → Liquid Glass Navigation</strong> to switch between the glass and frosted bottom bars.</p>
+
 <h2 id="platforms">Which platforms get what</h2>
 <p>Most features work everywhere. A few depend on what the device can do:</p>
 <div class="table-wrap"><table>
-  <thead><tr><th>Feature</th><th>Android</th><th>Android TV</th><th>Windows</th><th>Linux</th></tr></thead>
+  <thead><tr><th>Feature</th><th>Android</th><th>Android TV</th><th>Windows</th><th>Linux</th><th>iPhone / iPad</th></tr></thead>
   <tbody>
-    <tr><td>Movies, shows, anime, Live TV</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
-    <tr><td>Torrent streaming</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
-    <tr><td>Watch Party</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
-    <tr><td>True HDR & Dolby Vision</td><td>Yes, on supported phones</td><td>Yes, through your TV box</td><td>On the roadmap</td><td>On the roadmap</td></tr>
-    <tr><td>HDR → SDR tone mapping</td><td>Standard or HDR Toys</td><td>Standard or HDR Toys</td><td>Standard</td><td>Standard</td></tr>
-    <tr><td>Ambient mode</td><td>Yes</td><td>No</td><td>No</td><td>No</td></tr>
-    <tr><td>Discord Rich Presence</td><td>Yes (sign in with Discord)</td><td>Same as Android</td><td>Yes (uses your Discord app)</td><td>Yes (uses your Discord app)</td></tr>
-    <tr><td>One-click updates</td><td>Download from the app</td><td>Download from the app</td><td>Installs and restarts itself</td><td>Replaces the AppImage and restarts</td></tr>
+    <tr><td>Movies, shows, anime, Live TV</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+    <tr><td>Torrent streaming</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+    <tr><td>Watch Party</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+    <tr><td>HDR &amp; Dolby Vision</td><td>On supported phones</td><td>On supported TV setups</td><td>HDR10 and Dolby Vision converted to HDR10</td><td>HDR10 on supported Wayland desktops</td><td><a href="hdr.html#ios">Depends on the display and video</a></td></tr>
+    <tr><td>HDR → SDR tone mapping</td><td>Standard or HDR Toys</td><td>Standard or HDR Toys</td><td>Standard</td><td>Standard</td><td>Handled by iOS</td></tr>
+    <tr><td>Ambient mode</td><td>Yes</td><td>No</td><td>No</td><td>No</td><td>No</td></tr>
+    <tr><td>Discord Rich Presence</td><td>Yes (sign in with Discord)</td><td>Same as Android</td><td>Yes (uses your Discord app)</td><td>Yes (uses your Discord app)</td><td>Yes (sign in with Discord)</td></tr>
+    <tr><td>Full build updates</td><td>Download from the app</td><td>Download from the app</td><td>Installs and restarts itself</td><td>Replaces the AppImage and restarts</td><td>Install a new IPA with your sideloading app</td></tr>
   </tbody>
 </table></div>
 

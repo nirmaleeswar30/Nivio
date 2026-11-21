@@ -201,8 +201,15 @@ class StreamingService {
       selection.$2,
       ep,
       onStatusUpdate,
+      media: media,
     );
-    await torrentStreamService.rememberReleaseGroup(media.id, selection.$1);
+    if (handle != null && !selection.automatic) {
+      await torrentStreamService.rememberReleaseGroup(
+        media,
+        selection.$1,
+        fileName: handle.fileName,
+      );
+    }
     return handle;
   }
 
@@ -248,14 +255,22 @@ class StreamingService {
           // if it's ready, else the season-pack fast path (next episode already
           // inside the streaming torrent), then a silent same-release-group
           // resolve; fall back to the picker only if all fail and we have a context.
-          handle = torrentStreamService.consumePrefetch(episode);
+          final group = await torrentStreamService.recallReleaseGroup(media);
+          handle = await torrentStreamService.consumePrefetch(
+            media: media,
+            episode: episode,
+            season: season,
+            preferredGroup: group,
+          );
+          final prefetched = handle != null;
           handle ??= await torrentStreamService.nextEpisodeInActiveTorrent(
+            media: media,
             episode: episode,
             season: season,
             absoluteEpisode: absoluteEpisode,
+            preferredGroup: group,
           );
           if (handle == null) {
-            final group = await torrentStreamService.recallReleaseGroup(media.id);
             handle = await torrentStreamService.resolveStream(
               media: media,
               episode: episode,
@@ -263,12 +278,35 @@ class StreamingService {
               resolution: resolution,
               absoluteEpisode: absoluteEpisode,
               preferredGroup: group,
+              binge: true,
               onStatus: onStatusUpdate,
             );
           }
-          if (handle == null && context != null) {
+          final usePicker = handle == null && context != null;
+          if (usePicker) {
             handle = await _pickTorrentInteractively(
               media, episode, season, absoluteEpisode, resolution, onStatusUpdate, context,
+            );
+          }
+          if (handle != null) {
+            final title = handle.title.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
+            final fileName = handle.fileName.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
+            final releaseGroup = handle.releaseGroup;
+            final String reason;
+            if (usePicker) {
+              reason = 'picker fallback';
+            } else if (handle.fromPack) {
+              reason = 'reused current torrent';
+            } else if (group != null && releaseGroup?.trim().toLowerCase() == group.toLowerCase()) {
+              reason = 'matched release group';
+            } else {
+              reason = group == null ? 'best-ranked torrent' : 'fallback ranking';
+            }
+            debugPrint(
+              '[Binge Mode] Season $season episode $episode | $reason'
+              '${prefetched ? ' (prefetched)' : ''} | torrent: "$title"'
+              ' | file: "$fileName" | group: ${releaseGroup ?? "unknown"}'
+              ' | preferred: ${group ?? "none"}',
             );
           }
         } else if (context != null) {

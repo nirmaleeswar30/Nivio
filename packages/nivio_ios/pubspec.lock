@@ -937,7 +937,7 @@ packages:
       path: "../nivio_core"
       relative: true
     source: path
-    version: "2.2.7"
+    version: "2.2.8"
   nivio_curl:
     dependency: "direct main"
     description:

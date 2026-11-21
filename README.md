@@ -11,7 +11,7 @@
   [![Firebase](https://img.shields.io/badge/Powered_by-Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com/)
   [![TMDB](https://img.shields.io/badge/Metadata-TMDB-01B4E4?style=for-the-badge&logo=themoviedatabase&logoColor=white)](https://www.themoviedb.org/)
   [![AniList](https://img.shields.io/badge/Anime-AniList-02A9FF?style=for-the-badge&logo=anilist&logoColor=white)](https://anilist.co/)
-  [![Platforms](https://img.shields.io/badge/Platforms-Android%20%7C%20Android%20TV%20%7C%20Windows%20%7C%20Linux-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com)
+  [![Platforms](https://img.shields.io/badge/Platforms-Android%20%7C%20Android%20TV%20%7C%20Windows%20%7C%20Linux%20%7C%20iOS-3DDC84?style=for-the-badge)](https://nivio.nirmaleeswar.dev/#download)
   [![HDR](https://img.shields.io/badge/Android%20%7C%20Windows%20%7C%20Linux-True%20HDR%20%7C%20Dolby%20Vision-000000?style=for-the-badge&logo=dolby&logoColor=white)](#hdr)
   [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge)](https://www.gnu.org/licenses/gpl-3.0)
 
@@ -39,6 +39,14 @@
     <img src="assets/images/badge-obtainium.png" alt="Get it on Obtainium" height="48" />
   </a>
 </p>
+
+## Releases and iOS availability
+
+[v2.2.7](https://github.com/nirmaleeswar30/Nivio/releases/tag/v2.2.7) brings HDR to Windows and supported Wayland desktops, Windows notifications, more reliable Android downloads, and the move to GPL-3.0. Install the new Windows setup or Linux AppImage to get desktop HDR.
+
+The iPhone and iPad build targets **iOS / iPadOS 15 and later**. It has Picture-in-Picture, HDR and Dolby Vision through AVFoundation on compatible devices, an HDR card in player settings, and a back button for fullscreen trailers. Changes since v2.2.7 also include Liquid Glass navigation on Android and iOS and clearer remote focus and season selection on Android TV.
+
+Check the [iOS install guide](https://nivio.nirmaleeswar.dev/docs/install#ios) for public IPA availability. Once the IPA is published, add the Nivio source in **SideStore** or **AltStore Classic**, then search for **Nivio** in Browse. The source URL is `https://nivio.nirmaleeswar.dev/altstore.json`.
 
 ---
 
@@ -119,7 +127,7 @@
 
 <a id="hdr"></a>
 
-## 🌈 True HDR & Dolby Vision (Android, Windows & Linux)
+## 🌈 HDR & Dolby Vision
 
 As far as we know, **Nivio is the only Flutter app that plays real HDR and hardware Dolby Vision.** Flutter draws everything (video included) as SDR, so HDR video normally comes out flat and washed out. Nivio gets around it by taking the video out of Flutter's drawing: on Android it gets its own surface rendered by a custom-built mpv, on Windows mpv renders into its own window behind Nivio's controls, and on Linux into a Wayland surface just below Nivio's window:
 
@@ -127,6 +135,7 @@ As far as we know, **Nivio is the only Flutter app that plays real HDR and hardw
 * **Hardware Dolby Vision** — Our own [mpvlibAndroid build](https://github.com/nirmaleeswar30/mpvlibAndroid/releases/tag/v1.1.4-dv) patches FFmpeg to decode on the phone's Dolby Vision decoder and send it straight to the screen, so the display's own Dolby Vision engine kicks in (profiles 5 and 8 on supported phones). Nivio can also convert between Dolby Vision and HDR10 on the fly.
 * **True HDR on Windows** — On a monitor with Windows HDR turned on, mpv's `gpu-next` renderer draws the video on its own Direct3D 11 swapchain in HDR10, in a window kept just behind Nivio's, and Nivio's window turns see-through over the video so the controls and subtitles stay on top. Dolby Vision (profiles 5 and 8) is converted to HDR10 with correct colours. It follows the monitor the window is on, and falls back to tone mapping when Windows HDR is off.
 * **True HDR on Linux** — On a Wayland desktop with HDR turned on for the screen (KDE Plasma 6, GNOME 48+, Hyprland), mpv draws the video in HDR10 (PQ, BT.2020, 10-bit) into its own Wayland surface just below Nivio's window, tagged with the Wayland colour-management protocol, and Nivio's window turns see-through over it. Dolby Vision plays its HDR10 base layer. It follows the screen the window is on, and falls back to tone mapping when HDR is off.
+* **HDR on iPhone and iPad** — mpv renders through Apple's AVFoundation video layer. iOS handles HDR output and SDR tone mapping based on the device and video. The player’s HDR card and Stats for Nerds show the source format and reported output. [iOS HDR guide](https://nivio.nirmaleeswar.dev/docs/hdr#ios)
 * **Tone mapping for SDR screens** — No HDR screen, or HDR output turned off? HDR and BT.2020 video is tone-mapped to SDR instead: either mpv's own per-scene tone mapping or the [hdr-toys](https://github.com/natural-harmonia-gropius/hdr-toys) shader pipeline (PQ, HLG and BT.2020 profiles, picked from the video), the same approach as [mpvRx](https://github.com/Riteshp2001/mpvRx).
 * **You stay in control** — An HDR tile in the player shows exactly what's happening ("True HDR", "True DV", "Tone mapped") and lets you switch HDR output, the tone-mapping mode and the surface backend, also available under Settings → Playback.
 
@@ -162,8 +171,8 @@ Nivio is free and open source. If it makes your day a little better, consider su
 * **Offline Downloads**
 * **Curated Release Shelves** (Theatrical, OTT Premiere & Weekly Anime)
 * **Custom Subtitles & Persistence** (Local .srt/.vtt or remote URLs)
-* **Native Desktop, Mobile & TV Apps** (Windows, Linux, Android, Android TV / Google TV)
-* **True HDR, Dolby Vision & Tone Mapping** (Android, Windows & Linux, [details](#hdr))
+* **Native Desktop, Mobile & TV Apps** (Windows, Linux, Android, Android TV / Google TV, iPhone and iPad)
+* **HDR, Dolby Vision & Tone Mapping** ([platform details](#hdr))
 * **Live TV & IPTV** (M3U playlists and Xtream Codes, including Xtream movies & series)
 * **Seek-Bar Thumbnail Previews** (for sources that provide sprite sheets)
 * **Discord Rich Presence** (desktop and Android)
@@ -178,12 +187,12 @@ Nivio runs on Android TV and Google TV with a layout made for the big screen: a 
 
 ## 🛠️ Tech Stack
 
-*   **Architecture**: Modular Monorepo (`nivio_core`, `nivio_desktop`, `nivio_mobile`, `rqbit_ffi`)
+*   **Architecture**: Modular Monorepo (`nivio_core`, `nivio_desktop`, `nivio_mobile`, `nivio_ios`, `rqbit_ffi`)
 *   **UI & Framework**: Flutter (Dart `^3.10.0`)
 *   **Native P2P Engine**: Rust (`rqbit_ffi` / C-FFI bindings)
 *   **Media Playback**: `media_kit` (high-performance playback engine utilizing `libmpv` / MPV for hardware-accelerated rendering and extensive format decoding). On Android, a custom [mpvlibAndroid](https://github.com/nirmaleeswar30/mpvlibAndroid) build (mpv 0.41, libplacebo, Vulkan, Dolby Vision MediaCodec) powers HDR and Dolby Vision. On Windows, the desktop build ships a current libmpv (mpv 0.42, libplacebo, Direct3D 11 `gpu-next`) in place of media_kit's older bundled one. On Linux, HDR video is rendered through libmpv's render API into a 10-bit EGL Wayland subsurface.
 *   **State Management**: Riverpod (`flutter_riverpod ^2.6.1`)
-*   **Networking**: Dio & Google Cronet HTTP engine
+*   **Networking**: Dio, Cronet on Android, and libcurl with URLSession fallback on iOS
 *   **Routing & Navigation**: GoRouter (`go_router ^17.3.0`)
 *   **Backend & Authentication**: Firebase (Firebase Auth, Cloud Firestore)
 *   **Realtime Sockets**: Supabase (WebSockets for synchronized Watch Parties)
@@ -275,6 +284,10 @@ Use the automated builder scripts to compile either a Shorebird OTA release or a
 ./build_universal_apk.sh
 # Or with flags: ./build_universal_apk.sh --shorebird | --normal | --skip-build
 ```
+
+### iPhone and iPad (IPA)
+
+Both GitHub Actions builds are manual. **iOS build** produces a standard unsigned test IPA. **iOS Shorebird release** builds the sideload IPA that can receive Dart patches and registers it with Shorebird. See the [iOS build and release guide](packages/nivio_ios/README.md).
 
 ### 🖥️ Windows Desktop (installer)
 

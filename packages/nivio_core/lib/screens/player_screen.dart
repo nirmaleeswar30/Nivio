@@ -1290,7 +1290,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           headers: {},
           subtitles: hasSrt ? [StreamSubtitleTrack(lang: subLang, url: srtPath)] : [],
         );
-      } else if (_prefetchedStreams.containsKey(_currentEpisode)) {
+      } else if (_prefetchedStreams.containsKey(_currentEpisode) &&
+          (!_bingeMode || streamingService.getProviderName(
+            _currentProviderIndex,
+            isAnime: _isAnimeMedia(media),
+          ) != 'Nivio Torrents')) {
         // Use the silently prefetched stream to eliminate loading delays!
         result = _prefetchedStreams.remove(_currentEpisode);
       } else if (_selectedAudioOverride != null && _streamResult?.preloadedSources?.containsKey(_selectedAudioOverride) == true) {
@@ -1705,10 +1709,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       
       _applyDisplaySettings(refreshUi: false);
       _maybeAutoEnterFullscreenOnce();
-      _prefetchNextEpisode();
-      if (_bingeMode) {
-        _prefetchBingeNext();
+      if (_bingeMode && _currentProvider == 'Nivio Torrents') {
+        await _refreshBingeGroup();
       }
+      if (mounted) _prefetchNextEpisode();
       
       if (_resumePosition != null && mounted) {
         final marginHorizontal = (MediaQuery.of(context).size.width - 250) / 2;
@@ -3090,10 +3094,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final enabling = !_bingeMode;
     setState(() => _bingeMode = enabling);
     if (enabling) {
-      // Load the remembered release group so the card can show it.
-      final group =
-          await _cachedTorrentService?.recallReleaseGroup(widget.mediaId);
-      if (mounted) setState(() => _bingeGroup = group);
+      await _refreshBingeGroup();
+      if (!mounted || !_bingeMode) return;
       _prefetchBingeNext();
     }
     // Rebuild the overlay so it reflects the new binge state immediately.
@@ -3109,6 +3111,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         setState(() => _nextEpisodeCountdown = null);
         _nextEpNotifier.value = const _NextEpState(show: true, countdown: null);
       }
+    }
+  }
+
+  Future<void> _refreshBingeGroup() async {
+    final media = ref.read(selectedMediaProvider) ?? _cachedMedia;
+    if (media == null) return;
+    final group = await _cachedTorrentService?.recallReleaseGroup(media);
+    if (mounted && _bingeMode && group != _bingeGroup) {
+      setState(() => _bingeGroup = group);
     }
   }
 
@@ -3128,8 +3139,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         episode: nextEp,
         season: widget.season,
         resolution: resolution,
-        absoluteEpisode: null,
-        preferredGroup: _bingeGroup,
       ) ??
           Future.value(),
     );

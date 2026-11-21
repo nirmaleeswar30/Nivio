@@ -77,14 +77,14 @@ Color appAccentColorFromKey(String key) {
   return appAccentOptions.first.color;
 }
 
-// App Theme Provider (full color schemes: System, Blackout, Monokai, Catppuccin, Dracula, Amber, Lavender)
+// App Theme Provider (Classic, Blackout, Monokai, Catppuccin, Dracula, Amber, Lavender)
 final appThemeProvider =
     StateNotifierProvider<AppThemeNotifier, String>((ref) {
   return AppThemeNotifier();
 });
 
 class AppThemeNotifier extends StateNotifier<String> {
-  AppThemeNotifier() : super('system') {
+  AppThemeNotifier() : super(NivioTheme.classicTheme.key) {
     _loadTheme();
   }
 
@@ -92,7 +92,7 @@ class AppThemeNotifier extends StateNotifier<String> {
     final prefs = await SharedPreferences.getInstance();
     final savedTheme = prefs.getString('app_theme');
     if (savedTheme != null) {
-      state = _normalizeTheme(savedTheme);
+      state = NivioTheme.getTheme(savedTheme).key;
       return;
     }
     // Migrate legacy accent color if present
@@ -102,21 +102,14 @@ class AppThemeNotifier extends StateNotifier<String> {
       await prefs.setString('app_theme', state);
       return;
     }
-    state = 'system';
+    state = NivioTheme.classicTheme.key;
   }
 
   Future<void> setTheme(String key) async {
-    final normalized = _normalizeTheme(key);
+    final normalized = NivioTheme.getTheme(key).key;
     state = normalized;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('app_theme', normalized);
-  }
-
-  String _normalizeTheme(String key) {
-    for (final theme in NivioTheme.availableThemes) {
-      if (theme.key == key) return key;
-    }
-    return 'system';
   }
 
   String _mapOldAccentToTheme(String oldAccent) {
@@ -133,7 +126,7 @@ class AppThemeNotifier extends StateNotifier<String> {
       case 'blue':
         return 'catppuccin';
       default:
-        return 'system';
+        return NivioTheme.classicTheme.key;
     }
   }
 }

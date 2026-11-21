@@ -4,7 +4,7 @@
   var GROUPS = [
     { title: 'Getting started', pages: [
       { slug: '', title: 'Overview', keys: 'start intro what is nivio platforms' },
-      { slug: 'install', title: 'Install & update', keys: 'download apk exe appimage windows linux android obtainium update upgrade uninstall smartscreen fuse' },
+      { slug: 'install', title: 'Install & update', keys: 'download apk exe appimage windows linux android iphone ipad ios ipa sidestore altstore sideload source shorebird obtainium update upgrade uninstall smartscreen fuse' },
     ] },
     { title: 'Watching', pages: [
       { slug: 'player', title: 'The player', keys: 'controls gestures keyboard shortcuts lock brightness volume subtitles audio quality server decoder ambient stats pip skip intro next episode' },

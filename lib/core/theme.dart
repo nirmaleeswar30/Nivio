@@ -15,7 +15,6 @@ class NivioAppTheme {
   final Color textPrimary;
   final Color textSecondary;
   final List<Color> gradientColors;
-  final bool isDark;
 
   const NivioAppTheme({
     required this.key,
@@ -30,7 +29,6 @@ class NivioAppTheme {
     required this.textPrimary,
     required this.textSecondary,
     required this.gradientColors,
-    this.isDark = true,
   });
 }
 
@@ -45,7 +43,6 @@ class NivioThemeColors extends ThemeExtension<NivioThemeColors> {
   final Color textPrimary;
   final Color textSecondary;
   final LinearGradient backgroundGradient;
-  final bool isDark;
 
   const NivioThemeColors({
     required this.background,
@@ -57,7 +54,6 @@ class NivioThemeColors extends ThemeExtension<NivioThemeColors> {
     required this.textPrimary,
     required this.textSecondary,
     required this.backgroundGradient,
-    this.isDark = true,
   });
 
   @override
@@ -71,7 +67,6 @@ class NivioThemeColors extends ThemeExtension<NivioThemeColors> {
     Color? textPrimary,
     Color? textSecondary,
     LinearGradient? backgroundGradient,
-    bool? isDark,
   }) {
     return NivioThemeColors(
       background: background ?? this.background,
@@ -83,7 +78,6 @@ class NivioThemeColors extends ThemeExtension<NivioThemeColors> {
       textPrimary: textPrimary ?? this.textPrimary,
       textSecondary: textSecondary ?? this.textSecondary,
       backgroundGradient: backgroundGradient ?? this.backgroundGradient,
-      isDark: isDark ?? this.isDark,
     );
   }
 
@@ -105,7 +99,6 @@ class NivioThemeColors extends ThemeExtension<NivioThemeColors> {
       backgroundGradient:
           LinearGradient.lerp(backgroundGradient, other.backgroundGradient, t) ??
               backgroundGradient,
-      isDark: t < 0.5 ? isDark : other.isDark,
     );
   }
 }
@@ -231,11 +224,11 @@ class NivioTheme {
     gradientColors: [Color(0xFF262142), Color(0xFF161426)],
   );
 
-  // 7. System (Adaptive / Classic Nivio)
-  static const systemDarkTheme = NivioAppTheme(
+  // Keep the saved 'system' key for the Classic palette.
+  static const classicTheme = NivioAppTheme(
     key: 'system',
-    label: 'System',
-    description: 'Follows device system appearance (Classic Nivio)',
+    label: 'Classic',
+    description: 'Nivio’s original dark palette with red accents',
     scaffoldBackgroundColor: Color(0xFF0D0F14),
     surface: Color(0xFF151922),
     surfaceContainer: Color(0xFF1D2330),
@@ -247,24 +240,8 @@ class NivioTheme {
     gradientColors: [Color(0xFF151922), Color(0xFF0D0F14)],
   );
 
-  static const systemLightTheme = NivioAppTheme(
-    key: 'system',
-    label: 'System',
-    description: 'Follows device system appearance (Light)',
-    scaffoldBackgroundColor: Color(0xFFF8FAFC),
-    surface: Color(0xFFFFFFFF),
-    surfaceContainer: Color(0xFFF1F5F9),
-    primary: Color(0xFFE50914),
-    secondary: Color(0xFF64748B),
-    border: Color(0xFFE2E8F0),
-    textPrimary: Color(0xFF0F172A),
-    textSecondary: Color(0xFF64748B),
-    gradientColors: [Color(0xFFEDF2F7), Color(0xFFF8FAFC)],
-    isDark: false,
-  );
-
   static List<NivioAppTheme> get availableThemes => const [
-    systemDarkTheme,
+    classicTheme,
     blackoutTheme,
     catppuccinTheme,
     draculaTheme,
@@ -273,16 +250,11 @@ class NivioTheme {
     monokaiTheme,
   ];
 
-  static NivioAppTheme getTheme(String key, {Brightness? systemBrightness}) {
-    if (key == 'system') {
-      return systemBrightness == Brightness.light
-          ? systemLightTheme
-          : systemDarkTheme;
-    }
+  static NivioAppTheme getTheme(String key) {
     for (final theme in availableThemes) {
       if (theme.key == key) return theme;
     }
-    return systemDarkTheme;
+    return classicTheme;
   }
 
   static Color accentColorOf(BuildContext context) {
@@ -329,11 +301,9 @@ class NivioTheme {
 
   static ThemeData buildTheme(
     String themeKey, {
-    Brightness? systemBrightness,
     String fontFamily = 'Satoshi',
   }) {
-    final appTheme = getTheme(themeKey, systemBrightness: systemBrightness);
-    final brightness = appTheme.isDark ? Brightness.dark : Brightness.light;
+    final appTheme = getTheme(themeKey);
 
     final themeColors = NivioThemeColors(
       background: appTheme.scaffoldBackgroundColor,
@@ -349,12 +319,11 @@ class NivioTheme {
         end: Alignment.bottomCenter,
         colors: appTheme.gradientColors,
       ),
-      isDark: appTheme.isDark,
     );
 
     return ThemeData(
       useMaterial3: true,
-      brightness: brightness,
+      brightness: Brightness.dark,
       fontFamily: fontFamily,
       scaffoldBackgroundColor: appTheme.scaffoldBackgroundColor,
       primaryColor: appTheme.primary,
@@ -365,7 +334,7 @@ class NivioTheme {
       extensions: [themeColors],
       colorScheme: ColorScheme.fromSeed(
         seedColor: appTheme.primary,
-        brightness: brightness,
+        brightness: Brightness.dark,
         primary: appTheme.primary,
         secondary: appTheme.secondary,
         surface: appTheme.surface,
@@ -441,9 +410,7 @@ class NivioTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: appTheme.primary,
-          foregroundColor: appTheme.isDark
-              ? const Color(0xFFFFFFFF)
-              : const Color(0xFF000000),
+          foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(999),
@@ -531,7 +498,7 @@ class NivioTheme {
     String fontFamily = 'Satoshi',
     Color accentColor = netflixRed,
   }) {
-    return buildTheme('system', fontFamily: fontFamily);
+    return buildTheme(classicTheme.key, fontFamily: fontFamily);
   }
 
   static final ThemeData darkTheme = buildDarkTheme();

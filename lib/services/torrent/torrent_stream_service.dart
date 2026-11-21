@@ -10,6 +10,7 @@ import '../../core/debug_log.dart';
 import '../../models/search_result.dart';
 import '../download_service.dart';
 import '../tmdb_service.dart';
+import 'anitomy.dart';
 import 'anime_query_builder.dart';
 import 'media_ranking.dart';
 import 'media_torrent_models.dart';
@@ -32,6 +33,8 @@ class TorrentStreamHandle {
     required this.client,
     required this.title,
     this.resolution,
+    this.releaseGroup,
+    this.fromPack = false,
   });
 
   final String url;
@@ -41,27 +44,37 @@ class TorrentStreamHandle {
   final RqbitClient client;
   final String title;
   final int? resolution;
+  final String? releaseGroup;
+  final bool fromPack;
 
   Future<TorrentStats> stats() => client.getStats(torrentId);
 }
 
 /// A next episode pre-added to rqbit for binge mode. [fromPack] means it's a
 /// file inside the already-active season-pack torrent (no new torrent added).
+typedef _BingeEpisode = ({String mediaType, int mediaId, int season, int episode, String? group});
+
 class _PrefetchEntry {
-  final int episode;
+  final _BingeEpisode target;
   final int torrentId;
   final int fileIndex;
   final String url;
+  final String title;
+  final String fileName;
   final bool fromPack;
   final int? resolution;
+  final String? releaseGroup;
 
   _PrefetchEntry({
-    required this.episode,
+    required this.target,
     required this.torrentId,
     required this.fileIndex,
     required this.url,
+    required this.title,
+    required this.fileName,
     required this.fromPack,
     this.resolution,
+    this.releaseGroup,
   });
 }
 
@@ -94,6 +107,8 @@ class TorrentStreamService {
   TmdbService? get tmdbService => _tmdbService;
 
   int? _activeTorrentId;
+  String? _activeReleaseGroup;
+  ({String mediaType, int mediaId})? _activeMedia;
   int? _lastStreamedTorrentId;
   // True when _activeTorrentId points at a torrent owned by DownloadService
   // (adopted only so stats can be shown). We must NOT forget/delete it on
@@ -104,6 +119,15 @@ class TorrentStreamService {
   // Binge prefetch: the next episode pre-added to rqbit (metadata + first
   // pieces) so switching to it is near-instant.
   _PrefetchEntry? _prefetch;
+  Object? _prefetching;
+
+  _BingeEpisode _bingeEpisode(SearchResult media, int season, int episode, String? group) => (
+    mediaType: media.mediaType,
+    mediaId: media.id,
+    season: season,
+    episode: episode,
+    group: group?.trim().toLowerCase(),
+  );
 
   void _log(String m) => appDebugLog('🌀 [TORRENT] $m');
 
@@ -117,6 +141,7 @@ class TorrentStreamService {
     List<String> exclusions = const [],
     int? absoluteEpisode,
     String? preferredGroup,
+    bool binge = false,
     void Function(String status)? onStatus,
   }) async {
     final isAnime = media.mediaType == 'anime';
@@ -131,20 +156,22 @@ class TorrentStreamService {
         absoluteEpisode: absoluteEpisode,
       );
 
+      if (binge && (query.season != season || query.absoluteEpisode != absoluteEpisode)) {
+        final pack = await nextEpisodeInActiveTorrent(
+          media: media,
+          episode: episode,
+          season: query.season,
+          absoluteEpisode: query.absoluteEpisode,
+          preferredGroup: preferredGroup,
+        );
+        if (pack != null) return pack;
+      }
+
       final results = await searchTorrents(query: query, onStatus: onStatus);
       if (results.isEmpty) return null;
 
-      // Binge mode: prefer the same release group the user picked before,
-      // falling back to the best-ranked release when it isn't available.
-      final best =
-          _pickByGroup(results, preferredGroup) ?? TorrentRanking.best(results, query);
-      if (best == null) {
-        _log('=> ${results.length} candidates but none passed ranking/episode filter');
-        onStatus?.call('No suitable release found');
-        return null;
-      }
-
-      return startTorrent(best, query, episode, onStatus);
+      return _startRanked(results, TorrentRanking.best(results, query), query,
+          media, episode, preferredGroup, binge, onStatus);
     } else {
       // Movies and TV series
       final isMovie = media.mediaType == 'movie';
@@ -177,16 +204,40 @@ class TorrentStreamService {
       final results = await searchMediaTorrents(query: query, onStatus: onStatus);
       if (results.isEmpty) return null;
 
-      final best =
-          _pickByGroup(results, preferredGroup) ?? MediaRanking.best(results, query);
-      if (best == null) {
-        _log('=> ${results.length} media candidates but none passed ranking');
-        onStatus?.call('No suitable release found');
-        return null;
-      }
-
-      return startTorrent(best, query, episode, onStatus);
+      return _startRanked(results, results.first, query, media, episode,
+          preferredGroup, binge, onStatus);
     }
+  }
+
+  Future<TorrentStreamHandle?> _startRanked(
+    List<TorrentResult> ranked,
+    TorrentResult? best,
+    Object query,
+    SearchResult media,
+    int episode,
+    String? preferredGroup,
+    bool binge,
+    void Function(String)? onStatus,
+  ) async {
+    final preferred = _pickByGroup(ranked, preferredGroup);
+    if (preferred != null) {
+      try {
+        final handle = await startTorrent(preferred, query, episode, onStatus,
+            media: media, requireEpisodeMatch: binge);
+        if (handle != null) return handle;
+      } catch (error) {
+        _log('Preferred release could not start: $error');
+      }
+    }
+    final fallback = preferred != null && preferred == best
+        ? ranked.where((item) => item != preferred).firstOrNull
+        : best;
+    if (fallback == null) {
+      onStatus?.call('No suitable release found');
+      return null;
+    }
+    return startTorrent(fallback, query, episode, onStatus,
+        media: media, requireEpisodeMatch: binge);
   }
 
   /// Returns the highest-ranked candidate whose release group matches [group]
@@ -203,21 +254,22 @@ class TorrentStreamService {
   }
 
   /// Persists the release group of [chosen] as the binge preference for the
-  /// series [mediaId], so future episodes prefer the same group.
-  Future<void> rememberReleaseGroup(int mediaId, TorrentResult chosen) async {
-    final group = chosen.parsed.releaseGroup;
-    if (group == null || group.trim().isEmpty) return;
+  /// series, so future episodes prefer the same group.
+  Future<void> rememberReleaseGroup(SearchResult media, TorrentResult chosen,
+      {required String fileName}) async {
+    final group = chosen.parsed.releaseGroup ?? Anitomy.parse(fileName).releaseGroup;
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('binge_group_$mediaId', group.trim());
+      await prefs.setString('binge_group_${media.mediaType}_${media.id}', group?.trim() ?? '');
     } catch (_) {}
   }
 
-  /// The remembered binge release group for series [mediaId], if any.
-  Future<String?> recallReleaseGroup(int mediaId) async {
+  /// The remembered binge release group for this series, if any.
+  Future<String?> recallReleaseGroup(SearchResult media) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final g = prefs.getString('binge_group_$mediaId');
+      final g = prefs.getString('binge_group_${media.mediaType}_${media.id}') ??
+          prefs.getString('binge_group_${media.id}');
       return (g != null && g.trim().isNotEmpty) ? g.trim() : null;
     } catch (_) {
       return null;
@@ -228,13 +280,18 @@ class TorrentStreamService {
   /// pack that also contains [episode], returns a handle streaming that file
   /// directly — no new search, no re-add. Returns null if it isn't in the pack.
   Future<TorrentStreamHandle?> nextEpisodeInActiveTorrent({
+    required SearchResult media,
     required int episode,
     int? season,
     int? absoluteEpisode,
+    String? preferredGroup,
+    bool prepareOnly = false,
   }) async {
     final id = _activeTorrentId;
     final client = _client;
-    if (id == null || client == null) return null;
+    if (id == null || client == null ||
+        _activeMedia != (mediaType: media.mediaType, mediaId: media.id) ||
+        (preferredGroup != null && _activeReleaseGroup?.toLowerCase() != preferredGroup.toLowerCase())) return null;
     try {
       final details = await client.getDetails(id);
       if (details.files.length <= 1) return null; // single-file, not a pack
@@ -243,11 +300,14 @@ class TorrentStreamService {
         episode: episode,
         season: season,
         absoluteEpisode: absoluteEpisode,
+        requireEpisodeMatch: true,
       );
       if (file == null) return null;
-      try {
-        await client.updateOnlyFiles(id, [file.index]);
-      } catch (_) {}
+      if (!prepareOnly && !_activeIsAdopted) {
+        try {
+          await client.updateOnlyFiles(id, [file.index]);
+        } catch (_) {}
+      }
       _log('season-pack fast path: episode $episode -> file[${file.index}] "${file.name}"');
       return TorrentStreamHandle(
         url: client.streamUrl(id, file.index),
@@ -255,8 +315,9 @@ class TorrentStreamService {
         fileIndex: file.index,
         fileName: file.name,
         client: client,
-        title: file.name,
-        resolution: null,
+        title: details.name?.trim().isNotEmpty == true ? details.name! : file.name,
+        releaseGroup: _activeReleaseGroup,
+        fromPack: true,
       );
     } catch (_) {
       return null;
@@ -273,32 +334,36 @@ class TorrentStreamService {
     required int season,
     String resolution = '1080',
     int? absoluteEpisode,
-    String? preferredGroup,
   }) async {
+    final activeId = _activeTorrentId;
+    if (activeId == null) return;
+    final preferredGroup = await recallReleaseGroup(media);
+    final target = _bingeEpisode(media, season, episode, preferredGroup);
+    if (_activeTorrentId != activeId || _prefetching != null || _prefetch?.target == target) return;
+    final request = Object();
+    _prefetching = request;
+    int? addedId;
     try {
-      if (_prefetch?.episode == episode) return; // already prefetched
-
       // If the active torrent is a pack that already has this episode, we don't
       // need to add anything — just note the file to switch to.
-      final pack = await nextEpisodeInActiveTorrent(
+      var pack = await nextEpisodeInActiveTorrent(
+        media: media,
         episode: episode,
         season: season,
         absoluteEpisode: absoluteEpisode,
+        preferredGroup: preferredGroup,
+        prepareOnly: true,
       );
+      if (_prefetching != request || _activeTorrentId != activeId) return;
       if (pack != null) {
-        _prefetch = _PrefetchEntry(
-          episode: episode,
-          torrentId: pack.torrentId,
-          fileIndex: pack.fileIndex,
-          url: pack.url,
-          fromPack: true,
-          resolution: pack.resolution,
-        );
+        _cachePack(target, pack);
         return;
       }
 
       final isAnime = media.mediaType == 'anime';
       TorrentResult? best;
+      var fileSeason = season;
+      var fileAbsoluteEpisode = absoluteEpisode;
       if (isAnime) {
         final query = await _queryBuilder.build(
           media,
@@ -307,6 +372,23 @@ class TorrentStreamService {
           resolution: resolution,
           absoluteEpisode: absoluteEpisode,
         );
+        fileSeason = query.season;
+        fileAbsoluteEpisode = query.absoluteEpisode;
+        if (fileSeason != season || fileAbsoluteEpisode != absoluteEpisode) {
+          pack = await nextEpisodeInActiveTorrent(
+            media: media,
+            episode: episode,
+            season: fileSeason,
+            absoluteEpisode: fileAbsoluteEpisode,
+            preferredGroup: preferredGroup,
+            prepareOnly: true,
+          );
+          if (_prefetching != request || _activeTorrentId != activeId) return;
+          if (pack != null) {
+            _cachePack(target, pack);
+            return;
+          }
+        }
         final results = await searchTorrents(query: query);
         if (results.isEmpty) return;
         best = _pickByGroup(results, preferredGroup) ?? TorrentRanking.best(results, query);
@@ -329,7 +411,7 @@ class TorrentStreamService {
         if (results.isEmpty) return;
         best = _pickByGroup(results, preferredGroup) ?? MediaRanking.best(results, query);
       }
-      if (best == null) return;
+      if (best == null || _prefetching != request || _activeTorrentId != activeId) return;
 
       final client = await RqbitEngine.instance.ensureStarted();
       _client ??= client;
@@ -339,16 +421,14 @@ class TorrentStreamService {
       );
       final id = add.id;
       if (id == null) return;
+      addedId = id;
 
       var details = await client.getDetails(id);
       for (var i = 0; details.files.isEmpty && i < 30; i++) {
         await Future.delayed(const Duration(seconds: 1));
         details = await client.getDetails(id);
       }
-      if (details.files.isEmpty) {
-        await _releaseTorrent(id);
-        return;
-      }
+      if (details.files.isEmpty || _prefetching != request || _activeTorrentId != activeId) return;
 
       TorrentFileInfo? file = best.fileIndex != null
           ? details.files.where((f) => f.index == best!.fileIndex).firstOrNull
@@ -356,34 +436,76 @@ class TorrentStreamService {
       file ??= TorrentFileResolver.resolve(
         details.files,
         episode: episode,
-        absoluteEpisode: absoluteEpisode,
-        season: season,
+        absoluteEpisode: fileAbsoluteEpisode,
+        season: fileSeason,
+        requireEpisodeMatch: true,
+        allowUnnumberedSingle: !best.isBatch,
       );
       if (file == null) return;
-      try {
-        await client.updateOnlyFiles(id, [file.index]);
-      } catch (_) {}
+      if (id != activeId) {
+        try {
+          await client.updateOnlyFiles(id, [file.index]);
+        } catch (_) {}
+      }
+      if (_prefetching != request || _activeTorrentId != activeId) return;
 
-      _prefetch = _PrefetchEntry(
-        episode: episode,
+      _cachePrefetch(_PrefetchEntry(
+        target: target,
         torrentId: id,
         fileIndex: file.index,
         url: client.streamUrl(id, file.index),
+        title: best.title,
+        fileName: file.name,
         fromPack: false,
         resolution: best.parsed.resolution,
-      );
+        releaseGroup: best.parsed.releaseGroup ?? Anitomy.parse(file.name).releaseGroup,
+      ));
       _log('prefetched episode $episode -> torrent $id file[${file.index}]');
     } catch (e) {
       _log('prefetch error: $e');
+    } finally {
+      if (_prefetching == request) _prefetching = null;
+      if (addedId != null && addedId != _activeTorrentId && addedId != _prefetch?.torrentId) {
+        await _releaseTorrent(addedId);
+      }
+    }
+  }
+
+  void _cachePack(_BingeEpisode target, TorrentStreamHandle pack) {
+    _cachePrefetch(_PrefetchEntry(
+      target: target,
+      torrentId: pack.torrentId,
+      fileIndex: pack.fileIndex,
+      url: pack.url,
+      title: pack.title,
+      fileName: pack.fileName,
+      fromPack: true,
+      resolution: pack.resolution,
+      releaseGroup: pack.releaseGroup,
+    ));
+  }
+
+  void _cachePrefetch(_PrefetchEntry entry) {
+    final old = _prefetch;
+    _prefetch = entry;
+    if (old != null && !old.fromPack && old.torrentId != entry.torrentId &&
+        old.torrentId != _activeTorrentId) {
+      unawaited(_releaseTorrent(old.torrentId));
     }
   }
 
   /// Returns the prefetched handle for [episode] (if any) and promotes it to the
   /// active stream, releasing the previously-active torrent. Null if nothing was
   /// prefetched for that episode.
-  TorrentStreamHandle? consumePrefetch(int episode) {
+  Future<TorrentStreamHandle?> consumePrefetch({
+    required SearchResult media,
+    required int episode,
+    required int season,
+    required String? preferredGroup,
+  }) async {
     final p = _prefetch;
-    if (p == null || p.episode != episode) return null;
+    final target = _bingeEpisode(media, season, episode, preferredGroup);
+    if (p == null || p.target != target || (p.fromPack && p.torrentId != _activeTorrentId)) return null;
     _prefetch = null;
     final client = _client;
     if (client == null) return null;
@@ -394,20 +516,29 @@ class TorrentStreamService {
       _activeTorrentId = p.torrentId;
       _lastStreamedTorrentId = p.torrentId;
       _activeIsAdopted = false;
+      _activeMedia = (mediaType: media.mediaType, mediaId: media.id);
+      _activeReleaseGroup = p.releaseGroup?.trim();
       // Never release an adopted download torrent — it belongs to DownloadService.
       if (old != null && old != p.torrentId && !oldAdopted) {
         unawaited(_releaseTorrent(old));
       }
+    }
+    if (!_activeIsAdopted) {
+      try {
+        await client.updateOnlyFiles(p.torrentId, [p.fileIndex]);
+      } catch (_) {}
     }
     _log('consuming prefetch for episode $episode (torrent ${p.torrentId})');
     return TorrentStreamHandle(
       url: p.url,
       torrentId: p.torrentId,
       fileIndex: p.fileIndex,
-      fileName: '',
+      fileName: p.fileName,
       client: client,
-      title: '',
+      title: p.title,
       resolution: p.resolution,
+      releaseGroup: p.releaseGroup,
+      fromPack: p.fromPack,
     );
   }
 
@@ -416,6 +547,7 @@ class TorrentStreamService {
     final client = _client;
     if (client == null) return;
     try {
+      if (Hive.isBoxOpen('downloads') && DownloadService.box.values.any((item) => item.torrentId == id)) return;
       final prefs = await SharedPreferences.getInstance();
       final persist = prefs.getBool('torrent_persist_files') ?? false;
       persist ? await client.forget(id) : await client.delete(id);
@@ -482,8 +614,10 @@ class TorrentStreamService {
     TorrentResult best,
     dynamic query,
     int episode,
-    void Function(String status)? onStatus,
-  ) async {
+    void Function(String status)? onStatus, {
+    required SearchResult media,
+    bool requireEpisodeMatch = false,
+  }) async {
     _log('best="${best.title}" src=${best.source} seeders=${best.seeders} '
         'res=${best.parsed.resolution} type=${best.type} link=${best.link.substring(0, best.link.length.clamp(0, 60))}…');
 
@@ -500,25 +634,9 @@ class TorrentStreamService {
       best.link,
       isUrl: best.link.startsWith('http') ? true : null,
     );
-    final id = add.id ?? 0;
+    final id = add.id;
+    if (id == null) return null;
     _log('torrent added id=$id; waiting for metadata/files…');
-
-    // Stop any previously-playing torrent — unless it was an adopted download
-    // torrent (owned by DownloadService), which must keep running.
-    final prev = _activeTorrentId ?? _lastStreamedTorrentId;
-    final prevAdopted = _activeIsAdopted;
-    if (prev != null && prev != id && !prevAdopted) {
-      try {
-        if (persistFiles) {
-          await client.forget(prev);
-        } else {
-          await client.delete(prev);
-        }
-      } catch (_) {}
-    }
-    _activeTorrentId = id;
-    _lastStreamedTorrentId = id;
-    _activeIsAdopted = false;
 
     // Magnets resolve metadata from peers — wait for the file list.
     var details = await client.getDetails(id);
@@ -530,13 +648,10 @@ class TorrentStreamService {
     if (details.files.isEmpty) {
       _log('=> metadata never arrived (no peers?) after 60s for id=$id');
       onStatus?.call('Could not fetch metadata (no peers?)');
+      if (id != _activeTorrentId) await _releaseTorrent(id);
       return null;
     }
     _log('metadata ready: ${details.files.length} file(s) in torrent');
-    if (!persistFiles) {
-      unawaited(_cleanupOldStreamingCache(client, currentTorrentId: id, details: details));
-    }
-
     TorrentFileInfo? file;
     if (best.fileIndex != null) {
       file = details.files.where((f) => f.index == best.fileIndex).firstOrNull;
@@ -548,13 +663,30 @@ class TorrentStreamService {
       season: query is MediaTorrentQuery
           ? query.season
           : (query is AnimeQuery ? query.season : null),
+      requireEpisodeMatch: requireEpisodeMatch,
+      allowUnnumberedSingle: !best.isBatch,
     );
     if (file == null) {
       _log('=> resolver found no playable file');
       onStatus?.call('No playable file in torrent');
+      if (id != _activeTorrentId) await _releaseTorrent(id);
       return null;
     }
     _log('resolved file[${file.index}]="${file.name}" -> streaming');
+
+    // Keep the prior stream until the chosen release has a playable file.
+    final prev = _activeTorrentId ?? _lastStreamedTorrentId;
+    final prevAdopted = _activeIsAdopted;
+    _activeTorrentId = id;
+    _lastStreamedTorrentId = id;
+    _activeIsAdopted = false;
+    _activeMedia = (mediaType: media.mediaType, mediaId: media.id);
+    final releaseGroup = (best.parsed.releaseGroup ?? Anitomy.parse(file.name).releaseGroup)?.trim();
+    _activeReleaseGroup = releaseGroup;
+    if (prev != null && prev != id && !prevAdopted) await _releaseTorrent(prev);
+    if (!persistFiles) {
+      unawaited(_cleanupOldStreamingCache(client, currentTorrentId: id, details: details));
+    }
 
     // Wait out the initializing/checking state (up to ~20s) so the stream
     // endpoint can actually serve the file header when mpv opens it. When replaying
@@ -595,6 +727,7 @@ class TorrentStreamService {
       client: client,
       title: best.title,
       resolution: best.parsed.resolution,
+      releaseGroup: releaseGroup,
     );
   }
 
@@ -612,6 +745,8 @@ class TorrentStreamService {
       _client ??= await RqbitEngine.instance.ensureStarted();
       _activeTorrentId = torrentId;
       _activeIsAdopted = true;
+      _activeMedia = null;
+      _activeReleaseGroup = null;
     } catch (_) {}
   }
 
@@ -637,6 +772,14 @@ class TorrentStreamService {
     final wasAdopted = _activeIsAdopted;
     _activeTorrentId = null;
     _activeIsAdopted = false;
+    _activeMedia = null;
+    _activeReleaseGroup = null;
+    _prefetching = null;
+    final prefetched = _prefetch;
+    _prefetch = null;
+    if (prefetched != null && !prefetched.fromPack && prefetched.torrentId != id) {
+      unawaited(_releaseTorrent(prefetched.torrentId));
+    }
     // An adopted torrent is owned by DownloadService's ongoing download — just
     // stop reporting it; forgetting/deleting it would abort that download.
     if (wasAdopted) {

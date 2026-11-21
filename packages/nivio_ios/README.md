@@ -11,13 +11,53 @@ a thin app package around `nivio_core` (the root `lib/`).
 
 ### CI (no Mac needed)
 
-`.github/workflows/ios.yml` runs on every push to `ios-support`, on `v*` tags and
-on demand (Actions → *iOS build* → *Run workflow*). It uploads
+Run `.github/workflows/ios.yml` manually from **Actions → iOS build → Run
+workflow**. It uploads
 `Nivio-<version>-unsigned.ipa` as the **Nivio-iOS-unsigned** artifact.
 
 The workflow needs the `NIVIO_ENV` repository secret: the full contents of the
 app's `.env`. It is bundled as an asset, the same as in the Android and desktop
 builds.
+
+### Shorebird IPA for sideloading
+
+**Actions → iOS Shorebird release → Run workflow** creates a Shorebird
+release baseline. Run it from `main` when ready to release. It uses Nivio's
+existing Shorebird app ID and Xcode 26.3 on the macOS 15
+runner.
+
+1. Add a Shorebird CI token with access to the Nivio app as the
+   `SHOREBIRD_TOKEN` repository secret.
+2. The workflow uses the existing `NIVIO_ENV` repository secret, just like
+   the regular iOS build. Flutter bundles it as the app's `.env` asset.
+3. Use build number `1` for Nivio `2.2.7`. The workflow looks up the exact
+   version and build number in Shorebird. For `2.2.7+1`, it picks the Flutter
+   revision already used by Android, Windows and Linux. A release version
+   that is new to Shorebird uses the CLI's default Flutter. The unsigned
+   IPA is uploaded as an Actions artifact. Attach it to a GitHub Release
+   separately when ready to distribute it.
+
+Keep the release artifact's IPA, checksum, dependency lockfiles and
+`toolchain.txt` together. Sign the same built app when sideloading and
+preserve its version and build number. For patches, use the exact
+Shorebird release version (for example, `2.2.7+1`), app config,
+Xcode and CocoaPods versions from that build. Changes to native code or
+bundled assets need a new IPA.
+
+### SideStore and AltStore Classic source
+
+The website serves `https://nivio.nirmaleeswar.dev/altstore.json` from
+`landing/api/ios-source.js`. After approval, attach the tested
+`Nivio-<version>+<build>-shorebird-unsigned.ipa` to a public GitHub Release.
+The website and source pick it up automatically. Check the source against
+the built IPA's bundle ID, version, minimum iOS version and permissions
+before a release. If you change the minimum iOS version or add permissions,
+update the source metadata too.
+
+Users add the Nivio source once and can then find the app in Browse. For a
+listing in SideStore's built-in Community Source, follow the
+[submission guidelines](https://github.com/SideStore/Community-Source)
+after the public IPA and iOS screenshots are available.
 
 ### On a Mac
 
@@ -164,7 +204,7 @@ These would have crashed the app or broken a feature on iOS.
 ## Testing HDR / Dolby Vision
 
 1. IPTV tab → add playlist → M3U link:
-   `https://raw.githubusercontent.com/nirmaleeswar30/Nivio/ios-support/packages/nivio_ios/test-media/hdr-test.m3u`
+   `https://raw.githubusercontent.com/nirmaleeswar30/Nivio/main/packages/nivio_ios/test-media/hdr-test.m3u`
    (Jellyfin's public test clips: SDR control, HDR10, Dolby Vision P5 / P8.1 / P8.4.)
 2. Play a clip, open the player settings → **Stats for Nerds**. Expected:
    - VO Driver `avfoundation`, Hardware Dec `videotoolbox`.

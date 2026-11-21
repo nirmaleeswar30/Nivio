@@ -82,6 +82,7 @@ class Anitomy {
       r'\b(?:batch|complete|season|seasons|vol\.?|volume|collection|bd[- ]?box|\d+\s*~\s*\d+)\b',
       caseSensitive: false);
   static final _codecRx = RegExp(r'\b(x265|h\.?265|hevc|x264|h\.?264|av1)\b', caseSensitive: false);
+  static const _nonGroupSuffixes = {'dl', 'rip', 'ray', 'webdl', 'webrip', 'hdtv', 'remux', 'hdr10', 'dv'};
   static final _sourceRx =
       RegExp(r'\b(bluray|blu-ray|bdrip|bd|web-?dl|web-?rip|webrip|hdtv|dvd)\b', caseSensitive: false);
   // Allow a trailing number (OP1, ED2, NCOP3) — the base token is captured.
@@ -100,10 +101,13 @@ class Anitomy {
       group = gb.group(1)?.trim();
     } else {
       final gt = _groupTrailingRx.firstMatch(base);
-      // Only treat trailing -TOKEN as a group when it looks like a scene group
-      // (letters present), to avoid catching episode numbers.
+      // Trailing scene groups contain letters and can follow source or quality tags.
       final t = gt?.group(1);
-      if (t != null && RegExp(r'[A-Za-z]').hasMatch(t)) group = t;
+      if (t != null && RegExp(r'[A-Za-z]').hasMatch(t) &&
+          !_resolutionRx.hasMatch(t) && !_codecRx.hasMatch(t) &&
+          !_nonGroupSuffixes.contains(t.toLowerCase())) {
+        group = t;
+      }
     }
 
     final resolution = _parseResolution(base);

@@ -9,12 +9,6 @@ name: iOS build
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ios-support]
-    tags: ['v*']
-    paths-ignore:
-      - 'landing/**'
-      - '**.md'
 
 concurrency:
   group: ios-${{ github.ref }}

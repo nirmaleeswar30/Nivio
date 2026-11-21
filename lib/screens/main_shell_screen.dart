@@ -572,6 +572,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     if (_keyboardWasOpen && !keyboardOpen) _navVisible = true;
     _keyboardWasOpen = keyboardOpen;
     final showNav = _navVisible && !keyboardOpen;
+    final useLiquidGlassNav = ref.watch(liquidGlassNavProvider);
 
     return WillPopScope(
       onWillPop: _onWillPop,
@@ -601,36 +602,44 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
             ),
             // Background physical WebView for Cloudflare Turnstile bypass (drawn on top when needed)
             const Positioned.fill(child: SizedBox.shrink()),
-            // Frosted floating navigation bar.
+            // Floating navigation bar.
             Positioned(
               left: 0,
               right: 0,
               bottom: 0,
-              child: IgnorePointer(
-                ignoring: !showNav,
-                child: AnimatedSlide(
-                  offset: showNav ? Offset.zero : const Offset(0, 1.4),
-                  duration: const Duration(milliseconds: 520),
-                  curve: Curves.easeInOutCubicEmphasized,
-                  child: AnimatedOpacity(
-                    opacity: showNav ? 1 : 0,
-                    duration: const Duration(milliseconds: 420),
-                    curve: Curves.easeOutCubic,
-                    child: ref.watch(liquidGlassNavProvider)
+              child: ExcludeSemantics(
+                excluding: !showNav,
+                child: IgnorePointer(
+                  ignoring: !showNav,
+                  child: AnimatedSlide(
+                    offset: showNav ? Offset.zero : const Offset(0, 1.4),
+                    duration: const Duration(milliseconds: 520),
+                    curve: Curves.easeInOutCubicEmphasized,
+                    // The glass backdrop shader cannot inherit opacity on Impeller.
+                    child: useLiquidGlassNav
                         ? LiquidGlassNav(
                             items: [
                               for (final item in _NivioFloatingNavState._navItems)
-                                LiquidGlassNavItem(icon: item.$1, selectedIcon: item.$2, label: item.$3),
+                                LiquidGlassNavItem(
+                                  icon: item.$1,
+                                  selectedIcon: item.$2,
+                                  label: item.$3,
+                                ),
                             ],
                             currentIndex: widget.navigationShell.currentIndex,
                             onTap: _onTap,
                             isDark: true,
                             accentColor: accentColor,
                           )
-                        : _NivioFloatingNav(
-                            currentIndex: widget.navigationShell.currentIndex,
-                            onTap: _onTap,
-                            accentColor: accentColor,
+                        : AnimatedOpacity(
+                            opacity: showNav ? 1 : 0,
+                            duration: const Duration(milliseconds: 420),
+                            curve: Curves.easeOutCubic,
+                            child: _NivioFloatingNav(
+                              currentIndex: widget.navigationShell.currentIndex,
+                              onTap: _onTap,
+                              accentColor: accentColor,
+                            ),
                           ),
                   ),
                 ),

@@ -1,0 +1,82 @@
+name: Prepare Nivio iOS build
+description: Install the toolchain, resolve plugins and build Nivio's native frameworks
+inputs:
+  flutter-version:
+    description: Version of the stock Flutter SDK used for dependency setup
+    required: true
+  xcode-version:
+    description: Exact Xcode version, or an empty string to select the newest Xcode 26
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    # The apps build nivio_core/lib, which points to the root lib/ on Windows.
+    - name: Link the shared Dart code
+      shell: bash
+      run: |
+        rm -rf packages/nivio_core/lib
+        ln -s ../../lib packages/nivio_core/lib
+
+    - name: Select Xcode
+      shell: bash
+      env:
+        XCODE_VERSION: ${{ inputs.xcode-version }}
+      run: |
+        if [[ -n "$XCODE_VERSION" ]]; then
+          xcode="/Applications/Xcode_${XCODE_VERSION}.app"
+        else
+          xcode=$(printf '%s\n' /Applications/Xcode_26*.app | sort -t. -k2,2n -k3,3n | tail -1)
+        fi
+        if [[ ! -d "$xcode" ]]; then
+          echo "::error::Requested Xcode is not installed: $xcode"
+          exit 1
+        fi
+        sudo xcode-select -s "$xcode"
+        xcodebuild -version
+        pod --version
+
+    - uses: subosito/flutter-action@v2
+      with:
+        channel: stable
+        flutter-version: ${{ inputs.flutter-version }}
+        cache: true
+
+    - name: Install Rust (iOS target)
+      shell: bash
+      run: |
+        rustup toolchain install stable --profile minimal
+        rustup default stable
+        rustup target add aarch64-apple-ios
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: packages/rqbit_ffi/rust -> target
+        key: ios
+
+    - name: Resolve Flutter dependencies
+      shell: bash
+      working-directory: packages/nivio_ios
+      run: flutter pub get
+
+    - name: Patch iOS plugins
+      shell: bash
+      working-directory: packages/nivio_ios
+      run: dart run tool/patch_ios_plugins.dart
+
+    - name: Build RqbitEngine.xcframework
+      shell: bash
+      run: bash packages/rqbit_ffi/ios/build_xcframework.sh
+
+    - uses: actions/cache@v4
+      with:
+        path: ~/.cache/nivio-ios
+        key: ios-libs-${{ hashFiles('packages/nivio_ios/third_party/media_kit_libs_ios_video/ios/mpv-ios.lock', 'packages/nivio_ios/third_party/nivio_curl/ios/build_curl_framework.sh') }}
+
+    - name: Build Mpv.xcframework
+      shell: bash
+      run: MPV_IOS_CACHE="$HOME/.cache/nivio-ios/mpv" bash packages/nivio_ios/third_party/media_kit_libs_ios_video/ios/build_mpv_framework.sh
+
+    - name: Build CurlImpersonate.xcframework
+      shell: bash
+      run: CURL_IOS_CACHE="$HOME/.cache/nivio-ios/curl" bash packages/nivio_ios/third_party/nivio_curl/ios/build_curl_framework.sh

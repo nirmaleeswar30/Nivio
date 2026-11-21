@@ -1,0 +1,135 @@
+name: iOS Shorebird release
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: iOS build number. Increment it for each new Shorebird baseline.
+        required: true
+        type: string
+        default: '1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nivio-ios-shorebird
+  cancel-in-progress: false
+
+env:
+  XCODE_VERSION: '26.3'
+  BUILD_NUMBER: ${{ inputs.build_number }}
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Validate dispatch
+        env:
+          SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
+        run: |
+          if [[ ! "$BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Enter a positive integer for the iOS build number."
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::Create the Shorebird iOS release from main."
+            exit 1
+          fi
+          if [[ -z "$SHOREBIRD_TOKEN" ]]; then
+            echo "::error::Add a Shorebird token with access to the Nivio app as SHOREBIRD_TOKEN."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Write .env
+        env:
+          NIVIO_ENV: ${{ secrets.NIVIO_ENV }}
+        run: |
+          if [ -z "$NIVIO_ENV" ]; then
+            echo "::warning::NIVIO_ENV secret is not set; the app is built without API keys."
+          fi
+          printf '%s\n' "$NIVIO_ENV" > packages/nivio_ios/.env
+
+      - uses: ./.github/actions/prepare-ios
+        with:
+          flutter-version: '3.47.7'
+          xcode-version: ${{ env.XCODE_VERSION }}
+
+      - uses: shorebirdtech/setup-shorebird@v1
+        with:
+          cache: true
+
+      - name: Resolve the Flutter revision for this release
+        id: release
+        working-directory: packages/nivio_ios
+        env:
+          SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
+        run: |
+          version=$(awk '/^version:/ { sub(/[+\r].*/, "", $2); print $2; exit }' pubspec.yaml)
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected an iOS app version like 2.2.7 in pubspec.yaml."
+            exit 1
+          fi
+
+          release_version="$version+$BUILD_NUMBER"
+          flutter_revision=$(shorebird api '/apps/{appId}/releases' --paginate -F per_page=100 \
+            --jq ".releases[] | select(.version == \"$release_version\") | .flutter_revision")
+
+          if [[ -z "$flutter_revision" ]]; then
+            echo "No Shorebird release for $release_version. Using Shorebird's default Flutter."
+          elif [[ "$flutter_revision" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Using Flutter revision $flutter_revision from Shorebird release $release_version."
+          else
+            echo "::error::Invalid Flutter revision returned for Shorebird release $release_version."
+            exit 1
+          fi
+
+          printf 'version=%s\nflutter_revision=%s\n' "$release_version" "$flutter_revision" >> "$GITHUB_OUTPUT"
+
+      - name: Build unsigned Shorebird archive
+        working-directory: packages/nivio_ios
+        env:
+          SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
+          SHOREBIRD_FLUTTER_REVISION: ${{ steps.release.outputs.flutter_revision }}
+        run: |
+          args=(--no-codesign "--build-number=$BUILD_NUMBER")
+          if [[ -n "$SHOREBIRD_FLUTTER_REVISION" ]]; then
+            args+=("--flutter-version=$SHOREBIRD_FLUTTER_REVISION")
+          fi
+          shorebird release ios "${args[@]}"
+
+      - name: Package the unsigned IPA and record the build baseline
+        working-directory: packages/nivio_ios
+        env:
+          SHOREBIRD_RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          SHOREBIRD_FLUTTER_REVISION: ${{ steps.release.outputs.flutter_revision }}
+        run: |
+          python3 tool/shorebird_ipa.py
+          cp pubspec.lock ios/Podfile.lock build/shorebird-package/
+          {
+            printf 'Commit: %s\n' "$GITHUB_SHA"
+            printf 'Shorebird release: %s\n' "$SHOREBIRD_RELEASE_VERSION"
+            printf 'Shorebird Flutter pin: %s\n' "${SHOREBIRD_FLUTTER_REVISION:-Shorebird default}"
+            printf 'Runner: %s\n' "${ImageOS:-macos-15}"
+            xcodebuild -version
+            printf 'CocoaPods: %s\n' "$(pod --version)"
+            rustc --version
+            shorebird --version
+          } > build/shorebird-package/toolchain.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Nivio-iOS-Shorebird
+          path: packages/nivio_ios/build/shorebird-package/
+          if-no-files-found: error
+          retention-days: 30

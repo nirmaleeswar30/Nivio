@@ -1,7 +1,7 @@
 name: nivio_ios
 description: "iOS target application for Nivio (iPhone & iPad)."
 publish_to: 'none'
-version: 2.2.7
+version: 2.2.8
 
 environment:
   sdk: ^3.10.0

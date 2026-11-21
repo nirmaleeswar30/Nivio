@@ -60,7 +60,9 @@ float circleMap(float x) {
 
 vec4 sampleAt(vec2 p) {
     vec2 uv = p / uTexSize;
-#ifdef IMPELLER_TARGET_OPENGLES
+// Older Impeller OpenGL ES targets expose bottom-up textures. Flutter 3.47+
+// exposes top-down textures, so flipping again would sample the wrong backdrop.
+#if defined(IMPELLER_TARGET_OPENGLES) && !defined(IMPELLER_OPENGLES_UNFLIPPED_DEPRECATED)
     uv.y = 1.0 - uv.y;
 #endif
     return texture(uTexture, uv);
