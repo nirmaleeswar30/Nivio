@@ -1,10 +1,9 @@
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/core/app_platform.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/services/schedule_api_service.dart';
 import 'package:nivio/services/episode_check_service.dart';
@@ -509,13 +508,11 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: item.posterPath != null
-                      ? CachedNetworkImage(
-                          imageUrl: item.posterPath!.startsWith('http') 
-                              ? item.posterPath! 
-                              : '$tmdbImageBaseUrl/$posterSize${item.posterPath}',
+                      ? ArtworkImage(
+                          imageUrl: item.posterPath!,
                           width: 70,
                           height: 105,
-                          memCacheWidth: 200,
+                          maxDecodeWidth: 200,
                           fit: BoxFit.cover,
                           errorWidget: (_, __, ___) => _buildPlaceholder(),
                         )
@@ -699,12 +696,10 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                   fit: StackFit.expand,
                   children: [
                     item.posterPath != null
-                        ? CachedNetworkImage(
-                              imageUrl: item.posterPath!.startsWith('http') 
-                                  ? item.posterPath! 
-                                  : '$tmdbImageBaseUrl/w342${item.posterPath}',
+                        ? ArtworkImage(
+                              imageUrl: item.posterPath!,
                               fit: BoxFit.cover,
-                              memCacheWidth: 300,
+                              maxDecodeWidth: 300,
                               errorWidget: (_, __, ___) => const Center(
                                 child: Icon(Icons.movie_creation_outlined, color: Colors.white54, size: 40),
                               ),

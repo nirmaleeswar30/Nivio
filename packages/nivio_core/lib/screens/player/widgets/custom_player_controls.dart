@@ -546,11 +546,7 @@ class CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
 
   /// The thumbnail card above the slider thumb, kept inside the bar's width.
   Widget _seekPreviewOverlay(SeekPreviewLoader preview, double width, Duration duration) {
-    final size = AppPlatform.isTv
-        ? const Size(240, 135)
-        : AppPlatform.useDesktopLayout
-            ? const Size(192, 108)
-            : const Size(150, 84);
+    final size = SeekPreviewThumbnail.displaySize;
     final value = _dragValue ?? 0;
     final fraction = duration.inMilliseconds > 0 ? (value / duration.inMilliseconds).clamp(0.0, 1.0) : 0.0;
     // The slider's track is inset by the thumb overlay radius on each side.

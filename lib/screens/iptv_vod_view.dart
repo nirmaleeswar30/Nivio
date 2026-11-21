@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -283,10 +283,10 @@ class _PosterCard extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   poster.startsWith('http')
-                      ? CachedNetworkImage(
+                      ? ArtworkImage(
                           imageUrl: poster,
                           fit: BoxFit.cover,
-                          memCacheWidth: 300,
+                          maxDecodeWidth: 300,
                           placeholder: (_, __) => placeholder,
                           errorWidget: (_, __, ___) => placeholder,
                         )

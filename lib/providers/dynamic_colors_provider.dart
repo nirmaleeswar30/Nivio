@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:nivio/core/debug_log.dart';
 
 /// Dynamic color scheme generated from poster/backdrop art
@@ -44,7 +44,7 @@ final dynamicColorsProvider = FutureProvider.family<DynamicColors, String?>((
 
   try {
     final colorScheme = await ColorScheme.fromImageProvider(
-      provider: CachedNetworkImageProvider(imageUrl),
+      provider: artworkPaletteProvider(imageUrl),
       brightness: Brightness.dark,
     );
 

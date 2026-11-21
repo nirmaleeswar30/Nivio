@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
@@ -267,10 +267,10 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                 fit: StackFit.expand,
                 children: [
                   if (item.posterPath != null)
-                    CachedNetworkImage(
+                    ArtworkImage(
                       imageUrl: posterUrl,
                       fit: BoxFit.cover,
-                      memCacheWidth: 300,
+                      maxDecodeWidth: 300,
                       placeholder: (context, url) => const Skeletonizer(
                         child: SkeletonBox(
                           width: double.infinity,
@@ -429,10 +429,10 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                   fit: StackFit.expand,
                   children: [
                     if (item.posterPath != null)
-                      CachedNetworkImage(
+                      ArtworkImage(
                         imageUrl: posterUrl,
                         fit: BoxFit.cover,
-                        memCacheWidth: 300,
+                        maxDecodeWidth: 300,
                         placeholder: (context, url) => const Skeletonizer(
                           child: SkeletonBox(
                             width: double.infinity,

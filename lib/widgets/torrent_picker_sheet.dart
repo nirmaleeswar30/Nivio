@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/models/search_result.dart';
@@ -403,9 +404,6 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
     
     final title = widget.media.title ?? widget.media.name ?? 'Select Torrent';
     final backdropPath = widget.media.backdropPath ?? widget.media.posterPath;
-    final backdropUrl = (backdropPath != null && backdropPath.startsWith('http')) 
-        ? backdropPath 
-        : (backdropPath != null ? 'https://image.tmdb.org/t/p/w780$backdropPath' : null);
     
     return MouseRegion(
       onHover: (_) => _cancelAutoPlay(),
@@ -435,7 +433,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
             borderRadius: isFullScreen ? BorderRadius.zero : BorderRadius.circular(12),
             child: Stack(
               children: [
-                if (backdropUrl != null)
+                if (backdropPath != null)
                   Positioned(
                     top: 0, left: 0, right: 0, 
                     height: isCompactLandscape ? 180 : 320,
@@ -452,7 +450,18 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
                       child: Container(
                         decoration: BoxDecoration(
                           image: DecorationImage(
-                            image: NetworkImage(backdropUrl),
+                            image: artworkImageProvider(
+                              backdropPath,
+                              width: isFullScreen
+                                  ? MediaQuery.sizeOf(context).width
+                                  : MediaQuery.sizeOf(context).width.clamp(0, 800),
+                              height: MediaQuery.sizeOf(context).height *
+                                  (isFullScreen ? 1 : 0.85),
+                              pixelRatio: MediaQuery.devicePixelRatioOf(context),
+                              kind: widget.media.backdropPath != null
+                                  ? ArtworkKind.backdrop
+                                  : ArtworkKind.poster,
+                            ),
                             fit: BoxFit.cover,
                             alignment: Alignment.topCenter,
                           ),

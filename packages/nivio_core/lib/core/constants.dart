@@ -7,7 +7,6 @@ const String tmdbBaseUrl = 'https://tmdb-proxy.nirmaleeswar30.workers.dev';
 //const String tmdbImageBaseUrl = 'https://image.tmdb.org/t/p';
 const String tmdbImageBaseUrl = '$tmdbBaseUrl/t/p';
 const String posterSize = 'w500';
-const String backdropSize = 'original';
 
 // Video Quality Priority
 const List<String> qualityPriority = [

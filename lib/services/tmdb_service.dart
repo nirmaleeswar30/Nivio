@@ -1,6 +1,8 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/models/search_result.dart';
@@ -428,24 +430,12 @@ class TmdbService {
   }
 
   /// Get poster URL
-  String getPosterUrl(String? posterPath, {String? size}) {
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
-    final resolvedSize = size ?? (isDesktop ? 'original' : posterSize);
-    if (posterPath == null || posterPath.isEmpty) {
-      return '';
-    }
-    if (posterPath.startsWith('http')) return posterPath;
-    return '$tmdbImageBaseUrl/$resolvedSize$posterPath';
-  }
+  String getPosterUrl(String? posterPath, {String size = posterSize}) =>
+      tmdbArtworkUrl(posterPath, size) ?? '';
 
   /// Get backdrop URL
-  String getBackdropUrl(String? backdropPath, {String size = backdropSize}) {
-    if (backdropPath == null || backdropPath.isEmpty) {
-      return '';
-    }
-    if (backdropPath.startsWith('http')) return backdropPath;
-    return '$tmdbImageBaseUrl/$size$backdropPath';
-  }
+  String getBackdropUrl(String? backdropPath, {String size = 'w780'}) =>
+      tmdbArtworkUrl(backdropPath, size) ?? '';
 
   /// Get logo URL for movie or tv show
   Future<String?> getMediaLogo(int id, String mediaType) async {
@@ -473,7 +463,7 @@ class TmdbService {
       
       final filePath = englishLogo['file_path'] as String?;
       if (filePath == null) return null;
-      return '$tmdbImageBaseUrl/original$filePath';
+      return tmdbArtworkUrl(filePath, 'w500');
     } catch (e) {
       return null;
     }
@@ -503,7 +493,7 @@ class TmdbService {
             orElse: () => pngLogos.first,
           );
           final filePath = englishLogo['file_path'] as String?;
-          if (filePath != null) logoUrl = '$tmdbImageBaseUrl/original$filePath';
+          logoUrl = tmdbArtworkUrl(filePath, 'w500');
         }
       }
 
@@ -516,7 +506,7 @@ class TmdbService {
         pool.sort((a, b) => ((b['vote_average'] as num?) ?? 0)
             .compareTo((a['vote_average'] as num?) ?? 0));
         final filePath = pool.first['file_path'] as String?;
-        if (filePath != null) cleanBackdrop = '$tmdbImageBaseUrl/original$filePath';
+        cleanBackdrop = tmdbArtworkUrl(filePath, 'w1280');
       }
 
       return {'logo_url': logoUrl, 'clean_backdrop': cleanBackdrop};
@@ -606,8 +596,8 @@ class TmdbService {
       
       final result = {
         'logo_url': logoUrl,
-        'backdrop_path': backdropPath != null ? getBackdropUrl(backdropPath, size: 'original') : null,
-        'poster_path': posterPath != null ? getPosterUrl(posterPath, size: 'original') : null,
+        'backdrop_path': backdropPath != null ? getBackdropUrl(backdropPath) : null,
+        'poster_path': posterPath != null ? getPosterUrl(posterPath) : null,
         'tmdb_id': id.toString(),
       };
       
@@ -892,44 +882,7 @@ class TmdbService {
     final cacheKey = page == 1 ? 'latest_movie_ott_v3' : 'latest_movie_ott_page_v3_$page';
     final staleCache = await _cache.getStaleRaw(cacheKey);
 
-    if (_cache.isExpired(cacheKey)) {
-      _cache.updateInBackground(cacheKey, () async {
-        final today = DateTime.now();
-        final todayStr = today.toIso8601String().split('T')[0];
-        final ninetyDaysAgo = today.subtract(const Duration(days: 90)).toIso8601String().split('T')[0];
-        final response = await _dio.get(
-          '/3/discover/movie',
-          queryParameters: {
-            'sort_by': 'popularity.desc',
-            'release_date.gte': ninetyDaysAgo,
-            'release_date.lte': todayStr,
-            'with_release_type': '4|5', // 4=Digital, 5=Physical (OTT/home releases)
-            'vote_count.gte': 20,
-            'page': page,
-          },
-        );
-        final enhanced = await _attachDigitalReleaseDates(response.data['results'] as List<dynamic>?);
-        enhanced.sort((a, b) {
-          final dateA = (a is Map) ? (a['digital_release_date'] ?? a['release_date'])?.toString() : null;
-          final dateB = (b is Map) ? (b['digital_release_date'] ?? b['release_date'])?.toString() : null;
-          if (dateA == null && dateB == null) return 0;
-          if (dateA == null) return 1;
-          if (dateB == null) return -1;
-          return dateB.compareTo(dateA);
-        });
-        return {'results': enhanced};
-      }, CacheService.shortCache);
-    }
-
-    if (staleCache != null) {
-      final list = staleCache['results'] as List<dynamic>?;
-      final hasDigitalDates = list != null && list.isNotEmpty && list.any((e) => e is Map && e.containsKey('digital_release_date'));
-      if (hasDigitalDates) {
-        return _filterAndMapResults(list, defaultMediaType: 'movie');
-      }
-    }
-
-    try {
+    Future<Map<String, dynamic>> fetchReleases() async {
       final today = DateTime.now();
       final todayStr = today.toIso8601String().split('T')[0];
       final ninetyDaysAgo = today.subtract(const Duration(days: 90)).toIso8601String().split('T')[0];
@@ -953,8 +906,30 @@ class TmdbService {
         if (dateB == null) return -1;
         return dateB.compareTo(dateA);
       });
-      await _cache.set(cacheKey, {'results': enhanced}, ttl: CacheService.shortCache);
-      return _filterAndMapResults(enhanced, defaultMediaType: 'movie');
+      return {'results': enhanced};
+    }
+
+    final cachedResults = staleCache?['results'] as List<dynamic>?;
+    if (cachedResults != null && cachedResults.any(
+      (item) => item is Map && item.containsKey('digital_release_date'),
+    )) {
+      if (_cache.isExpired(cacheKey)) {
+        unawaited(_cache.updateInBackground(
+          cacheKey,
+          fetchReleases,
+          CacheService.shortCache,
+        ));
+      }
+      return _filterAndMapResults(cachedResults, defaultMediaType: 'movie');
+    }
+
+    try {
+      final fetched = await fetchReleases();
+      await _cache.set(cacheKey, fetched, ttl: CacheService.shortCache);
+      return _filterAndMapResults(
+        fetched['results'] as List<dynamic>,
+        defaultMediaType: 'movie',
+      );
     } catch (e) {
       appDebugLog('Failed to get latest movie OTT releases: $e');
       return [];
@@ -966,40 +941,7 @@ class TmdbService {
     final cacheKey = page == 1 ? 'latest_tv_ott' : 'latest_tv_ott_page_$page';
     final staleCache = await _cache.getStaleRaw(cacheKey);
 
-    if (_cache.isExpired(cacheKey)) {
-      _cache.updateInBackground(cacheKey, () async {
-        final today = DateTime.now();
-        final todayStr = today.toIso8601String().split('T')[0];
-        final ninetyDaysAgo = today.subtract(const Duration(days: 90)).toIso8601String().split('T')[0];
-        final response = await _dio.get(
-          '/3/discover/tv',
-          queryParameters: {
-            'sort_by': 'first_air_date.desc',
-            'first_air_date.gte': ninetyDaysAgo,
-            'first_air_date.lte': todayStr,
-            'without_genres': '10763,10767,10764', // Filter out talk shows, news, reality
-            'vote_count.gte': 10,
-            'page': page,
-          },
-        );
-        final list = List<dynamic>.from(response.data['results'] as List<dynamic>? ?? []);
-        list.sort((a, b) {
-          final dateA = (a is Map) ? a['first_air_date']?.toString() : null;
-          final dateB = (b is Map) ? b['first_air_date']?.toString() : null;
-          if (dateA == null && dateB == null) return 0;
-          if (dateA == null) return 1;
-          if (dateB == null) return -1;
-          return dateB.compareTo(dateA);
-        });
-        return {'results': list};
-      }, CacheService.shortCache);
-    }
-
-    if (staleCache != null) {
-      return _filterAndMapResults(staleCache['results'] as List<dynamic>?, defaultMediaType: 'tv');
-    }
-
-    try {
+    Future<Map<String, dynamic>> fetchReleases() async {
       final today = DateTime.now();
       final todayStr = today.toIso8601String().split('T')[0];
       final ninetyDaysAgo = today.subtract(const Duration(days: 90)).toIso8601String().split('T')[0];
@@ -1023,8 +965,28 @@ class TmdbService {
         if (dateB == null) return -1;
         return dateB.compareTo(dateA);
       });
-      await _cache.set(cacheKey, {'results': list}, ttl: CacheService.shortCache);
-      return _filterAndMapResults(list, defaultMediaType: 'tv');
+      return {'results': list};
+    }
+
+    final cachedResults = staleCache?['results'] as List<dynamic>?;
+    if (staleCache != null) {
+      if (_cache.isExpired(cacheKey)) {
+        unawaited(_cache.updateInBackground(
+          cacheKey,
+          fetchReleases,
+          CacheService.shortCache,
+        ));
+      }
+      return _filterAndMapResults(cachedResults, defaultMediaType: 'tv');
+    }
+
+    try {
+      final fetched = await fetchReleases();
+      await _cache.set(cacheKey, fetched, ttl: CacheService.shortCache);
+      return _filterAndMapResults(
+        fetched['results'] as List<dynamic>,
+        defaultMediaType: 'tv',
+      );
     } catch (e) {
       appDebugLog('Failed to get latest TV OTT releases: $e');
       return [];

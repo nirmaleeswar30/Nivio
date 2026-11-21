@@ -931,7 +931,7 @@ packages:
       path: "../nivio_core"
       relative: true
     source: path
-    version: "2.2.7"
+    version: "2.2.8"
   nm:
     dependency: transitive
     description:

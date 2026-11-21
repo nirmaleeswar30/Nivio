@@ -1,9 +1,10 @@
+import 'package:nivio/core/tmdb_artwork.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'dart:async';
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:flutter/material.dart';
 import '../widgets/download_prompt.dart';
@@ -212,7 +213,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         final extras = await anilistService.getAnimeDetailsWithExtras(
           widget.mediaId,
         );
-        mediaDetails = anilistService.mapToSearchResult(extras);
+        mediaDetails = anilistService.mapToSearchResult(extras, forDetails: true);
 
         try {
           final title = mediaDetails.title ?? mediaDetails.name ?? '';
@@ -470,13 +471,11 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     }
 
     final isDesktop = AppPlatform.useDesktopLayout;
-    final tmdbService = ref.read(tmdbServiceProvider);
-    final fallbackBackdropUrl = tmdbService.getBackdropUrl(media.backdropPath, size: 'original');
-    final fallbackPosterUrl = tmdbService.getPosterUrl(media.posterPath, size: 'original');
-    final backdropUrl = isDesktop
-        ? (fallbackBackdropUrl.isNotEmpty ? fallbackBackdropUrl : fallbackPosterUrl)
-        : (fallbackPosterUrl.isNotEmpty ? fallbackPosterUrl : fallbackBackdropUrl);
-    final posterUrl = fallbackPosterUrl;
+    final posterUrl = media.posterPath ?? '';
+    final backdropPath = media.backdropPath ?? '';
+    final useBackdrop =
+        backdropPath.isNotEmpty && (isDesktop || posterUrl.isEmpty);
+    final backdropUrl = useBackdrop ? backdropPath : posterUrl;
     final isInWatchlist = ref.watch(isInWatchlistProvider(media.id));
     final isTv = media.mediaType == 'tv' || media.mediaType == 'anime';
     final seriesInfoAsync = isTv ? ref.watch(seriesInfoProvider(media.id)) : null;
@@ -536,8 +535,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                     fit: StackFit.expand,
                     children: [
                       if (backdropUrl.isNotEmpty)
-                        CachedNetworkImage(
+                        ArtworkImage(
                           imageUrl: backdropUrl,
+                          kind: useBackdrop ? ArtworkKind.backdrop : ArtworkKind.poster,
                           fit: BoxFit.cover,
                           fadeInDuration: Duration.zero,
                           fadeOutDuration: Duration.zero,
@@ -644,11 +644,11 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                 ),
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
-                                  child: CachedNetworkImage(
+                                  child: ArtworkImage(
                                     imageUrl: posterUrl,
                                     height: heroHeight * 0.62,
                                     fit: BoxFit.cover,
-                                    memCacheWidth: 400,
+                                    maxDecodeWidth: 400,
                                     fadeInDuration: Duration.zero,
                                     fadeOutDuration: Duration.zero,
                                   ),
@@ -1317,7 +1317,6 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                 final profilePath = actor['profile_path'] as String?;
                 final name = actor['name'] as String? ?? 'Unknown';
                 final character = actor['character'] as String? ?? '';
-                final tmdbService = ref.read(tmdbServiceProvider);
 
                 return SizedBox(
                   width: 100,
@@ -1331,14 +1330,11 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                             width: double.infinity,
                             color: NivioTheme.netflixDarkGrey,
                             child: profilePath != null
-                                ? CachedNetworkImage(
-                                    imageUrl:
-                                        (actor['is_anilist'] == true ||
-                                            profilePath.startsWith('http'))
-                                        ? profilePath
-                                        : tmdbService.getPosterUrl(profilePath),
+                                ? ArtworkImage(
+                                    imageUrl: profilePath,
+                                    kind: ArtworkKind.profile,
                                     fit: BoxFit.cover,
-                                    memCacheWidth: 200,
+                                    maxDecodeWidth: 200,
                                   )
                                 : const Icon(
                                     Icons.person,
@@ -2422,7 +2418,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
             child: photoUrl != null
                 ? CircleAvatar(
                     radius: 14,
-                    backgroundImage: CachedNetworkImageProvider(photoUrl),
+                    backgroundImage: avatarArtworkImage(context, photoUrl, 28),
                     backgroundColor: NivioTheme.netflixDarkGrey,
                   )
                 : PhosphorIcon(

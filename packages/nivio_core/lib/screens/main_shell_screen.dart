@@ -1,3 +1,4 @@
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'dart:io';
 import 'dart:ui';
 import 'package:nivio/core/app_platform.dart';
@@ -7,7 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/services/github_release_update_service.dart';
@@ -480,7 +480,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
               child: photoUrl != null
                   ? CircleAvatar(
                       radius: 14,
-                      backgroundImage: CachedNetworkImageProvider(photoUrl),
+                      backgroundImage: avatarArtworkImage(context, photoUrl, 28),
                       backgroundColor: NivioTheme.netflixDarkGrey,
                     )
                   : PhosphorIcon(

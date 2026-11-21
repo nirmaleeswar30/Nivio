@@ -5,9 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/theme.dart';
+import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/widgets/hover_preview_card.dart';
@@ -288,20 +289,17 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard> {
     final isInWatchlist = ref.watch(isInWatchlistProvider(widget.tmdbId));
     final isDesktop = AppPlatform.useDesktopLayout;
 
-    final activePath = widget.posterPath;
-    final sizeSegment = isDesktop ? 'original' : posterSize;
+    final posterUrl = tmdbArtworkUrl(widget.posterPath, posterSize);
 
-    final staticImageContent = activePath != null
+    final staticImageContent = posterUrl != null
         ? ClipRRect(
             borderRadius: BorderRadius.circular(4),
-            child: CachedNetworkImage(
-              imageUrl: activePath.startsWith('http') 
-                  ? activePath 
-                  : '$tmdbImageBaseUrl/$sizeSegment$activePath',
+            child: ArtworkImage(
+              imageUrl: posterUrl,
               fit: BoxFit.cover,
               width: double.infinity,
               height: double.infinity,
-              memCacheWidth: 360,
+              maxDecodeWidth: 360,
               // Static skeleton-gray placeholder (no per-image spinner/animation
               // controller) so shelves stay light on GPU while posters load in.
               placeholder: (context, url) => const DecoratedBox(

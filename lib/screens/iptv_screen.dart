@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:flutter/material.dart';
+import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:go_router/go_router.dart';
@@ -12,7 +13,7 @@ import '../services/iptv_service.dart';
 import '../services/xtream_client.dart';
 import '../models/iptv_vod.dart';
 import 'iptv_vod_view.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 
 class IptvScreen extends ConsumerStatefulWidget {
   /// When embedded inside the TV/Sports tab, skip the outer Scaffold and the
@@ -1040,8 +1041,9 @@ class _ChannelCardState extends State<_ChannelCard> {
                       child: channel.logo.isNotEmpty
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(10),
-                              child: CachedNetworkImage(
+                              child: ArtworkImage(
                                 imageUrl: channel.logo,
+                                kind: ArtworkKind.badge,
                                 fit: BoxFit.contain,
                                 errorWidget: (context, url, error) => Icon(
                                   PhosphorIconsRegular.television,

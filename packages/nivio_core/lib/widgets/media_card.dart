@@ -1,5 +1,5 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
@@ -51,12 +51,12 @@ class _MediaCardState extends ConsumerState<MediaCard>
     final posterUrl = tmdbService.getPosterUrl(widget.history.posterPath);
 
     final staticImageContent = posterUrl.isNotEmpty
-        ? CachedNetworkImage(
+        ? ArtworkImage(
             imageUrl: posterUrl,
             height: 180,
             width: 130,
             fit: BoxFit.cover,
-            memCacheWidth: 390,
+            maxDecodeWidth: 390,
             placeholder: (context, url) => Container(
               color: NivioTheme.netflixDarkGrey,
               child: Center(

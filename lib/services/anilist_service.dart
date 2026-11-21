@@ -187,13 +187,19 @@ class AniListService {
     }
   }
 
-  SearchResult mapToSearchResult(Map<String, dynamic> media) {
+  SearchResult mapToSearchResult(
+    Map<String, dynamic> media, {
+    bool forDetails = false,
+  }) {
+    final coverImage = media['coverImage'] as Map?;
+    final large = coverImage?['large'] as String?;
+    final extraLarge = coverImage?['extraLarge'] as String?;
     return SearchResult(
       id: media['id'],
       malId: media['idMal'],
       title: media['title']?['english'] ?? media['title']?['romaji'] ?? 'Unknown',
       name: media['title']?['english'] ?? media['title']?['romaji'] ?? 'Unknown',
-      posterPath: media['coverImage']?['extraLarge'] ?? media['coverImage']?['large'],
+      posterPath: forDetails ? extraLarge ?? large : large ?? extraLarge,
       backdropPath: media['bannerImage'],
       overview: media['description']?.replaceAll(RegExp(r'<[^>]*>'), ''),
       voteAverage: (media['averageScore'] as num?)?.toDouble() != null ? media['averageScore'] / 10.0 : 0.0,
@@ -327,8 +333,8 @@ class AniListService {
         final episode = schedule['episode'] as int?;
         final airingAtSec = schedule['airingAt'] as int?;
         final coverImage = media['coverImage'] as Map? ?? {};
-        final poster = coverImage['extraLarge'] ?? coverImage['large'];
-        final backdrop = media['bannerImage'] ?? poster;
+        final poster = coverImage['large'] ?? coverImage['extraLarge'];
+        final backdrop = media['bannerImage'];
         final averageScore = (media['averageScore'] as num?)?.toDouble();
         final voteAverage = averageScore != null ? averageScore / 10.0 : null;
 
@@ -520,7 +526,7 @@ class AniListService {
     try {
       final response = await _dio.post('', data: {'query': query, 'variables': {'id': id}});
       final data = response.data['data']['Media'];
-      return mapToSearchResult(data);
+      return mapToSearchResult(data, forDetails: true);
     } catch (e) {
       appDebugLog('getAnimeDetails error: $e');
       throw Exception('Failed to get anime details');

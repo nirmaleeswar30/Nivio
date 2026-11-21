@@ -1,3 +1,5 @@
+import 'package:nivio/core/tmdb_artwork.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:media_kit_video/src/video_controller/android_video_controller/android_video_controller.dart';
@@ -9,12 +11,10 @@ import 'dart:io';
 import 'package:nivio/core/screen_wake_lock.dart';
 import 'package:simple_pip_mode/simple_pip.dart';
 import 'dart:ui';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
@@ -2248,6 +2248,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
+  String? _playbackArtworkUrl(SearchResult? media) {
+    final poster = media?.posterPath;
+    return poster != null && poster.isNotEmpty
+        ? tmdbArtworkUrl(poster, 'w342')
+        : tmdbArtworkUrl(media?.backdropPath, 'w300');
+  }
+
   /// Title/artwork for the OS media session (headset & media-key controls).
   MediaSessionMetadata _mediaSessionMetadata() {
     final media = ref.read(selectedMediaProvider);
@@ -2262,19 +2269,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       subtitle = 'Season ${widget.season} · Episode $_currentEpisode';
     }
 
-    String? artUrl;
-    final posterPath = widget.directStreamTitle != null
-        ? null
-        : (media?.posterPath ?? media?.backdropPath);
-    if (posterPath != null && posterPath.isNotEmpty) {
-      if (posterPath.startsWith('http')) {
-        artUrl = posterPath;
-      } else {
-        final path = posterPath.startsWith('/') ? posterPath : '/$posterPath';
-        artUrl = 'https://image.tmdb.org/t/p/w500$path';
-      }
-    }
-
+    final artUrl = widget.directStreamTitle == null
+        ? _playbackArtworkUrl(media)
+        : null;
     return MediaSessionMetadata(title: title, subtitle: subtitle, artUrl: artUrl);
   }
 
@@ -2319,17 +2316,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       details = 'Movie';
     }
 
-    String? posterUrl;
-    final posterPath = media?.posterPath ?? media?.backdropPath;
-    if (posterPath != null && posterPath.isNotEmpty) {
-      if (posterPath.startsWith('http')) {
-        posterUrl = posterPath;
-      } else {
-        final path = posterPath.startsWith('/') ? posterPath : '/$posterPath';
-        posterUrl = 'https://image.tmdb.org/t/p/w500$path';
-      }
-    }
-
+    final posterUrl = _playbackArtworkUrl(media);
     final startedAt = now.subtract(pos);
 
     DiscordRpcService.instance.setWatching(
@@ -2842,7 +2829,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       return CircleAvatar(
         radius: 18,
         backgroundColor: Colors.white12,
-        backgroundImage: NetworkImage(photoUrl),
+        backgroundImage: avatarArtworkImage(context, photoUrl, 36),
       );
     }
 
@@ -4063,7 +4050,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _seekPreview?.dispose();
     _seekPreview = null;
     if (vtt == null || vtt.isEmpty) return;
-    final loader = SeekPreviewLoader(vttUrl: vtt, headers: result.thumbnailsHeaders);
+    final loader = SeekPreviewLoader(
+      vttUrl: vtt,
+      headers: result.thumbnailsHeaders,
+      tilePixels: SeekPreviewThumbnail.displaySize *
+          MediaQuery.devicePixelRatioOf(context),
+    );
     _seekPreview = loader;
     loader.load().then((_) {
       if (mounted && identical(_seekPreview, loader)) setState(() {});
@@ -7249,14 +7241,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             Positioned.fill(
               child: Opacity(
                 opacity: 0.15,
-                child: CachedNetworkImage(
-                  imageUrl:
-                      posterPath.startsWith('http://') ||
-                          posterPath.startsWith('https://')
-                      ? posterPath
-                      : posterPath.startsWith('/')
-                      ? '$tmdbImageBaseUrl/$backdropSize$posterPath'
-                      : posterPath,
+                child: ArtworkImage(
+                  imageUrl: posterPath,
+                  maxDecodeWidth: 342,
                   fit: BoxFit.cover,
                   errorWidget: (context, url, error) => const SizedBox.shrink(),
                 ),
@@ -8027,16 +8014,7 @@ class _EpisodePickerSheetState extends ConsumerState<_EpisodePickerSheet> {
                               final isCurrent =
                                   episode.episodeNumber ==
                                   widget.currentEpisode;
-                              final stillUrl = episode.stillPath != null
-                                  ? (episode.stillPath!.startsWith('http://') ||
-                                            episode.stillPath!.startsWith(
-                                              'https://',
-                                            )
-                                        ? episode.stillPath!
-                                        : episode.stillPath!.startsWith('/')
-                                        ? '$tmdbImageBaseUrl/$backdropSize${episode.stillPath}'
-                                        : episode.stillPath!)
-                                  : '';
+                              final stillUrl = episode.stillPath ?? '';
 
                               return FocusableTap(
                                 onTap: () {
@@ -8078,8 +8056,9 @@ class _EpisodePickerSheetState extends ConsumerState<_EpisodePickerSheet> {
                                               ? Stack(
                                                   fit: StackFit.expand,
                                                   children: [
-                                                    CachedNetworkImage(
+                                                    ArtworkImage(
                                                       imageUrl: stillUrl,
+                                                      kind: ArtworkKind.still,
                                                       fit: BoxFit.cover,
                                                       placeholder:
                                                           (context, url) =>
@@ -8518,20 +8497,13 @@ class _NextEpisodeOverlayWidget extends StatelessWidget {
                           if (stillPath == null) {
                             return const SizedBox.shrink();
                           }
-                          final imageUrl =
-                              stillPath.startsWith('http://') ||
-                                  stillPath.startsWith('https://')
-                              ? stillPath
-                              : stillPath.startsWith('/')
-                              ? '$tmdbImageBaseUrl/$backdropSize$stillPath'
-                              : stillPath;
-
                           return ClipRRect(
                             borderRadius: const BorderRadius.vertical(
                               top: Radius.circular(12),
                             ),
-                            child: CachedNetworkImage(
-                              imageUrl: imageUrl,
+                            child: ArtworkImage(
+                              imageUrl: stillPath,
+                              kind: ArtworkKind.still,
                               width: 280,
                               height: 120,
                               fit: BoxFit.cover,

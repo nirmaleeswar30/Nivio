@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,6 +7,7 @@ import 'package:nivio/models/season_info.dart';
 import 'package:nivio/models/watch_history.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/core/debug_log.dart';
+import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:nivio/providers/service_providers.dart';
 
 class ContinueWatchingCard extends ConsumerStatefulWidget {
@@ -109,9 +110,9 @@ class _ContinueWatchingCardState extends ConsumerState<ContinueWatchingCard>
 
   @override
   Widget build(BuildContext context) {
-    final tmdbService = ref.watch(tmdbServiceProvider);
-    
-    String imageUrl = tmdbService.getBackdropUrl(widget.history.posterPath);
+    const thumbnailWidth = 220.0;
+    var imageUrl = widget.history.posterPath;
+    var artworkKind = ArtworkKind.poster;
     String topTitle = widget.history.title;
     String subtitle = 'Movie';
 
@@ -128,8 +129,10 @@ class _ContinueWatchingCardState extends ConsumerState<ContinueWatchingCard>
 
       if (_episodeData != null) {
         final epName = _episodeData!.episodeName;
-        if (_episodeData!.stillPath != null && _episodeData!.stillPath!.isNotEmpty) {
-          imageUrl = tmdbService.getBackdropUrl(_episodeData!.stillPath);
+        final stillPath = _episodeData!.stillPath;
+        if (stillPath != null && stillPath.isNotEmpty) {
+          imageUrl = stillPath;
+          artworkKind = ArtworkKind.still;
         }
         
         // Avoid redundancy if TMDB just returned "Episode X" as the name
@@ -181,7 +184,7 @@ class _ContinueWatchingCardState extends ConsumerState<ContinueWatchingCard>
             return Transform.scale(
               scale: _scaleAnimation.value,
               child: Container(
-                width: 220,
+                width: thumbnailWidth,
                 margin: const EdgeInsets.only(right: 12),
                 decoration: BoxDecoration(
                   color: const Color(0xFF151922),
@@ -205,9 +208,11 @@ class _ContinueWatchingCardState extends ConsumerState<ContinueWatchingCard>
                           child: Stack(
                             fit: StackFit.expand,
                             children: [
-                              imageUrl.isNotEmpty
-                                  ? CachedNetworkImage(
+                              imageUrl != null && imageUrl.isNotEmpty
+                                  ? ArtworkImage(
                                       imageUrl: imageUrl,
+                                      kind: artworkKind,
+                                      maxDecodeWidth: 640,
                                       width: double.infinity,
                                       height: 124,
                                       alignment: Alignment.topCenter,

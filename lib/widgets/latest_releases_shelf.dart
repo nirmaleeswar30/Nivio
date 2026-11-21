@@ -1,9 +1,9 @@
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:nivio/core/constants.dart';
+import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:nivio/widgets/skeleton.dart';
@@ -83,76 +83,11 @@ class LatestReleasesShelf extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Shelf Header
-          Padding(
-            padding: EdgeInsets.only(
-              left: isDesktop ? 68 : 16,
-              right: 16,
-              bottom: 12,
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      // Glowing Accent Bar
-                      Container(
-                        width: 4,
-                        height: 22,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: badgeGradient,
-                          ),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Flexible(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: -0.3,
-                              ),
-                            ),
-                            if (subtitle != null) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                subtitle!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.55),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w400,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (onSeeAll != null)
-                  _ShelfMoreButton(
-                    accentColor: badgeGradient.first,
-                    onTap: onSeeAll!,
-                  ),
-              ],
-            ),
+          _LatestShelfHeader(
+            title: title,
+            subtitle: subtitle,
+            badgeGradient: badgeGradient,
+            onSeeAll: onSeeAll,
           ),
 
           // Horizontal Shelf Cards
@@ -169,7 +104,9 @@ class LatestReleasesShelf extends StatelessWidget {
               // TV: a trailing "View all" tile, see TvSeeAllTile.
               itemCount: sortedItems.length +
                   (AppPlatform.isTv && onSeeAll != null ? 1 : 0),
-              cacheExtent: isDesktop ? 800 : 350,
+              cacheExtent: AppPlatform.isDesktopOS
+                  ? cardWidth
+                  : (isDesktop ? 800 : 350),
               scrollSpeed: 2.0,
               silkyScrollDuration: const Duration(milliseconds: 500),
               animationCurve: Curves.easeOutQuart,
@@ -202,6 +139,98 @@ class LatestReleasesShelf extends StatelessWidget {
               },
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LatestShelfHeader extends StatelessWidget {
+  const _LatestShelfHeader({
+    required this.title,
+    this.subtitle,
+    this.badgeGradient,
+    this.onSeeAll,
+  });
+
+  final String title;
+  final String? subtitle;
+  final List<Color>? badgeGradient;
+  final VoidCallback? onSeeAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDesktop = AppPlatform.useDesktopLayout;
+    return Padding(
+      padding: EdgeInsets.only(
+        left: isDesktop ? 68 : 16,
+        right: 16,
+        bottom: 12,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                // Glowing Accent Bar
+                Container(
+                  width: 4,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: badgeGradient == null ? const Color(0xFF23262E) : null,
+                    gradient: badgeGradient == null
+                        ? null
+                        : LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: badgeGradient!,
+                          ),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.55),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (onSeeAll != null)
+            _ShelfMoreButton(
+              accentColor: badgeGradient!.first,
+              onTap: onSeeAll!,
+            ),
         ],
       ),
     );
@@ -381,11 +410,9 @@ class _LatestReleaseCardState extends State<LatestReleaseCard> {
       airingAtSec = item['airing_at'];
     }
 
-    final imageUrl = (backdropPath != null && backdropPath.isNotEmpty)
-        ? (backdropPath.startsWith('http') ? backdropPath : '$tmdbImageBaseUrl/w780$backdropPath')
-        : (posterPath != null && posterPath.isNotEmpty)
-            ? (posterPath.startsWith('http') ? posterPath : '$tmdbImageBaseUrl/w500$posterPath')
-            : null;
+    final isDesktop = AppPlatform.isDesktopOS;
+    final hasBackdrop = backdropPath != null && backdropPath.isNotEmpty;
+    final imageUrl = hasBackdrop ? backdropPath : posterPath;
 
     final releaseTag = _formatReleaseTag(rawDate, digitalDate, airingAtSec);
 
@@ -394,8 +421,7 @@ class _LatestReleaseCardState extends State<LatestReleaseCard> {
       GoRouter.of(context).push('/media/$id?type=$mediaType');
     }
 
-    return RepaintBoundary(
-      child: DpadFocusable(
+    return DpadFocusable(
         style: DpadFocusStyle.lift,
         onActivate: handleTap,
         borderRadius: BorderRadius.circular(12),
@@ -406,8 +432,10 @@ class _LatestReleaseCardState extends State<LatestReleaseCard> {
         child: GestureDetector(
           onTap: handleTap,
           child: AnimatedScale(
-            scale: _isHovered ? 1.025 : 1.0,
-            duration: const Duration(milliseconds: 140),
+            scale: _isHovered && !isDesktop ? 1.025 : 1.0,
+            duration: isDesktop
+                ? Duration.zero
+                : const Duration(milliseconds: 140),
             curve: Curves.easeOutCubic,
             child: Container(
               width: widget.width,
@@ -428,11 +456,18 @@ class _LatestReleaseCardState extends State<LatestReleaseCard> {
                   fit: StackFit.expand,
                   children: [
                   // Backdrop Image
-                  if (imageUrl != null)
-                    CachedNetworkImage(
+                  if (imageUrl != null && imageUrl.isNotEmpty)
+                    ArtworkImage(
                       imageUrl: imageUrl,
+                      kind: hasBackdrop ? ArtworkKind.backdrop : ArtworkKind.poster,
                       fit: BoxFit.cover,
-                      memCacheWidth: 600,
+                      maxDecodeWidth: 600,
+                      fadeInDuration: isDesktop
+                          ? Duration.zero
+                          : const Duration(milliseconds: 500),
+                      fadeOutDuration: isDesktop
+                          ? Duration.zero
+                          : const Duration(seconds: 1),
                       filterQuality: FilterQuality.low,
                       placeholder: (context, url) => const DecoratedBox(
                         decoration: BoxDecoration(color: Color(0xFF1B1E28)),
@@ -616,16 +651,20 @@ class _LatestReleaseCardState extends State<LatestReleaseCard> {
           ),
         ),
       ),
-    ),
       ),
-  );
+    );
   }
 }
 
 class LatestReleasesShelfSkeleton extends StatelessWidget {
   final String title;
+  final String? subtitle;
 
-  const LatestReleasesShelfSkeleton({super.key, required this.title});
+  const LatestReleasesShelfSkeleton({
+    super.key,
+    required this.title,
+    this.subtitle,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -638,34 +677,7 @@ class LatestReleasesShelfSkeleton extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: EdgeInsets.only(
-              left: isDesktop ? 68 : 16,
-              right: 16,
-              bottom: 12,
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 4,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF23262E),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          _LatestShelfHeader(title: title, subtitle: subtitle),
           SizedBox(
             height: cardHeight + 16,
             child: ListView.builder(

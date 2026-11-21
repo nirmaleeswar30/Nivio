@@ -2,17 +2,16 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:go_router/go_router.dart';
-import 'package:nivio/core/constants.dart';
 
 import 'package:nivio/core/providers_data.dart';
 import 'package:nivio/core/theme.dart';
+import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:nivio/models/watchlist_item.dart';
 import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/changelog_provider.dart';
@@ -30,6 +29,7 @@ import 'package:nivio/widgets/content_row.dart';
 import 'package:nivio/widgets/latest_releases_shelf.dart';
 import 'package:nivio/widgets/skeleton.dart';
 import 'package:nivio/widgets/continue_watching_row.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:nivio/providers/player_active_provider.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
@@ -101,6 +101,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
   final Map<int, bool> _pendingWatchlistState = <int, bool>{};
   final Map<int, Color> _ambientColors = {};
+  final Set<int> _loadingAmbientColors = {};
   Color _currentAmbientColor = const Color(0xFF0D0F14);
 
 
@@ -133,38 +134,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (!_pageController.hasClients || !_isBannerVisible || _heroHasFocus) {
         return;
       }
+      final lifecycle = WidgetsBinding.instance.lifecycleState;
+      if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return;
+      if (!TickerMode.getValuesNotifier(context).value.enabled) return;
       // Don't waste cycles on banner animation while the video player is active
       if (ref.read(isPlayerActiveProvider)) return;
       final featuredContent = ref.read(featuredContentProvider).value ?? [];
-      if (featuredContent.isEmpty) return;
+      if (featuredContent.length < 2) return;
       _pageController.animateToPage(
         _currentBannerPage + 1,
         duration: const Duration(milliseconds: 800),
         curve: Curves.easeInOutCubic,
       );
     });
-
-    unawaited(_prewarmHomeContent());
-  }
-
-  Future<void> _prewarmHomeContent() async {
-    await Future.wait([
-      ref.read(featuredContentProvider.future),
-      ref.read(latestMoviesOttProvider.future),
-      ref.read(popularMoviesProvider.future),
-      ref.read(trendingMoviesProvider.future),
-      ref.read(topRatedMoviesProvider.future),
-      ref.read(latestTvOttProvider.future),
-      ref.read(popularTVShowsProvider.future),
-      ref.read(trendingTVShowsProvider.future),
-      ref.read(latestAnimeReleasesProvider.future),
-      ref.read(animeProvider.future),
-      ref.read(trendingAnimeProvider.future),
-    ]);
   }
 
   Future<void> _extractColorForIndex(List<Map<String, dynamic>> items, int index) async {
-    if (items.isEmpty || index >= items.length) return;
+    if (!mounted || index >= items.length) return;
     
     if (_ambientColors.containsKey(index)) return;
 
@@ -172,19 +158,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (ref.read(isPlayerActiveProvider)) return;
     
     final content = items[index];
-    final isDesktop = AppPlatform.useDesktopLayout;
-    final posterPath = isDesktop
-        ? (content['backdrop_path'] ?? content['poster_path'])?.toString()
-        : (content['poster_path'] ?? content['backdrop_path'])?.toString();
-    if (posterPath == null) return;
-    
+    final backdrop = tmdbArtworkUrl(content['backdrop_path'] as String?, 'w300');
+    final poster = tmdbArtworkUrl(content['poster_path'] as String?, 'w185');
+    final url = AppPlatform.useDesktopLayout
+        ? backdrop ?? poster
+        : poster ?? backdrop;
+    if (url == null || !_loadingAmbientColors.add(index)) return;
+
     try {
-      final url = posterPath.startsWith('http') 
-          ? posterPath 
-          : '$tmdbImageBaseUrl/w200$posterPath';
-      
       final colorScheme = await ColorScheme.fromImageProvider(
-        provider: NetworkImage(url),
+        provider: artworkPaletteProvider(url),
         brightness: Brightness.dark,
       );
       final color = colorScheme.primary;
@@ -198,7 +181,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           }
         });
       }
-    } catch (_) {}
+    } catch (_) {
+      // Keep the current ambient color if artwork is unavailable.
+    } finally {
+      _loadingAmbientColors.remove(index);
+    }
   }
 
   @override
@@ -409,121 +396,128 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           Positioned.fill(
             child: AppCustomScrollView(
-          controller: _scrollController,
-          cacheExtent: 250,
-          scrollSpeed: 2.0,
-          silkyScrollDuration: const Duration(milliseconds: 500),
-          animationCurve: Curves.easeOutQuart,
-          slivers: [
-          SliverToBoxAdapter(
-            child: RepaintBoundary(
-              child: featuredContent.when(
-                data: (content) => _buildHeroBannerCarousel(context, content),
-                loading: _buildHeroBannerShimmer,
-                error: (error, stackTrace) => const SizedBox(height: 500),
+              controller: _scrollController,
+              // TV keeps the next shelf in reach of D-pad focus.
+              cacheExtent: AppPlatform.isTv ? 420 : 250,
+              scrollSpeed: 2.0,
+              silkyScrollDuration: const Duration(milliseconds: 500),
+              animationCurve: Curves.easeOutQuart,
+              slivers: [
+                SliverToBoxAdapter(
+                  child: RepaintBoundary(
+                    child: featuredContent.when(
+                      data: (content) => _buildHeroBannerCarousel(context, content),
+                      loading: _buildHeroBannerShimmer,
+                      error: (error, stackTrace) => const SizedBox(height: 500),
+                    ),
+                  ),
+                ),
+                // One delegate builds shelves and subscribes to their providers
+                // only when they approach the viewport.
+                SliverList.list(
+                  children: [
+                    _buildContinueWatchingSection(isDesktop),
+                    _buildWatchlistSection(),
+                    _buildProviderSelectionRow(),
+                    const SizedBox(height: 40),
+                    _buildRecommendationsSection(),
+                    ...dynamicSections,
+                    const SizedBox(height: 50),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContinueWatchingSection(bool isDesktop) {
+    return Consumer(
+      key: const PageStorageKey<String>('home-continue-watching'),
+      builder: (context, ref, child) {
+        return ref.watch(continueWatchingProvider).when(
+          data: (items) {
+            if (items.isEmpty) return const SizedBox.shrink();
+            return Padding(
+              padding: EdgeInsets.only(left: isDesktop ? 68 : 16, right: 16),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Continue Watching',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  SizedBox(height: 12),
+                  ContinueWatchingRow(),
+                  SizedBox(height: 30),
+                ],
               ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Consumer(
-              builder: (context, ref, child) {
-                final continueWatching = ref.watch(continueWatchingProvider);
-                return continueWatching.when(
-                  data: (items) {
-                    if (items.isEmpty) return const SizedBox.shrink();
-                    return Padding(
-                      padding: EdgeInsets.only(top: 0, left: isDesktop ? 68 : 16, right: 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Continue Watching',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          SizedBox(height: 12),
-                          ContinueWatchingRow(),
-                          SizedBox(height: 30),
-                        ],
-                      ),
-                    );
-                  },
-                  loading: () => const SizedBox.shrink(),
-                  error: (error, stackTrace) => const SizedBox.shrink(),
-                );
-              },
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Consumer(
-              builder: (context, ref, child) {
-                final watchlist = ref.watch(watchlistProvider);
-                if (watchlist.isEmpty) return const SizedBox.shrink();
+            );
+          },
+          loading: () => const SizedBox.shrink(),
+          error: (error, stackTrace) => const SizedBox.shrink(),
+        );
+      },
+    );
+  }
 
-                final seenIds = <int>{};
-                final watchlistItems = watchlist
-                    // "Your List" surfaces only actively-tracked titles:
-                    // Watching + Plan to Watch. Completed/On Hold/Dropped
-                    // live in the full watchlist screen, not here.
-                    .where((item) =>
-                        (item.watchStatus == WatchStatus.watching ||
-                            item.watchStatus == WatchStatus.planning) &&
-                        seenIds.add(item.id))
-                    .take(20)
-                    .map(
-                      (WatchlistItem item) => {
-                        'id': item.id,
-                        'name': item.title,
-                        'title': item.title,
-                        'poster_path': item.posterPath,
-                        'vote_average': item.voteAverage,
-                        'first_air_date': item.releaseDate,
-                        'release_date': item.releaseDate,
-                        'media_type': item.mediaType,
-                      },
-                    )
-                    .toList(growable: false);
-
-                if (watchlistItems.isEmpty) return const SizedBox.shrink();
-
-                return ContentRow(
-                  title: 'Your List',
-                  items: watchlistItems,
-                  onSeeAll: () => context.go('/library?tab=watchlist'),
-                );
+  Widget _buildWatchlistSection() {
+    return Consumer(
+      key: const PageStorageKey<String>('home-watchlist'),
+      builder: (context, ref, child) {
+        final watchlist = ref.watch(watchlistProvider);
+        final seenIds = <int>{};
+        final watchlistItems = watchlist
+            // Only currently watched and planned titles appear on Home.
+            .where((item) =>
+                (item.watchStatus == WatchStatus.watching ||
+                    item.watchStatus == WatchStatus.planning) &&
+                seenIds.add(item.id))
+            .take(20)
+            .map(
+              (WatchlistItem item) => {
+                'id': item.id,
+                'name': item.title,
+                'title': item.title,
+                'poster_path': item.posterPath,
+                'vote_average': item.voteAverage,
+                'first_air_date': item.releaseDate,
+                'release_date': item.releaseDate,
+                'media_type': item.mediaType,
               },
-            ),
-          ),
-          _buildProviderSelectionRow(),
-          const SliverToBoxAdapter(
-            child: SizedBox(height: 40),
-          ),
-          SliverToBoxAdapter(
-            child: Consumer(
-              builder: (context, ref, _) {
-                final recsAsync = ref.watch(homeRecommendationsProvider);
-                return recsAsync.when(
-                  data: (recs) {
-                    if (recs == null || recs.items.isEmpty) return const SizedBox.shrink();
-                    final items = recs.items.map((e) => e.toJson()).toList();
-                    return ContentRow(title: 'Recommended for You', items: items);
-                  },
-                  loading: () => const SizedBox.shrink(),
-                  error: (_, __) => const SizedBox.shrink(),
-                );
-              },
-            ),
-          ),
-          ...dynamicSections,
-          const SliverToBoxAdapter(child: SizedBox(height: 50)),
-        ],
-      ),
-          ),
-        ],
-      ),
+            )
+            .toList(growable: false);
+
+        if (watchlistItems.isEmpty) return const SizedBox.shrink();
+        return ContentRow(
+          title: 'Your List',
+          items: watchlistItems,
+          onSeeAll: () => context.go('/library?tab=watchlist'),
+        );
+      },
+    );
+  }
+
+  Widget _buildRecommendationsSection() {
+    return Consumer(
+      key: const PageStorageKey<String>('home-recommendations'),
+      builder: (context, ref, _) {
+        return ref.watch(homeRecommendationsProvider).when(
+          data: (recs) {
+            if (recs == null || recs.items.isEmpty) return const SizedBox.shrink();
+            final items = recs.items.map((e) => e.toJson()).toList();
+            return ContentRow(title: 'Recommended for You', items: items);
+          },
+          loading: () => const SizedBox.shrink(),
+          error: (_, __) => const SizedBox.shrink(),
+        );
+      },
     );
   }
 
@@ -531,18 +525,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     String title,
     FutureProvider<List<dynamic>> provider,
   ) {
-    return SliverToBoxAdapter(
-      key: ValueKey(title),
-      child: Consumer(
-        builder: (context, ref, child) {
-          final asyncItems = ref.watch(provider);
-          return asyncItems.when(
-            data: (items) => ContentRow(title: title, items: items),
-            loading: () => const ContentRowSkeleton(),
-            error: (error, stackTrace) => const SizedBox.shrink(),
-          );
-        },
-      ),
+    return Consumer(
+      key: PageStorageKey<String>(title),
+      builder: (context, ref, child) {
+        return ref.watch(provider).when(
+          data: (items) => ContentRow(title: title, items: items),
+          loading: () => const ContentRowSkeleton(),
+          error: (error, stackTrace) => const SizedBox.shrink(),
+        );
+      },
     );
   }
 
@@ -556,27 +547,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     bool isAnime = false,
     VoidCallback? onSeeAll,
   }) {
-    return SliverToBoxAdapter(
-      key: ValueKey(title),
-      child: Consumer(
-        builder: (context, ref, child) {
-          final asyncItems = ref.watch(provider);
-          return asyncItems.when(
-            data: (items) => LatestReleasesShelf(
-              title: title,
-              subtitle: subtitle,
-              items: items,
-              badgeText: badgeText,
-              badgeGradient: badgeGradient,
-              badgeIcon: badgeIcon,
-              isAnime: isAnime,
-              onSeeAll: onSeeAll,
-            ),
-            loading: () => LatestReleasesShelfSkeleton(title: title),
-            error: (error, stackTrace) => const SizedBox.shrink(),
-          );
-        },
-      ),
+    return Consumer(
+      key: PageStorageKey<String>(title),
+      builder: (context, ref, child) {
+        return ref.watch(provider).when(
+          data: (items) => LatestReleasesShelf(
+            title: title,
+            subtitle: subtitle,
+            items: items,
+            badgeText: badgeText,
+            badgeGradient: badgeGradient,
+            badgeIcon: badgeIcon,
+            isAnime: isAnime,
+            onSeeAll: onSeeAll,
+          ),
+          loading: () => LatestReleasesShelfSkeleton(title: title, subtitle: subtitle),
+          error: (error, stackTrace) => const SizedBox.shrink(),
+        );
+      },
     );
   }
 
@@ -585,10 +573,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final providers = allProviders.take(20).toList();
     final isDesktop = AppPlatform.useDesktopLayout;
 
-    return SliverToBoxAdapter(
-      child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return Column(
+      key: const PageStorageKey<String>('home-studios'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
           Padding(
             padding: EdgeInsets.only(top: 8.0, bottom: 8.0, left: isDesktop ? 68 : 16, right: 16),
             child: Row(
@@ -652,9 +640,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-                      child: CachedNetworkImage(
-                        imageUrl: '$tmdbImageBaseUrl/w500${provider['logo_path']}',
+                      child: ArtworkImage(
+                        imageUrl: provider['logo_path'] as String,
+                        kind: ArtworkKind.logo,
                         fit: BoxFit.contain,
+                        maxDecodeWidth: 240,
                         errorWidget: (context, url, error) => Center(
                           child: Text(
                             provider['name'] as String,
@@ -674,8 +664,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
           const SizedBox(height: 24),
-        ],
-      ),
+      ],
     );
   }
 
@@ -822,18 +811,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildHeroBannerCarousel(BuildContext context, List<Map<String, dynamic>> items) {
     if (items.isEmpty) return const SizedBox(height: 500);
     final isDesktop = AppPlatform.useDesktopLayout;
+    final retainArtwork = TabArtworkScope.retainsArtwork(context);
     final watchlistIds = ref
         .watch(watchlistProvider)
         .map((item) => item.id)
         .toSet();
     final itemCount = items.length + 1;
 
-    if (!_ambientColors.containsKey(0) && items.isNotEmpty) {
+    if (retainArtwork && !_ambientColors.containsKey(0)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _extractColorForIndex(items, 0);
       });
     }
-    final bannerHeight = isDesktop ? MediaQuery.sizeOf(context).height * 0.8 : 600.0;
+    final viewport = MediaQuery.sizeOf(context);
+    final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final bannerHeight = isDesktop ? viewport.height * 0.8 : 600.0;
+    final logoHeight = isDesktop ? 110.0 : 75.0;
 
     return SizedBox(
       height: bannerHeight,
@@ -894,7 +887,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             : const PageScrollPhysics(),
         onPageChanged: (index) {
           final actualIndex = index % items.length;
-          _extractColorForIndex(items, actualIndex);
+          if (retainArtwork) _extractColorForIndex(items, actualIndex);
 
           if (index == items.length) {
             setState(() {
@@ -940,8 +933,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           final season = content['season'] as String?;
 
           final logoUrl = content['logo_url'] as String?;
+          final logoImage = logoUrl == null || !retainArtwork
+              ? null
+              : artworkImageProvider(
+                  logoUrl,
+                  width: viewport.width * (isDesktop ? 0.6 : 1),
+                  height: logoHeight,
+                  pixelRatio: pixelRatio,
+                  kind: ArtworkKind.logo,
+                  fit: BoxFit.contain,
+                );
 
-          final isDesktop = AppPlatform.useDesktopLayout;
           // Desktop: use the TMDB-enriched backdrop (high quality; falls back to
           // the AniList backdrop only when TMDB has none). Mobile: portrait poster.
           // (Restored from commit b65a017 — the AniList "clean_backdrop" was
@@ -953,9 +955,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     watchlistIds.contains(tmdbId))
               : false;
 
-          final backdropUrl = (backdropPath != null && backdropPath.startsWith('http')) 
-              ? backdropPath 
-              : _tmdbImageUrl(backdropPath, backdropSize);
 
           final activeBgColor = Color.lerp(const Color(0xFF0D0F14), _currentAmbientColor, 0.15)!;
           final slideColor = _ambientColors[_currentBannerIndex] ?? NivioTheme.accentColorOf(context);
@@ -974,17 +973,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             children: [
               Container(
                 decoration: BoxDecoration(
-                  image: backdropUrl != null
+                  image: backdropPath != null && retainArtwork
                       ? DecorationImage(
-                          image: CachedNetworkImageProvider(backdropUrl),
+                          image: artworkImageProvider(
+                            backdropPath,
+                            width: viewport.width,
+                            height: bannerHeight,
+                            pixelRatio: pixelRatio,
+                            kind: isDesktop && rawBackdropPath != null
+                                ? ArtworkKind.backdrop
+                                : ArtworkKind.poster,
+                          ),
                           fit: BoxFit.cover,
                         )
                       : null,
-                  color: backdropUrl == null ? const Color(0xFF2F2F2F) : null,
+                  color: backdropPath == null || !retainArtwork
+                      ? const Color(0xFF2F2F2F)
+                      : null,
                 ),
               ),
               // Vignette overlay
-              if (isDesktop)
+              if (isDesktop && retainArtwork)
                 Positioned.fill(
                   child: Image.asset(
                     // TV ships the desktop vignette (the mobile package's
@@ -1028,22 +1037,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                if (logoUrl != null && logoUrl.isNotEmpty)
+                                if (logoImage != null)
                                   GestureDetector(
                                     onTap: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
                                     child: DpadFocusable(
                                       onActivate: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
                                       child: MouseRegion(
                                       cursor: SystemMouseCursors.click,
-                                      child: CachedNetworkImage(
-                                        imageUrl: logoUrl,
-                                        height: 110,
+                                      child: Image(
+                                        image: logoImage,
+                                        height: logoHeight,
                                         alignment: Alignment.bottomLeft,
                                         fit: BoxFit.contain,
-                                        fadeInDuration: Duration.zero,
-                                        fadeOutDuration: Duration.zero,
-                                        placeholder: (context, url) => SizedBox(height: 110, child: _buildTitleText(title)),
-                                        errorWidget: (_, __, ___) => _buildTitleText(title),
+                                        frameBuilder: (_, child, frame, _) =>
+                                            frame == null
+                                                ? SizedBox(height: logoHeight, child: _buildTitleText(title))
+                                                : child,
+                                        errorBuilder: (_, __, ___) => _buildTitleText(title),
                                       ),
                                     ),
                                     ),
@@ -1160,18 +1170,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     : Column(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          if (logoUrl != null && logoUrl.isNotEmpty)
+                          if (logoImage != null)
                             FocusableTap(
                               onTap: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
-                              child: CachedNetworkImage(
-                                imageUrl: logoUrl,
-                                height: 75,
+                              child: Image(
+                                image: logoImage,
+                                height: logoHeight,
                                 alignment: Alignment.center,
                                 fit: BoxFit.contain,
-                                fadeInDuration: Duration.zero,
-                                fadeOutDuration: Duration.zero,
-                                placeholder: (context, url) => SizedBox(
-                                  height: 75,
+                                frameBuilder: (_, child, frame, _) => frame != null ? child : SizedBox(
+                                  height: logoHeight,
                                   child: Center(
                                     child: Text(
                                       title,
@@ -1186,7 +1194,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     ),
                                   ),
                                 ),
-                                errorWidget: (_, __, ___) => Text(
+                                errorBuilder: (_, __, ___) => Text(
                                   title,
                                   textAlign: TextAlign.center,
                                   style: const TextStyle(
@@ -1333,7 +1341,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           icon: user?.photoURL != null
               ? CircleAvatar(
                   radius: 14,
-                  backgroundImage: CachedNetworkImageProvider(user!.photoURL!),
+                  backgroundImage: avatarArtworkImage(context, user!.photoURL!, 28),
                   backgroundColor: NivioTheme.netflixDarkGrey,
                 )
               : const PhosphorIcon(
@@ -1559,12 +1567,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       ),
     );
-  }
-
-  String? _tmdbImageUrl(String? path, String size) {
-    if (path == null || path.isEmpty) return null;
-    if (path.startsWith('http://') || path.startsWith('https://')) return path;
-    return '$tmdbImageBaseUrl/$size$path';
   }
 
   int? _parseMediaId(dynamic value) {

@@ -214,8 +214,8 @@ class AniListAuthService {
         _currentUser = TrackingUser(
           id: data['id'].toString(),
           username: data['name'] as String,
-          avatarUrl: data['avatar']?['large'] as String? ??
-              data['avatar']?['medium'] as String?,
+          avatarUrl: data['avatar']?['medium'] as String? ??
+              data['avatar']?['large'] as String?,
           provider: TrackingProvider.anilist,
           connectedAt: DateTime.now(),
         );

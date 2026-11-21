@@ -1,3 +1,4 @@
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'dart:ui';
 import 'package:nivio/core/app_platform.dart';
 import 'package:flutter/material.dart';
@@ -122,7 +123,7 @@ class WatchPartyParticipantsSheet extends ConsumerWidget {
                             return ListTile(
                               leading: CircleAvatar(
                                 backgroundColor: Colors.white24,
-                                backgroundImage: p.photoUrl != null ? NetworkImage(p.photoUrl!) : null,
+                                backgroundImage: p.photoUrl != null ? avatarArtworkImage(context, p.photoUrl!, 40) : null,
                                 child: p.photoUrl == null
                                     ? Text(
                                         p.name.substring(0, 1).toUpperCase(),

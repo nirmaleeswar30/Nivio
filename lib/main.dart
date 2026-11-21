@@ -23,6 +23,7 @@ import 'package:nivio/core/tv_focus.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/firebase_options.dart';
 import 'package:nivio/widgets/mini_player_overlay.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:nivio/models/cache_entry.dart';
 import 'package:nivio/models/watchlist_item.dart';
 import 'package:nivio/models/new_episode.dart';
@@ -153,6 +154,10 @@ void main([List<String> args = const []]) async {
       if (handled) return;
     }
     WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+    if (AppPlatform.isDesktopOS) {
+      // Keep the disk cache warm while bounding decoded images in memory.
+      PaintingBinding.instance.imageCache.maximumSizeBytes = 48 * 1024 * 1024;
+    }
     if (Platform.isLinux) {
       LinuxInAppWebViewPlatform.registerWith();
       
@@ -654,7 +659,7 @@ final appRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/home',
-              builder: (context, state) => const HomeScreen(),
+              builder: (context, state) => const TabArtworkScope(child: HomeScreen()),
             ),
           ],
         ),
@@ -668,7 +673,12 @@ final appRouter = GoRouter(
                 int initialTab = 0;
                 if (tab == 'watchlist') initialTab = 1;
                 if (tab == 'downloads') initialTab = 2;
-                return LibraryScreen(key: ValueKey(state.uri.toString()), initialTab: initialTab);
+                return TabArtworkScope(
+                  child: LibraryScreen(
+                    key: ValueKey(state.uri.toString()),
+                    initialTab: initialTab,
+                  ),
+                );
               },
             ),
           ],
@@ -711,7 +721,7 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/profile',
-      builder: (context, state) => const ProfileScreen(),
+      builder: (context, state) => const TabArtworkScope(child: ProfileScreen()),
     ),
     GoRoute(
       path: '/watchlist',

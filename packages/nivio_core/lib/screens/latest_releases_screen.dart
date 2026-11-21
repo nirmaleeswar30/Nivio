@@ -1,10 +1,10 @@
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:nivio/core/tmdb_artwork.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/providers/service_providers.dart';
@@ -608,7 +608,7 @@ class _DesktopScheduleButtonState extends State<_DesktopScheduleButton> {
 
 /// Ultra-optimized poster release card:
 /// - Fast GPU rendering with zero BackdropFilter blur overhead
-/// - Downsampled cached images (memCacheWidth: 340) for minimal RAM usage
+/// - Downsampled cached images (maxDecodeWidth: 340) for minimal RAM usage
 /// - Native RepaintBoundary layer caching
 /// - Vertical poster aspect ratio matching industry-standard streaming catalogs
 class _OptimizedReleaseCard extends StatefulWidget {
@@ -705,12 +705,8 @@ class _OptimizedReleaseCardState extends State<_OptimizedReleaseCard> {
     final releaseTag = _formatReleaseTag(rawDate, digitalDate, airingAtSec);
 
     // Prefer poster for vertical card format; fallback to backdrop if poster unavailable
-    final imagePath = (posterPath != null && posterPath.isNotEmpty)
-        ? posterPath
-        : backdropPath;
-    final imageUrl = imagePath != null && imagePath.isNotEmpty
-        ? (imagePath.startsWith('http') ? imagePath : '$tmdbImageBaseUrl/w500$imagePath')
-        : null;
+    final hasPoster = posterPath != null && posterPath.isNotEmpty;
+    final imageUrl = hasPoster ? posterPath : backdropPath;
 
     final isDesktop = AppPlatform.useDesktopLayout;
 
@@ -731,11 +727,12 @@ class _OptimizedReleaseCardState extends State<_OptimizedReleaseCard> {
           fit: StackFit.expand,
           children: [
           // Cached Poster Image
-          if (imageUrl != null)
-            CachedNetworkImage(
+          if (imageUrl != null && imageUrl.isNotEmpty)
+            ArtworkImage(
               imageUrl: imageUrl,
+              kind: hasPoster ? ArtworkKind.poster : ArtworkKind.backdrop,
               fit: BoxFit.cover,
-              memCacheWidth: 340,
+              maxDecodeWidth: 340,
               filterQuality: FilterQuality.low,
               placeholder: (context, url) => const DecoratedBox(
                 decoration: BoxDecoration(color: Color(0xFF1B1E28)),

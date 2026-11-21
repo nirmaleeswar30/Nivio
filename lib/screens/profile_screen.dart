@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'package:animations/animations.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
@@ -15,6 +14,7 @@ import 'package:intl/intl.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/core/theme.dart';
+import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
@@ -23,6 +23,7 @@ import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:nivio/services/discord_gateway_service.dart';
 import 'package:nivio/services/discord_rpc_service.dart';
 import 'package:nivio/providers/changelog_provider.dart';
@@ -847,6 +848,9 @@ Widget _buildMobileLayout(BuildContext context, User user) {
 
   Widget _buildProfileHeader(User user) {
     final avatarUrl = user.photoURL;
+    final avatar = avatarUrl != null && avatarUrl.isNotEmpty
+        ? avatarArtworkImage(context, avatarUrl, 92)
+        : null;
     final name = user.displayName?.trim().isNotEmpty == true
         ? user.displayName!.trim()
         : 'Nivio User';
@@ -858,10 +862,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           CircleAvatar(
             radius: 46,
             backgroundColor: NivioTheme.netflixDarkGrey,
-            backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
-                ? CachedNetworkImageProvider(avatarUrl)
-                : null,
-            child: (avatarUrl == null || avatarUrl.isEmpty)
+            backgroundImage: avatar,
+            child: avatar == null
                 ? const PhosphorIcon(
                     PhosphorIconsRegular.userCircle,
                     color: NivioTheme.netflixWhite,
@@ -2079,8 +2081,10 @@ Widget _buildMobileLayout(BuildContext context, User user) {
       );
     }
 
-    final tmdbService = ref.watch(tmdbServiceProvider);
     final preview = watchlist.take(8).toList();
+    final posterPixels = (78 * MediaQuery.devicePixelRatioOf(context))
+        .ceil()
+        .clamp(1, 240);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2094,12 +2098,13 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             separatorBuilder: (context, index) => const SizedBox(width: 8),
             itemBuilder: (context, index) {
               final item = preview[index];
+              final posterUrl = tmdbArtworkUrl(item.posterPath, 'w185');
               return FocusableTap(
                 onTap: () =>
                     context.push('/media/${item.id}?type=${item.mediaType}'),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(10),
-                  child: item.posterPath == null
+                  child: posterUrl == null
                       ? Container(
                           width: 78,
                           color: NivioTheme.netflixDarkGrey,
@@ -2108,9 +2113,10 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                             color: NivioTheme.netflixGrey,
                           ),
                         )
-                      : CachedNetworkImage(
-                          imageUrl: tmdbService.getPosterUrl(item.posterPath),
+                      : ArtworkImage(
+                          imageUrl: posterUrl,
                           width: 78,
+                          maxDecodeWidth: posterPixels,
                           fit: BoxFit.cover,
                         ),
                 ),
@@ -2160,13 +2166,16 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           );
         }
 
-        final tmdb = ref.watch(tmdbServiceProvider);
+        final posterPixels = (42 * MediaQuery.devicePixelRatioOf(context))
+            .ceil()
+            .clamp(1, 128);
         final sorted = [...history]
           ..sort((a, b) => b.lastWatchedAt.compareTo(a.lastWatchedAt));
         final preview = sorted.take(4).toList();
 
         return Column(
           children: preview.map((entry) {
+            final posterUrl = tmdbArtworkUrl(entry.posterPath, 'w92');
             final subtitle = [
               if (entry.mediaType == 'tv')
                 'S${entry.currentSeason} E${entry.currentEpisode}',
@@ -2180,10 +2189,10 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                 child: SizedBox(
                   width: 42,
                   height: 58,
-                  child:
-                      (entry.posterPath != null && entry.posterPath!.isNotEmpty)
-                      ? CachedNetworkImage(
-                          imageUrl: tmdb.getPosterUrl(entry.posterPath),
+                  child: posterUrl != null
+                      ? ArtworkImage(
+                          imageUrl: posterUrl,
+                          maxDecodeWidth: posterPixels,
                           fit: BoxFit.cover,
                         )
                       : Container(color: NivioTheme.netflixDarkGrey),
@@ -5194,7 +5203,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                     CircleAvatar(
                       radius: 19,
                       backgroundImage:
-                          CachedNetworkImageProvider(user.avatarUrl!),
+                          avatarArtworkImage(context, user.avatarUrl!, 38),
                       backgroundColor: Colors.white10,
                     ),
                     Positioned(
@@ -5345,7 +5354,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                   user.avatarUrl!.isNotEmpty)
                 CircleAvatar(
                   radius: 19,
-                  backgroundImage: CachedNetworkImageProvider(user.avatarUrl!),
+                  backgroundImage: avatarArtworkImage(context, user.avatarUrl!, 38),
                   backgroundColor: Colors.white10,
                 )
               else

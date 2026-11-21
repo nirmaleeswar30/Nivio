@@ -1270,7 +1270,7 @@ class HdrOutputNotifier extends StateNotifier<bool> {
 
 // Liquid Glass Nav Provider (phones): the floating bottom nav as shader
 // liquid glass with a lens selection pill (lib/core/liquid_glass, from Inzx)
-// instead of the frosted bar. Defaults to on.
+// instead of the frosted bar. Enabled by default on iOS.
 final liquidGlassNavProvider = StateNotifierProvider<LiquidGlassNavNotifier, bool>((ref) {
   return LiquidGlassNavNotifier();
 });
@@ -1278,13 +1278,13 @@ final liquidGlassNavProvider = StateNotifierProvider<LiquidGlassNavNotifier, boo
 class LiquidGlassNavNotifier extends StateNotifier<bool> {
   static const _key = 'liquid_glass_nav_enabled';
 
-  LiquidGlassNavNotifier() : super(_startupPrefs?.getBool(_key) ?? true) {
+  LiquidGlassNavNotifier() : super(_startupPrefs?.getBool(_key) ?? Platform.isIOS) {
     _loadPreference();
   }
 
   Future<void> _loadPreference() async {
     final prefs = await SharedPreferences.getInstance();
-    state = prefs.getBool(_key) ?? true;
+    state = prefs.getBool(_key) ?? Platform.isIOS;
   }
 
   Future<void> setEnabled(bool value) async {

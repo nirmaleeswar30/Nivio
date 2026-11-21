@@ -1,15 +1,16 @@
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:flutter/material.dart';
+import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/screens/iptv_screen.dart';
 import 'package:nivio/services/sports_service.dart';
 import 'package:nivio/models/sports_match.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 
 /// Combined "TV / Sports" tab: live sports events + IPTV / live TV channels.
 class TvSportsScreen extends ConsumerStatefulWidget {
@@ -56,9 +57,15 @@ class _TvSportsScreenState extends ConsumerState<TvSportsScreen> {
               Expanded(
                 child: IndexedStack(
                   index: _index,
-                  children: const [
-                    IptvScreen(embedded: true),
-                    SportsView(),
+                  children: [
+                    TickerMode(
+                      enabled: !AppPlatform.isDesktopOS || _index == 0,
+                      child: const TabArtworkScope(child: IptvScreen(embedded: true)),
+                    ),
+                    TickerMode(
+                      enabled: !AppPlatform.isDesktopOS || _index == 1,
+                      child: const TabArtworkScope(child: SportsView()),
+                    ),
                   ],
                 ),
               ),
@@ -933,8 +940,9 @@ class _SportsMatchCardState extends State<_SportsMatchCard> {
       ),
       padding: const EdgeInsets.all(5),
       child: hasUrl
-          ? CachedNetworkImage(
+          ? ArtworkImage(
               imageUrl: url,
+              kind: ArtworkKind.badge,
               fit: BoxFit.contain,
               errorWidget: (_, __, ___) => _badgeLetterFallback(name),
             )
@@ -973,8 +981,9 @@ class _SportsMatchCardState extends State<_SportsMatchCard> {
           child: hasUrl
               ? ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: CachedNetworkImage(
+                  child: ArtworkImage(
                     imageUrl: img,
+                    kind: ArtworkKind.badge,
                     fit: BoxFit.cover,
                     errorWidget: (_, __, ___) => Icon(
                       PhosphorIconsRegular.trophy,

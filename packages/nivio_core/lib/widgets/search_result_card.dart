@@ -1,5 +1,5 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/theme.dart';
@@ -46,11 +46,11 @@ class SearchResultCard extends ConsumerWidget {
                         borderRadius: const BorderRadius.vertical(
                           top: Radius.circular(10),
                         ),
-                        child: CachedNetworkImage(
+                        child: ArtworkImage(
                           imageUrl: posterUrl,
                           fit: BoxFit.cover,
                           width: double.infinity,
-                          memCacheWidth: 350,
+                          maxDecodeWidth: 350,
                           placeholder: (context, url) => const Skeletonizer(
                             child: SkeletonBox(
                               width: double.infinity,

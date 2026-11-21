@@ -1,3 +1,4 @@
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'dart:async';
 
 import 'package:nivio/core/app_platform.dart';
@@ -359,7 +360,7 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
       return CircleAvatar(
         radius: radius,
         backgroundColor: Colors.white12,
-        backgroundImage: NetworkImage(photoUrl),
+        backgroundImage: avatarArtworkImage(context, photoUrl, radius * 2),
       );
     }
 

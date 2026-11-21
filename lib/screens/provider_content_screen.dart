@@ -3,12 +3,12 @@ import 'dart:ui';
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:flutter/material.dart';
+import 'package:nivio/core/tmdb_artwork.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:nivio/providers/home_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/providers_data.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/watchlist_item.dart';
@@ -245,15 +245,14 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
   Future<void> _extractColorForIndex(int index) async {
     if (_trending.isEmpty || index >= _trending.length) return;
     final item = _trending[index];
-    final posterPath = item['poster_path'];
+    final posterPath = item['poster_path'] as String?;
     if (posterPath == null) return;
     
     if (_ambientColors.containsKey(index)) return;
     
     try {
-      final url = '$tmdbImageBaseUrl/w200$posterPath';
       final colorScheme = await ColorScheme.fromImageProvider(
-        provider: NetworkImage(url),
+        provider: artworkPaletteProvider(posterPath),
         brightness: Brightness.dark,
       );
       final color = colorScheme.primary;
@@ -482,8 +481,9 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                               child: Align(
                                 alignment: Alignment.centerLeft,
                                 child: logoPath != null 
-                                  ? CachedNetworkImage(
-                                      imageUrl: '$tmdbImageBaseUrl/w300$logoPath',
+                                  ? ArtworkImage(
+                                      imageUrl: logoPath,
+                                      kind: ArtworkKind.logo,
                                       height: 56,
                                       fit: BoxFit.contain,
                                       alignment: Alignment.centerLeft,
@@ -714,7 +714,12 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                             width: 2.0,
                           ),
                           image: DecorationImage(
-                            image: CachedNetworkImageProvider('$tmdbImageBaseUrl/w500$posterPath'),
+                            image: artworkImageProvider(
+                              posterPath,
+                              width: MediaQuery.sizeOf(context).width - 32,
+                              height: 480,
+                              pixelRatio: MediaQuery.devicePixelRatioOf(context),
+                            ),
                             fit: BoxFit.cover,
                           ),
                         ),
@@ -757,8 +762,9 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           if (item['logo_url'] != null)
-                            CachedNetworkImage(
-                              imageUrl: '$tmdbImageBaseUrl/w500${item['logo_url']}',
+                            ArtworkImage(
+                              imageUrl: item['logo_url'] as String,
+                              kind: ArtworkKind.logo,
                               height: 80,
                               fit: BoxFit.contain,
                               alignment: Alignment.bottomCenter,
@@ -1004,8 +1010,9 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                                 ),
                                 const SizedBox(width: 4),
                                 if (logoPath != null)
-                                  CachedNetworkImage(
-                                    imageUrl: '$tmdbImageBaseUrl/w300$logoPath',
+                                  ArtworkImage(
+                                    imageUrl: logoPath,
+                                    kind: ArtworkKind.logo,
                                     height: isDesktop ? 36 : 30,
                                     fit: BoxFit.contain,
                                   )
@@ -1184,11 +1191,6 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
             themeColor: slideColor,
           );
 
-          final backdropUrl = imagePath != null
-              ? (imagePath.startsWith('http')
-                  ? imagePath
-                  : '$tmdbImageBaseUrl/${isDesktop ? 'original' : 'w500'}$imagePath')
-              : null;
 
           final isInWatchlist = tmdbId != 0 && watchlistIds.contains(tmdbId);
 
@@ -1198,13 +1200,21 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
               // 1. Backdrop / Poster Image
               Container(
                 decoration: BoxDecoration(
-                  image: backdropUrl != null
+                  image: imagePath != null
                       ? DecorationImage(
-                          image: CachedNetworkImageProvider(backdropUrl),
+                          image: artworkImageProvider(
+                            imagePath,
+                            width: MediaQuery.sizeOf(context).width,
+                            height: bannerHeight,
+                            pixelRatio: MediaQuery.devicePixelRatioOf(context),
+                            kind: isDesktop && backdropPath != null
+                                ? ArtworkKind.backdrop
+                                : ArtworkKind.poster,
+                          ),
                           fit: BoxFit.cover,
                         )
                       : null,
-                  color: backdropUrl == null ? const Color(0xFF2F2F2F) : null,
+                  color: imagePath == null ? const Color(0xFF2F2F2F) : null,
                 ),
               ),
               // 2. Vignette Asset Overlay
@@ -1260,8 +1270,9 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                                       onActivate: () => context.push('/media/$tmdbId?type=$_mediaType'),
                                       child: MouseRegion(
                                       cursor: SystemMouseCursors.click,
-                                      child: CachedNetworkImage(
+                                      child: ArtworkImage(
                                         imageUrl: logoUrl,
+                                        kind: ArtworkKind.logo,
                                         height: 110,
                                         alignment: Alignment.bottomLeft,
                                         fit: BoxFit.contain,
@@ -1627,7 +1638,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
             child: photoUrl != null
                 ? CircleAvatar(
                     radius: 14,
-                    backgroundImage: CachedNetworkImageProvider(photoUrl),
+                    backgroundImage: avatarArtworkImage(context, photoUrl, 28),
                     backgroundColor: NivioTheme.netflixDarkGrey,
                   )
                 : PhosphorIcon(

@@ -1,11 +1,11 @@
+import 'package:nivio/core/tmdb_artwork.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:nivio/widgets/youtube_webview_player.dart';
-import 'package:nivio/core/constants.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/models/watchlist_item.dart';
@@ -392,12 +392,7 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
   @override
   Widget build(BuildContext context) {
     final isInWatchlist = ref.watch(isInWatchlistProvider(widget.tmdbId));
-    final resolvedBackdrop = widget.backdropPath ?? _details?['backdrop_path'];
-    final backdropUrl = resolvedBackdrop != null
-        ? (resolvedBackdrop.startsWith('http')
-            ? resolvedBackdrop
-            : '$tmdbImageBaseUrl/w780$resolvedBackdrop')
-        : null;
+    final backdropUrl = widget.backdropPath ?? _details?['backdrop_path'] as String?;
 
     return FadeTransition(
       opacity: _fadeAnimation,
@@ -624,8 +619,9 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
           // Show backdrop image until video starts rendering
           if (!_isVideoPlaying && backdropUrl != null)
             Positioned.fill(
-              child: CachedNetworkImage(
+              child: ArtworkImage(
                 imageUrl: backdropUrl,
+                kind: ArtworkKind.backdrop,
                 fit: BoxFit.cover,
                 placeholder: (context, url) => Container(color: const Color(0xFF2F2F2F)),
                 errorWidget: (context, url, error) => Container(
@@ -692,8 +688,9 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
       return Stack(
         fit: StackFit.expand,
         children: [
-          CachedNetworkImage(
+          ArtworkImage(
             imageUrl: backdropUrl,
+            kind: ArtworkKind.backdrop,
             fit: BoxFit.cover,
             width: double.infinity,
             height: double.infinity,

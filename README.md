@@ -12,7 +12,7 @@
   [![TMDB](https://img.shields.io/badge/Metadata-TMDB-01B4E4?style=for-the-badge&logo=themoviedatabase&logoColor=white)](https://www.themoviedb.org/)
   [![AniList](https://img.shields.io/badge/Anime-AniList-02A9FF?style=for-the-badge&logo=anilist&logoColor=white)](https://anilist.co/)
   [![Platforms](https://img.shields.io/badge/Platforms-Android%20%7C%20Android%20TV%20%7C%20Windows%20%7C%20Linux%20%7C%20iOS-3DDC84?style=for-the-badge)](https://nivio.nirmaleeswar.dev/#download)
-  [![HDR](https://img.shields.io/badge/Android%20%7C%20Windows%20%7C%20Linux-True%20HDR%20%7C%20Dolby%20Vision-000000?style=for-the-badge&logo=dolby&logoColor=white)](#hdr)
+  [![HDR](https://img.shields.io/badge/Android%20%7C%20Windows%20%7C%20Linux%20%7C%20iOS-True%20HDR%20%7C%20Dolby%20Vision-000000?style=for-the-badge&logo=dolby&logoColor=white)](#hdr)
   [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge)](https://www.gnu.org/licenses/gpl-3.0)
 
 </div>
@@ -39,14 +39,6 @@
     <img src="assets/images/badge-obtainium.png" alt="Get it on Obtainium" height="48" />
   </a>
 </p>
-
-## Releases and iOS availability
-
-[v2.2.7](https://github.com/nirmaleeswar30/Nivio/releases/tag/v2.2.7) brings HDR to Windows and supported Wayland desktops, Windows notifications, more reliable Android downloads, and the move to GPL-3.0. Install the new Windows setup or Linux AppImage to get desktop HDR.
-
-The iPhone and iPad build targets **iOS / iPadOS 15 and later**. It has Picture-in-Picture, HDR and Dolby Vision through AVFoundation on compatible devices, an HDR card in player settings, and a back button for fullscreen trailers. Changes since v2.2.7 also include Liquid Glass navigation on Android and iOS and clearer remote focus and season selection on Android TV.
-
-Check the [iOS install guide](https://nivio.nirmaleeswar.dev/docs/install#ios) for public IPA availability. Once the IPA is published, add the Nivio source in **SideStore** or **AltStore Classic**, then search for **Nivio** in Browse. The source URL is `https://nivio.nirmaleeswar.dev/altstore.json`.
 
 ---
 
@@ -117,7 +109,7 @@ Check the [iOS install guide](https://nivio.nirmaleeswar.dev/docs/install#ios) f
 * **🧲 Instant Torrent Streaming** — Watch magnet links directly on the fly without waiting for downloads, powered by an embedded Rust engine.
 * **🎌 Dedicated Anime Hub** — Fast multi-source scraping, one-tap skip intro, filler episode tagging, and AniList sync.
 * **⚽ Live Sports & IPTV** — Live sports match streams, schedules, and global TV channels.
-* **🌈 True HDR & Dolby Vision on Android, Windows and Linux** — Real HDR10 / HLG output and hardware Dolby Vision on supported phones, true HDR on Windows HDR monitors and on Wayland desktops with HDR, plus HDR → SDR tone mapping everywhere else. [More below](#hdr).
+* **🌈 HDR & Dolby Vision** — HDR and Dolby Vision on supported Android, iPhone and iPad models, HDR output on compatible Windows and Wayland desktops, and tone mapping for SDR screens. [Platform details](#hdr).
 * **📺 Android TV & Google TV** — A full TV layout driven by the remote's D-pad, from browsing to the player.
 * **⚡ Native MPV Playback** — Hardware-accelerated decoding (HW+ / HW / SW), 200% software volume boost, and Picture-in-Picture.
 * **✨ Ambient Mode** — A soft glow fills the black bars around the video, with adjustable blur and edges that fade into it.

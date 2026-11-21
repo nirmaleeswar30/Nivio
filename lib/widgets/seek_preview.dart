@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/services/network_client_factory.dart';
 
@@ -19,6 +22,8 @@ class SeekPreviewCue {
   const SeekPreviewCue(this.start, this.end, this.imageUrl, this.region);
 }
 
+typedef _PreviewImage = ({ui.Image image, double scaleX, double scaleY});
+
 /// Seek-bar thumbnail previews from a server's WebVTT sprite map (the kind
 /// web players such as JW Player / Vidstack use).
 ///
@@ -28,8 +33,13 @@ class SeekPreviewCue {
 class SeekPreviewLoader {
   final String vttUrl;
   final Map<String, String> headers;
+  final Size tilePixels;
 
-  SeekPreviewLoader({required this.vttUrl, Map<String, String> headers = const {}})
+  SeekPreviewLoader({
+    required this.vttUrl,
+    required this.tilePixels,
+    Map<String, String> headers = const {},
+  })
       : headers = {
           'Accept': '*/*',
           'Sec-Fetch-Site': 'cross-site',
@@ -42,11 +52,15 @@ class SeekPreviewLoader {
   List<SeekPreviewCue> _cues = const [];
   bool _disposed = false;
 
-  /// Decoded sprite sheets, most recently used last. Sheets are ~1-2k px
-  /// wide, so only a few are kept.
-  final LinkedHashMap<String, ui.Image> _images = LinkedHashMap();
-  final Map<String, Future<ui.Image?>> _pending = {};
+  // Keep the smallest tile dimensions for each sheet so every cue is legible.
+  final Map<String, Size> _smallestTile = {};
+  final LinkedHashMap<String, _PreviewImage> _images = LinkedHashMap();
+  final Map<String, Future<void>> _pending = {};
   static const _maxImages = 4;
+  static const _maxSide = 2048;
+  static const _maxPixels = 2 * 1024 * 1024;
+  static const _cacheByteLimit = 12 * 1024 * 1024;
+  int _cacheBytes = 0;
 
   /// Becomes true once the track has loaded and has cues.
   final ValueNotifier<bool> ready = ValueNotifier(false);
@@ -61,10 +75,22 @@ class SeekPreviewLoader {
       final cues = parse(utf8.decode(res.bodyBytes, allowMalformed: true), Uri.parse(vttUrl));
       if (_disposed || cues.isEmpty) return;
       _cues = cues;
+      for (final cue in cues) {
+        final tile = cue.region?.size;
+        if (tile == null || tile.isEmpty) continue;
+        _smallestTile.update(
+          cue.imageUrl,
+          (current) => Size(
+            math.min(current.width, tile.width),
+            math.min(current.height, tile.height),
+          ),
+          ifAbsent: () => tile,
+        );
+      }
       ready.value = true;
       appDebugLog('🖼️ Seek previews: ${cues.length} cues from $vttUrl');
       // Warm the first sheet so the first drag shows a tile straight away.
-      unawaited(image(cues.first.imageUrl));
+      unawaited(_loadImage(cues.first.imageUrl));
     } catch (e) {
       appDebugLog('🖼️ Seek previews unavailable: $e');
     }
@@ -127,48 +153,80 @@ class SeekPreviewLoader {
   }
 
   /// A decoded sprite sheet if it's already loaded (no waiting).
-  ui.Image? cachedImage(String url) {
+  _PreviewImage? _cachedImage(String url) {
     final img = _images.remove(url);
     if (img != null) _images[url] = img; // mark as recently used
     return img;
   }
 
   /// Fetches and decodes a sprite sheet (deduplicated, cached).
-  Future<ui.Image?> image(String url) {
-    final cached = cachedImage(url);
-    if (cached != null) return Future.value(cached);
+  Future<void> _loadImage(String url) {
+    if (_disposed || _cachedImage(url) != null) return Future.value();
     return _pending[url] ??= () async {
       try {
         final res = await _client.get(Uri.parse(url), headers: headers).timeout(const Duration(seconds: 15));
-        if (res.statusCode != 200 || _disposed) return null;
-        final codec = await ui.instantiateImageCodec(res.bodyBytes);
-        final frame = await codec.getNextFrame();
+        if (res.statusCode != 200 || _disposed) return;
+        final decoded = await _decode(url, res.bodyBytes);
         if (_disposed) {
-          frame.image.dispose();
-          return null;
+          decoded.image.dispose();
+          return;
         }
-        _images[url] = frame.image;
-        while (_images.length > _maxImages) {
-          final oldest = _images.keys.first;
-          _images.remove(oldest)?.dispose();
+        _images[url] = decoded;
+        _cacheBytes += _byteSize(decoded.image);
+        while (_images.length > _maxImages || _cacheBytes > _cacheByteLimit) {
+          final oldest = _images.remove(_images.keys.first)!.image;
+          _cacheBytes -= _byteSize(oldest);
+          oldest.dispose();
         }
-        return frame.image;
       } catch (e) {
         appDebugLog('🖼️ Seek preview sprite failed: $e');
-        return null;
       } finally {
         _pending.remove(url);
       }
     }();
   }
 
+  int _byteSize(ui.Image image) => image.width * image.height * 4;
+
+  Future<_PreviewImage> _decode(String url, Uint8List bytes) async {
+    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    ui.ImageDescriptor? descriptor;
+    ui.Codec? codec;
+    try {
+      descriptor = await ui.ImageDescriptor.encoded(buffer);
+      final width = descriptor.width;
+      final height = descriptor.height;
+      final tile = _smallestTile[url] ?? Size(width.toDouble(), height.toDouble());
+      final fitScale = math.max(
+        tilePixels.width / tile.width,
+        tilePixels.height / tile.height,
+      );
+      final sizeLimit = math.min(
+        _maxSide / math.max(width, height),
+        math.sqrt(_maxPixels / (width * height)),
+      );
+      final scale = math.min(1.0, math.min(fitScale, sizeLimit));
+      codec = await descriptor.instantiateCodec(
+        targetWidth: math.max(1, (width * scale).floor()),
+        targetHeight: math.max(1, (height * scale).floor()),
+      );
+      final image = (await codec.getNextFrame()).image;
+      return (image: image, scaleX: image.width / width, scaleY: image.height / height);
+    } finally {
+      codec?.dispose();
+      descriptor?.dispose();
+      buffer.dispose();
+    }
+  }
+
   void dispose() {
     _disposed = true;
     ready.dispose();
-    for (final img in _images.values) {
-      img.dispose();
+    for (final decoded in _images.values) {
+      decoded.image.dispose();
     }
     _images.clear();
+    _smallestTile.clear();
     _client.close();
   }
 }
@@ -176,6 +234,12 @@ class SeekPreviewLoader {
 /// The preview tile for [position], with the time underneath. Shows the
 /// previous tile while a new sprite sheet is still loading.
 class SeekPreviewThumbnail extends StatefulWidget {
+  static Size get displaySize => AppPlatform.isTv
+      ? const Size(240, 135)
+      : AppPlatform.useDesktopLayout
+      ? const Size(192, 108)
+      : const Size(150, 84);
+
   final SeekPreviewLoader loader;
   final Duration position;
   final String label;
@@ -195,6 +259,7 @@ class SeekPreviewThumbnail extends StatefulWidget {
 
 class _SeekPreviewThumbnailState extends State<SeekPreviewThumbnail> {
   ui.Image? _image;
+  String? _imageUrl;
   Rect? _region;
 
   @override
@@ -206,28 +271,54 @@ class _SeekPreviewThumbnailState extends State<SeekPreviewThumbnail> {
   @override
   void didUpdateWidget(covariant SeekPreviewThumbnail oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.position != widget.position) _update();
+    if (oldWidget.loader != widget.loader) {
+      _image?.dispose();
+      _image = null;
+      _imageUrl = null;
+    }
+    if (oldWidget.position != widget.position || oldWidget.loader != widget.loader) {
+      _update();
+    }
   }
 
   void _update() {
-    final cue = widget.loader.cueAt(widget.position);
+    final loader = widget.loader;
+    final cue = loader.cueAt(widget.position);
     if (cue == null) return;
-    final cached = widget.loader.cachedImage(cue.imageUrl);
+    final cached = loader._cachedImage(cue.imageUrl);
     if (cached != null) {
-      _image = cached;
-      _region = cue.region;
+      _showTile(cue, cached);
       return;
     }
-    widget.loader.image(cue.imageUrl).then((img) {
-      if (!mounted || img == null) return;
+    loader._loadImage(cue.imageUrl).then((_) {
+      if (!mounted || !identical(loader, widget.loader)) return;
       // Still the tile we want? (the finger may have moved on)
-      final now = widget.loader.cueAt(widget.position);
-      if (now?.imageUrl != cue.imageUrl) return;
-      setState(() {
-        _image = img;
-        _region = now!.region;
-      });
+      final now = loader.cueAt(widget.position);
+      if (now == null || now.imageUrl != cue.imageUrl) return;
+      final decoded = loader._cachedImage(cue.imageUrl);
+      if (decoded != null) setState(() => _showTile(now, decoded));
     });
+  }
+
+  void _showTile(SeekPreviewCue cue, _PreviewImage decoded) {
+    if (_imageUrl != cue.imageUrl) {
+      _image?.dispose();
+      _image = decoded.image.clone();
+      _imageUrl = cue.imageUrl;
+    }
+    final region = cue.region;
+    _region = region == null ? null : Rect.fromLTRB(
+      region.left * decoded.scaleX,
+      region.top * decoded.scaleY,
+      region.right * decoded.scaleX,
+      region.bottom * decoded.scaleY,
+    );
+  }
+
+  @override
+  void dispose() {
+    _image?.dispose();
+    super.dispose();
   }
 
   @override

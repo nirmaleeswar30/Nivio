@@ -1,7 +1,7 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:nivio/core/tmdb_artwork.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:go_router/go_router.dart';
-import '../core/constants.dart';
 import '../core/providers_data.dart';
 import '../widgets/dpad_focusable.dart';
 
@@ -55,8 +55,9 @@ class AllProvidersScreen extends StatelessWidget {
                       ],
                     ),
                     clipBehavior: Clip.antiAlias,
-                    child: CachedNetworkImage(
-                      imageUrl: '$tmdbImageBaseUrl/w200${provider['logo_path']}',
+                    child: ArtworkImage(
+                      imageUrl: provider['logo_path'] as String,
+                      kind: ArtworkKind.badge,
                       fit: BoxFit.cover,
                       errorWidget: (context, url, error) => const Icon(Icons.error, color: Colors.white),
                     ),

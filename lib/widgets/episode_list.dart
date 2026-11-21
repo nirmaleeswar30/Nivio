@@ -1,14 +1,14 @@
 
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:nivio/core/tmdb_artwork.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:intl/intl.dart';
 import '../widgets/download_prompt.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
@@ -329,13 +329,13 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
     WatchHistory? mediaHistory,
     AnimeFillerData fillerData = const AnimeFillerData(),
   }) {
-    final isDesktop = AppPlatform.useDesktopLayout;
     final stillPath = episode.stillPath ?? widget.media.backdropPath ?? widget.media.posterPath;
-    final stillUrl = stillPath == null || stillPath.isEmpty
-        ? ''
-        : stillPath.startsWith('http://') || stillPath.startsWith('https://')
-        ? stillPath
-        : '$tmdbImageBaseUrl/${isDesktop ? 'original' : 'w500'}$stillPath';
+    final stillUrl = stillPath ?? '';
+    final artworkKind = episode.stillPath != null
+        ? ArtworkKind.still
+        : widget.media.backdropPath != null
+        ? ArtworkKind.backdrop
+        : ArtworkKind.poster;
 
     final bgColor = isEven ? const Color(0x0EFFFFFF) : Colors.transparent;
     final isUnaired = _isUnaired(episode.airDate);
@@ -388,12 +388,13 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
                             stillUrl.isNotEmpty
                                 ? ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
-                                    child: CachedNetworkImage(
+                                    child: ArtworkImage(
                                       imageUrl: stillUrl,
+                                      kind: artworkKind,
                                       width: 140,
                                       height: 90,
                                       fit: BoxFit.cover,
-                                      memCacheWidth: 280,
+                                      maxDecodeWidth: 280,
                                       placeholder: (context, url) =>
                                           _thumbPlaceholder(),
                                       errorWidget: (context, url, error) =>

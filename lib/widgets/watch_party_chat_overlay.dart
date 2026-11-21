@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/services/watch_party/watch_party_models.dart';
@@ -204,7 +205,7 @@ class _WatchPartyChatOverlayState extends ConsumerState<WatchPartyChatOverlay> {
                             radius: 12,
                             backgroundColor: Colors.white24,
                             backgroundImage: msg.senderPhotoUrl != null
-                                ? NetworkImage(msg.senderPhotoUrl!)
+                                ? avatarArtworkImage(context, msg.senderPhotoUrl!, 24)
                                 : null,
                             child: msg.senderPhotoUrl == null
                                 ? Text(

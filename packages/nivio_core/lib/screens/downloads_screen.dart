@@ -2,13 +2,14 @@ import 'dart:io';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/core/app_platform.dart';
 import 'package:flutter/material.dart';
+import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/download_item.dart';
 import 'package:nivio/services/download_service.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:nivio/widgets/marquee_text.dart';
 
 class DownloadsScreen extends StatefulWidget {
@@ -147,12 +148,12 @@ class _DownloadGroupCardState extends State<_DownloadGroupCard> {
               leading: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: seriesPoster != null
-                    ? CachedNetworkImage(
-                        imageUrl: seriesPoster.startsWith('http') ? seriesPoster : 'https://image.tmdb.org/t/p/w200$seriesPoster',
+                    ? ArtworkImage(
+                        imageUrl: seriesPoster,
                         width: 60,
                         height: 88,
                         fit: BoxFit.cover,
-                        memCacheWidth: 200,
+                        maxDecodeWidth: 200,
                         errorWidget: (_, __, ___) => _buildFallbackPoster(width: 60, height: 88),
                       )
                     : _buildFallbackPoster(width: 60, height: 88),
@@ -316,14 +317,15 @@ class _DownloadItemCardState extends State<_DownloadItemCard> {
                             ClipRRect(
                               borderRadius: BorderRadius.circular(8),
                               child: itemPoster != null
-                                  ? CachedNetworkImage(
-                                      imageUrl: itemPoster.startsWith('http')
-                                          ? itemPoster
-                                          : 'https://image.tmdb.org/t/p/w200$itemPoster',
+                                  ? ArtworkImage(
+                                      imageUrl: itemPoster,
+                                      kind: posterParts.length > 1 && itemPoster != posterParts.first
+                                          ? ArtworkKind.still
+                                          : ArtworkKind.poster,
                                       width: thumbWidth,
                                       height: thumbHeight,
                                       fit: BoxFit.cover,
-                                      memCacheWidth: 260,
+                                      maxDecodeWidth: 260,
                                       errorWidget: (_, __, ___) => _buildFallbackPoster(isEpisode: isEpisode, width: thumbWidth, height: thumbHeight),
                                     )
                                   : _buildFallbackPoster(isEpisode: isEpisode, width: thumbWidth, height: thumbHeight),
