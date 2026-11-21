@@ -1,10 +1,16 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 /// Keeps the app process (and the FFI engine's networking threads) alive while
 /// torrents are active, via an Android foreground service with a persistent
-/// notification. No-op on non-Android platforms.
+/// notification.
+///
+/// iOS has no foreground services: holders are passed to the app's
+/// `com.nivio/background_keepalive` channel instead, which asks iOS for
+/// extra background time (a few minutes at most) when Nivio is backgrounded.
+/// No-op on other platforms.
 ///
 /// It runs the service *without* a task-handler isolate — the engine lives in
 /// the main isolate, so we only need the service to hold the process at
@@ -22,6 +28,20 @@ class TorrentForegroundService {
 
   /// Current holders and their notification text, most recent last.
   final Map<String, String> _holders = {};
+
+  static const MethodChannel _iosKeepAlive =
+      MethodChannel('com.nivio/background_keepalive');
+
+  Future<void> _iosHold(String key, bool hold) async {
+    try {
+      await _iosKeepAlive.invokeMethod<bool>(
+        hold ? 'hold' : 'release',
+        {'key': 'torrent:$key'},
+      );
+    } catch (_) {
+      // Host app without the channel (e.g. the example app): nothing to do.
+    }
+  }
 
   void _ensureInitialized() {
     if (_initialized || !Platform.isAndroid) return;
@@ -81,6 +101,7 @@ class TorrentForegroundService {
 
   /// Releases [key]'s hold; the service stops once nothing holds it.
   Future<void> stop({String key = 'stream'}) async {
+    if (Platform.isIOS) return _iosHold(key, false);
     if (!Platform.isAndroid) return;
     if (_holders.remove(key) == null) return;
     if (_holders.isNotEmpty) {

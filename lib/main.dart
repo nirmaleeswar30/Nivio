@@ -17,6 +17,7 @@ import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/core/liquid_glass/glass_shaders.dart';
 import 'package:nivio/core/mpv_android_setup.dart';
 import 'package:nivio/core/tv_focus.dart';
 import 'package:nivio/core/theme.dart';
@@ -264,6 +265,9 @@ void main([List<String> args = const []]) async {
 
     // Wire up deep link handling (nivio://open/...)
     _initDeepLinks();
+
+    // Liquid glass nav lens + rim shaders (glass falls back without them).
+    if (Platform.isAndroid || Platform.isIOS) await GlassShaders.ensureLoaded();
 
     runApp(
       ProviderScope(

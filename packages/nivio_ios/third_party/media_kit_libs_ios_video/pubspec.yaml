@@ -1,0 +1,21 @@
+name: media_kit_libs_ios_video
+description: >-
+  Nivio's replacement for package:media_kit_libs_ios_video. Ships libmpv from
+  edde746/mpv-build (with the AVFoundation video output, used for HDR, Dolby
+  Vision and picture-in-picture) as a single Mpv.framework. iOS only.
+version: 1.1.4+nivio
+publish_to: none
+
+environment:
+  sdk: ">=2.17.0 <4.0.0"
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      ios:
+        pluginClass: MediaKitLibsIosVideoPlugin

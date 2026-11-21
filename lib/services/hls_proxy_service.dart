@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:nivio/core/debug_log.dart';
+import 'package:nivio/services/loopback_server.dart';
 import 'package:nivio/services/network_client_factory.dart';
 
 class HlsProxyService {
@@ -12,17 +13,54 @@ class HlsProxyService {
 
   HttpServer? _server;
   http.Client? _cronetClient;
+  bool _resumeHooked = false;
 
   Future<void> start() async {
     if (_server != null) return;
     
-    _cronetClient = NetworkClientFactory.createClient();
-    _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    _cronetClient ??= NetworkClientFactory.createClient();
+    await _bind(0);
     appDebugLog('🚀 HlsProxyService started on port ${_server!.port}');
 
-    _server!.listen((HttpRequest request) {
-      _handleRequest(request);
-    });
+    if (!_resumeHooked) {
+      _resumeHooked = true;
+      onIosResume(_reviveIfDead);
+    }
+  }
+
+  Future<void> _bind(int preferredPort) async {
+    final server = await bindLoopback(preferredPort: preferredPort);
+    _server = server;
+    server.listen(
+      (HttpRequest request) {
+        _handleRequest(request);
+      },
+      onError: (Object e) => appDebugLog('⚠️ HlsProxyService listen error: $e'),
+      onDone: () {
+        if (identical(_server, server)) _server = null;
+      },
+    );
+  }
+
+  /// iOS: the listening socket may have been reclaimed while suspended.
+  Future<void> _reviveIfDead() async {
+    final server = _server;
+    if (server == null) {
+      if (_cronetClient != null) await start();
+      return;
+    }
+    final port = server.port;
+    if (await loopbackPortAccepts(port)) return;
+    appDebugLog('♻️ HlsProxyService socket was reclaimed; rebinding on $port');
+    _server = null;
+    try {
+      await server.close(force: true);
+    } catch (_) {}
+    try {
+      await _bind(port);
+    } catch (e) {
+      appDebugLog('⚠️ HlsProxyService rebind failed: $e');
+    }
   }
 
   Future<void> stop() async {

@@ -26,3 +26,9 @@ anyhow = "1"
 # bundled engine). strip keeps the shared libs small.
 opt-level = 2
 strip = true
+
+# librqbit-dualstack-sockets 0.7.0 picks socket2's Linux-only bind_device()
+# for every non-macOS Unix, which doesn't compile for iOS. The vendored copy
+# uses the by-index variant on all Apple targets (only bind_device.rs differs).
+[patch.crates-io]
+librqbit-dualstack-sockets = { path = "vendor/librqbit-dualstack-sockets" }

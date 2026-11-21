@@ -92,9 +92,12 @@ class EpisodeCheckService {
       const linuxSettings = LinuxInitializationSettings(
         defaultActionName: 'Open',
       );
+      // iOS: permission is asked for here, on first launch.
+      const darwinSettings = DarwinInitializationSettings();
       // Windows needs its own settings, or nothing is ever shown there.
       final initSettings = InitializationSettings(
         android: androidSettings,
+        iOS: darwinSettings,
         linux: linuxSettings,
         windows: nivioWindowsInitSettings(),
       );

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:nivio/core/share_origin.dart';
 
 class WatchPartyParticipantsSheet extends ConsumerWidget {
   const WatchPartyParticipantsSheet({super.key});
@@ -244,6 +245,10 @@ class WatchPartyParticipantsSheet extends ConsumerWidget {
       return;
     }
 
-    await Share.share(shareText, subject: 'Join Nivio Watch Party ($code)');
+    await Share.share(
+      shareText,
+      subject: 'Join Nivio Watch Party ($code)',
+      sharePositionOrigin: shareOriginFor(context),
+    );
   }
 }

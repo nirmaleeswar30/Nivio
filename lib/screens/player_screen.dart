@@ -2,6 +2,8 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:media_kit_video/src/video_controller/android_video_controller/android_video_controller.dart';
 import 'package:simple_pip_mode/actions/pip_actions_layout.dart';
+import 'package:nivio/services/ios_video_output.dart';
+import 'package:nivio/widgets/ios_video_surface.dart';
 import 'package:nivio/services/window_fullscreen.dart';
 import 'dart:io';
 import 'package:nivio/core/screen_wake_lock.dart';
@@ -559,14 +561,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _player = Player();
       _videoController = VideoController(
         _player,
-        configuration: VideoControllerConfiguration(
-          enableHardwareAcceleration: !Platform.isLinux,
-          // Android ships mpvlibAndroid's mpv (see android/app/build.gradle.kts),
-          // whose libplacebo renderer tone-maps HDR far better and runs the
-          // hdr-toys shaders (see HdrToneMapping).
-          vo: Platform.isAndroid ? 'gpu-next' : null,
-        ),
+        configuration: Platform.isIOS
+            // iOS: mpv draws into a native display layer (IosVideoOutput).
+            ? IosVideoOutput.controllerConfiguration
+            : VideoControllerConfiguration(
+                enableHardwareAcceleration: !Platform.isLinux,
+                // Android ships mpvlibAndroid's mpv (see android/app/build.gradle.kts),
+                // whose libplacebo renderer tone-maps HDR far better and runs the
+                // hdr-toys shaders (see HdrToneMapping).
+                vo: Platform.isAndroid ? 'gpu-next' : null,
+              ),
       );
+      unawaited(IosVideoOutput.instance.prepare(_player));
       _guardVideoControllerWid(_videoController);
       appDebugLog(
         '🧪 [CW_DEBUG] PlayerScreen#$_sid created NEW player=${_hash(_player)} ctrl=${_hash(_videoController)}',
@@ -624,6 +630,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _syncPipPlayingState();
         }();
       } catch (_) {}
+    }
+    if (Platform.isIOS) {
+      // Picture-in-picture when leaving Nivio, like Android's auto PiP.
+      unawaited(IosVideoOutput.instance.setAutoPip(_player, ref.read(pipOnLostVisibilityProvider)));
     }
     _currentEpisode = widget.episode;
     _currentProviderIndex = math.max(0, widget.providerIndex ?? 0);
@@ -1618,6 +1628,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _hdrVideo = false;
       }
       _hdrSurfaceFailed = false;
+      // iOS: mpv must know its display layer before the video output starts.
+      await IosVideoOutput.instance.prepare(_player);
       await _player.open(
         Media(
           targetUrl,
@@ -2069,7 +2081,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // HDR video (PQ / HLG transfer) on an HDR screen plays through the HDR
     // surface instead of media_kit's SDR texture (see _useHdrSurface);
     // otherwise it is tone-mapped to SDR (see _syncToneMapping).
-    if (Platform.isAndroid || Platform.isWindows || Platform.isLinux) {
+    if (Platform.isAndroid || Platform.isWindows || Platform.isLinux || Platform.isIOS) {
       _refreshHdrDisplay();
     }
     if (Platform.isWindows || Platform.isLinux) {
@@ -4060,17 +4072,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       case 'hwplus':
         if (Platform.isAndroid) return 'mediacodec';
         if (Platform.isWindows) return 'd3d11va';
-        if (Platform.isMacOS) return 'videotoolbox';
+        if (Platform.isMacOS || Platform.isIOS) return 'videotoolbox';
         return 'vaapi,nvdec';
       case 'hw':
         if (Platform.isAndroid) return 'mediacodec-copy';
         if (Platform.isWindows) return 'd3d11va-copy';
-        if (Platform.isMacOS) return 'videotoolbox-copy';
+        if (Platform.isMacOS || Platform.isIOS) return 'videotoolbox-copy';
         return 'vaapi-copy,nvdec-copy';
       default:
         if (Platform.isAndroid) {
           return 'mediacodec,mediacodec-copy,no';
         }
+        // iOS: VideoToolbox frames go to the display layer untouched, which
+        // keeps HDR / Dolby Vision metadata intact.
+        if (Platform.isIOS) return 'videotoolbox,videotoolbox-copy,no';
         return 'auto-safe';
     }
   }
@@ -5883,8 +5898,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             };
                           }
 
+                          // iOS: mpv hands the frames to an AVSampleBufferDisplayLayer, which
+                          // shows HDR / Dolby Vision itself on an HDR screen and tone-maps
+                          // them to SDR on any other (see IosVideoOutput.setHdr).
+                          final iosHdrNow = Platform.isIOS && _hdrDisplay && _hdrVideo && hdrOutput;
+
                           String hdrValue() {
                             final isDv = _doviProfile != null;
+                            if (Platform.isIOS) {
+                              if (iosHdrNow) return isDv ? 'Dolby Vision · iOS' : 'True HDR · iOS';
+                              return _hdrVideo ? 'Tone mapped by iOS' : videoColourLabel();
+                            }
                             if (_hdrSurfaceActive && _trueHdr) {
                               if (Platform.isWindows) return isDv ? 'True HDR (DV → HDR10)' : 'True HDR';
                               if (Platform.isLinux) return isDv ? 'True HDR (DV Base)' : 'True HDR';
@@ -5905,7 +5929,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             };
                             final trueHdrNow = _hdrSurfaceActive && _trueHdr;
                             final String status;
-                            if (trueHdrNow && Platform.isWindows) {
+                            if (iosHdrNow) {
+                              status = _doviProfile != null
+                                  ? 'Playing in Dolby Vision on this screen (AVFoundation).'
+                                  : 'Playing in HDR on this screen (AVFoundation).';
+                            } else if (Platform.isIOS && _hdrVideo && !_hdrDisplay) {
+                              status = _doviProfile != null
+                                  ? "This screen isn't HDR, so iOS tone maps the Dolby Vision video to SDR using its metadata."
+                                  : "This screen isn't HDR, so iOS tone maps the video to SDR.";
+                            } else if (trueHdrNow && Platform.isWindows) {
                               status = _doviProfile != null
                                   ? 'Playing in HDR on this screen (Direct3D 11). Dolby Vision is converted to HDR10.'
                                   : 'Playing in HDR on this screen (Direct3D 11).';
@@ -6106,9 +6138,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                     onTap: () => openPage('sync'),
                                   ),
                                   tile(icon: Icons.memory, title: 'Decoder', value: decoderValue(), onTap: () => openPage('decoder')),
-                                  // True HDR on Android, Windows and Linux; the tone-mapping
-                                  // choice is Android-only (desktop uses Standard).
-                                  if (Platform.isAndroid || Platform.isWindows || Platform.isLinux)
+                                  // True HDR on Android, Windows, Linux and iOS; the tone-mapping
+                                  // choice is Android-only (desktop uses Standard, iOS its own).
+                                  if (Platform.isAndroid || Platform.isWindows || Platform.isLinux || Platform.isIOS)
                                     tile(
                                       icon: _doviProfile != null ? Icons.branding_watermark_rounded : Icons.hdr_on_outlined,
                                       title: _doviProfile != null ? 'Dolby Vision' : 'HDR',
@@ -7539,8 +7571,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _selectedDisplayFitKey == 'bestFit' &&
         ref.watch(ambientModeProvider);
 
+    if (Platform.isIOS) {
+      unawaited(IosVideoOutput.instance.setHdr(_player, ref.watch(hdrOutputProvider) && _hdrVideo));
+    }
     Widget videoWidget = _videoDetached
         ? Container(color: Colors.black)
+        : Platform.isIOS
+            ? IosVideoSurface(
+                player: _player,
+                fit: _displayFitOptions[_selectedDisplayFitKey] ?? BoxFit.contain,
+              )
         : _useWindowsHdrSurface
             ? WindowsHdrVideoSurface(
                 player: _player,
@@ -7728,7 +7768,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               player: _player,
               doviProfile: _doviProfile,
               isHdr: _hdrVideo,
-              isHdrOutput: _trueHdr && _hdrSurfaceActive,
+              // iOS: the display layer shows HDR itself on an HDR screen.
+              isHdrOutput: Platform.isIOS
+                  ? _hdrDisplay && _hdrVideo && ref.watch(hdrOutputProvider)
+                  : _trueHdr && _hdrSurfaceActive,
+              screen: Platform.isIOS
+                  ? (_hdrDisplay
+                      ? 'HDR${_hdrPeak != null ? ' (up to ${_hdrPeak!.round()} nits)' : ''}'
+                      : 'SDR (HDR video is tone-mapped by iOS)')
+                  : null,
               toneMappingMode: ref.watch(toneMappingProvider),
               onClose: () => setState(() => _showStatsOverlay = false),
             ),

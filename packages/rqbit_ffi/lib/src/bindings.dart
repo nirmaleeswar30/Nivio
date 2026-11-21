@@ -27,7 +27,8 @@ class RqbitBindings {
   /// Resolution order:
   ///  1. `RQBIT_FFI_LIB` env var (absolute path) — handy for desktop dev/tests.
   ///  2. Platform default name, resolved by the OS loader / Flutter's ffiPlugin
-  ///     bundling (`rqbit_ffi.dll`, `librqbit_ffi.so`).
+  ///     bundling (`rqbit_ffi.dll`, `librqbit_ffi.so`,
+  ///     `RqbitEngine.framework/RqbitEngine`).
   static RqbitBindings instance() {
     return _instance ??= RqbitBindings._(_openLibrary());
   }
@@ -42,6 +43,11 @@ class RqbitBindings {
       return DynamicLibrary.open('librqbit_ffi.so');
     }
     if (Platform.isMacOS) return DynamicLibrary.open('librqbit_ffi.dylib');
+    // iOS: a dynamic framework embedded in Runner.app/Frameworks (built by
+    // ios/build_xcframework.sh and vendored by ios/rqbit_ffi.podspec).
+    if (Platform.isIOS) {
+      return DynamicLibrary.open('RqbitEngine.framework/RqbitEngine');
+    }
     throw UnsupportedError(
         'rqbit_ffi: unsupported platform ${Platform.operatingSystem}');
   }

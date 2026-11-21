@@ -1,0 +1,13 @@
+#EXTM3U
+#EXTINF:-1 group-title="Nivio iOS test",SDR HEVC 10-bit 1080p (control)
+https://repo.jellyfin.org/test-videos/SDR/HEVC%2010bit/Test%20Jellyfin%201080p%20HEVC%2010bit%2010M.mp4
+#EXTINF:-1 group-title="Nivio iOS test",HDR10 HEVC 1080p
+https://repo.jellyfin.org/test-videos/HDR/HDR10/HEVC/Test%20Jellyfin%201080p%20HEVC%20HDR10%2010M.mp4
+#EXTINF:-1 group-title="Nivio iOS test",Dolby Vision P5 1080p
+https://repo.jellyfin.org/test-videos/HDR/Dolby%20Vision/Test%20Jellyfin%201080p%20DV%20P5.mp4
+#EXTINF:-1 group-title="Nivio iOS test",Dolby Vision P8.1 1080p
+https://repo.jellyfin.org/test-videos/HDR/Dolby%20Vision/Test%20Jellyfin%201080p%20DV%20P8.1.mp4
+#EXTINF:-1 group-title="Nivio iOS test",Dolby Vision P8.4 (HLG base) 1080p
+https://repo.jellyfin.org/test-videos/HDR/Dolby%20Vision/Test%20Jellyfin%201080p%20DV%20P8.4.mp4
+#EXTINF:-1 group-title="Nivio iOS test",Dolby Vision P5 4K
+https://repo.jellyfin.org/test-videos/HDR/Dolby%20Vision/Test%20Jellyfin%204K%20DV%20P5.mp4

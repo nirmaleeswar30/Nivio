@@ -42,6 +42,7 @@ import 'package:nivio/services/streaming_service.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:nivio/core/share_origin.dart';
 
 class _TrailerSource {
   const _TrailerSource({
@@ -1447,7 +1448,11 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       return;
     }
 
-    Share.share(shareText, subject: title);
+    Share.share(
+      shareText,
+      subject: title,
+      sharePositionOrigin: shareOriginFor(context),
+    );
   }
 
   Future<void> _handleDownload(SearchResult media) async {
@@ -2413,6 +2418,8 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
       DeviceOrientation.landscapeRight,
     ]);
     _initPlayer();
+    // After this route is in the overlay, so the entry goes above it.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showBackButtonAboveVideo());
   }
 
   void _initPlayer() {
@@ -2470,6 +2477,7 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
 
   @override
   void dispose() {
+    _removeBackButtonEntry();
     ScreenWakeLock.release(this);
     _youtubeSubscription?.cancel();
     final youtubeController = _youtubeController;
@@ -2625,12 +2633,73 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
         },
       );
     }
-    if (_youtubeController == null) {
+    if (_youtubeController == null || _hasError) {
+      // On error the player is removed so the message and "Open Externally"
+      // below aren't covered by it (see _youtubeDrawsInOverlay).
       return const SizedBox.shrink();
     }
     return YoutubePlayer(
       controller: _youtubeController!,
       backgroundColor: Colors.black,
+      // This screen is already fullscreen and landscape-locked; the player's
+      // own fullscreen mode (on rotation / vertical drag) only gets in the way.
+      autoFullScreen: false,
+      enableFullScreenOnVerticalDrag: false,
+    );
+  }
+
+  /// On phones, the YouTube player (youtube_player_iframe underneath) draws
+  /// the video through an OverlayPortal, on top of this whole route, so
+  /// widgets in this screen's Stack end up underneath it: the back button
+  /// never showed. It goes in an OverlayEntry above the route instead
+  /// (_backButtonEntry).
+  bool get _youtubeDrawsInOverlay =>
+      widget.source.site.toLowerCase() == 'youtube' && !AppPlatform.isDesktopOS;
+
+  OverlayEntry? _backButtonEntry;
+
+  void _showBackButtonAboveVideo() {
+    if (!mounted || _backButtonEntry != null || !_youtubeDrawsInOverlay) return;
+    final entry = OverlayEntry(
+      builder: (_) => SafeArea(
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: _buildBackButton(),
+          ),
+        ),
+      ),
+    );
+    _backButtonEntry = entry;
+    Overlay.of(context).insert(entry);
+  }
+
+  void _removeBackButtonEntry() {
+    _backButtonEntry?.remove();
+    _backButtonEntry = null;
+  }
+
+  Widget _buildBackButton() {
+    return Semantics(
+      button: true,
+      label: 'Back',
+      child: GestureDetector(
+        onTap: _closeTrailer,
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.4),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.arrow_back_rounded,
+            color: Colors.white,
+            size: 24,
+          ),
+        ),
+      ),
     );
   }
 
@@ -2730,6 +2799,7 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
   void _closeTrailer() {
     if (_isClosing) return;
     _isClosing = true;
+    _removeBackButtonEntry();
 
     // Cancel the stream subscription immediately to prevent state updates
     _youtubeSubscription?.cancel();
@@ -2764,27 +2834,14 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
               Positioned.fill(
                 child: isYoutube ? _buildYoutubePlayer() : _buildWebViewPlayer(),
               ),
-              // Floating Back Button
-              Positioned(
-                top: 16,
-                left: 16,
-                child: GestureDetector(
-                  onTap: _closeTrailer,
-                  child: Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.4),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.arrow_back_rounded,
-                      color: Colors.white,
-                      size: 24,
-                    ),
-                  ),
+              // Floating back button. On phones it is drawn above the
+              // YouTube player instead (see _showBackButtonAboveVideo).
+              if (!_youtubeDrawsInOverlay)
+                Positioned(
+                  top: 16,
+                  left: 16,
+                  child: _buildBackButton(),
                 ),
-              ),
                   if (_hasError)
                     Positioned.fill(
                       child: Center(

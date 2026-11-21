@@ -1,0 +1,118 @@
+# Builds an unsigned Nivio IPA for sideloading (AltStore, SideStore,
+# Sideloadly, TrollStore, ...), which sign it with the installer's own
+# Apple ID. Output: the "Nivio-iOS-unsigned" artifact.
+#
+# Needs the NIVIO_ENV repository secret: the full contents of the app's .env
+# (TMDB key, Supabase, OAuth client ids, ...), bundled as an asset exactly
+# like in the Android/desktop builds.
+name: iOS build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ios-support]
+    tags: ['v*']
+    paths-ignore:
+      - 'landing/**'
+      - '**.md'
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      # The apps build nivio_core, whose lib/ is meant to be the root lib/
+      # (a junction on Windows). Make sure it is, not a stale copy.
+      - name: Link nivio_core/lib to lib
+        run: |
+          rm -rf packages/nivio_core/lib
+          ln -s ../../lib packages/nivio_core/lib
+
+      - name: Write .env
+        env:
+          NIVIO_ENV: ${{ secrets.NIVIO_ENV }}
+        run: |
+          if [ -z "$NIVIO_ENV" ]; then
+            echo "::warning::NIVIO_ENV secret is not set; the app is built without API keys."
+          fi
+          printf '%s\n' "$NIVIO_ENV" > packages/nivio_ios/.env
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.7
+          cache: true
+
+      - name: Install Rust (iOS target)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-apple-ios
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/rqbit_ffi/rust -> target
+          key: ios
+
+      # Current plugins (e.g. connectivity_plus 7.3) use iOS 26 SDK APIs, so
+      # build with the newest Xcode 26 on the runner (the default is 16.x).
+      - name: Select Xcode 26
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app | sort -t_ -k2 -n | tail -1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: flutter pub get
+        working-directory: packages/nivio_ios
+        run: flutter pub get
+
+      - name: Patch plugins for iOS
+        working-directory: packages/nivio_ios
+        run: dart run tool/patch_ios_plugins.dart
+
+      - name: Build RqbitEngine.xcframework (rqbit_ffi)
+        run: bash packages/rqbit_ffi/ios/build_xcframework.sh
+
+      # Pinned prebuilt binaries: libmpv + FFmpeg & co. from edde746/mpv-build
+      # (AVFoundation video output) and libcurl-impersonate.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/nivio-ios
+          key: ios-libs-${{ hashFiles('packages/nivio_ios/third_party/media_kit_libs_ios_video/ios/mpv-ios.lock', 'packages/nivio_ios/third_party/nivio_curl/ios/build_curl_framework.sh') }}
+
+      - name: Build Mpv.xcframework (mpv-build)
+        run: MPV_IOS_CACHE="$HOME/.cache/nivio-ios/mpv" bash packages/nivio_ios/third_party/media_kit_libs_ios_video/ios/build_mpv_framework.sh
+
+      - name: Build CurlImpersonate.xcframework
+        run: CURL_IOS_CACHE="$HOME/.cache/nivio-ios/curl" bash packages/nivio_ios/third_party/nivio_curl/ios/build_curl_framework.sh
+
+      - name: Build iOS app (no codesign)
+        working-directory: packages/nivio_ios
+        run: flutter build ios --release --no-codesign
+
+      - name: Package unsigned IPA
+        working-directory: packages/nivio_ios
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          rm -rf Payload
+          mkdir Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qry "Nivio-${VERSION}-unsigned.ipa" Payload
+          ls -lh *.ipa
+          echo "IPA=packages/nivio_ios/Nivio-${VERSION}-unsigned.ipa" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Nivio-iOS-unsigned
+          path: ${{ env.IPA }}
+          if-no-files-found: error
+          retention-days: 30

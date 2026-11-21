@@ -13,6 +13,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/services/github_release_update_service.dart';
 import 'package:nivio/services/desktop_self_updater.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
+import 'package:nivio/widgets/liquid_glass_nav.dart';
+import 'package:nivio/providers/settings_providers.dart' show liquidGlassNavProvider;
 
 import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
@@ -618,11 +620,22 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
                     opacity: showNav ? 1 : 0,
                     duration: const Duration(milliseconds: 420),
                     curve: Curves.easeOutCubic,
-                    child: _NivioFloatingNav(
-                      currentIndex: widget.navigationShell.currentIndex,
-                      onTap: _onTap,
-                      accentColor: accentColor,
-                    ),
+                    child: ref.watch(liquidGlassNavProvider)
+                        ? LiquidGlassNav(
+                            items: [
+                              for (final item in _NivioFloatingNavState._navItems)
+                                LiquidGlassNavItem(icon: item.$1, selectedIcon: item.$2, label: item.$3),
+                            ],
+                            currentIndex: widget.navigationShell.currentIndex,
+                            onTap: _onTap,
+                            isDark: true,
+                            accentColor: accentColor,
+                          )
+                        : _NivioFloatingNav(
+                            currentIndex: widget.navigationShell.currentIndex,
+                            onTap: _onTap,
+                            accentColor: accentColor,
+                          ),
                   ),
                 ),
               ),

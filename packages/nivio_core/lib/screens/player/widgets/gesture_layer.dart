@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
@@ -5,6 +7,7 @@ import 'dart:async';
 
 import 'package:device_screen_brightness/device_screen_brightness.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
+import 'package:nivio/core/app_platform.dart';
 
 class PlayerGestureLayer extends StatefulWidget {
   final Player controller;
@@ -101,6 +104,12 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
   }
 
   Future<void> _initHardwareLevels() async {
+    if (Platform.isIOS) {
+      // The player draws its own volume indicator; hide the system HUD.
+      try {
+        await FlutterVolumeController.updateShowSystemUI(false);
+      } catch (_) {}
+    }
     try {
       final brightnessVal = await DeviceScreenBrightness.getBrightness(mode: BrightnessMode.app);
       setState(() {
@@ -138,6 +147,7 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
   }
 
   bool _ignoreCurrentDrag = false;
+  bool _systemBrightnessSaved = false;
 
   void _onVerticalDragStart(DragStartDetails details) {
     if (widget.isLocked) return;
@@ -173,6 +183,12 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer>
         _showBrightnessIndicator = true;
         _showVolumeIndicator = false;
         if (!_useLocalOverlayFallback) {
+          // iOS: the gesture changes the system-wide brightness; save the
+          // level it had first so it's restored when the player closes.
+          if (!_systemBrightnessSaved) {
+            _systemBrightnessSaved = true;
+            unawaited(AppPlatform.rememberSystemBrightness());
+          }
           try {
             DeviceScreenBrightness.setBrightness((_brightness * 100).round(), mode: BrightnessMode.app);
           } catch (_) {
