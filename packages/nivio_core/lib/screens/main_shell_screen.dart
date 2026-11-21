@@ -402,8 +402,6 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     return Align(
       alignment: isActive ? Alignment.centerLeft : Alignment.center,
       child: FocusableInkWell(
-        style: DpadFocusStyle.subtle,
-        focusScale: 1.15,
         focusNode: AppPlatform.isTv ? _railNodes[index] : null,
         onTap: () => _onTap(index),
         borderRadius: isActive
@@ -451,8 +449,6 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     return Align(
       alignment: isActive ? Alignment.centerLeft : Alignment.center,
       child: FocusableInkWell(
-        style: DpadFocusStyle.subtle,
-        focusScale: 1.15,
         onTap: () {
           if (GoRouterState.of(context).matchedLocation.startsWith(route)) {
             context.go('/home');

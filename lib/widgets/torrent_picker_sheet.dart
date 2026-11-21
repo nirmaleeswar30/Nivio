@@ -924,7 +924,6 @@ class _HoverTorrentCardState extends State<_HoverTorrentCard> {
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
       child: FocusableTap(
-        style: DpadFocusStyle.subtle,
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),

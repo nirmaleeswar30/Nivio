@@ -110,6 +110,10 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   _TrailerSource? _trailerSource;
   List<dynamic> _cast = [];
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _seasonFocus = FocusNode(
+    debugLabel: 'Season picker',
+    canRequestFocus: AppPlatform.isTv,
+  );
 
   @override
   void initState() {
@@ -128,6 +132,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 
   @override
   void dispose() {
+    _seasonFocus.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -1999,17 +2004,112 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     return seriesInfoAsync.when(
       data: (seriesInfo) {
         final selectedSeason = ref.watch(selectedSeasonProvider);
-        final matchingSeason = seriesInfo.seasons.any((s) => s.seasonNumber == selectedSeason);
+        final seasons = seriesInfo.seasons
+            .where((season) => season.seasonNumber > 0)
+            .toList();
+        final availableSeasons = seasons.length > 1 ? seasons : seriesInfo.seasons;
+        final matchingSeason = availableSeasons.any(
+          (season) => season.seasonNumber == selectedSeason,
+        );
         final currentSeasonValue = matchingSeason
             ? selectedSeason
-            : (seriesInfo.seasons.isNotEmpty ? seriesInfo.seasons.first.seasonNumber : 1);
+            : (availableSeasons.firstOrNull?.seasonNumber ?? 1);
 
-        if (!matchingSeason && seriesInfo.seasons.isNotEmpty) {
+        if (!matchingSeason && availableSeasons.isNotEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
               ref.read(selectedSeasonProvider.notifier).state = currentSeasonValue;
             }
           });
+        }
+
+        Widget seasonPicker() {
+          const buttonRadius = BorderRadius.all(Radius.circular(999));
+          const menuRadius = BorderRadius.all(Radius.circular(14));
+          final isTv = AppPlatform.isTv;
+          final labels = [
+            for (final season in seasons)
+              Text(
+                season.name.isNotEmpty
+                    ? season.name
+                    : 'Season ${season.seasonNumber}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+          ];
+          final picker = Container(
+            width: 154,
+            height: 36,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: const Color(0x241F2431),
+              borderRadius: buttonRadius,
+              border: Border.all(color: const Color(0x36FFFFFF)),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                focusNode: _seasonFocus,
+                isDense: true,
+                isExpanded: true,
+                focusColor: Colors.transparent,
+                value: currentSeasonValue,
+                dropdownColor: NivioTheme.netflixDarkGrey,
+                borderRadius: menuRadius,
+                icon: Icon(Icons.expand_more, color: NivioTheme.netflixWhite),
+                style: TextStyle(
+                  color: NivioTheme.netflixWhite,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+                selectedItemBuilder: isTv ? (_) => labels : null,
+                items: [
+                  for (var i = 0; i < seasons.length; i++)
+                    DropdownMenuItem(
+                      value: seasons[i].seasonNumber,
+                      child: isTv
+                          ? Builder(
+                              builder: (context) => TvFocusOutline(
+                                focused:
+                                    Focus.maybeOf(context)?.hasPrimaryFocus ??
+                                    false,
+                                borderRadius: menuRadius,
+                                child: Align(
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                    ),
+                                    child: labels[i],
+                                  ),
+                                ),
+                              ),
+                            )
+                          : labels[i],
+                    ),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  if (isTv) {
+                    _seasonFocus.requestFocus();
+                  } else {
+                    FocusScope.of(context).unfocus();
+                  }
+                  ref.read(selectedSeasonProvider.notifier).state = value;
+                  ref.read(selectedEpisodeProvider.notifier).state = 1;
+                },
+              ),
+            ),
+          );
+          if (!isTv) return picker;
+          return ListenableBuilder(
+            listenable: _seasonFocus,
+            child: picker,
+            builder: (context, child) => TvFocusOutline(
+              focused: _seasonFocus.hasPrimaryFocus,
+              borderRadius: buttonRadius,
+              child: child!,
+            ),
+          );
         }
 
         return Column(
@@ -2026,51 +2126,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                     ),
                   ),
                 ),
-                if (seriesInfo.seasons.where((s) => s.seasonNumber > 0).length > 1)
-                  Container(
-                    width: 154,
-                    height: 36,
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    decoration: BoxDecoration(
-                      color: const Color(0x241F2431),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: const Color(0x36FFFFFF)),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<int>(
-                        focusNode: FocusNode(canRequestFocus: false),
-                        isDense: true,
-                        focusColor: Colors.transparent,
-                        value: currentSeasonValue,
-                        dropdownColor: NivioTheme.netflixDarkGrey,
-                        borderRadius: BorderRadius.circular(14),
-                        icon: Icon(
-                          Icons.expand_more,
-                          color: NivioTheme.netflixWhite,
-                        ),
-                        style: TextStyle(
-                          color: NivioTheme.netflixWhite,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                        items: seriesInfo.seasons
-                            .where((s) => s.seasonNumber > 0)
-                            .map(
-                              (season) => DropdownMenuItem(
-                                value: season.seasonNumber,
-                                child: Text(season.name.isNotEmpty ? season.name : 'Season ${season.seasonNumber}'),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) {
-                          if (value == null) return;
-                          FocusScope.of(context).unfocus();
-                          ref.read(selectedSeasonProvider.notifier).state = value;
-                          ref.read(selectedEpisodeProvider.notifier).state = 1;
-                        },
-                      ),
-                    ),
-                  ),
+                if (seasons.length > 1) seasonPicker(),
               ],
             ),
             const SizedBox(height: 14),
@@ -2351,8 +2407,6 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     return Align(
       alignment: Alignment.center,
       child: FocusableInkWell(
-        style: DpadFocusStyle.subtle,
-        focusScale: 1.15,
         onTap: () {
           context.go(route);
         },
@@ -2962,7 +3016,7 @@ class _HoverGlowButtonState extends State<_HoverGlowButton> {
   @override
   Widget build(BuildContext context) {
     return DpadFocusable(
-      style: DpadFocusStyle.highlight,
+      borderRadius: BorderRadius.circular(999),
       onActivate: widget.onTap,
       child: MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -3030,7 +3084,6 @@ class _HoverSlideIconButtonState extends State<_HoverSlideIconButton> {
   @override
   Widget build(BuildContext context) {
     return DpadFocusable(
-      style: DpadFocusStyle.highlight,
       borderRadius: BorderRadius.circular(999),
       onActivate: widget.onTap,
       child: MouseRegion(
@@ -3073,7 +3126,7 @@ class _HoverGlassButtonState extends State<_HoverGlassButton> {
   @override
   Widget build(BuildContext context) {
     return DpadFocusable(
-      style: DpadFocusStyle.highlight,
+      borderRadius: BorderRadius.circular(999),
       onActivate: widget.onTap,
       child: MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),

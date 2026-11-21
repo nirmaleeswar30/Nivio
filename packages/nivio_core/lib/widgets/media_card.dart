@@ -89,6 +89,7 @@ class _MediaCardState extends ConsumerState<MediaCard>
       onEnter: (_) => _animationController.forward(),
       onExit: (_) => _animationController.reverse(),
       child: FocusableTap(
+        style: DpadFocusStyle.lift,
         onTap: () {
           context.push(
             '/player/${widget.history.tmdbId}'

@@ -490,7 +490,6 @@ class _DesktopBackButtonState extends State<_DesktopBackButton> {
   @override
   Widget build(BuildContext context) {
     return DpadFocusable(
-      style: DpadFocusStyle.highlight,
       onActivate: widget.onTap,
       child: MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -553,7 +552,6 @@ class _DesktopScheduleButtonState extends State<_DesktopScheduleButton> {
   @override
   Widget build(BuildContext context) {
     return DpadFocusable(
-      style: DpadFocusStyle.highlight,
       onActivate: widget.onTap,
       child: MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -908,6 +906,7 @@ class _OptimizedReleaseCardState extends State<_OptimizedReleaseCard> {
 
     return RepaintBoundary(
       child: FocusableTap(
+        style: DpadFocusStyle.lift,
         onTap: () {
           if (id == 0) return;
           GoRouter.of(context).push('/media/$id?type=$mediaType');

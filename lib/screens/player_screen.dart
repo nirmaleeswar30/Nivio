@@ -6650,7 +6650,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         child: Material(
                           color: Colors.transparent,
                           child: FocusableInkWell(
-                          style: DpadFocusStyle.lift,
                           requestFocusOnMount: AppPlatform.isTv,
                           onTap: _skipOutro,
                           borderRadius: BorderRadius.circular(6),

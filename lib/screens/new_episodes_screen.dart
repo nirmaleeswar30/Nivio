@@ -328,7 +328,6 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                     else if (isToday) bgColor = NivioTheme.accentColorOf(context).withValues(alpha: 0.3);
 
                     return FocusableTap(
-                      style: DpadFocusStyle.subtle,
                       borderRadius: BorderRadius.circular(999),
                       onTap: () {
                         setState(() {

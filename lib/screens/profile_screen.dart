@@ -5937,7 +5937,6 @@ class _SidebarCategoryTileState extends State<_SidebarCategoryTile> {
         onExit: (_) => setState(() => _isHovered = false),
         cursor: SystemMouseCursors.click,
         child: FocusableTap(
-          style: DpadFocusStyle.subtle,
           onTap: widget.onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),

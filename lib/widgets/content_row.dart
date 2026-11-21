@@ -379,6 +379,7 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard> {
     return CompositedTransformTarget(
       link: _layerLink,
       child: DpadFocusable(
+        style: DpadFocusStyle.lift,
         onActivate: () {
           _dismissActiveOverlay();
           action();

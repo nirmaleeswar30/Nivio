@@ -294,7 +294,6 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
   Widget _desktopOutlineButton({required Widget icon, required VoidCallback onTap}) {
     return _AnimatedHoverScale(
       child: FocusableTap(
-        style: DpadFocusStyle.highlight,
         borderRadius: BorderRadius.circular(999),
         onTap: onTap,
         child: Container(
@@ -477,7 +476,6 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                           pinned: true,
                           leadingWidth: 240,
                           leading: FocusableTap(
-                            style: DpadFocusStyle.highlight,
                             onTap: () => context.pop(),
                             child: Padding(
                               padding: const EdgeInsets.only(left: 24.0),
@@ -1259,7 +1257,6 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                                   GestureDetector(
                                     onTap: () => context.push('/media/$tmdbId?type=$_mediaType'),
                                     child: DpadFocusable(
-                                      style: DpadFocusStyle.grow,
                                       onActivate: () => context.push('/media/$tmdbId?type=$_mediaType'),
                                       child: MouseRegion(
                                       cursor: SystemMouseCursors.click,
@@ -1280,7 +1277,6 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                                   GestureDetector(
                                     onTap: () => context.push('/media/$tmdbId?type=$_mediaType'),
                                     child: DpadFocusable(
-                                      style: DpadFocusStyle.grow,
                                       onActivate: () => context.push('/media/$tmdbId?type=$_mediaType'),
                                       child: MouseRegion(
                                       cursor: SystemMouseCursors.click,
@@ -1465,7 +1461,6 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
     final isDesktop = AppPlatform.useDesktopLayout;
     
     Widget child = FocusableTap(
-      style: DpadFocusStyle.subtle,
       onTap: () {
         if (!isSelected) {
           setState(() {
@@ -1606,8 +1601,6 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
     return Align(
       alignment: isActive ? Alignment.centerLeft : Alignment.center,
       child: FocusableInkWell(
-        style: DpadFocusStyle.subtle,
-        focusScale: 1.15,
         onTap: () {
           context.go(route);
         },

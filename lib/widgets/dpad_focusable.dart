@@ -4,20 +4,11 @@ import 'package:nivio/core/app_platform.dart';
 
 /// How a [DpadFocusable] shows remote focus on a TV.
 enum DpadFocusStyle {
-  /// Cards and posters: grow and lift onto a soft shadow.
+  /// Draw the outline while keeping the control's appearance steady.
+  outline,
+
+  /// Also scale up visual cards slightly.
   lift,
-
-  /// Action buttons: fill solid white with dark content (like Netflix) and
-  /// grow a little. The button's own faint background and border fade out.
-  highlight,
-
-  /// Selection controls and the side rail (chips, tabs, calendar days): a soft
-  /// white backdrop and a small grow. Used where a solid "selected"
-  /// background would hide content under [highlight]'s dark filter.
-  subtle,
-
-  /// See-through content (e.g. a title logo): just grow a little.
-  grow,
 }
 
 /// Makes a mouse/touch-only tappable (e.g. a `MouseRegion` + `GestureDetector`
@@ -32,10 +23,9 @@ class DpadFocusable extends StatefulWidget {
     super.key,
     required this.child,
     required this.onActivate,
-    this.style = DpadFocusStyle.lift,
+    this.style = DpadFocusStyle.outline,
     this.onFocusChange,
     this.borderRadius = const BorderRadius.all(Radius.circular(8)),
-    this.focusScale,
     this.autofocus = false,
     this.requestFocusOnMount = false,
     this.focusNode,
@@ -53,8 +43,6 @@ class DpadFocusable extends StatefulWidget {
 
   final BorderRadius borderRadius;
 
-  /// Overrides the style's default grow factor.
-  final double? focusScale;
 
   final bool autofocus;
 
@@ -80,9 +68,8 @@ class FocusableTap extends StatelessWidget {
     this.onLongPress,
     this.onDoubleTap,
     this.behavior,
-    this.style = DpadFocusStyle.lift,
+    this.style = DpadFocusStyle.outline,
     this.borderRadius = const BorderRadius.all(Radius.circular(8)),
-    this.focusScale,
     this.requestFocusOnMount = false,
     this.autofocus = false,
   });
@@ -93,7 +80,6 @@ class FocusableTap extends StatelessWidget {
   final HitTestBehavior? behavior;
   final DpadFocusStyle style;
   final BorderRadius borderRadius;
-  final double? focusScale;
   final bool requestFocusOnMount;
   final bool autofocus;
   final Widget child;
@@ -112,7 +98,6 @@ class FocusableTap extends StatelessWidget {
       onActivate: onTap,
       style: style,
       borderRadius: borderRadius,
-      focusScale: focusScale,
       requestFocusOnMount: requestFocusOnMount,
       autofocus: autofocus,
       child: detector,
@@ -129,8 +114,7 @@ class FocusableInkWell extends StatelessWidget {
     required this.onTap,
     required this.child,
     this.borderRadius,
-    this.style = DpadFocusStyle.highlight,
-    this.focusScale,
+    this.style = DpadFocusStyle.outline,
     this.autofocus = false,
     this.requestFocusOnMount = false,
     this.focusNode,
@@ -139,7 +123,6 @@ class FocusableInkWell extends StatelessWidget {
   final VoidCallback? onTap;
   final BorderRadius? borderRadius;
   final DpadFocusStyle style;
-  final double? focusScale;
   final bool autofocus;
   final bool requestFocusOnMount;
   final FocusNode? focusNode;
@@ -154,7 +137,6 @@ class FocusableInkWell extends StatelessWidget {
       onActivate: onTap,
       style: style,
       borderRadius: borderRadius ?? const BorderRadius.all(Radius.circular(8)),
-      focusScale: focusScale,
       autofocus: autofocus,
       requestFocusOnMount: requestFocusOnMount,
       focusNode: focusNode,
@@ -169,7 +151,6 @@ class FocusableInkWell extends StatelessWidget {
 }
 
 class _DpadFocusableState extends State<DpadFocusable> {
-  bool _focused = false;
   FocusNode? _ownNode;
 
   FocusNode get _node =>
@@ -191,33 +172,17 @@ class _DpadFocusableState extends State<DpadFocusable> {
     super.dispose();
   }
 
-  void _handleHighlight(bool value) {
-    if (_focused == value) return;
-    setState(() => _focused = value);
-    widget.onFocusChange?.call(value);
-  }
-
-  double get _scale =>
-      widget.focusScale ??
-      switch (widget.style) {
-        DpadFocusStyle.lift => 1.08,
-        DpadFocusStyle.highlight => 1.06,
-        DpadFocusStyle.subtle => 1.06,
-        DpadFocusStyle.grow => 1.05,
-      };
-
   @override
   Widget build(BuildContext context) {
     if (!AppPlatform.isTv) return widget.child;
+    final node = _node;
     final lift = widget.style == DpadFocusStyle.lift;
-    final highlight = widget.style == DpadFocusStyle.highlight;
-    final subtle = widget.style == DpadFocusStyle.subtle;
     return FocusableActionDetector(
-      focusNode: _node,
+      focusNode: node,
       autofocus: widget.autofocus,
       enabled: widget.onActivate != null,
       mouseCursor: MouseCursor.defer,
-      onShowFocusHighlight: _handleHighlight,
+      onShowFocusHighlight: widget.onFocusChange,
       actions: <Type, Action<Intent>>{
         ActivateIntent: CallbackAction<ActivateIntent>(
           onInvoke: (_) {
@@ -226,60 +191,86 @@ class _DpadFocusableState extends State<DpadFocusable> {
           },
         ),
       },
-      child: AnimatedScale(
-        scale: _focused ? _scale : 1.0,
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOutCubic,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutCubic,
-          decoration: BoxDecoration(
+      child: ListenableBuilder(
+        listenable: node,
+        child: widget.child,
+        builder: (context, child) {
+          final focused = node.hasPrimaryFocus && widget.onActivate != null;
+          final outlined = TvFocusOutline(
+            focused: focused,
             borderRadius: widget.borderRadius,
-            color: !_focused
-                ? Colors.transparent
-                : highlight
-                    ? Colors.white
-                    : subtle
-                        ? Colors.white.withValues(alpha: 0.18)
-                        : Colors.transparent,
-            boxShadow: lift && _focused
-                ? const [
-                    BoxShadow(
-                      color: Color(0x99000000),
-                      blurRadius: 24,
-                      offset: Offset(0, 10),
-                    ),
-                  ]
-                : const [],
-          ),
-          child: highlight
-              ? ColorFiltered(
-                  colorFilter: _focused ? _darkContent : _identity,
-                  child: widget.child,
-                )
-              : widget.child,
-        ),
+            child: child!,
+          );
+          if (!lift) return outlined;
+          return AnimatedScale(
+            scale: focused ? 1.04 : 1.0,
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 160),
+            curve: Curves.easeOutCubic,
+            child: outlined,
+          );
+        },
       ),
     );
   }
 }
 
-/// While focused, turns a button's solid content (icons, text, strong
-/// borders) near-black and drops faint, see-through backgrounds and borders
-/// (alpha below ~40%), so it reads as dark content on the white fill.
-const ColorFilter _darkContent = ColorFilter.matrix(<double>[
-  0, 0, 0, 0, 18, //
-  0, 0, 0, 0, 18, //
-  0, 0, 0, 0, 18, //
-  0, 0, 0, 1.67, -170, //
-]);
+/// Paints remote focus over the control so opaque cards cannot hide it.
+/// The outline sits inside the control's bounds, where list clips won't cut it off.
+class TvFocusOutline extends StatelessWidget {
+  const TvFocusOutline({
+    super.key,
+    required this.focused,
+    required this.borderRadius,
+    required this.child,
+  });
 
-const ColorFilter _identity = ColorFilter.matrix(<double>[
-  1, 0, 0, 0, 0, //
-  0, 1, 0, 0, 0, //
-  0, 0, 1, 0, 0, //
-  0, 0, 0, 1, 0, //
-]);
+  final bool focused;
+  final BorderRadius borderRadius;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      foregroundPainter: focused ? _TvFocusOutlinePainter(borderRadius) : null,
+      child: child,
+    );
+  }
+}
+
+class _TvFocusOutlinePainter extends CustomPainter {
+  const _TvFocusOutlinePainter(this.borderRadius);
+
+  final BorderRadius borderRadius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const edgeWidth = 5.0;
+    if (size.shortestSide <= edgeWidth) return;
+    final outline = borderRadius
+        .toRRect(Offset.zero & size)
+        .scaleRadii()
+        .deflate(edgeWidth / 2);
+    final paint = Paint()..style = PaintingStyle.stroke;
+    canvas.drawRRect(
+      outline,
+      paint
+        ..strokeWidth = edgeWidth
+        ..color = const Color(0xE6000000),
+    );
+    canvas.drawRRect(
+      outline,
+      paint
+        ..strokeWidth = 3
+        ..color = Colors.white,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_TvFocusOutlinePainter oldDelegate) =>
+      oldDelegate.borderRadius != borderRadius;
+}
 
 /// TV: a "View all" tile for the end of a shelf. The shelf's header link sits
 /// top-right where the remote rarely reaches it; this puts it one Right press
@@ -386,8 +377,6 @@ class _TvTextFieldGateState extends State<TvTextFieldGate> {
     if (!AppPlatform.isTv) return widget.builder(context, null);
     return DpadFocusable(
       focusNode: _gateNode,
-      style: DpadFocusStyle.subtle,
-      focusScale: 1.0,
       borderRadius: widget.borderRadius,
       onActivate: _fieldNode.requestFocus,
       child: Focus(

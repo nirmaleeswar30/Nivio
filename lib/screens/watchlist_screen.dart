@@ -963,6 +963,7 @@ class _WatchlistHoverCardState extends State<_WatchlistHoverCard> {
   @override
   Widget build(BuildContext context) {
     return DpadFocusable(
+      style: DpadFocusStyle.lift,
       onActivate: widget.onTap,
       child: MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),

@@ -397,7 +397,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildFilterChip(String label, bool isSelected, VoidCallback onTap) {
     return FocusableTap(
-      style: DpadFocusStyle.subtle,
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

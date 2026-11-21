@@ -147,7 +147,7 @@ class _LiquidGlassNavState extends State<LiquidGlassNav>
                         style: GlassStyle.bitChord(
                           dark: true,
                           surfaceTint: Colors.black.withValues(
-                            alpha: widget.isDark ? 0.42 : 0.72,
+                            alpha: widget.isDark ? 0.22 : 0.72,
                           ),
                         ),
                         borderRadius: BorderRadius.circular(_radius),

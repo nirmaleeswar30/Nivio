@@ -227,7 +227,6 @@ class _ShelfMoreButtonState extends State<_ShelfMoreButton> {
   @override
   Widget build(BuildContext context) {
     return DpadFocusable(
-      style: DpadFocusStyle.highlight,
       onActivate: widget.onTap,
       child: MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -397,6 +396,7 @@ class _LatestReleaseCardState extends State<LatestReleaseCard> {
 
     return RepaintBoundary(
       child: DpadFocusable(
+        style: DpadFocusStyle.lift,
         onActivate: handleTap,
         borderRadius: BorderRadius.circular(12),
         child: MouseRegion(

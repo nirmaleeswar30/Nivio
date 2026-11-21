@@ -694,7 +694,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _desktopOutlineButton({required Widget icon, required VoidCallback onTap}) {
     return _AnimatedHoverScale(
       child: FocusableTap(
-        style: DpadFocusStyle.highlight,
         borderRadius: BorderRadius.circular(999),
         onTap: onTap,
         child: Container(
@@ -1033,7 +1032,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   GestureDetector(
                                     onTap: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
                                     child: DpadFocusable(
-                                      style: DpadFocusStyle.grow,
                                       onActivate: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
                                       child: MouseRegion(
                                       cursor: SystemMouseCursors.click,
@@ -1054,7 +1052,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   GestureDetector(
                                     onTap: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
                                     child: DpadFocusable(
-                                      style: DpadFocusStyle.grow,
                                       onActivate: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
                                       child: MouseRegion(
                                       cursor: SystemMouseCursors.click,

@@ -361,7 +361,7 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
           Material(
             color: bgColor,
             borderRadius: BorderRadius.circular(12),
-            child: InkWell(
+            child: FocusableInkWell(
               borderRadius: BorderRadius.circular(12),
               onTap: () {
                 final isAnime = widget.media.mediaType == 'anime';

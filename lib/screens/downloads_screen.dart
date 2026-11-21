@@ -553,7 +553,6 @@ class _StreamWhileDownloadingButtonState extends State<_StreamWhileDownloadingBu
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
       child: FocusableTap(
-        style: DpadFocusStyle.highlight,
         onTap: widget.onTap,
         child: AnimatedScale(
           scale: _isHovered ? 1.04 : 1.0,
@@ -643,7 +642,6 @@ class _DownloadActionButtonState extends State<_DownloadActionButton> {
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
       child: FocusableTap(
-        style: DpadFocusStyle.highlight,
         onTap: widget.onTap,
         child: AnimatedScale(
           scale: _isHovered ? 1.05 : 1.0,
@@ -722,7 +720,6 @@ class _DownloadDeleteButtonState extends State<_DownloadDeleteButton> {
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
       child: FocusableTap(
-        style: DpadFocusStyle.highlight,
         onTap: widget.onTap,
         child: AnimatedScale(
           scale: _isHovered ? 1.08 : 1.0,

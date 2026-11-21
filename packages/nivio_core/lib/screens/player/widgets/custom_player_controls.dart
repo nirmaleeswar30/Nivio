@@ -753,7 +753,6 @@ class CustomPlayerControlsState extends ConsumerState<CustomPlayerControls> {
                           ),
                           if (ref.watch(watchPartySessionProvider).value != null)
                             FocusableTap(
-                              style: DpadFocusStyle.highlight,
                               onTap: _showParticipantsPanel,
                               child: Container(
                                 margin: const EdgeInsets.symmetric(horizontal: 8),

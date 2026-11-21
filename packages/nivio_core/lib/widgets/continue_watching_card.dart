@@ -151,6 +151,7 @@ class _ContinueWatchingCardState extends ConsumerState<ContinueWatchingCard>
       onEnter: (_) => _animationController.forward(),
       onExit: (_) => _animationController.reverse(),
       child: FocusableTap(
+        style: DpadFocusStyle.lift,
         onTap: () {
           if (_showRemoveOverlay) {
             setState(() => _showRemoveOverlay = false);

@@ -142,7 +142,6 @@ class _TabItemState extends State<_TabItem> {
   @override
   Widget build(BuildContext context) {
     return DpadFocusable(
-      style: DpadFocusStyle.subtle,
       onActivate: widget.onTap,
       child: MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -563,7 +562,6 @@ class _SportsCategoryChipState extends State<_SportsCategoryChip> {
   @override
   Widget build(BuildContext context) {
     return DpadFocusable(
-      style: DpadFocusStyle.subtle,
       onActivate: widget.onTap,
       child: MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
