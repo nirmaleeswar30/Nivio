@@ -1,3 +1,6 @@
+// Keep the legacy Android DSL while Flutter plugins still require it.
+@file:Suppress("DEPRECATION_ERROR")
+
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -185,8 +188,8 @@ val fetchMpvlib by tasks.registering {
     }
 }
 
-android.sourceSets.getByName("main").jniLibs.srcDir(mpvlibDir.map { it.dir("jni") })
-android.sourceSets.getByName("main").assets.srcDir(mpvlibDir.map { it.dir("assets") })
+android.sourceSets.getByName("main").jniLibs.srcDir(mpvlibDir.get().dir("jni").asFile)
+android.sourceSets.getByName("main").assets.srcDir(mpvlibDir.get().dir("assets").asFile)
 tasks.named("preBuild") { dependsOn(fetchMpvlib) }
 
 dependencies {

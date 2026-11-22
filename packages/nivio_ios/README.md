@@ -47,9 +47,11 @@ bundled assets need a new IPA.
 ### SideStore and AltStore Classic source
 
 The website serves `https://nivio.nirmaleeswar.dev/altstore.json` from
-`landing/api/ios-source.js`. After approval, attach the tested
-`Nivio-<version>+<build>-shorebird-unsigned.ipa` to a public GitHub Release.
-The website and source pick it up automatically. Check the source against
+`landing/api/ios-source.js`. Attach the tested `Nivio-<version>.ipa` to the
+GitHub release. Copy the hidden build marker from the Shorebird workflow
+summary into the release description, for example `<!-- nivio-ios-build: 1 -->`.
+The website and source pick up the IPA after publication and assume build 1
+if the marker is absent. Check the source against
 the built IPA's bundle ID, version, minimum iOS version and permissions
 before a release. If you change the minimum iOS version or add permissions,
 update the source metadata too.

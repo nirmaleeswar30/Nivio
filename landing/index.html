@@ -4808,7 +4808,7 @@
         if (assetNames.some(name => name.endsWith('.apk'))) platforms.push('Android', 'Android TV');
         if (assetNames.some(name => name.endsWith('.exe'))) platforms.push('Windows');
         if (assetNames.some(name => name.endsWith('.appimage'))) platforms.push('Linux');
-        if (assetNames.some(name => name.endsWith('-shorebird-unsigned.ipa'))) platforms.push('iPhone / iPad');
+        if (assetNames.some(name => name.endsWith('.ipa'))) platforms.push('iPhone / iPad');
         platPillEl.textContent = platforms.join(' · ');
       }
 

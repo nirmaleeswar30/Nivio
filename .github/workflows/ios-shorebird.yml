@@ -126,6 +126,11 @@ jobs:
             rustc --version
             shorebird --version
           } > build/shorebird-package/toolchain.txt
+          {
+            printf '### GitHub release notes\n\n'
+            printf 'Copy this marker into the release description to record the iOS build number.\n\n'
+            printf '```text\n<!-- nivio-ios-build: %s -->\n```\n' "$BUILD_NUMBER"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:

@@ -36,7 +36,7 @@ def package_archive():
 
     output = APP_ROOT / "build/shorebird-package"
     output.mkdir(exist_ok=True)
-    name = f"Nivio-{version}+{build}-shorebird-unsigned.ipa"
+    name = f"Nivio-{version}.ipa"
     with tempfile.TemporaryDirectory() as workspace:
         payload = Path(workspace) / "Payload"
         payload.mkdir()

@@ -1,8 +1,10 @@
 const SITE = 'https://nivio.nirmaleeswar.dev';
 const RELEASES = 'https://api.github.com/repos/nirmaleeswar30/Nivio/releases';
 const DOWNLOADS = 'https://github.com/nirmaleeswar30/Nivio/releases/download/';
-// GitHub may normalize the + in the build number when the file is uploaded.
-const IPA_NAME = /^Nivio-(\d+\.\d+\.\d+)[+._-]([1-9]\d*)-shorebird-unsigned\.ipa$/i;
+const IPA_NAME = /^Nivio-(\d+\.\d+\.\d+)\.ipa$/i;
+// Older IPAs put the build number in the name.
+const LEGACY_IPA_NAME = /^Nivio-(\d+\.\d+\.\d+)[+._-]([1-9]\d*)-shorebird-unsigned\.ipa$/i;
+const IOS_BUILD_MARKER = /<!--\s*nivio-ios-build:\s*([1-9]\d*)\s*-->/;
 
 export default async function handler(req, res) {
   try {
@@ -17,12 +19,13 @@ export default async function handler(req, res) {
       const releases = await response.json();
       for (const release of releases) {
         if (release.draft || release.prerelease) continue;
+        const releaseBuild = IOS_BUILD_MARKER.exec(release.body ?? '')?.[1] ?? '1';
         for (const asset of release.assets) {
-          const match = IPA_NAME.exec(asset.name);
+          const match = IPA_NAME.exec(asset.name) ?? LEGACY_IPA_NAME.exec(asset.name);
           if (!match || asset.state !== 'uploaded' || asset.size <= 0 ||
               !asset.browser_download_url.startsWith(DOWNLOADS)) continue;
 
-          const [, version, buildVersion] = match;
+          const [, version, buildVersion = releaseBuild] = match;
           const key = `${version}+${buildVersion}`;
           const date = asset.created_at || release.published_at;
           if (!versions.has(key) || date > versions.get(key).date) {

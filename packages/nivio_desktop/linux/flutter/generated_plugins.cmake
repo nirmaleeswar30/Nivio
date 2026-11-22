@@ -8,16 +8,16 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_volume_controller
   gtk
   media_kit_libs_linux
-  media_kit_video
   screen_retriever
   url_launcher_linux
   volume_controller
+  media_kit_video
   window_manager
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
-  device_screen_brightness
   jni
+  device_screen_brightness
   rhttp
   rqbit_ffi
 )

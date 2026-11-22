@@ -10,19 +10,19 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_secure_storage_windows
   flutter_volume_controller
   media_kit_libs_windows_video
-  media_kit_video
   permission_handler_windows
   screen_retriever
-  share_plus
   url_launcher_windows
+  share_plus
   volume_controller
+  media_kit_video
   window_manager
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
-  device_screen_brightness
   flutter_local_notifications_windows
   jni
+  device_screen_brightness
   rhttp
   rqbit_ffi
 )
