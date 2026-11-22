@@ -4,6 +4,12 @@ import android.app.UiModeManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.media.AudioAttributes
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioTrack
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -14,6 +20,7 @@ import android.graphics.Rect
 import android.view.WindowManager
 import cl.puntito.simple_pip_mode.PipCallbackHelperActivityWrapper
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : PipCallbackHelperActivityWrapper() {
@@ -24,6 +31,18 @@ class MainActivity : PipCallbackHelperActivityWrapper() {
     private var methodChannel: MethodChannel? = null
     private var mediaSessionChannel: MethodChannel? = null
     private var mediaSession: MediaSession? = null
+    private val audioManager by lazy { getSystemService(AudioManager::class.java) }
+    private val mpvRawAudio by lazy {
+        @Suppress("DEPRECATION")
+        val info = packageManager.getApplicationInfo(packageName, PackageManager.GET_META_DATA)
+        info.metaData?.getBoolean("com.nivio.mpvRawAudio") == true
+    }
+    private var dolbyRouteChannel: EventChannel? = null
+    private var dolbyRouteSink: EventChannel.EventSink? = null
+    private val audioDeviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(added: Array<AudioDeviceInfo>) = publishDolbyRoute()
+        override fun onAudioDevicesRemoved(removed: Array<AudioDeviceInfo>) = publishDolbyRoute()
+    }
     private var lastMetadataKey: String? = null
     private var canEnterPip = false
 
@@ -92,6 +111,8 @@ class MainActivity : PipCallbackHelperActivityWrapper() {
                 when (call.method) {
                     "isTv" -> result.success(isTelevision())
                     "hdrInfo" -> result.success(hdrInfo())
+                    "dolbyAudioRouteSupported" -> result.success(dolbyAudioRouteSupported())
+                    "mpvRawAudio" -> result.success(mpvRawAudio)
                     // The player's brightness gesture overrides the window's
                     // brightness; this hands it back to the system setting.
                     "resetWindowBrightness" -> {
@@ -103,6 +124,18 @@ class MainActivity : PipCallbackHelperActivityWrapper() {
                     else -> result.notImplemented()
                 }
             }
+
+        dolbyRouteChannel = EventChannel(flutterEngine.dartExecutor.binaryMessenger, "com.nivio/dolby_audio_route")
+        dolbyRouteChannel?.setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                stopDolbyRouteUpdates()
+                dolbyRouteSink = events
+                audioManager?.registerAudioDeviceCallback(audioDeviceCallback, null)
+                publishDolbyRoute()
+            }
+
+            override fun onCancel(arguments: Any?) = stopDolbyRouteUpdates()
+        })
 
         // SurfaceView for HDR video output (see HdrSurfaceView.kt).
         flutterEngine.platformViewsController.registry.registerViewFactory(
@@ -170,6 +203,64 @@ class MainActivity : PipCallbackHelperActivityWrapper() {
             info["minLuminance"] = it.desiredMinLuminance.toDouble()
         }
         return info
+    }
+
+    @Suppress("DEPRECATION")
+    private fun dolbyAudioRouteSupported(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+
+        val attributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+            .build()
+
+        // Match the shipped AudioTrack driver, which accepts raw E-AC-3 or
+        // the stereo IEC 61937 carrier. A JOC-only profile is insufficient
+        // because the driver opens the raw track with ENCODING_E_AC3.
+        fun supports(encoding: Int, channels: Int, rate: Int): Boolean {
+            val format = AudioFormat.Builder()
+                .setEncoding(encoding)
+                .setChannelMask(channels)
+                .setSampleRate(rate)
+                .build()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val direct = AudioManager.getDirectPlaybackSupport(format, attributes)
+                return (direct and AudioManager.DIRECT_PLAYBACK_BITSTREAM_SUPPORTED) != 0
+            }
+            // Android 10–12 can include connected outputs beyond the active route.
+            return AudioTrack.isDirectPlaybackSupported(format, attributes)
+        }
+
+        return runCatching {
+            listOf(48000, 44100, 32000).any { rate ->
+                (mpvRawAudio && (
+                    supports(AudioFormat.ENCODING_E_AC3, AudioFormat.CHANNEL_OUT_5POINT1, rate) ||
+                    supports(AudioFormat.ENCODING_E_AC3, AudioFormat.CHANNEL_OUT_STEREO, rate)
+                )) || supports(AudioFormat.ENCODING_IEC61937, AudioFormat.CHANNEL_OUT_STEREO, rate * 4)
+            }
+        }.getOrDefault(false)
+    }
+
+    private fun publishDolbyRoute() {
+        dolbyRouteSink?.success(dolbyAudioRouteSupported())
+    }
+
+    private fun stopDolbyRouteUpdates() {
+        if (dolbyRouteSink == null) return
+        dolbyRouteSink = null
+        audioManager?.unregisterAudioDeviceCallback(audioDeviceCallback)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) publishDolbyRoute()
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        stopDolbyRouteUpdates()
+        dolbyRouteChannel?.setStreamHandler(null)
+        dolbyRouteChannel = null
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 
     private fun isTelevision(): Boolean {

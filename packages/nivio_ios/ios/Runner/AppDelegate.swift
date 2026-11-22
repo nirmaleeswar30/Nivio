@@ -14,6 +14,7 @@ import UIKit
     // is only activated by mpv when playback starts, so other apps' audio
     // isn't interrupted at launch.
     try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
+    try? AVAudioSession.sharedInstance().setSupportsMultichannelContent(true)
 
     // flutter_local_notifications: show notifications while Nivio is open.
     UNUserNotificationCenter.current().delegate = self

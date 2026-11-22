@@ -78,6 +78,9 @@ class _PlayerStatsOverlayState extends State<PlayerStatsOverlay> {
         'video-params/colormatrix',
         'video-params/gamma',
         'video-params/primaries',
+        'current-ao',
+        'audio-out-params/format',
+        'audio-out-params/hr-channels',
         'avsync',
         'paused-for-cache',
         'core-idle',
@@ -146,6 +149,19 @@ class _PlayerStatsOverlayState extends State<PlayerStatsOverlay> {
     final primaries = _stats['video-params/primaries'] ?? '';
     final avsync = _stats['avsync'] ?? '';
     final isBuffering = _stats['paused-for-cache'] == 'yes';
+    final audioDriver = _stats['current-ao'] ?? '';
+    final audioFormat = _stats['audio-out-params/format'] ?? '';
+    final audioChannels = _stats['audio-out-params/hr-channels'] ?? '';
+    final audioOutput = switch (audioFormat) {
+      _ when audioDriver == 'null' => 'No audio device',
+      _ when audioDriver.isEmpty || audioFormat.isEmpty => '--',
+      'spdif-eac3' when audioDriver == 'avfoundation' => 'Dolby Digital Plus (iOS)',
+      'spdif-eac3' => 'Dolby Digital Plus bitstream',
+      'spdif-truehd' => 'Dolby TrueHD bitstream',
+      _ when audioFormat.startsWith('spdif-') => 'Bitstream',
+      _ when audioChannels.isNotEmpty => 'PCM ($audioChannels)',
+      _ => 'PCM',
+    };
 
     final String sourceFormat;
     if (widget.doviProfile != null) {
@@ -252,6 +268,7 @@ class _PlayerStatsOverlayState extends State<PlayerStatsOverlay> {
               _statRow('Resolution', w.isNotEmpty ? '${w}x$h ($codec)' : '--'),
               _statRow('Source Format', sourceFormat, isAccent: widget.doviProfile != null),
               _statRow('Display Output', outputFormat, isHighlight: widget.isHdrOutput),
+              _statRow('Audio Output', audioOutput),
               if (widget.screen != null) _statRow('Screen', widget.screen!),
               _statRow('Source Colors', (gamma.isNotEmpty || primaries.isNotEmpty) ? (matrix.isNotEmpty ? '$gamma / $primaries ($matrix)' : '$gamma / $primaries') : '--'),
               _statRow('A/V Sync', avsync.isNotEmpty ? '$avsync s' : '--'),

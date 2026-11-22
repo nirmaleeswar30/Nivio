@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/core/desktop_dolby_output.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/widgets/video_ambient_background.dart';
 import 'package:nivio/widgets/seek_preview.dart';
@@ -508,6 +509,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// Player screens currently alive (the next episode's opens before the old
   /// one is disposed).
   static int _liveScreens = 0;
+  // Mini-player handoffs can reuse a native player on another screen.
+  static final _originalAudioDrivers = Expando<String>();
+  static final _activeDolbyRoutes = Expando<DolbyAudioRoute>();
 
   @override
   void initState() {
@@ -558,7 +562,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         miniNotifier.reclaim();
       });
     } else {
-      _player = Player();
+      final logDolbyFallback =
+          AppPlatform.supportsDolbyPassthrough &&
+          ref.read(dolbyPassthroughProvider);
+      _player = Player(
+        configuration: PlayerConfiguration(
+          logLevel: logDolbyFallback ? MPVLogLevel.v : MPVLogLevel.error,
+        ),
+      );
       _videoController = VideoController(
         _player,
         configuration: Platform.isIOS
@@ -826,19 +837,94 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         return KeyEventResult.handled;
       case LogicalKeyboardKey.keyM:
         final vol = _player.state.volume;
-        _player.setVolume(vol > 0 ? 0 : 100);
+        _setPlaybackVolume(vol > 0 ? 0 : 100);
         return KeyEventResult.handled;
       case LogicalKeyboardKey.arrowUp:
         final vol = _player.state.volume;
-        _player.setVolume((vol + 10).clamp(0.0, 100.0));
+        _setPlaybackVolume((vol + 10).clamp(0.0, 100.0));
         return KeyEventResult.handled;
       case LogicalKeyboardKey.arrowDown:
         final vol = _player.state.volume;
-        _player.setVolume((vol - 10).clamp(0.0, 100.0));
+        _setPlaybackVolume((vol - 10).clamp(0.0, 100.0));
         return KeyEventResult.handled;
       default:
         return KeyEventResult.ignored;
     }
+  }
+
+  Future<void> _configureDolbyPassthrough(NativePlayer mpv, double speed) async {
+    var route = ref.read(dolbyPassthroughProvider) && speed == 1.0
+        ? await AppPlatform.dolbyAudioRoute()
+        : null;
+    if (!mounted || _isDeactivated) return;
+    if (route != null &&
+        Platform.isAndroid &&
+        !AppPlatform.isTv &&
+        await mpv.getProperty('options/audiotrack-raw-passthrough') != 'yes') {
+      route = null;
+    }
+    if (!mounted || _isDeactivated) return;
+    if (route == null) {
+      await _usePcmAudio(mpv);
+      return;
+    }
+
+    final previousRoute = _activeDolbyRoutes[mpv];
+    if (route.driver != previousRoute?.driver) {
+      _originalAudioDrivers[mpv] ??= await mpv.getProperty('options/ao');
+      if (!mounted || _isDeactivated) return;
+      await mpv.setProperty('ao', route.driver);
+    }
+    _activeDolbyRoutes[mpv] = route;
+    await mpv.setProperty(
+      'audio-spdif',
+      _player.state.volume > 0 ? route.codecs : '',
+    );
+  }
+
+  Future<void> _usePcmAudio(NativePlayer mpv) async {
+    _activeDolbyRoutes[mpv] = null;
+    await mpv.setProperty('audio-spdif', '');
+    final previousDriver = _originalAudioDrivers[mpv];
+    if (previousDriver != null &&
+        mounted &&
+        !_isDeactivated &&
+        _activeDolbyRoutes[mpv] == null) {
+      await mpv.setProperty('ao', previousDriver);
+      _originalAudioDrivers[mpv] = null;
+    }
+  }
+
+  Future<void> _setPlaybackVolume(double volume) async {
+    final mpv = _player.platform;
+    final changesMute = (volume == 0) != (_player.state.volume == 0);
+    await _player.setVolume(volume);
+    if (!mounted || _isDeactivated) return;
+    if (changesMute && mpv is NativePlayer) {
+      final route = _activeDolbyRoutes[mpv];
+      if (route == null) return;
+      // Software gain can't mute a compressed bitstream. Decode while muted.
+      await mpv.setProperty(
+        'audio-spdif',
+        volume > 0 ? route.codecs : '',
+      );
+    }
+  }
+
+  Future<void> _recoverDolbyAudio(PlayerLog log) async {
+    if (!mounted ||
+        _isDeactivated ||
+        log.prefix != 'cplayer' ||
+        log.text.trim() != 'Falling back to PCM output.') {
+      return;
+    }
+    final mpv = _player.platform;
+    if (mpv is! NativePlayer || _activeDolbyRoutes[mpv] == null) return;
+
+    // Some mpv builds reinitialize the PCM decoder without waking it up.
+    // Clearing this option rebuilds the audio chain and resumes decoding.
+    await _usePcmAudio(mpv);
+    appDebugLog('[Dolby Audio] Audio output rejected the bitstream. Using PCM.');
   }
 
   /// Reads the playing file's chapters from mpv and keeps the ones titled
@@ -1617,6 +1703,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         appDebugLog('🧪 [CW_DEBUG] PlayerScreen#$_sid screen closed during load — NOT opening stream');
         return;
       }
+      final speed = ref.read(playbackSpeedProvider);
+      final platform = _player.platform;
+      if (AppPlatform.supportsDolbyPassthrough && platform is NativePlayer) {
+        await _configureDolbyPassthrough(platform, speed);
+        if (!mounted || _isDeactivated) return;
+      }
       appDebugLog('✅ [FLOW] Direct player loaded! Starting playback...');
       appDebugLog(
         '🧪 [CW_DEBUG] PlayerScreen#$_sid _player.open → player=${_hash(_player)} '
@@ -1704,7 +1796,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         appDebugLog('🎬 SEEK_DEBUG: startAt is null or zero');
       }
 
-      final speed = ref.read(playbackSpeedProvider);
       await _player.setRate(speed);
       
       _applyDisplaySettings(refreshUi: false);
@@ -2059,6 +2150,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _setupPlayerStreams() {
+    if (AppPlatform.supportsDolbyPassthrough) {
+      _subscriptions.add(_player.stream.log.listen(_recoverDolbyAudio));
+      if (ref.read(dolbyPassthroughProvider)) {
+        ref.listenManual(dolbyAudioRouteProvider, (_, next) {
+          if (!mounted || _isDeactivated || !next.hasValue) return;
+          final mpv = _player.platform;
+          if (mpv is! NativePlayer) return;
+          final activeRoute = _activeDolbyRoutes[mpv];
+          if (activeRoute != null && activeRoute != next.valueOrNull) {
+            unawaited(_usePcmAudio(mpv));
+          }
+        });
+      }
+    }
+
     // Position/Progress stream — track preferences, next episode, watch party
     _subscriptions.add(
       _player.stream.position.listen((position) {
@@ -7042,7 +7148,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   children: [
                     IconButton(
                       onPressed: () =>
-                          _player.setVolume(isMuted ? 100.0 : 0.0),
+                          _setPlaybackVolume(isMuted ? 100.0 : 0.0),
                       icon: Icon(
                         isMuted ? Icons.volume_off : Icons.volume_up,
                         color: Colors.white,

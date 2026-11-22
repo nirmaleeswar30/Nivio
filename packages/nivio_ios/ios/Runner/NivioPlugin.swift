@@ -73,6 +73,10 @@ final class NivioPlugin: NSObject, FlutterPlugin {
     switch call.method {
     case "isTv":
       result(false)
+    case "dolbyAudioRouteSupported":
+      // Use the active port's spatial capability and the user's preference.
+      // An HDMI route or a large channel count alone does not imply Atmos.
+      result(AVAudioSession.sharedInstance().currentRoute.outputs.contains(where: \.isSpatialAudioEnabled))
     case "hdrInfo":
       // The player shows video through AVSampleBufferDisplayLayer
       // (NivioVideoPlugin), which plays HDR formats the device supports.

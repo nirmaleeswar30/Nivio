@@ -163,7 +163,20 @@ class ArtworkImage extends StatelessWidget {
       reverseDuration: fadeOutDuration,
       switchInCurve: Curves.easeIn,
       switchOutCurve: Curves.easeOut,
+      transitionBuilder: _fadeFrame,
+      // Keep the card's constraints on both layers so cold and cached images
+      // paint into the same box, including while the placeholder fades out.
+      layoutBuilder: (currentChild, previousChildren) => Stack(
+        alignment: Alignment.center,
+        fit: StackFit.passthrough,
+        children: [...previousChildren, if (currentChild != null) currentChild],
+      ),
       child: KeyedSubtree(key: ValueKey(frame != null), child: current),
     );
   }
+
+  // Let AnimatedSwitcher assign each fade its own key. Several placeholders
+  // with the same loading-state key can overlap when the image changes quickly.
+  static Widget _fadeFrame(Widget child, Animation<double> opacity) =>
+      FadeTransition(opacity: opacity, child: child);
 }

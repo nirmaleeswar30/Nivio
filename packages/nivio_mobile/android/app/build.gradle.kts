@@ -16,6 +16,8 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val mpvTestAar = providers.gradleProperty("nivioAndroidMpvAar").map { file(it) }
+
 android {
     namespace = "com.nirmal.nivio"
     compileSdk = flutter.compileSdkVersion
@@ -41,6 +43,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["androidMpvRawAudio"] = mpvTestAar.isPresent.toString()
         
         // Enable multidex for the app
         multiDexEnabled = true
@@ -80,6 +83,8 @@ val mpvlibDir = layout.buildDirectory.dir("mpvlib")
 
 val fetchMpvlib by tasks.registering {
     val outDir = mpvlibDir
+    inputs.file(mpvTestAar).optional()
+    inputs.property("mpvlibSha256", mpvlibSha256)
     outputs.dir(outDir)
     doLast {
         val dir = outDir.get().asFile
@@ -102,7 +107,10 @@ val fetchMpvlib by tasks.registering {
             return sb.toString()
         }
         val localAar = File(projectDir, "libs/mpvlib-$mpvlibVersion.aar")
-        if (localAar.exists() && sha256(localAar) == mpvlibSha256) {
+        val testAar = mpvTestAar.orNull
+        if (testAar != null) {
+            check(testAar.isFile) { "Native audio test AAR is missing: $testAar" }
+        } else if (localAar.exists() && sha256(localAar) == mpvlibSha256) {
             if (!aar.exists() || sha256(aar) != mpvlibSha256) {
                 dir.mkdirs()
                 localAar.copyTo(aar, overwrite = true)
@@ -125,7 +133,7 @@ val fetchMpvlib by tasks.registering {
         jniDir.deleteRecursively()
         File(dir, "assets").deleteRecursively()
         project.copy {
-            from(zipTree(aar))
+            from(zipTree(testAar ?: aar))
             // libplayer.so is mpv-android's Java glue; media_kit talks to libmpv directly.
             include("jni/**")
             // CA bundle for mpv's HTTPS (libcurl verifies certificates); copied to

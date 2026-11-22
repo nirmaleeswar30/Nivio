@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+
+import 'desktop_dolby_output.dart';
 
 /// Where Nivio is running, split into what the device *is* and how the UI
 /// should be laid out.
@@ -22,6 +25,7 @@ class AppPlatform {
   static const bool _forceTv = bool.fromEnvironment('NIVIO_TV');
 
   static bool _isTv = _forceTv;
+  static bool _hasAndroidRawAudio = false;
 
   /// Running on Android TV / Google TV (or TV mode forced for testing).
   static bool get isTv => _isTv;
@@ -124,11 +128,68 @@ class AppPlatform {
   static bool get isDesktopOS =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
+  /// Whether this build offers passthrough. The output is checked separately.
+  static bool get supportsDolbyPassthrough =>
+      Platform.isWindows ||
+      Platform.isLinux ||
+      Platform.isIOS ||
+      (Platform.isAndroid && (isTv || _hasAndroidRawAudio));
+
+  static const _androidDolbyOutput = (
+    driver: 'audiotrack,opensles,',
+    codecs: 'eac3',
+  );
+  static const _iosDolbyOutput = (
+    driver: 'avfoundation,audiounit',
+    codecs: 'eac3',
+  );
+
+  /// Queries the current output before a player tries opening a bitstream.
+  static Future<DolbyAudioRoute?> dolbyAudioRoute() async {
+    if (!supportsDolbyPassthrough) return null;
+    try {
+      if (Platform.isWindows) return await Isolate.run(windowsDolbyOutput);
+      if (Platform.isLinux) return await linuxDolbyOutput();
+      final supported = await _channel.invokeMethod<bool>(
+        'dolbyAudioRouteSupported',
+      );
+      if (supported != true) return null;
+      return Platform.isAndroid ? _androidDolbyOutput : _iosDolbyOutput;
+    } catch (_) {
+      // Missing native capability checks and inconclusive results use PCM.
+      return null;
+    }
+  }
+
+  static Stream<DolbyAudioRoute?> watchDolbyAudioRoute() {
+    if (Platform.isAndroid) {
+      return const EventChannel('com.nivio/dolby_audio_route')
+          .receiveBroadcastStream()
+          .map((event) => event == true ? _androidDolbyOutput : null)
+          .distinct();
+    }
+    return _pollDolbyAudioRoute().distinct();
+  }
+
+  static Stream<DolbyAudioRoute?> _pollDolbyAudioRoute() async* {
+    while (true) {
+      yield await dolbyAudioRoute();
+      await Future<void>.delayed(const Duration(seconds: 3));
+    }
+  }
+
   /// Big-screen layout: desktop, or a TV.
   static bool get useDesktopLayout => isDesktopOS || _isTv;
 
   /// Asks Android whether this is a TV. Call once before `runApp`.
   static Future<void> init() async {
+    if (Platform.isAndroid) {
+      try {
+        _hasAndroidRawAudio = await _channel.invokeMethod<bool>('mpvRawAudio') ?? false;
+      } on MissingPluginException {
+        // A Dart update may run with an older Android host.
+      }
+    }
     if (!_forceTv && Platform.isAndroid) {
       try {
         _isTv = await _channel.invokeMethod<bool>('isTv') ?? false;

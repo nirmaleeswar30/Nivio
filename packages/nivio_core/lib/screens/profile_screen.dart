@@ -373,6 +373,9 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                           ),
                         if (_showHdrSettings && _matches(_hdrSearchTerms))
                           ..._buildHdrSettingTiles(),
+                        if (AppPlatform.supportsDolbyPassthrough &&
+                            _matches(_dolbyPassthroughSearchTerms))
+                          _buildDolbyPassthroughTile(),
                       ],
                     ),
                   ),
@@ -1159,6 +1162,10 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     if (_showHdrSettings && _matches(_hdrSearchTerms)) {
       results.addAll(_buildHdrSettingTiles());
     }
+    if (AppPlatform.supportsDolbyPassthrough &&
+        _matches(_dolbyPassthroughSearchTerms)) {
+      results.add(_buildDolbyPassthroughTile());
+    }
     if (_matches('seek duration skip jump forward rewind step')) {
       results.add(
         _buildActionTile(
@@ -1742,10 +1749,49 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     );
   }
 
-  // True HDR, Dolby Vision and the tone-mapping choice are Android-only (the
-  // player's HDR tile shows the same); desktop always uses Standard tone mapping.
-  // iOS shows the HDR Output switch only: the system displays (or
-  // tone-maps) HDR itself, so the mpv-side choices below don't apply.
+  static const _dolbyPassthroughSearchTerms =
+      'dolby atmos audio passthrough bitstream digital plus eac3 truehd hdmi receiver';
+
+  Widget _buildDolbyPassthroughTile() {
+    final route = ref.watch(dolbyAudioRouteProvider);
+    final supported = route.asData?.value != null;
+    final codecs = switch (route.asData?.value?.codecs) {
+      'eac3,truehd' => 'Dolby Digital Plus or TrueHD',
+      'truehd' => 'Dolby TrueHD',
+      _ => 'Dolby Digital Plus',
+    };
+    final value = ref.watch(dolbyPassthroughProvider);
+    final subtitle = Platform.isIOS
+        ? 'Use Apple’s audio renderer for Dolby Digital Plus Atmos on '
+            'compatible audio routes at 1× speed. Applies when playback starts.'
+        : Platform.isAndroid && !AppPlatform.isTv
+        ? 'Use Android’s audio renderer for Dolby Digital Plus Atmos on '
+            'compatible audio routes at 1× speed. Applies when playback starts.'
+        : 'Send $codecs to a compatible HDMI receiver for Atmos at 1× speed. '
+            'Use the receiver for volume. Applies when playback starts.';
+    return _buildSwitchTile(
+      icon: Icons.surround_sound_outlined,
+      title: 'Dolby audio passthrough',
+      subtitle: supported
+          ? subtitle
+          : route.isLoading
+          ? 'Checking the current audio output…'
+          : 'Dolby passthrough is unavailable on this audio output. Audio plays as PCM.',
+      value: supported && value,
+      enabled: supported,
+      onChanged: (enabled) async {
+        if (enabled && await AppPlatform.dolbyAudioRoute() == null) {
+          if (mounted) ref.invalidate(dolbyAudioRouteProvider);
+          return;
+        }
+        if (!mounted) return;
+        await ref.read(dolbyPassthroughProvider.notifier).setEnabled(enabled);
+      },
+    );
+  }
+
+  // iOS shows the HDR Output switch because the system handles HDR presentation
+  // and tone mapping. The other HDR settings below apply to Android.
   bool get _showHdrSettings => Platform.isAndroid || Platform.isIOS;
 
   static const _hdrSearchTerms =
@@ -4684,6 +4730,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
             // Android TV uses this layout.
             if (_showHdrSettings) ..._buildHdrSettingTiles(),
+            if (AppPlatform.supportsDolbyPassthrough)
+              _buildDolbyPassthroughTile(),
           ],
         );
       case 2: // Subtitle Appearance

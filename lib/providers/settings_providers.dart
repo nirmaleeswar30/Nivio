@@ -8,6 +8,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/episode_check_service.dart';
+import '../core/app_platform.dart';
+import '../core/desktop_dolby_output.dart';
 import '../core/theme.dart';
 
 // SharedPreferences loaded once before runApp, so settings that are read
@@ -1265,6 +1267,27 @@ class HdrOutputNotifier extends StateNotifier<bool> {
     state = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('hdr_output_enabled', value);
+  }
+}
+
+final dolbyAudioRouteProvider = StreamProvider.autoDispose<DolbyAudioRoute?>(
+  (ref) => AppPlatform.watchDolbyAudioRoute(),
+);
+
+final dolbyPassthroughProvider =
+    StateNotifierProvider<DolbyPassthroughNotifier, bool>((ref) {
+      return DolbyPassthroughNotifier();
+    });
+
+class DolbyPassthroughNotifier extends StateNotifier<bool> {
+  static const _key = 'dolby_passthrough_enabled';
+
+  DolbyPassthroughNotifier() : super(_startupPrefs?.getBool(_key) ?? false);
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, value);
   }
 }
 
