@@ -573,22 +573,38 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
     listenable: _discovery,
     builder: (context, _) {
       final results = _visibleChoices();
+      final extensionNotice = _searchController.text.trim().isEmpty
+          ? _discovery.extensionSearchNotice
+          : null;
       if (results.isEmpty && _discovery.searching) return _buildLoading();
       if (results.isEmpty) {
         return Center(
           child: Text(
-            _searchController.text.trim().isEmpty &&
-                    _discovery.failures.isNotEmpty
-                ? 'Couldn’t reach some direct sources.'
-                : 'No direct streams found.',
+            extensionNotice ??
+                (_searchController.text.trim().isEmpty &&
+                        _discovery.failures.isNotEmpty
+                    ? 'Couldn’t reach some direct sources.'
+                    : 'No direct streams found.'),
             style: const TextStyle(color: Colors.white70, fontSize: 16),
           ),
         );
       }
       return ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: results.length,
-        itemBuilder: (_, index) => _buildRow(results[index], index == 0),
+        itemCount: results.length + (extensionNotice == null ? 0 : 1),
+        itemBuilder: (_, index) {
+          if (extensionNotice != null && index == 0) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Text(
+                extensionNotice,
+                style: const TextStyle(color: Colors.white70),
+              ),
+            );
+          }
+          final resultIndex = extensionNotice == null ? index : index - 1;
+          return _buildRow(results[resultIndex], resultIndex == 0);
+        },
       );
     },
   );

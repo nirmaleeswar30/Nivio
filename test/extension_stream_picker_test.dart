@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nivio/core/constants.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/services/extensions/extension_repository.dart';
@@ -175,6 +176,30 @@ StreamDiscovery _readyDiscovery() =>
       ..stop();
 
 void main() {
+  test('Nuvio public metadata uses the app transport and credentials', () {
+    final pluginUrl = Uri.parse(
+      'https://api.themoviedb.org/3/tv/10?language=ja&api_key=plugin-key&session_id=plugin-session',
+    );
+    final metadataUrl = nuvioTmdbMetadataUrl('GET', pluginUrl)!;
+    expect(metadataUrl.origin, Uri.parse(tmdbBaseUrl).origin);
+    expect(metadataUrl.path, '/3/tv/10');
+    expect(
+      metadataUrl.queryParameters.keys,
+      unorderedEquals(['api_key', 'language']),
+    );
+    expect(metadataUrl.queryParameters['api_key'] == tmdbApiKey, isTrue);
+    expect(metadataUrl.queryParameters['language'], 'ja');
+    expect(nuvioTmdbMetadataUrl('POST', pluginUrl), isNull);
+    expect(
+      nuvioTmdbMetadataUrl('GET', pluginUrl.replace(path: '/3/account/10')),
+      isNull,
+    );
+    expect(
+      nuvioTmdbMetadataUrl('GET', pluginUrl.replace(host: 'example.com')),
+      isNull,
+    );
+  });
+
   test(
     'HLS resolution labels read variants from masters with alternate audio',
     () {
@@ -574,6 +599,7 @@ void main() {
       await discovery.search();
 
       expect(discovery.failures, isEmpty);
+      expect(discovery.extensionSearchNotice, isNull);
       final choice = discovery.choices.single;
       expect(choice.title, 'movie:10:1:1');
       expect(choice.origin, _repo.name);

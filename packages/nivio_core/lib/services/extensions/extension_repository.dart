@@ -409,8 +409,11 @@ Future<ConnectionTask<Socket>> _connectToProvider(Uri uri) async {
         if (uri.scheme != 'https') return socket;
         // HttpClient requires an already secured socket from a custom
         // factory. Keep the original hostname for certificate checks and SNI.
-        return await SecureSocket.secure(socket, host: uri.host);
-      } on SocketException {
+        return await SecureSocket.secure(
+          socket,
+          host: uri.host,
+        ).timeout(const Duration(seconds: 3));
+      } on IOException {
         pending?.cancel();
         connected?.destroy();
       } on TimeoutException {

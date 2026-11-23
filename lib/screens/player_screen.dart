@@ -5665,6 +5665,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ) => ListenableBuilder(
     listenable: search,
     builder: (context, _) {
+      final extensionNotice = search.extensionSearchNotice;
       final choices = search.orderForPicker(
         search.availableChoices.where((choice) => choice.isDirect).toList(),
         resolution: search.selection.resolutions.firstOrNull,
@@ -5673,9 +5674,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         return Center(
           child: search.searching
               ? const CircularProgressIndicator()
-              : const Text(
-                  'No direct streams found.',
-                  style: TextStyle(color: Colors.white70),
+              : Text(
+                  extensionNotice ?? 'No direct streams found.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70),
                 ),
         );
       }
@@ -5683,6 +5685,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         padding: EdgeInsets.zero,
         children: [
           _providerSectionLabel('Direct'),
+          if (extensionNotice != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(extensionNotice, style: const TextStyle(color: Colors.white70)),
+            ),
           _sourceCardGrid([
             for (final choice in choices)
               _buildSourceCard(

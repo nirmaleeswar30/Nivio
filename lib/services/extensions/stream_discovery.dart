@@ -45,8 +45,16 @@ class StreamDiscovery extends ChangeNotifier {
   bool searching = true;
   bool _closed = false;
   int _generation = 0;
+  int _extensionProviderCount = 0;
 
   bool get isAnime => media.mediaType == 'anime';
+
+  String? get extensionSearchNotice =>
+      !searching &&
+          _extensionProviderCount > 0 &&
+          !choices.any((choice) => !choice.providerId.startsWith('builtin:'))
+      ? 'Enabled extensions returned no direct streams for this title.'
+      : null;
 
   late final policy = StreamSelection(
     selection,
@@ -155,6 +163,7 @@ class StreamDiscovery extends ChangeNotifier {
   Future<void> search() async {
     final generation = ++_generation;
     searching = true;
+    _extensionProviderCount = 0;
     choices.clear();
     failures.clear();
     unavailable.clear();
@@ -326,6 +335,7 @@ class StreamDiscovery extends ChangeNotifier {
           )
           .toList();
       if (providers.isEmpty || !_current(generation)) return;
+      _extensionProviderCount = providers.length;
       if (selection.mode != StreamSelectionMode.first) {
         final ranked = providers.indexed.toList()
           ..sort((a, b) {

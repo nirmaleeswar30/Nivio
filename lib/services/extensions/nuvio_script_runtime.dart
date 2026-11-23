@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_qjs_next/flutter_qjs.dart';
 import 'package:html/dom.dart';
 import 'package:html/parser.dart' as html;
+import 'package:nivio/core/constants.dart';
 
 import 'extension_repository.dart';
 
@@ -15,6 +16,35 @@ Future<List<Map<String, dynamic>>> runNuvioScript(
   List<Object?> arguments,
   Map<String, dynamic> settings,
 ) => Isolate.run(() => _execute(code, arguments, settings));
+
+final _publicTmdbPath = RegExp(
+  r'^/3/(?:movie/\d+(?:/external_ids)?|tv/\d+(?:/external_ids|/season/\d+(?:/episode/\d+)?)?|find/tt\d+)$',
+);
+
+/// Shares Nivio's metadata connection for the public title lookups used by plugins.
+Uri? nuvioTmdbMetadataUrl(String method, Uri url) {
+  if (method != 'GET' ||
+      url.scheme != 'https' ||
+      url.host != 'api.themoviedb.org' ||
+      url.port != 443 ||
+      url.userInfo.isNotEmpty ||
+      !_publicTmdbPath.hasMatch(url.path)) {
+    return null;
+  }
+  return Uri.parse(tmdbBaseUrl).replace(
+    path: url.path,
+    queryParameters: {
+      'api_key': tmdbApiKey,
+      for (final field in [
+        'language',
+        'append_to_response',
+        'include_image_language',
+        'external_source',
+      ])
+        if (url.queryParameters[field] case final String value) field: value,
+    },
+  );
+}
 
 Future<List<Map<String, dynamic>>> _execute(
   String code,
@@ -37,9 +67,17 @@ Future<List<Map<String, dynamic>>> _execute(
         handler: (request) async {
           if (++requests > 60)
             throw StateError('Provider request limit reached.');
-          final outgoing = await client.openUrl(request.method, request.url);
+          final metadata = nuvioTmdbMetadataUrl(request.method, request.url);
+          final outgoing = await client.openUrl(
+            request.method,
+            metadata ?? request.url,
+          );
           outgoing.followRedirects = false;
-          for (final header in request.headers) {
+          // Metadata lookups use app credentials. Never copy plugin headers to them.
+          for (final header
+              in metadata == null
+                  ? request.headers
+                  : const <MapEntry<String, String>>[]) {
             if (!const {
               'host',
               'content-length',
@@ -48,7 +86,7 @@ Future<List<Map<String, dynamic>>> _execute(
               outgoing.headers.add(header.key, header.value);
             }
           }
-          final body = request.body;
+          final body = metadata == null ? request.body : null;
           if (body != null) {
             if (body.length > 1024 * 1024)
               throw StateError('Provider request is too large.');
