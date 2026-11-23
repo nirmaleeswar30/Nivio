@@ -13,6 +13,7 @@ import 'package:nivio/services/extensions/stream_selection_settings.dart';
 import 'package:nivio/services/m3u8_parser.dart';
 import 'package:nivio/services/streaming_service.dart';
 import 'package:nivio/services/tmdb_service.dart';
+import 'package:nivio/services/torrent/anime_query_builder.dart';
 import 'package:nivio/services/torrent/media_ranking.dart';
 import 'package:nivio/services/torrent/media_torrent_models.dart';
 import 'package:nivio/services/torrent/torrent_models.dart';
@@ -83,7 +84,7 @@ class _PickerTmdb implements TmdbService {
 class _PickerTorrents extends TorrentStreamService {
   _PickerTorrents([List<TorrentResult>? results])
     : results = results ?? [_torrent.torrent!],
-      super(tmdbService: _PickerTmdb());
+      super(tmdbService: _PickerTmdb(), queryBuilder: _PickerAnimeQuery());
 
   final List<TorrentResult> results;
 
@@ -93,15 +94,44 @@ class _PickerTorrents extends TorrentStreamService {
     void Function(String status)? onStatus,
     bool rank = true,
   }) async => results;
+
+  @override
+  Future<List<TorrentResult>> searchTorrents({
+    required AnimeQuery query,
+    void Function(String status)? onStatus,
+  }) async => results;
 }
 
-TorrentResult _release(String label, int seeders) => TorrentResult(
+class _PickerAnimeQuery extends AnimeQueryBuilder {
+  @override
+  Future<AnimeQuery> build(
+    SearchResult media,
+    int episode, {
+    required int season,
+    String resolution = '1080',
+    List<String> exclusions = const [],
+    int? absoluteEpisode,
+  }) async => AnimeQuery(
+    titles: [media.title!],
+    episode: episode,
+    season: season,
+    resolution: resolution,
+  );
+}
+
+TorrentResult _release(
+  String label,
+  int seeders, {
+  int size = 0,
+  String? type,
+}) => TorrentResult(
   title: 'Example release $label',
   link: 'https://example.com/${Uri.encodeComponent('$label $seeders')}.torrent',
   seeders: seeders,
   leechers: 0,
-  sizeBytes: 0,
+  sizeBytes: size,
   source: 'torrentio',
+  type: type,
 );
 
 StreamDiscovery _readyDiscovery() =>
@@ -388,6 +418,78 @@ void main() {
       }
       expect(picked?.$1, autoSelect ? remux : web);
       expect(picked?.automatic, autoSelect);
+    });
+  }
+
+  for (final type in ['movie', 'tv', 'anime']) {
+    testWidgets('the $type torrent picker honors the file size limit', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      const gib = 1024 * 1024 * 1024;
+      final settings = const StreamSelectionSettings().copyWith(maxFileGb: 2);
+      final media = SearchResult(
+        id: 10,
+        mediaType: type,
+        title: 'Example title',
+      );
+      final oversized = _release('4K oversized', 100, size: 3 * gib);
+      final unknown = _release('1080p unknown size', 90);
+      final exact = _release('1080p at the limit', 80, size: 2 * gib);
+      final pack = _release(
+        '1080p season pack',
+        70,
+        size: 8 * gib,
+        type: 'batch',
+      );
+      final search = _PickerTorrents([
+        oversized,
+        unknown,
+        if (type == 'anime') pack else exact,
+      ]);
+      (TorrentResult, dynamic, {bool automatic})? picked;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () async {
+                  picked = await TorrentPickerSheet.show(
+                    context,
+                    media: media,
+                    initialEpisode: 1,
+                    initialSeason: 1,
+                    initialResolution: '1080',
+                    torrentStreamService: search,
+                    autoSelect: type != 'tv',
+                    maxFileBytes: settings.maxFileBytes,
+                  );
+                },
+                child: const Text('Open torrent picker'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open torrent picker'));
+      await tester.pumpAndSettle();
+      expect(find.text(oversized.title), findsNothing);
+      expect(find.text(unknown.title), findsOneWidget);
+
+      if (type == 'tv') {
+        await tester.tap(find.text('Auto Select Torrent'));
+      } else {
+        await tester.pump(const Duration(seconds: 6));
+        await tester.pumpAndSettle();
+      }
+      if (type == 'anime') {
+        expect(picked, isNull);
+        expect(find.textContaining('Auto Select Torrent'), findsNothing);
+        await tester.tap(find.text(pack.title));
+      }
+      await tester.pumpAndSettle();
+      expect(picked?.$1, type == 'anime' ? pack : exact);
+      expect(picked?.automatic, type != 'anime');
     });
   }
 

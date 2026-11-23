@@ -22,6 +22,15 @@ import 'sources/torrent_source.dart';
 import 'sources/torrentio_source.dart';
 import 'torrent_models.dart';
 
+class TorrentFileSizeException implements Exception {
+  const TorrentFileSizeException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// The result of resolving a torrent stream: a localhost URL ready for the
 /// player, plus the handles needed for stats and teardown.
 class TorrentStreamHandle {
@@ -619,6 +628,7 @@ class TorrentStreamService {
     bool requireEpisodeMatch = false,
     Duration? metadataTimeout,
     bool Function()? cancelled,
+    int? maxFileBytes,
   }) async {
     _log('best="${best.title}" src=${best.source} seeders=${best.seeders} '
         'res=${best.parsed.resolution} type=${best.type} link=${best.link.substring(0, best.link.length.clamp(0, 60))}…');
@@ -685,6 +695,16 @@ class TorrentStreamService {
       onStatus?.call('No playable file in torrent');
       if (id != _activeTorrentId) await _releaseTorrent(id);
       return null;
+    }
+    if (maxFileBytes != null && (file.length <= 0 || file.length > maxFileBytes)) {
+      if (id != _activeTorrentId && id != _prefetch?.torrentId) {
+        await _releaseTorrent(id);
+      }
+      throw TorrentFileSizeException(
+        file.length <= 0
+            ? 'Could not verify the torrent video’s file size.'
+            : 'The torrent video exceeds your maximum file size.',
+      );
     }
     _log('resolved file[${file.index}]="${file.name}" -> streaming');
 

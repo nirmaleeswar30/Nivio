@@ -87,9 +87,8 @@ class StreamSelection {
     if (settings.exclusions.any((term) => _blocked[term]!.hasMatch(text)))
       return false;
     final size = choice.byteSize;
-    if (settings.maxFileGb > 0 &&
-        (size == null || size > settings.maxFileGb * 1073741824))
-      return false;
+    final limit = settings.maxFileBytes;
+    if (limit != null && (size == null || size > limit)) return false;
     return !settings.matchAudio || _audioMatch(choice) > 0;
   }
 

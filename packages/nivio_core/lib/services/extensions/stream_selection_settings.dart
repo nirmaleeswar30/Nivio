@@ -186,6 +186,8 @@ class StreamSelectionSettings {
   List<int> get resolutions =>
       presetOptions[preset]?.resolutions ?? preset.resolutions;
   int get maxFileGb => presetOptions[preset]?.maxFileGb ?? 0;
+  int? get maxFileBytes =>
+      maxFileGb > 0 ? maxFileGb * 1024 * 1024 * 1024 : null;
   Set<StreamExclusion> get exclusions =>
       presetOptions[preset]?.exclusions ??
       {StreamExclusion.cam, StreamExclusion.ts, StreamExclusion.hdcam};

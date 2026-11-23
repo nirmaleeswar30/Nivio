@@ -526,7 +526,7 @@ class StreamPlaybackSettings extends ConsumerWidget {
                       min: 0,
                       max: 100,
                       description:
-                          'With a limit, streams with unknown file sizes remain available in the picker.',
+                          'With a limit, unknown sizes are available for manual selection. Torrent packs are checked when the video file is found.',
                       onChanged: (max) =>
                           change((value) => value.copyWith(maxFileGb: max)),
                     ),

@@ -13,6 +13,7 @@ import 'package:nivio/services/scrapers/vidrock/vidrock_scraper.dart';
 import 'package:nivio/services/tmdb_service.dart';
 import 'package:nivio/services/scrapers/miruro/miruro_scraper.dart';
 import 'package:nivio/services/scrapers/animex/animex_scraper.dart';
+import 'package:nivio/services/extensions/stream_selection_settings.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
 import 'package:nivio/services/torrent/torrent_models.dart';
 import 'package:nivio/services/torrent/media_torrent_models.dart';
@@ -195,6 +196,9 @@ class StreamingService {
     bool? autoSelect,
     bool Function()? onManualSwitch,
   }) async {
+    final settings = await ref.read(streamSelectionSettingsProvider.future);
+    if (!context.mounted) return null;
+    final maxFileBytes = settings.maxFileBytes;
     final selection = await TorrentPickerSheet.show(
       context,
       media: media,
@@ -205,6 +209,7 @@ class StreamingService {
       torrentStreamService: pickerSearch ?? torrentStreamService,
       onStatusUpdate: onStatusUpdate,
       autoSelect: onManualSwitch == null ? autoSelect : false,
+      maxFileBytes: maxFileBytes,
     );
     if (selection == null || !context.mounted || onManualSwitch?.call() == false) {
       return null;
@@ -218,6 +223,7 @@ class StreamingService {
       ep,
       onStatusUpdate,
       media: media,
+      maxFileBytes: maxFileBytes,
     );
     if (handle != null && !selection.automatic) {
       await torrentStreamService.rememberReleaseGroup(

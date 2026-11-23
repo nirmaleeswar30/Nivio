@@ -5638,7 +5638,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       appDebugLog('Could not switch playback source: $error');
       if (isCurrentStream()) {
         _messenger.showSnackBar(
-          const SnackBar(content: Text('Could not switch source.')),
+          SnackBar(
+            content: Text(
+              error is TorrentFileSizeException
+                  ? error.message
+                  : 'Could not switch source.',
+            ),
+          ),
         );
       }
     } finally {

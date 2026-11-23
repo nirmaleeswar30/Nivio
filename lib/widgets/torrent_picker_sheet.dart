@@ -23,6 +23,7 @@ class TorrentPickerSheet extends StatefulWidget {
   final bool isFullScreen;
   /// Uses the saved torrent setting when no playback mode overrides it.
   final bool? autoSelect;
+  final int? maxFileBytes;
 
   const TorrentPickerSheet({
     super.key,
@@ -35,6 +36,7 @@ class TorrentPickerSheet extends StatefulWidget {
     this.onStatusUpdate,
     this.isFullScreen = false,
     this.autoSelect,
+    this.maxFileBytes,
   });
 
   static Future<(TorrentResult, dynamic, {bool automatic})?> show(
@@ -47,6 +49,7 @@ class TorrentPickerSheet extends StatefulWidget {
     required TorrentStreamService torrentStreamService,
     void Function(String status)? onStatusUpdate,
     bool? autoSelect,
+    int? maxFileBytes,
   }) {
     final isMobile = Platform.isAndroid || Platform.isIOS;
     if (isMobile) {
@@ -64,6 +67,7 @@ class TorrentPickerSheet extends StatefulWidget {
               onStatusUpdate: onStatusUpdate,
               isFullScreen: true,
               autoSelect: autoSelect,
+              maxFileBytes: maxFileBytes,
             ),
           ),
         ),
@@ -87,6 +91,7 @@ class TorrentPickerSheet extends StatefulWidget {
           onStatusUpdate: onStatusUpdate,
           isFullScreen: false,
           autoSelect: autoSelect,
+          maxFileBytes: maxFileBytes,
         ),
       ),
     );
@@ -99,6 +104,7 @@ class TorrentPickerSheet extends StatefulWidget {
 class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
   List<TorrentResult>? _filteredResults;
   String? _error;
+  bool _hasOversizedResults = false;
   
   late int _episode;
   late String _resolution;
@@ -113,6 +119,29 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
 
   bool get _isAnime => StreamingService.isAnimeMedia(widget.media);
   bool get _isMovie => !_isAnime && widget.media.mediaType == 'movie';
+
+  TorrentResult? get _autoSelectCandidate {
+    final limit = widget.maxFileBytes;
+    final results = _filteredResults;
+    if (limit == null || results == null) return results?.firstOrNull;
+    return results
+        .where((result) => result.sizeBytes > 0 && result.sizeBytes <= limit)
+        .firstOrNull;
+  }
+
+  void _showResults(List<TorrentResult> results) {
+    final limit = widget.maxFileBytes;
+    // A pack's total size does not tell us the size of the episode inside it.
+    final visible = limit == null
+        ? results
+        : results
+            .where((result) => result.isBatch || result.sizeBytes <= limit)
+            .toList();
+    setState(() {
+      _filteredResults = visible;
+      _hasOversizedResults = visible.length < results.length;
+    });
+  }
 
   @override
   void initState() {
@@ -205,11 +234,9 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
       // MediaRanking for movies/shows) — it already accounts for the selected
       // resolution, so re-sorting by seeders here would override that.
 
-      setState(() {
-        _filteredResults = results;
-      });
+      _showResults(results);
       
-      if (results.isNotEmpty) {
+      if (_autoSelectCandidate != null) {
         final autoSelect = widget.autoSelect ??
             (await SharedPreferences.getInstance()).getBool('torrent_auto_select') ??
             true;
@@ -320,9 +347,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
       // MediaRanking for movies/shows) — it already accounts for the selected
       // resolution, so re-sorting by seeders here would override that.
 
-      setState(() {
-        _filteredResults = results;
-      });
+      _showResults(results);
     } catch (e) {
       if (!mounted || request != _searchRequest) return;
       setState(() {
@@ -342,8 +367,9 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
       });
       if (_countdown <= 0) {
         timer.cancel();
-        if (_filteredResults != null && _filteredResults!.isNotEmpty) {
-          _playResult(_filteredResults!.first, automatic: true);
+        final candidate = _autoSelectCandidate;
+        if (candidate != null) {
+          _playResult(candidate, automatic: true);
         }
       }
     });
@@ -668,9 +694,10 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
   }
 
   Widget _buildAutoSelectButton(double spacing) {
-    if (_filteredResults != null && _filteredResults!.isNotEmpty) {
+    final candidate = _autoSelectCandidate;
+    if (candidate != null) {
       return ElevatedButton(
-        onPressed: () => _playResult(_filteredResults!.first, automatic: true),
+        onPressed: () => _playResult(candidate, automatic: true),
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF38Bdf8),
           foregroundColor: Colors.black,
@@ -811,21 +838,24 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         child: Padding(
           padding: const EdgeInsets.all(48.0),
           child: Text(
-            _isMovie
-                ? 'No torrents found for this movie.'
-                : 'No torrents found for this episode.', 
+            _hasOversizedResults
+                ? 'No torrents within your maximum file size.'
+                : _isMovie
+                    ? 'No torrents found for this movie.'
+                    : 'No torrents found for this episode.',
             style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 16)
           ),
         ),
       );
     }
 
+    final best = _autoSelectCandidate ?? _filteredResults!.first;
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: _filteredResults!.length,
       itemBuilder: (context, index) {
         final r = _filteredResults![index];
-        final isBest = index == 0;
+        final isBest = identical(r, best);
         final isTrusted = _isTrusted(r);
         
         return _HoverTorrentCard(
@@ -867,7 +897,7 @@ class _HoverTorrentCardState extends State<_HoverTorrentCard> {
   bool _isHovered = false;
 
   String _formatSize(int bytes) {
-    if (bytes <= 0) return '0 B';
+    if (bytes <= 0) return 'Size unknown';
     final kb = bytes / 1024;
     final mb = kb / 1024;
     final gb = mb / 1024;
@@ -1012,7 +1042,12 @@ class _HoverTorrentCardState extends State<_HoverTorrentCard> {
                             _buildTag('${r.parsed.resolution}p', const Color(0xFF60A5FA)),
                             const SizedBox(width: 8),
                           ],
-                          _buildTag(_formatSize(r.sizeBytes), Colors.grey),
+                          _buildTag(
+                            r.isBatch && r.sizeBytes > 0
+                                ? '${_formatSize(r.sizeBytes)} pack'
+                                : _formatSize(r.sizeBytes),
+                            Colors.grey,
+                          ),
                         ],
                       ),
                     ),
