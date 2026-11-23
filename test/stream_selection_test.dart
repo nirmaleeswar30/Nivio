@@ -293,12 +293,24 @@ void main() {
     await tester.drag(find.byType(PageView), const Offset(-300, 0));
     await tester.pumpAndSettle();
     expect(find.text('Set your playback preferences'), findsOneWidget);
+    final fastestLoad = find.text('Fastest Load');
+    await tester.ensureVisible(fastestLoad);
+    await tester.pumpAndSettle();
+    expect(fastestLoad.hitTestable(), findsOneWidget);
+    await tester.tap(fastestLoad.hitTestable());
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      StreamSelectionSettings.read(prefs, StreamFilter.all).mode,
+      StreamSelectionMode.first,
+    );
     await tester.drag(find.byType(PageView), const Offset(300, 0));
     await tester.pumpAndSettle();
     expect(find.text('Choose your sources'), findsOneWidget);
     await tester.tap(find.text('Skip this step'));
     await tester.pumpAndSettle();
-    expect(find.text('Set your playback preferences'), findsOneWidget);
+    expect(find.byKey(const PageStorageKey(1)), findsOneWidget);
     await tester.tap(find.text('Skip this step'));
     await tester.pumpAndSettle();
     expect(find.text('Connect your accounts'), findsOneWidget);

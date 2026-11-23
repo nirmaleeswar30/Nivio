@@ -12,7 +12,6 @@ import 'package:nivio/services/tmdb_service.dart';
 import 'package:nivio/services/torrent/media_torrent_models.dart';
 import 'package:nivio/services/torrent/torrent_models.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
-import 'package:nivio/widgets/playback_picker.dart';
 import 'package:nivio/widgets/stream_picker_sheet.dart';
 import 'package:nivio/widgets/torrent_picker_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -119,7 +118,7 @@ void main() {
         ),
       );
       expect(find.text('Direct link'), findsOneWidget);
-      expect(find.byType(BackdropFilter), findsOneWidget);
+      expect(find.byType(TorrentPickerSheet), findsOneWidget);
       expect(find.text('Torrent release'), findsNothing);
       await tester.tap(find.text('All 2'));
       await tester.pump();
@@ -151,14 +150,10 @@ void main() {
       );
       expect(find.text('Direct link'), findsOneWidget);
       expect(
-        find
-            .widgetWithText(PlaybackPickerTab, 'Torrents 0')
-            .evaluate()
-            .single
-            .widget,
-        isA<PlaybackPickerTab>().having(
-          (segment) => segment.onTap,
-          'onTap',
+        find.widgetWithText(ChoiceChip, 'Torrents 0').evaluate().single.widget,
+        isA<ChoiceChip>().having(
+          (chip) => chip.onSelected,
+          'onSelected',
           isNull,
         ),
       );
@@ -195,14 +190,14 @@ void main() {
     );
     await tester.tap(find.text('Choose a source'));
     await tester.pumpAndSettle();
-    expect(find.text('Choose stream'), findsOneWidget);
-    expect(find.byType(PlaybackPickerFrame), findsOneWidget);
-    expect(find.byType(PlaybackPickerRow), findsOneWidget);
+    expect(find.text('Example movie'), findsOneWidget);
+    expect(find.byType(TorrentPickerSheet), findsOneWidget);
+    expect(find.byType(TorrentPickerResultRow), findsOneWidget);
     await tester.tap(find.text('Direct link'));
     await tester.pumpAndSettle();
     expect(picked?.choice, _direct);
     expect(picked?.result, _direct.direct);
-    expect(find.text('Choose stream'), findsNothing);
+    expect(find.byType(TorrentPickerSheet), findsNothing);
     discovery.dispose();
   });
 
@@ -238,8 +233,8 @@ void main() {
     );
     await tester.tap(find.text('Open torrent picker'));
     await tester.pumpAndSettle();
-    expect(find.byType(PlaybackPickerFrame), findsOneWidget);
-    expect(find.byType(PlaybackPickerRow), findsOneWidget);
+    expect(find.byType(TorrentPickerSheet), findsOneWidget);
+    expect(find.byType(TorrentPickerResultRow), findsOneWidget);
     await tester.tap(find.text('Torrent release'));
     await tester.pumpAndSettle();
     expect(picked?.$1, _torrent.torrent);

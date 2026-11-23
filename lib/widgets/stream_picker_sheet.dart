@@ -5,7 +5,9 @@ import 'package:nivio/services/extensions/extension_repository.dart';
 import 'package:nivio/services/extensions/extension_resolver.dart';
 import 'package:nivio/services/extensions/stream_discovery.dart';
 import 'package:nivio/services/extensions/stream_selection.dart';
-import 'package:nivio/widgets/playback_picker.dart';
+import 'package:nivio/widgets/torrent_picker_sheet.dart';
+
+const _accent = Color(0xFF38BDF8);
 
 class StreamPickerOutcome {
   const StreamPickerOutcome({
@@ -42,7 +44,7 @@ class StreamPickerSheet extends StatefulWidget {
     StreamFilter initialFilter,
     ValueChanged<StreamFilter> onFilter, {
     String? fallbackMessage,
-  }) => PlaybackPickerFrame.show<StreamPickerOutcome>(
+  }) => TorrentPickerSheet.showPicker<StreamPickerOutcome>(
     context,
     (fullScreen) => StreamPickerSheet(
       discovery: discovery,
@@ -116,14 +118,15 @@ class _StreamPickerSheetState extends State<StreamPickerSheet> {
   @override
   Widget build(BuildContext context) => PopScope(
     canPop: _opening == null,
-    child: PlaybackPickerFrame(
+    child: TorrentPickerSheet.streams(
       media: discovery.media,
-      fullScreen: widget.fullScreen,
-      label: 'Choose stream',
-      onClose: _opening == null ? () => Navigator.of(context).pop() : null,
-      child: TextButtonTheme(
+      isFullScreen: widget.fullScreen,
+      onStreamClose: _opening == null
+          ? () => Navigator.of(context).pop()
+          : null,
+      streamContent: TextButtonTheme(
         data: TextButtonThemeData(
-          style: TextButton.styleFrom(foregroundColor: playbackPickerAccent),
+          style: TextButton.styleFrom(foregroundColor: _accent),
         ),
         child: ListenableBuilder(
           listenable: discovery,
@@ -221,11 +224,13 @@ class _StreamPickerSheetState extends State<StreamPickerSheet> {
                 runSpacing: 6,
                 children: [
                   for (final audio in <String?>[null, 'Sub', 'Dub'])
-                    PlaybackPickerTab(
-                      label: audio ?? 'All audio',
+                    ChoiceChip(
+                      label: Text(audio ?? 'All audio'),
+                      selectedColor: _accent.withValues(alpha: .20),
+                      showCheckmark: false,
                       selected: _audio == audio,
-                      onTap: _opening == null
-                          ? () => setState(() => _audio = audio)
+                      onSelected: _opening == null
+                          ? (_) => setState(() => _audio = audio)
                           : null,
                     ),
                 ],
@@ -242,10 +247,7 @@ class _StreamPickerSheetState extends State<StreamPickerSheet> {
           if (_status != null || discovery.searching)
             const Padding(
               padding: EdgeInsets.only(top: 10),
-              child: LinearProgressIndicator(
-                minHeight: 2,
-                color: playbackPickerAccent,
-              ),
+              child: LinearProgressIndicator(minHeight: 2, color: _accent),
             ),
           if (_status != null ||
               discovery.searching ||
@@ -282,15 +284,17 @@ class _StreamPickerSheetState extends State<StreamPickerSheet> {
     );
   }
 
-  Widget _tab(StreamFilter type, int count) => PlaybackPickerTab(
-    label: '${type.label} $count',
+  Widget _tab(StreamFilter type, int count) => ChoiceChip(
+    label: Text('${type.label} $count'),
+    selectedColor: _accent.withValues(alpha: .20),
+    showCheckmark: false,
     selected: _filter == type,
     autofocus: _filter == type,
-    onTap:
+    onSelected:
         _opening != null ||
             type == StreamFilter.torrents && !discovery.torrentsEnabled
         ? null
-        : () => _setFilter(type),
+        : (_) => _setFilter(type),
   );
 
   Widget _empty(int direct, int torrents) => Center(
@@ -358,47 +362,39 @@ class _StreamPickerSheetState extends State<StreamPickerSheet> {
         : choice.isWebPlayer
         ? 'Web player'
         : 'Direct';
-    return PlaybackPickerRow(
+    return TorrentPickerResultRow.stream(
       title: choice.title,
+      source: choice.provider,
+      quality: choice.quality,
+      sizeBytes: bytes,
+      torrent: torrent,
       marker: isPrevious ? 'PREVIOUS SOURCE' : null,
-      highlighted: isPrevious,
       onTap: _opening != null || failed ? null : () => _open(choice),
       message: failed
           ? 'Couldn’t open this stream. Choose another result.'
           : null,
       actionLabel: choice.isTorrent ? 'Buffer & play' : 'Play',
       tags: [
-        PlaybackPickerTag(
-          choice.provider.toUpperCase(),
-          color: playbackPickerProviderColor,
-        ),
-        PlaybackPickerTag(choice.quality, color: playbackPickerQualityColor),
-        PlaybackPickerTag(transport, color: playbackPickerAccent),
-        PlaybackPickerTag(choice.origin, color: Colors.white70),
+        (text: transport, color: _accent),
+        (text: choice.origin, color: Colors.white70),
         if (choice.audioType case final String audio)
-          PlaybackPickerTag(audio, color: Colors.white70)
+          (text: audio, color: Colors.white70)
         else if (choice.audio == null && discovery.selection.matchAudio)
-          const PlaybackPickerTag('Audio unconfirmed', color: Colors.white70),
+          (text: 'Audio unconfirmed', color: Colors.white70),
         if (choice.audio != null && choice.audio != choice.audioType)
-          PlaybackPickerTag(choice.audio!, color: Colors.white70),
-        if (bytes != null)
-          PlaybackPickerTag(
-            formatPlaybackPickerSize(bytes),
-            color: Colors.white70,
-          )
-        else if (discovery.selection.maxFileGb > 0)
-          const PlaybackPickerTag('Size unknown', color: Colors.white70),
-        if (torrent != null) ...playbackPickerPeerTags(torrent),
+          (text: choice.audio!, color: Colors.white70),
+        if (bytes == null && discovery.selection.maxFileGb > 0)
+          (text: 'Size unknown', color: Colors.white70),
         if (torrent?.isBatch == true)
-          PlaybackPickerTag(
-            discovery.selection.maxFileGb > 0
+          (
+            text: discovery.selection.maxFileGb > 0
                 ? 'Episode size unknown'
                 : 'Pack · episode ${discovery.episode}',
             color: Colors.white70,
           ),
         if (subtitles.isNotEmpty)
-          PlaybackPickerTag(
-            'Subtitles: ${subtitles.take(3).join(', ')}',
+          (
+            text: 'Subtitles: ${subtitles.take(3).join(', ')}',
             color: Colors.white70,
           ),
       ],

@@ -517,6 +517,7 @@ class StreamPlaybackSettings extends ConsumerWidget {
                 ),
 
                 ExpansionTile(
+                  key: const PageStorageKey('stream-customise'),
                   title: const Text('Customise'),
                   children: [
                     ListTile(
@@ -647,6 +648,7 @@ class StreamPlaybackSettings extends ConsumerWidget {
                   ),
                 ),
                 ExpansionTile(
+                  key: const PageStorageKey('stream-advanced'),
                   title: const Text('Advanced'),
                   children: [
                     ListTile(
