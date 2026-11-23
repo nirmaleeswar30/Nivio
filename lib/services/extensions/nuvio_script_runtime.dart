@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
@@ -23,6 +24,8 @@ Future<List<Map<String, dynamic>>> _execute(
   final client = extensionHttpClient();
   var requests = 0;
   final runtime = getJavascriptRuntime(
+    // The Windows default runs out of stack inside the web URL parser.
+    stackSize: Platform.isWindows ? 512 * 1024 : null,
     timeout: 2000,
     memoryLimit: 48 * 1024 * 1024,
     webApis: JsWebApis.standard(
@@ -164,7 +167,8 @@ Future<List<Map<String, dynamic>>> _execute(
             (typeof getStreams === 'function' ? getStreams : globalThis.getStreams?.getStreams);
         })();
         if (typeof resolver !== 'function') throw new Error('Missing getStreams export');
-        const result = await resolver(...${jsonEncode(arguments)});
+        const args = ${jsonEncode(arguments)}.map(value => value ?? undefined);
+        const result = await resolver(...args);
         const streams = Array.isArray(result) ? result : result?.streams;
         sendMessage('nivioResult', JSON.stringify(JSON.stringify({streams: (streams || []).slice(0, 100)})));
       })().catch(error => sendMessage('nivioResult', JSON.stringify(JSON.stringify({error: String(error)}))));

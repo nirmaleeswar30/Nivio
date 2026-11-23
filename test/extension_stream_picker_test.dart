@@ -67,7 +67,30 @@ final _vidRock = StreamChoice(
 
 class _UnusedStreamingService implements StreamingService {
   @override
+  int totalProvidersFor({required bool isAnime}) => 0;
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FixtureRepository extends ExtensionRepository {
+  _FixtureRepository(this.script);
+
+  final File script;
+
+  @override
+  Future<List<ExtensionRepo>> list() async => [
+    ExtensionRepo(
+      url: _repo.url,
+      name: _repo.name,
+      format: _repo.format,
+      entries: _repo.entries,
+      enabledIds: {_repo.providers.single.id},
+    ),
+  ];
+
+  @override
+  Future<File> package(ExtensionProvider provider) async => script;
 }
 
 class _PickerTmdb implements TmdbService {
@@ -514,6 +537,47 @@ void main() {
         streams.single['title'],
         '42:tv:1:2:5d41402abc4b2a76b9719d911017c592',
       );
+    },
+    skip: Platform.environment['FLUTTER_QJS_NEXT_LIBRARY'] == null
+        ? 'Set FLUTTER_QJS_NEXT_LIBRARY to the built QuickJS library to run the native fixture.'
+        : false,
+  );
+
+  test(
+    'an enabled Nuvio provider can construct a request and populate Direct results',
+    () async {
+      final fixture = await Directory.systemTemp.createTemp('nivio-provider-');
+      addTearDown(() => fixture.delete(recursive: true));
+      final script = await File('${fixture.path}/demo.js').writeAsString(r'''
+        module.exports.getStreams = async (id, type, season = 1, episode = 1) => {
+          const request = new Request(new URL('/fixture.mp4', 'https://example.com'));
+          const response = new Response(JSON.stringify({quality: '1080p'}));
+          return [{ url: request.url, title: `${type}:${id}:${season}:${episode}`,
+            quality: (await response.json()).quality }];
+        };
+      ''');
+      final discovery = StreamDiscovery(
+        media: const SearchResult(
+          id: 10,
+          mediaType: 'movie',
+          title: 'Example movie',
+        ),
+        season: 1,
+        episode: 1,
+        streaming: _UnusedStreamingService(),
+        repository: _FixtureRepository(script),
+        subDub: 'sub',
+        preferredQuality: null,
+      );
+      addTearDown(discovery.dispose);
+
+      await discovery.search();
+
+      expect(discovery.failures, isEmpty);
+      final choice = discovery.choices.single;
+      expect(choice.title, 'movie:10:1:1');
+      expect(choice.origin, _repo.name);
+      expect(choice.direct?.url, 'https://example.com/fixture.mp4');
     },
     skip: Platform.environment['FLUTTER_QJS_NEXT_LIBRARY'] == null
         ? 'Set FLUTTER_QJS_NEXT_LIBRARY to the built QuickJS library to run the native fixture.'

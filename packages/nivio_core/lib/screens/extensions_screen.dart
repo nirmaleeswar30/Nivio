@@ -21,6 +21,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen> {
 
   final _url = TextEditingController();
   List<ExtensionRepo>? _repos;
+  Uri? _newRepository;
   bool _busy = true;
   bool _loadFailed = false;
 
@@ -107,8 +108,10 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen> {
     final text = _url.text.trim();
     if (text.isEmpty) return;
     _update(() async {
-      await _service.add(text);
-      if (mounted && _url.text.trim() == text) _url.clear();
+      final repo = await _service.add(text);
+      if (!mounted) return;
+      _newRepository = repo.url;
+      if (_url.text.trim() == text) _url.clear();
     });
   }
 
@@ -253,12 +256,19 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen> {
       padding: const EdgeInsets.only(bottom: 8),
       child: StreamPanel(
         child: ExpansionTile(
+          initiallyExpanded: repo.url == _newRepository,
           leading: const StreamGlyph(PhosphorIconsRegular.puzzlePiece),
           title: Text(repo.name),
           subtitle: Text(
             '${isCloudstream ? 'Cloudstream' : 'Nuvio JavaScript'} · $count enabled${available ? '' : ' · Android only'}',
           ),
           children: [
+            if (count == 0 && available)
+              const ListTile(
+                dense: true,
+                title: Text('Enable a provider to search for streams.'),
+                subtitle: Text('Direct results appear when torrents are off.'),
+              ),
             OverflowBar(
               alignment: MainAxisAlignment.end,
               children: [

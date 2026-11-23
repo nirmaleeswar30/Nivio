@@ -122,7 +122,7 @@ class ExtensionRepository {
     }
   }
 
-  Future<void> add(String input) async {
+  Future<ExtensionRepo> add(String input) async {
     final uri = Uri.tryParse(
       input.trim().replaceFirst(
         RegExp('^cloudstreamrepo://', caseSensitive: false),
@@ -147,8 +147,10 @@ class ExtensionRepository {
     }
     final repo = await _readManifest(url);
     final repositories = await list();
-    if (repositories.any((item) => item.url == url)) return;
+    final existing = repositories.where((item) => item.url == url).firstOrNull;
+    if (existing != null) return existing;
     await _save([...repositories, repo]);
+    return repo;
   }
 
   Future<void> refresh(ExtensionRepo repo) async {
