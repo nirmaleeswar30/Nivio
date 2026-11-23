@@ -230,6 +230,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Stopwatch? _streamSelectionClock;
   _StreamProbe? _firstReachableProbe;
   bool _streamPickerOpen = false;
+  bool _serverOverlayOpen = false;
 
   bool get _usesStreamPicker => widget.providerIndex == null &&
       widget.watchPartyCode == null && widget.directStreamUrl == null &&
@@ -1108,82 +1109,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       while (mounted && !_isDeactivated) {
         final settings = await ref.read(streamSelectionSettingsProvider.future);
         if (!mounted || _isDeactivated) return null;
-        final streaming = ref.read(streamingServiceProvider);
         if (ref.read(enableTorrentsProvider)) {
-          final pickerSearch = await ExtensionTorrentSearch.forPicker(
-            builtIn: streaming.torrentStreamService,
-            media: media,
-            repository: repository,
-            settings: settings,
-          );
-          if (!mounted || _isDeactivated) return null;
-          final result = await streaming.fetchTorrentStream(
-            media: media,
-            season: widget.season,
-            episode: _currentEpisode,
-            preferredQuality: preferredQuality,
-            context: context,
+          return await _chooseTorrentStream(
+            media,
+            preferredQuality,
+            settings,
+            repository,
             binge: allowAuto && _bingeMode && _currentEpisode != widget.episode,
-            pickerSearch: pickerSearch,
-            onStatusUpdate: (status) {
-              if (mounted && !_isDeactivated) setState(() => _loadingMessage = status);
-            },
           );
-          return result == null ? null : StreamPickerOutcome(result: result);
         }
-        final presetHeight = settings.resolutions.firstOrNull;
-        final directQuality =
-            preferredQuality ?? (presetHeight == null ? null : '${presetHeight}p');
-        final String audioLanguage =
-            _currentHistory?.preferredAudioTrack ??
-            ref.read(preferredAudioLanguageProvider);
-        final String subtitleLanguage =
-            _currentHistory?.preferredSubtitleTrack ??
-            ref.read(preferredSubtitleLanguageProvider);
-        var search = _streamDiscovery;
-        if (search == null || search.episode != _currentEpisode ||
-            search.season != widget.season || search.media.id != media.id ||
-            search.media.mediaType != media.mediaType ||
-            search.selection != settings ||
-            search.preferredAudio != audioLanguage ||
-            search.preferredSubtitle != subtitleLanguage ||
-            search.preferredQuality != directQuality || search.subDub != subDub) {
-          search?.dispose();
-          search = StreamDiscovery(
-            media: media,
-            season: widget.season,
-            episode: _currentEpisode,
-            streaming: streaming,
-            repository: repository,
-            subDub: subDub,
-            preferredQuality: directQuality,
-            preferredAudio: audioLanguage,
-            preferredSubtitle: subtitleLanguage,
-            previous: _lastStreamChoice,
-            inspectVideoHeights: (stream) async {
-              final probe = await _probeStreamCandidate(
-                StreamSource(
-                  url: stream.url,
-                  quality: stream.quality,
-                  isM3U8: stream.isM3U8,
-                ),
-                _buildPlaybackHeaders(stream.headers),
-              );
-              return probe?.videoHeights ?? const [];
-            },
-            selection: settings,
-          );
-          _streamDiscovery = search;
-          _autoStreamAttempts = 0;
-          _streamSelectionClock = Stopwatch()..start();
-          unawaited(search.search());
+        final search = _discoverDirectStreams(
+          media, preferredQuality, subDub, settings, repository,
+        );
+        if (allowAuto && settings.mode == StreamSelectionMode.match) {
+          return await _autoSelectStream(search, settings) ??
+              const StreamPickerOutcome(automatic: true);
         }
-        final directSearch = search;
         final outcome = await DirectStreamPickerSheet.show(
           context,
-          directSearch,
-          selectAutomatically: allowAuto && settings.mode != StreamSelectionMode.manual
-              ? () => _autoSelectStream(directSearch, settings)
+          search,
+          selectAutomatically: allowAuto && settings.mode == StreamSelectionMode.first
+              ? () => _autoSelectStream(search, settings)
               : null,
         );
         if (outcome?.refresh != true || !mounted) return outcome;
@@ -1196,6 +1142,97 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } finally {
       _streamPickerOpen = false;
     }
+  }
+
+  Future<StreamPickerOutcome?> _chooseTorrentStream(
+    SearchResult media,
+    String? preferredQuality,
+    StreamSelectionSettings settings,
+    ExtensionRepository repository, {
+    bool binge = false,
+    bool Function()? onManualSwitch,
+  }) async {
+    final streaming = ref.read(streamingServiceProvider);
+    final episode = _currentEpisode;
+    final pickerSearch = await ExtensionTorrentSearch.forPicker(
+      builtIn: streaming.torrentStreamService,
+      media: media,
+      repository: repository,
+      settings: settings,
+    );
+    if (!mounted || _isDeactivated || episode != _currentEpisode) return null;
+    final result = await streaming.fetchTorrentStream(
+      media: media,
+      season: widget.season,
+      episode: episode,
+      preferredQuality: preferredQuality,
+      context: context,
+      binge: binge,
+      pickerSearch: pickerSearch,
+      onManualSwitch: onManualSwitch,
+      onStatusUpdate: (status) {
+        if (mounted && !_isDeactivated && episode == _currentEpisode && _isLoading) {
+          setState(() => _loadingMessage = status);
+        }
+      },
+    );
+    return result == null ? null : StreamPickerOutcome(result: result);
+  }
+
+  StreamDiscovery _discoverDirectStreams(
+    SearchResult media,
+    String? preferredQuality,
+    String subDub,
+    StreamSelectionSettings settings,
+    ExtensionRepository repository,
+  ) {
+    final presetHeight = settings.resolutions.firstOrNull;
+    final directQuality =
+        preferredQuality ?? (presetHeight == null ? null : '${presetHeight}p');
+    final String audioLanguage = _currentHistory?.preferredAudioTrack ??
+        ref.read(preferredAudioLanguageProvider);
+    final String subtitleLanguage = _currentHistory?.preferredSubtitleTrack ??
+        ref.read(preferredSubtitleLanguageProvider);
+    final current = _streamDiscovery;
+    if (current != null && current.episode == _currentEpisode &&
+        current.season == widget.season && current.media.id == media.id &&
+        current.media.mediaType == media.mediaType &&
+        current.selection == settings && current.preferredAudio == audioLanguage &&
+        current.preferredSubtitle == subtitleLanguage &&
+        current.preferredQuality == directQuality && current.subDub == subDub) {
+      return current;
+    }
+
+    current?.dispose();
+    final search = StreamDiscovery(
+      media: media,
+      season: widget.season,
+      episode: _currentEpisode,
+      streaming: ref.read(streamingServiceProvider),
+      repository: repository,
+      subDub: subDub,
+      preferredQuality: directQuality,
+      preferredAudio: audioLanguage,
+      preferredSubtitle: subtitleLanguage,
+      previous: _lastStreamChoice,
+      inspectVideoHeights: (stream) async {
+        final probe = await _probeStreamCandidate(
+          StreamSource(
+            url: stream.url,
+            quality: stream.quality,
+            isM3U8: stream.isM3U8,
+          ),
+          _buildPlaybackHeaders(stream.headers),
+        );
+        return probe?.videoHeights ?? const [];
+      },
+      selection: settings,
+    );
+    _streamDiscovery = search;
+    _autoStreamAttempts = 0;
+    _streamSelectionClock = Stopwatch()..start();
+    unawaited(search.search());
+    return search;
   }
 
   String _streamBingeKey(SearchResult media) =>
@@ -1582,11 +1619,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         final selected = picked ?? await _chooseStream(
           media, preferredQuality, subDubPref, allowAuto: allowAuto,
         );
-        if (!mounted) return;
+        if (!mounted || _isDeactivated) return;
         if (selected?.result == null) {
           setState(() {
             _isLoading = false;
-            _error = 'Choose a stream to start playback.';
+            _error = selected?.automatic == true
+                ? 'No playable streams matched your preferences.'
+                : 'Choose a stream to start playback.';
           });
           return;
         }
@@ -4682,7 +4721,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     final isTorrent = fullName == 'Nivio Torrents';
     final isDirect = service.isDirectStream(index, isAnime: isAnime);
-    final accent = Theme.of(context).primaryColor;
     final IconData icon;
     final String kind;
     if (isTorrent) {
@@ -4696,15 +4734,36 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       kind = 'Embed';
     }
 
+    return _buildSourceCard(
+      title: providerName,
+      detail: kind,
+      icon: icon,
+      isCurrent: isCurrent,
+      isTorrent: isTorrent,
+      wide: wide,
+      onTap: () {
+        Navigator.of(context).pop();
+        if (!isCurrent) _switchToProvider(index);
+      },
+    );
+  }
+
+  Widget _buildSourceCard({
+    required String title,
+    required String detail,
+    required IconData icon,
+    required bool isCurrent,
+    required VoidCallback onTap,
+    bool isTorrent = false,
+    bool wide = false,
+  }) {
+    final accent = Theme.of(context).primaryColor;
     return Material(
       color: isCurrent ? accent.withValues(alpha: 0.22) : Colors.white.withValues(alpha: 0.07),
       borderRadius: BorderRadius.circular(16),
       child: FocusableInkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () {
-          Navigator.of(context).pop();
-          if (!isCurrent) _switchToProvider(index);
-        },
+        onTap: onTap,
         child: Container(
           padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
           decoration: BoxDecoration(
@@ -4740,7 +4799,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ),
               if (!wide) const Spacer() else const SizedBox(height: 10),
               Text(
-                providerName,
+                title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -4751,7 +4810,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ),
               const SizedBox(height: 2),
               Text(
-                isCurrent ? '$kind · Playing' : kind,
+                isCurrent ? '$detail · Playing' : detail,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.white60, fontSize: 12),
@@ -4771,7 +4830,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ),
       );
 
-  Widget _providerGrid(List<int> indices, SearchResult? media) => GridView.count(
+  Widget _sourceCardGrid(List<Widget> cards) => GridView.count(
         crossAxisCount: 2,
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
@@ -4779,7 +4838,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         mainAxisSpacing: 10,
         crossAxisSpacing: 10,
         childAspectRatio: 1.65,
-        children: [for (final i in indices) _buildProviderCard(i, media)],
+        children: cards,
       );
 
   /// Server picker contents: Nivio Torrents as a full-width card, then
@@ -4817,7 +4876,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     for (final entry in groups.entries) {
       widgets.add(_providerSectionLabel(entry.key));
-      widgets.add(_providerGrid(entry.value, media));
+      widgets.add(_sourceCardGrid([
+        for (final i in entry.value) _buildProviderCard(i, media),
+      ]));
     }
     widgets.add(const SizedBox(height: 16));
     return widgets;
@@ -4992,12 +5053,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  void _disposePlayer() {
+  Future<void> _disposePlayer() {
     _saveProgress(); // Ensure we save one last time on exit
     _progressTimer?.cancel();
     _removeFullscreenTopBarOverlayEntry();
     _removeTrackingPromptOverlay();
-    _player.stop();
+    return _player.stop();
   }
 
   @override
@@ -5400,7 +5461,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       unawaited(_switchManualStream(media));
       return;
     }
-    showGeneralDialog(
+    unawaited(_showServerOverlay<void>(
+      (_) => ListView(
+        padding: EdgeInsets.zero,
+        children: _buildProviderListTiles(media),
+      ),
+    ));
+  }
+
+  Future<T?> _showServerOverlay<T>(WidgetBuilder content) {
+    return showGeneralDialog<T>(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Server Overlay',
@@ -5440,12 +5510,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         ],
                       ),
                     ),
-                    Expanded(
-                      child: ListView(
-                        padding: EdgeInsets.zero,
-                        children: _buildProviderListTiles(media),
-                      ),
-                    ),
+                    Expanded(child: content(context)),
                   ],
                 ), // Column
               ), // SafeArea
@@ -5472,14 +5537,161 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Future<void> _switchManualStream(SearchResult media) async {
-    final quality = ref.read(videoQualityProvider);
-    final subDub = ref.read(languagePreferencesProvider).animePreferredAudio;
-    final selected = await _chooseStream(media, quality == 'auto' ? null : quality, subDub);
-    if (!mounted || selected?.result == null) return;
-    _resumePosition = _isDirectStream ? _player.state.position : _webViewPosition;
-    _disposePlayer();
-    await _initializePlayer(picked: selected);
+    final currentStream = _streamResult;
+    if (_serverOverlayOpen || _isLoading || currentStream == null) return;
+    final episode = _currentEpisode;
+    bool isCurrentStream() =>
+        mounted && !_isDeactivated && _currentEpisode == episode &&
+        identical(_streamResult, currentStream);
+    Duration playbackPosition() {
+      if (_useNativePlayer) return _nativePosition;
+      return _isDirectStream ? _player.state.position : _webViewPosition;
+    }
+
+    _serverOverlayOpen = true;
+    var switching = false;
+    try {
+      final settings = await ref.read(streamSelectionSettingsProvider.future);
+      if (!isCurrentStream() || _isLoading) return;
+      final quality = ref.read(videoQualityProvider);
+      final preferredQuality = quality == 'auto' ? null : quality;
+      final repository = ref.read(extensionRepositoryProvider);
+      StreamPickerOutcome? selected;
+      Duration? resumePosition;
+
+      if (ref.read(enableTorrentsProvider)) {
+        final changeTorrent = await _showServerOverlay<bool>(
+          (panelContext) => ListView(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            children: [
+              _buildSourceCard(
+                title: 'Nivio Torrents',
+                detail: 'Choose a release',
+                icon: Icons.cloud_download_rounded,
+                isCurrent: currentStream.provider == 'Nivio Torrents',
+                isTorrent: true,
+                wide: true,
+                onTap: () => Navigator.of(panelContext).pop(true),
+              ),
+            ],
+          ),
+        );
+        if (changeTorrent != true || !isCurrentStream() || _isLoading) return;
+        selected = await _chooseTorrentStream(
+          media,
+          preferredQuality,
+          settings,
+          repository,
+          onManualSwitch: () {
+            if (!isCurrentStream() || _isLoading) return false;
+            resumePosition = playbackPosition();
+            switching = true;
+            setState(() {
+              _isLoading = true;
+              _loadingMessage = 'Preparing torrent…';
+            });
+            return true;
+          },
+        );
+      } else {
+        final subDub = ref.read(languagePreferencesProvider).animePreferredAudio;
+        final search = _discoverDirectStreams(
+          media, preferredQuality, subDub, settings, repository,
+        );
+        final choice = await _showServerOverlay<StreamChoice>(
+          (panelContext) => _buildDirectSourceCards(
+            panelContext, search, currentStream,
+          ),
+        );
+        if (choice != null) {
+          selected = StreamPickerOutcome(choice: choice, result: choice.direct);
+        }
+      }
+
+      final result = selected?.result;
+      if (!isCurrentStream() || result == null ||
+          (result.url == currentStream.url && result.provider == currentStream.provider)) {
+        return;
+      }
+
+      final position = resumePosition ?? playbackPosition();
+      switching = true;
+      setState(() {
+        _isLoading = true;
+        _loadingMessage = 'Switching source…';
+      });
+      await _disposePlayer();
+      if (!isCurrentStream()) return;
+      _resumePosition = position;
+      await _initializePlayer(picked: selected);
+    } catch (error) {
+      appDebugLog('Could not switch playback source: $error');
+      if (isCurrentStream()) {
+        _messenger.showSnackBar(
+          const SnackBar(content: Text('Could not switch source.')),
+        );
+      }
+    } finally {
+      if (switching && isCurrentStream() && _isLoading) {
+        setState(() {
+          _isLoading = false;
+          _loadingMessage = null;
+        });
+      }
+      _serverOverlayOpen = false;
+    }
   }
+
+  Widget _buildDirectSourceCards(
+    BuildContext panelContext,
+    StreamDiscovery search,
+    StreamResult currentStream,
+  ) => ListenableBuilder(
+    listenable: search,
+    builder: (context, _) {
+      final choices = search.orderForPicker(
+        search.availableChoices.where((choice) => choice.isDirect).toList(),
+        resolution: search.selection.resolutions.firstOrNull,
+      );
+      if (choices.isEmpty) {
+        return Center(
+          child: search.searching
+              ? const CircularProgressIndicator()
+              : const Text(
+                  'No direct streams found.',
+                  style: TextStyle(color: Colors.white70),
+                ),
+        );
+      }
+      return ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          _providerSectionLabel('Direct'),
+          _sourceCardGrid([
+            for (final choice in choices)
+              _buildSourceCard(
+                title: choice.title,
+                detail: [
+                  if (choice.provider != choice.title) choice.provider,
+                  if (choice.knownResolutions.isEmpty ||
+                      (choice.reportedResolution == null &&
+                          !const {'', 'auto', 'unknown', 'unknown quality'}
+                              .contains(choice.quality.trim().toLowerCase())))
+                    choice.quality,
+                  if (choice.knownResolutions.isNotEmpty)
+                    choice.knownResolutions.map((height) => '${height}p').join(' / '),
+                ].join(' · '),
+                icon: Icons.bolt_rounded,
+                isCurrent: choice.direct?.url == currentStream.url &&
+                    choice.provider == currentStream.provider,
+                onTap: () => Navigator.of(panelContext).pop(choice),
+              ),
+          ]),
+          const SizedBox(height: 16),
+        ],
+      );
+    },
+  );
 
   // ignore: unused_element
   Future<void> _switchNativeStreamSource(StreamSource source) async {

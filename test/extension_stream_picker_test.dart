@@ -227,45 +227,65 @@ void main() {
     discovery.dispose();
   });
 
-  testWidgets('the original torrent picker returns the selected torrent', (
-    tester,
-  ) async {
-    SharedPreferences.setMockInitialValues({'torrent_auto_select': false});
-    (TorrentResult, dynamic, {bool automatic})? picked;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
-          builder: (context) => Scaffold(
-            body: TextButton(
-              onPressed: () async {
-                picked = await TorrentPickerSheet.show(
-                  context,
-                  media: const SearchResult(
-                    id: 10,
-                    mediaType: 'movie',
-                    title: 'Example movie',
-                  ),
-                  initialEpisode: 1,
-                  initialSeason: 1,
-                  initialResolution: '1080',
-                  torrentStreamService: _PickerTorrents(),
-                );
-              },
-              child: const Text('Open torrent picker'),
+  for (final duringPlayback in [false, true]) {
+    testWidgets(
+      duringPlayback
+          ? 'the in-player torrent chooser waits for a tap and can be dismissed'
+          : 'the original torrent picker returns the selected torrent',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({
+          'torrent_auto_select': duringPlayback,
+        });
+        (TorrentResult, dynamic, {bool automatic})? picked;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: TextButton(
+                  onPressed: () async {
+                    picked = await TorrentPickerSheet.show(
+                      context,
+                      media: const SearchResult(
+                        id: 10,
+                        mediaType: 'movie',
+                        title: 'Example movie',
+                      ),
+                      initialEpisode: 1,
+                      initialSeason: 1,
+                      initialResolution: '1080',
+                      torrentStreamService: _PickerTorrents(),
+                      allowAutoSelect: !duringPlayback,
+                    );
+                  },
+                  child: const Text('Open torrent picker'),
+                ),
+              ),
             ),
           ),
-        ),
-      ),
-    );
-    await tester.tap(find.text('Open torrent picker'));
-    await tester.pumpAndSettle();
-    expect(find.byType(TorrentPickerSheet), findsOneWidget);
+        );
+        final open = find.text('Open torrent picker');
+        final picker = find.byType(TorrentPickerSheet);
+        await tester.tap(open);
+        await tester.pumpAndSettle();
+        expect(picker, findsOneWidget);
 
-    await tester.tap(find.text('Torrent release'));
-    await tester.pumpAndSettle();
-    expect(picked?.$1, _torrent.torrent);
-    expect(picked?.automatic, isFalse);
-  });
+        if (duringPlayback) {
+          await tester.pump(const Duration(seconds: 6));
+          expect(picker, findsOneWidget);
+          Navigator.of(tester.element(picker)).pop();
+          await tester.pumpAndSettle();
+          expect(picked, isNull);
+          await tester.tap(open);
+          await tester.pumpAndSettle();
+        }
+
+        await tester.tap(find.text('Torrent release'));
+        await tester.pumpAndSettle();
+        expect(picked?.$1, _torrent.torrent);
+        expect(picked?.automatic, isFalse);
+      },
+    );
+  }
 
   test(
     'QuickJS runs a CommonJS provider with episode arguments and host modules',

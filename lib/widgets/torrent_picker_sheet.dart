@@ -21,6 +21,7 @@ class TorrentPickerSheet extends StatefulWidget {
   final TorrentStreamService torrentStreamService;
   final void Function(String status)? onStatusUpdate;
   final bool isFullScreen;
+  final bool allowAutoSelect;
 
   const TorrentPickerSheet({
     super.key,
@@ -32,6 +33,7 @@ class TorrentPickerSheet extends StatefulWidget {
     required this.torrentStreamService,
     this.onStatusUpdate,
     this.isFullScreen = false,
+    this.allowAutoSelect = true,
   });
 
   static Future<(TorrentResult, dynamic, {bool automatic})?> show(
@@ -43,6 +45,7 @@ class TorrentPickerSheet extends StatefulWidget {
     required String initialResolution,
     required TorrentStreamService torrentStreamService,
     void Function(String status)? onStatusUpdate,
+    bool allowAutoSelect = true,
   }) {
     final isMobile = Platform.isAndroid || Platform.isIOS;
     if (isMobile) {
@@ -59,6 +62,7 @@ class TorrentPickerSheet extends StatefulWidget {
               torrentStreamService: torrentStreamService,
               onStatusUpdate: onStatusUpdate,
               isFullScreen: true,
+              allowAutoSelect: allowAutoSelect,
             ),
           ),
         ),
@@ -81,6 +85,7 @@ class TorrentPickerSheet extends StatefulWidget {
           torrentStreamService: torrentStreamService,
           onStatusUpdate: onStatusUpdate,
           isFullScreen: false,
+          allowAutoSelect: allowAutoSelect,
         ),
       ),
     );
@@ -200,7 +205,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         _filteredResults = results;
       });
       
-      if (results.isNotEmpty) {
+      if (results.isNotEmpty && widget.allowAutoSelect) {
         final prefs = await SharedPreferences.getInstance();
         final autoSelect = prefs.getBool('torrent_auto_select') ?? true;
         if (autoSelect) {
