@@ -948,19 +948,55 @@ class _RegexDialogState extends State<_RegexDialog> {
   Widget build(BuildContext context) => AlertDialog(
     backgroundColor: NivioTheme.surfaceColorOf(context),
     title: const Text('Custom Regex Override'),
+    scrollable: true,
     content: SizedBox(
       width: 440,
       child: Form(
         key: _form,
-        child: TextFormField(
-          controller: _controller,
-          maxLength: 512,
-          decoration: const InputDecoration(
-            labelText: 'Pattern',
-            hintText: r'1080p.*WEB[ .-]?DL',
-            helperText: 'Leave empty to use your quality preset.',
-          ),
-          validator: (value) => validateStreamRegex(value?.trim() ?? ''),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            PopupMenuButton<StreamRegexPreset>(
+              tooltip: 'Choose a regex preset',
+              color: NivioTheme.surfaceColorOf(context),
+              onSelected: (preset) {
+                _controller.value = TextEditingValue(
+                  text: preset.pattern,
+                  selection: TextSelection.collapsed(
+                    offset: preset.pattern.length,
+                  ),
+                );
+              },
+              itemBuilder: (_) => [
+                for (final preset in StreamRegexPreset.values)
+                  CheckedPopupMenuItem(
+                    value: preset,
+                    checked: _controller.text.trim() == preset.pattern,
+                    child: Text(preset.label),
+                  ),
+              ],
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Row(
+                  children: [
+                    Expanded(child: Text('Regex presets')),
+                    Icon(Icons.arrow_drop_down),
+                  ],
+                ),
+              ),
+            ),
+            TextFormField(
+              controller: _controller,
+              maxLength: 512,
+              decoration: const InputDecoration(
+                labelText: 'Pattern',
+                hintText: r'1080p.*WEB[ .-]?DL',
+                helperText: 'Leave empty to use your quality preset.',
+              ),
+              validator: (value) => validateStreamRegex(value?.trim() ?? ''),
+            ),
+          ],
         ),
       ),
     ),

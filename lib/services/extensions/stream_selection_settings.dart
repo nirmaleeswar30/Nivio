@@ -52,12 +52,49 @@ enum StreamExclusion {
 }
 
 enum StreamFeature {
-  hevc('HEVC / x265'),
-  hdr('HDR10'),
-  dolbyVision('Dolby Vision');
+  webSources('WEB Sources', r'\bweb[ ._-]?(?:dl|rip)\b'),
+  bluRayQuality(
+    'BluRay Quality',
+    r'\b(?:blu[ ._-]?ray|b[dr][ ._-]?rip|remux)\b',
+  ),
+  remux('Remux', r'\bremux\b'),
+  hevc('HEVC / x265', r'\b(?:x265|h[ ._-]?265|hevc|hev1|hvc1)\b'),
+  avc('AVC / x264', r'\b(?:x264|h[ ._-]?264|avc1?)\b'),
+  hdr('HDR / HDR10 / HDR10+', r'\bhdr(?:10)?\b'),
+  dolbyVision('Dolby Vision', r'\b(?:dovi|dv|dolby[ ._-]?vision)\b'),
+  dolbyAtmosDts(
+    'Dolby Atmos / DTS',
+    r'\b(?:atmos|true[ ._-]?hd|dts(?:[ ._:-]?(?:hd|x))?)\b',
+  );
 
-  const StreamFeature(this.label);
+  const StreamFeature(this.label, this.pattern);
   final String label;
+  final String pattern;
+}
+
+// Nuvio Mobile's regex presets, in the order shown in Playback settings.
+enum StreamRegexPreset {
+  any1080p('Any 1080p+', r'(2160p|4k|1080p)'),
+  remux4k('4K / Remux', r'(2160p|4k|remux)'),
+  standard1080p('1080p Standard', r'(1080p|full\s*hd)'),
+  smaller720p('720p / Smaller', r'(720p|webrip|web-dl)'),
+  webSources('WEB Sources', r'(web[-\s]?dl|webrip)'),
+  bluRayQuality('BluRay Quality', r'(bluray|b[dr]rip|remux)'),
+  hevc('HEVC / x265', r'(hevc|x265|h\.265)'),
+  avc('AVC / x264', r'(x264|h\.264|avc)'),
+  hdrDolbyVision('HDR / Dolby Vision', r'(hdr|hdr10\+?|dv|dolby\s*vision)'),
+  dolbyAtmosDts('Dolby Atmos / DTS', r'(atmos|truehd|dts[-\s]?hd|dtsx?)'),
+  english('English', r'(\beng\b|english)'),
+  noCamTs('No CAM/TS', r'^(?!.*\b(cam|hdcam|ts|telesync)\b).*$'),
+  // Matching is already case-insensitive. [\s\S] replaces Kotlin's dot-all flag.
+  noRemuxHdr(
+    'No REMUX/HDR',
+    r'^(?![\s\S]*\b(hdr|hdr10|dv|dolby|vision|hevc|remux|2160p)\b)[\s\S]+$',
+  );
+
+  const StreamRegexPreset(this.label, this.pattern);
+  final String label;
+  final String pattern;
 }
 
 class StreamPresetOptions {

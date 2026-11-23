@@ -60,6 +60,10 @@ class StreamSelection {
   final bool isAnime;
   late final _wantedAudio = _languageCodes(audio);
   late final _wantedSubtitles = _languageCodes(subtitle);
+  late final _preferredFormats = [
+    for (final feature in settings.features)
+      RegExp(feature.pattern, caseSensitive: false),
+  ];
 
   static final _blocked = {
     StreamExclusion.cam: RegExp(
@@ -251,16 +255,9 @@ class StreamSelection {
 
   int _featureScore(StreamChoice choice) {
     final text = choice.releaseLabel.toLowerCase();
-    var score = 0;
-    if (settings.features.contains(StreamFeature.hevc) &&
-        RegExp(r'\b(?:x265|h[ .]?265|hevc)\b').hasMatch(text))
-      score++;
-    if (settings.features.contains(StreamFeature.hdr) &&
-        RegExp(r'\bhdr(?:10(?:\+)?)?\b').hasMatch(text))
-      score++;
-    if (settings.features.contains(StreamFeature.dolbyVision) &&
-        RegExp(r'\b(?:dovi|dv|dolby[ ._-]?vision)\b').hasMatch(text))
-      score++;
+    var score = _preferredFormats
+        .where((pattern) => pattern.hasMatch(text))
+        .length;
     if (settings.preset == StreamPreset.balanced &&
         RegExp(r'\b(?:web[ ._-]?dl|blu[ ._-]?ray)\b').hasMatch(text))
       score++;

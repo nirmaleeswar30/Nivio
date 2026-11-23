@@ -10,6 +10,7 @@ import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/screens/extensions_screen.dart';
 import 'package:nivio/screens/onboarding_screen.dart';
+import 'package:nivio/screens/stream_selection_screen.dart';
 import 'package:nivio/services/extensions/extension_repository.dart';
 import 'package:nivio/services/extensions/extension_resolver.dart';
 import 'package:nivio/services/extensions/stream_discovery.dart';
@@ -222,6 +223,114 @@ void main() {
     expect(await selection.ranked([candidates.first]), isEmpty);
     expect(validateStreamRegex('['), isNotNull);
   });
+
+  test('each preferred format promotes a matching release', () async {
+    const samples = {
+      StreamFeature.webSources: 'Film WEBRip',
+      StreamFeature.bluRayQuality: 'Film BDRip',
+      StreamFeature.remux: 'Film Remux',
+      StreamFeature.hevc: 'Film H.265',
+      StreamFeature.avc: 'Film H.264',
+      StreamFeature.hdr: 'Film HDR10+',
+      StreamFeature.dolbyVision: 'Film Dolby Vision',
+      StreamFeature.dolbyAtmosDts: 'Film DTS:X',
+    };
+    final untagged = _choice('untagged', 'Film', '1080p');
+    for (final feature in StreamFeature.values) {
+      final tagged = _choice(feature.name, samples[feature]!, '1080p');
+      final selection = StreamSelection(
+        const StreamSelectionSettings(
+          mode: StreamSelectionMode.match,
+          preset: StreamPreset.dataSaver,
+        ).copyWith(customFeatures: {feature}),
+        audio: 'Original',
+        animeAudio: 'sub',
+        isAnime: false,
+      );
+      expect(await selection.ranked([untagged, tagged]), [tagged, untagged]);
+    }
+  });
+
+  test(
+    'all regex presets compile and No REMUX/HDR keeps clean releases',
+    () async {
+      for (final preset in StreamRegexPreset.values) {
+        expect(
+          validateStreamRegex(preset.pattern),
+          isNull,
+          reason: preset.label,
+        );
+      }
+      final selection = StreamSelection(
+        StreamSelectionSettings(
+          mode: StreamSelectionMode.match,
+          regex: StreamRegexPreset.noRemuxHdr.pattern,
+        ),
+        audio: 'Original',
+        animeAudio: 'sub',
+        isAnime: false,
+      );
+      final clean = _choice('clean', 'Film WEBRip x264', '1080p');
+      expect(
+        await selection.ranked([
+          _choice('remux', 'Film REMUX', '1080p'),
+          _choice('hdr', 'Film hdr10+', '1080p'),
+          clean,
+        ]),
+        [clean],
+      );
+    },
+  );
+
+  testWidgets(
+    'playback settings expose and save formats and all regex presets',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(home: StreamPickerSettingsScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      Future<void> tapVisible(Finder finder) async {
+        await tester.ensureVisible(finder);
+        await tester.pumpAndSettle();
+        await tester.tap(finder);
+        await tester.pumpAndSettle();
+      }
+
+      await tapVisible(find.text('Customise'));
+      for (final feature in StreamFeature.values) {
+        expect(find.widgetWithText(FilterChip, feature.label), findsOneWidget);
+      }
+      await tapVisible(
+        find.widgetWithText(FilterChip, StreamFeature.avc.label),
+      );
+
+      await tapVisible(find.text('Advanced'));
+      await tapVisible(find.text('Custom Regex Override'));
+      await tapVisible(find.byTooltip('Choose a regex preset'));
+      expect(
+        find.byType(CheckedPopupMenuItem<StreamRegexPreset>),
+        findsNWidgets(13),
+      );
+      await tapVisible(
+        find.widgetWithText(
+          CheckedPopupMenuItem<StreamRegexPreset>,
+          StreamRegexPreset.noRemuxHdr.label,
+        ),
+      );
+      await tapVisible(find.text('Save'));
+
+      final prefs = await SharedPreferences.getInstance();
+      final saved = StreamSelectionSettings.read(prefs);
+      expect(saved.features, contains(StreamFeature.avc));
+      expect(saved.regex, StreamRegexPreset.noRemuxHdr.pattern);
+    },
+  );
 
   test(
     'fastest mode returns a lower-ranked stream when its probe completes first',
