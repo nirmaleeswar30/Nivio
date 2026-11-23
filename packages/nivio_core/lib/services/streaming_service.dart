@@ -192,6 +192,7 @@ class StreamingService {
     void Function(String)? onStatusUpdate,
     BuildContext context,
     TorrentStreamService? pickerSearch, {
+    bool? autoSelect,
     bool Function()? onManualSwitch,
   }) async {
     final selection = await TorrentPickerSheet.show(
@@ -203,7 +204,7 @@ class StreamingService {
       initialResolution: resolution,
       torrentStreamService: pickerSearch ?? torrentStreamService,
       onStatusUpdate: onStatusUpdate,
-      allowAutoSelect: onManualSwitch == null,
+      autoSelect: onManualSwitch == null ? autoSelect : false,
     );
     if (selection == null || !context.mounted || onManualSwitch?.call() == false) {
       return null;
@@ -238,6 +239,7 @@ class StreamingService {
     BuildContext? context,
     bool binge = false,
     TorrentStreamService? pickerSearch,
+    bool? autoSelect,
     bool Function()? onManualSwitch,
   }) async {
     final resMatch =
@@ -281,6 +283,7 @@ class StreamingService {
       if (usePicker) {
         handle = await _pickTorrentInteractively(
           media, episode, season, absoluteEpisode, resolution, onStatusUpdate, context, pickerSearch,
+          autoSelect: autoSelect,
         );
       }
       if (handle != null) {
@@ -307,6 +310,7 @@ class StreamingService {
     } else if (context != null) {
       handle = await _pickTorrentInteractively(
         media, episode, season, absoluteEpisode, resolution, onStatusUpdate, context, pickerSearch,
+        autoSelect: autoSelect,
         onManualSwitch: onManualSwitch,
       );
       if (handle == null) return null; // user cancelled

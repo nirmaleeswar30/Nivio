@@ -1115,6 +1115,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             preferredQuality,
             settings,
             repository,
+            allowAuto: allowAuto,
             binge: allowAuto && _bingeMode && _currentEpisode != widget.episode,
           );
         }
@@ -1149,6 +1150,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     String? preferredQuality,
     StreamSelectionSettings settings,
     ExtensionRepository repository, {
+    bool allowAuto = false,
     bool binge = false,
     bool Function()? onManualSwitch,
   }) async {
@@ -1161,6 +1163,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       settings: settings,
     );
     if (!mounted || _isDeactivated || episode != _currentEpisode) return null;
+    final autoSelect = media.mediaType == 'movie' || media.mediaType == 'tv'
+        ? switch (settings.mode) {
+            StreamSelectionMode.manual => false,
+            StreamSelectionMode.match => allowAuto,
+            StreamSelectionMode.first => null,
+          }
+        : null;
     final result = await streaming.fetchTorrentStream(
       media: media,
       season: widget.season,
@@ -1169,6 +1178,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       context: context,
       binge: binge,
       pickerSearch: pickerSearch,
+      autoSelect: autoSelect,
       onManualSwitch: onManualSwitch,
       onStatusUpdate: (status) {
         if (mounted && !_isDeactivated && episode == _currentEpisode && _isLoading) {

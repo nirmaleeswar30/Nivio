@@ -6,11 +6,14 @@ import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/services/extensions/extension_repository.dart';
 import 'package:nivio/services/extensions/extension_resolver.dart';
+import 'package:nivio/services/extensions/extension_torrent_search.dart';
 import 'package:nivio/services/extensions/nuvio_script_runtime.dart';
 import 'package:nivio/services/extensions/stream_discovery.dart';
+import 'package:nivio/services/extensions/stream_selection_settings.dart';
 import 'package:nivio/services/m3u8_parser.dart';
 import 'package:nivio/services/streaming_service.dart';
 import 'package:nivio/services/tmdb_service.dart';
+import 'package:nivio/services/torrent/media_ranking.dart';
 import 'package:nivio/services/torrent/media_torrent_models.dart';
 import 'package:nivio/services/torrent/torrent_models.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
@@ -78,15 +81,28 @@ class _PickerTmdb implements TmdbService {
 }
 
 class _PickerTorrents extends TorrentStreamService {
-  _PickerTorrents() : super(tmdbService: _PickerTmdb());
+  _PickerTorrents([List<TorrentResult>? results])
+    : results = results ?? [_torrent.torrent!],
+      super(tmdbService: _PickerTmdb());
+
+  final List<TorrentResult> results;
 
   @override
   Future<List<TorrentResult>> searchMediaTorrents({
     required MediaTorrentQuery query,
     void Function(String status)? onStatus,
     bool rank = true,
-  }) async => [_torrent.torrent!];
+  }) async => results;
 }
+
+TorrentResult _release(String label, int seeders) => TorrentResult(
+  title: 'Example release $label',
+  link: 'https://example.com/${Uri.encodeComponent('$label $seeders')}.torrent',
+  seeders: seeders,
+  leechers: 0,
+  sizeBytes: 0,
+  source: 'torrentio',
+);
 
 StreamDiscovery _readyDiscovery() =>
     StreamDiscovery(
@@ -254,7 +270,7 @@ void main() {
                       initialSeason: 1,
                       initialResolution: '1080',
                       torrentStreamService: _PickerTorrents(),
-                      allowAutoSelect: !duringPlayback,
+                      autoSelect: duringPlayback ? false : null,
                     );
                   },
                   child: const Text('Open torrent picker'),
@@ -285,6 +301,94 @@ void main() {
         expect(picked?.automatic, isFalse);
       },
     );
+  }
+
+  test('torrent format boosts preserve resolution and seeder priority', () {
+    final web = _release('1080p WEB-DL', 80);
+    final remux = _release('1080p Remux', 70);
+    final lowSeeds = _release('1080p Remux', 1);
+    final offResolution = _release('2160p Remux', 100);
+    final query = MediaTorrentQuery(title: 'Example movie', isMovie: true);
+
+    expect(MediaRanking.rank([web, remux], query), [web, remux]);
+    expect(
+      MediaRanking.rank(
+        [web, offResolution, lowSeeds, remux],
+        query,
+        preferredFormats: [
+          RegExp(StreamFeature.remux.pattern, caseSensitive: false),
+        ],
+      ),
+      [remux, web, lowSeeds, offResolution],
+    );
+  });
+
+  for (final mode in [StreamSelectionMode.manual, StreamSelectionMode.match]) {
+    testWidgets('${mode.label} uses boosted torrent results', (tester) async {
+      final autoSelect = mode == StreamSelectionMode.match;
+      SharedPreferences.setMockInitialValues({
+        'torrent_auto_select': !autoSelect,
+      });
+      final media = autoSelect
+          ? const SearchResult(
+              id: 10,
+              mediaType: 'movie',
+              title: 'Example movie',
+            )
+          : const SearchResult(id: 10, mediaType: 'tv', name: 'Example show');
+      final web = _release('1080p WEB-DL', 80);
+      final remux = _release('1080p Remux', 70);
+      final settings = StreamSelectionSettings(
+        mode: mode,
+      ).copyWith(customFeatures: {StreamFeature.remux});
+      (TorrentResult, dynamic, {bool automatic})? picked;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () async {
+                  final search = await ExtensionTorrentSearch.forPicker(
+                    builtIn: _PickerTorrents([web, remux]),
+                    media: media,
+                    repository: ExtensionRepository(),
+                    settings: settings,
+                  );
+                  if (!context.mounted) return;
+                  picked = await TorrentPickerSheet.show(
+                    context,
+                    media: media,
+                    initialEpisode: 1,
+                    initialSeason: 1,
+                    initialResolution: '1080',
+                    torrentStreamService: search,
+                    autoSelect: autoSelect,
+                  );
+                },
+                child: const Text('Open torrent picker'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open torrent picker'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getTopLeft(find.text(remux.title)).dy,
+        lessThan(tester.getTopLeft(find.text(web.title)).dy),
+      );
+
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+      if (!autoSelect) {
+        expect(picked, isNull);
+        expect(find.text('Auto Select Torrent'), findsOneWidget);
+        await tester.tap(find.text(web.title));
+        await tester.pumpAndSettle();
+      }
+      expect(picked?.$1, autoSelect ? remux : web);
+      expect(picked?.automatic, autoSelect);
+    });
   }
 
   test(

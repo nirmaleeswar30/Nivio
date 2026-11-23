@@ -21,7 +21,8 @@ class TorrentPickerSheet extends StatefulWidget {
   final TorrentStreamService torrentStreamService;
   final void Function(String status)? onStatusUpdate;
   final bool isFullScreen;
-  final bool allowAutoSelect;
+  /// Uses the saved torrent setting when no playback mode overrides it.
+  final bool? autoSelect;
 
   const TorrentPickerSheet({
     super.key,
@@ -33,7 +34,7 @@ class TorrentPickerSheet extends StatefulWidget {
     required this.torrentStreamService,
     this.onStatusUpdate,
     this.isFullScreen = false,
-    this.allowAutoSelect = true,
+    this.autoSelect,
   });
 
   static Future<(TorrentResult, dynamic, {bool automatic})?> show(
@@ -45,7 +46,7 @@ class TorrentPickerSheet extends StatefulWidget {
     required String initialResolution,
     required TorrentStreamService torrentStreamService,
     void Function(String status)? onStatusUpdate,
-    bool allowAutoSelect = true,
+    bool? autoSelect,
   }) {
     final isMobile = Platform.isAndroid || Platform.isIOS;
     if (isMobile) {
@@ -62,7 +63,7 @@ class TorrentPickerSheet extends StatefulWidget {
               torrentStreamService: torrentStreamService,
               onStatusUpdate: onStatusUpdate,
               isFullScreen: true,
-              allowAutoSelect: allowAutoSelect,
+              autoSelect: autoSelect,
             ),
           ),
         ),
@@ -85,7 +86,7 @@ class TorrentPickerSheet extends StatefulWidget {
           torrentStreamService: torrentStreamService,
           onStatusUpdate: onStatusUpdate,
           isFullScreen: false,
-          allowAutoSelect: allowAutoSelect,
+          autoSelect: autoSelect,
         ),
       ),
     );
@@ -104,6 +105,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
   
   final _searchController = TextEditingController();
   dynamic _currentQuery;
+  int _searchRequest = 0;
   
   Timer? _autoPlayTimer;
   int _countdown = 5;
@@ -135,6 +137,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
 
   Future<void> _loadTorrents() async {
     if (!mounted) return;
+    final request = ++_searchRequest;
     setState(() {
       _filteredResults = null;
       _error = null;
@@ -153,6 +156,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
           resolution: _resolution,
           absoluteEpisode: widget.initialAbsoluteEpisode,
         );
+        if (!mounted || request != _searchRequest) return;
         _currentQuery = animeQuery;
         
         results = await widget.torrentStreamService.searchTorrents(
@@ -170,8 +174,8 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
           );
         }
         
+        if (!mounted || request != _searchRequest) return;
         if (imdbId == null || imdbId.isEmpty) {
-          if (!mounted) return;
           setState(() {
             _error = 'Could not resolve IMDb ID for torrent search.';
           });
@@ -195,7 +199,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         );
       }
       
-      if (!mounted) return;
+      if (!mounted || request != _searchRequest) return;
       
       // Preserve the ranking order from the service (TorrentRanking for anime,
       // MediaRanking for movies/shows) — it already accounts for the selected
@@ -205,16 +209,20 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         _filteredResults = results;
       });
       
-      if (results.isNotEmpty && widget.allowAutoSelect) {
-        final prefs = await SharedPreferences.getInstance();
-        final autoSelect = prefs.getBool('torrent_auto_select') ?? true;
-        if (autoSelect) {
-          _countdown = 5;
-          _startAutoPlay();
+      if (results.isNotEmpty) {
+        final autoSelect = widget.autoSelect ??
+            (await SharedPreferences.getInstance()).getBool('torrent_auto_select') ??
+            true;
+        if (!mounted || request != _searchRequest) return;
+        if (autoSelect && !_isCancelled) {
+          setState(() {
+            _countdown = 5;
+            _startAutoPlay();
+          });
         }
       }
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || request != _searchRequest) return;
       setState(() {
         _error = e.toString();
       });
@@ -228,6 +236,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
       return;
     }
 
+    final request = ++_searchRequest;
     _cancelAutoPlay();
 
     // Support direct magnet links
@@ -258,7 +267,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
             );
 
       _cancelAutoPlay();
-      Navigator.of(context).pop((syntheticResult, dummyQuery));
+      Navigator.of(context).pop((syntheticResult, dummyQuery, automatic: false));
       return;
     }
 
@@ -305,7 +314,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         );
       }
 
-      if (!mounted) return;
+      if (!mounted || request != _searchRequest) return;
       
       // Preserve the ranking order from the service (TorrentRanking for anime,
       // MediaRanking for movies/shows) — it already accounts for the selected
@@ -315,7 +324,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         _filteredResults = results;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || request != _searchRequest) return;
       setState(() {
         _error = e.toString();
       });
@@ -659,7 +668,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
   }
 
   Widget _buildAutoSelectButton(double spacing) {
-    if (_filteredResults != null && _filteredResults!.isNotEmpty && !_isCancelled) {
+    if (_filteredResults != null && _filteredResults!.isNotEmpty) {
       return ElevatedButton(
         onPressed: () => _playResult(_filteredResults!.first, automatic: true),
         style: ElevatedButton.styleFrom(
@@ -670,23 +679,10 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
           elevation: 0,
         ),
         child: Text(
-          'Auto Select Torrent (in $_countdown)',
+          _autoPlayTimer?.isActive == true
+              ? 'Auto Select Torrent (in $_countdown)'
+              : 'Auto Select Torrent',
           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-        ),
-      );
-    } else if (_filteredResults != null && _filteredResults!.isNotEmpty) {
-      return ElevatedButton(
-        onPressed: () => _playResult(_filteredResults!.first, automatic: true),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF38Bdf8),
-          foregroundColor: Colors.black,
-          padding: EdgeInsets.symmetric(vertical: spacing),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          elevation: 0,
-        ),
-        child: const Text(
-          'Auto Select Torrent',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
         ),
       );
     }

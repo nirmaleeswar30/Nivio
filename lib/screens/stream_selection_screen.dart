@@ -377,7 +377,7 @@ class StreamPlaybackSettings extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const _SectionHeading(
-                  'DIRECT PLAYBACK MODE',
+                  'PLAYBACK MODE',
                   PhosphorIconsRegular.playCircle,
                 ),
                 for (final mode in StreamSelectionMode.values)
@@ -490,6 +490,9 @@ class StreamPlaybackSettings extends ConsumerWidget {
                     const ListTile(
                       dense: true,
                       title: Text('Prefer these formats'),
+                      subtitle: Text(
+                        'Also boosts matching movie and TV torrents.',
+                      ),
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),

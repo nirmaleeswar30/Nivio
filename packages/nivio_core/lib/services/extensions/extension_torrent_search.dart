@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:nivio/models/search_result.dart';
+import 'package:nivio/services/torrent/media_ranking.dart';
 import 'package:nivio/services/torrent/media_torrent_models.dart';
 import 'package:nivio/services/torrent/torrent_models.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
@@ -9,7 +10,7 @@ import 'extension_repository.dart';
 import 'extension_resolver.dart';
 import 'stream_selection_settings.dart';
 
-/// Supplies the original picker with extension torrent results for its title.
+/// Supplies the picker with extension results and movie/TV format preferences.
 class ExtensionTorrentSearch extends TorrentStreamService {
   ExtensionTorrentSearch._({
     required this.builtIn,
@@ -17,6 +18,7 @@ class ExtensionTorrentSearch extends TorrentStreamService {
     required this.providers,
     required this.repository,
     required this.timeout,
+    required this.preferredFormats,
   }) : super(
          queryBuilder: builtIn.queryBuilder,
          tmdbService: builtIn.tmdbService,
@@ -27,6 +29,7 @@ class ExtensionTorrentSearch extends TorrentStreamService {
   final List<ExtensionProvider> providers;
   final ExtensionRepository repository;
   final Duration timeout;
+  final List<RegExp> preferredFormats;
   final Map<(int, int), Future<List<TorrentResult>>> _results = {};
 
   static Future<TorrentStreamService> forPicker({
@@ -35,8 +38,9 @@ class ExtensionTorrentSearch extends TorrentStreamService {
     required ExtensionRepository repository,
     required StreamSelectionSettings settings,
   }) async {
+    var providers = <ExtensionProvider>[];
     try {
-      final providers = (await repository.list())
+      providers = (await repository.list())
           .expand((repo) => repo.providers)
           .where(
             (provider) =>
@@ -45,24 +49,30 @@ class ExtensionTorrentSearch extends TorrentStreamService {
                 provider.supports(media.mediaType),
           )
           .toList();
-      if (providers.isEmpty) return builtIn;
-      final indexed = providers.indexed.toList()
-        ..sort((a, b) {
-          final rank = settings
-              .sourceRank(a.$2.id)
-              .compareTo(settings.sourceRank(b.$2.id));
-          return rank == 0 ? a.$1.compareTo(b.$1) : rank;
-        });
-      return ExtensionTorrentSearch._(
-        builtIn: builtIn,
-        media: media,
-        providers: indexed.map((entry) => entry.$2).toList(),
-        repository: repository,
-        timeout: Duration(seconds: settings.timeoutSeconds),
-      );
     } catch (_) {
-      return builtIn;
+      // Built-in search can still use the format preferences.
     }
+    final formats = [
+      if (media.mediaType == 'movie' || media.mediaType == 'tv')
+        for (final feature in settings.features)
+          RegExp(feature.pattern, caseSensitive: false),
+    ];
+    if (providers.isEmpty && formats.isEmpty) return builtIn;
+    final indexed = providers.indexed.toList()
+      ..sort((a, b) {
+        final rank = settings
+            .sourceRank(a.$2.id)
+            .compareTo(settings.sourceRank(b.$2.id));
+        return rank == 0 ? a.$1.compareTo(b.$1) : rank;
+      });
+    return ExtensionTorrentSearch._(
+      builtIn: builtIn,
+      media: media,
+      providers: indexed.map((entry) => entry.$2).toList(),
+      repository: repository,
+      timeout: Duration(seconds: settings.timeoutSeconds),
+      preferredFormats: formats,
+    );
   }
 
   @override
@@ -80,14 +90,29 @@ class ExtensionTorrentSearch extends TorrentStreamService {
     required MediaTorrentQuery query,
     void Function(String status)? onStatus,
     bool rank = true,
-  }) {
-    final results = builtIn.searchMediaTorrents(
+  }) async {
+    if (query.isManual || !rank) {
+      return builtIn.searchMediaTorrents(
+        query: query,
+        onStatus: onStatus,
+        rank: rank,
+      );
+    }
+    final builtInResults = builtIn.searchMediaTorrents(
       query: query,
       onStatus: onStatus,
-      rank: rank,
+      rank: false,
     );
-    if (query.isManual) return results;
-    return _merge(results, query.season ?? 1, query.episode ?? 1);
+    final results = await _merge(
+      builtInResults,
+      query.season ?? 1,
+      query.episode ?? 1,
+    );
+    return MediaRanking.rank(
+      results,
+      query,
+      preferredFormats: preferredFormats,
+    );
   }
 
   Future<List<TorrentResult>> _merge(
@@ -95,6 +120,7 @@ class ExtensionTorrentSearch extends TorrentStreamService {
     int season,
     int episode,
   ) async {
+    if (providers.isEmpty) return builtInResults;
     final results = await Future.wait([
       builtInResults,
       _results.putIfAbsent((season, episode), () => _fetch(season, episode)),
