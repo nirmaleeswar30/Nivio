@@ -60,6 +60,14 @@ class StreamingService {
 
   static const List<String> _standardProviders = [];
 
+  Iterable<String> get streamSelectionBuiltIns => [
+    ..._premiumProviders,
+    ..._standardProviders,
+    'Miruro',
+    'Animetsu',
+    'Animex',
+  ];
+
   List<String> _dynamicAnimexServers = ['Animex (Auto)'];
   List<String> _dynamicMiruroServers = ['Miruro (Auto)'];
 

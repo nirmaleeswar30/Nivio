@@ -19,7 +19,7 @@ import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
-import 'package:nivio/screens/extensions_screen.dart';
+import 'package:nivio/screens/stream_selection_screen.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
@@ -45,7 +45,9 @@ import 'package:nivio/services/simkl_auth_service.dart';
 import 'package:nivio/services/anime_tracking_coordinator.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({super.key, this.connectionsOnly = false});
+
+  final bool connectionsOnly;
 
   @override
   ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
@@ -96,6 +98,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.connectionsOnly) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
+            _buildDiscordDesktopTile(),
+          if (Platform.isAndroid || Platform.isIOS) _buildDiscordMobileTile(),
+          const SizedBox(height: 8),
+          _buildTrackingAccounts(),
+        ],
+      );
+    }
     final authAsync = ref.watch(authStateProvider);
 
     return authAsync.when(
@@ -282,7 +296,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                     title: 'Playback',
                     child: Column(
                       children: [
-                        if (_matches('stream selection default filter direct torrents extensions'))
+                        if (_matches('stream selection autoplay regex quality resolution source priority direct torrents extensions'))
                           _streamSelectionTile(),
                         if (_matches('auto play next episode automatically'))
                           _buildSwitchTile(
@@ -1611,7 +1625,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
   Widget _streamSelectionTile() => _buildActionTile(
     icon: Icons.filter_list,
     title: 'Stream selection',
-    subtitle: 'Default stream tab and extensions',
+    subtitle: 'Autoplay, quality presets, and source priority',
     onTap: () => showStreamPickerSettings(context),
   );
 
@@ -5068,12 +5082,9 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     }
   }
 
-  Widget _buildAnimeTrackingContent() {
+  Widget _buildTrackingAccounts() {
     final aniListUser = ref.watch(aniListAuthProvider);
     final malUser = ref.watch(malAuthProvider);
-    final autoSyncProgress = ref.watch(animeAutoSyncProgressProvider);
-    final autoSyncWatchlist = ref.watch(animeAutoSyncWatchlistProvider);
-    final untrackedBehavior = ref.watch(untrackedAnimeBehaviorProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -5115,6 +5126,18 @@ Widget _buildMobileLayout(BuildContext context, User user) {
         ),
         const SizedBox(height: 8),
         _buildSimklAccountTile(),
+      ],
+    );
+  }
+
+  Widget _buildAnimeTrackingContent() {
+    final autoSyncProgress = ref.watch(animeAutoSyncProgressProvider);
+    final autoSyncWatchlist = ref.watch(animeAutoSyncWatchlistProvider);
+    final untrackedBehavior = ref.watch(untrackedAnimeBehaviorProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildTrackingAccounts(),
         const SizedBox(height: 16),
         const Divider(color: Colors.white12),
         const SizedBox(height: 8),
@@ -5282,7 +5305,10 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 3,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
                           title,
@@ -5292,8 +5318,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        if (isConnected) ...[
-                          const SizedBox(width: 8),
+                        if (isConnected)
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 6, vertical: 2),
@@ -5310,7 +5335,6 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                               ),
                             ),
                           ),
-                        ],
                       ],
                     ),
                     const SizedBox(height: 3),
@@ -5320,7 +5344,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                         color: Colors.white60,
                         fontSize: 12,
                       ),
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
@@ -5424,7 +5448,10 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 3,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         const Text(
                           'Simkl',
@@ -5434,8 +5461,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        if (isConnected) ...[
-                          const SizedBox(width: 8),
+                        if (isConnected)
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 6, vertical: 2),
@@ -5452,7 +5478,6 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                               ),
                             ),
                           ),
-                        ],
                       ],
                     ),
                     const SizedBox(height: 3),
@@ -5461,7 +5486,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                           ? '@${user.username}'
                           : 'Sync movies, TV & anime status to Simkl',
                       style: const TextStyle(color: Colors.white60, fontSize: 12),
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],

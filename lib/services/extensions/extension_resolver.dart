@@ -22,6 +22,7 @@ class StreamChoice {
     this.torrent,
     this.audio,
     this.byteSize,
+    this.bingeGroupHint,
     this.isWebPlayer = false,
   });
 
@@ -33,6 +34,7 @@ class StreamChoice {
   final String quality;
   final String? audio;
   final int? byteSize;
+  final String? bingeGroupHint;
   final StreamResult? direct;
   final TorrentResult? torrent;
   final bool isWebPlayer;
@@ -100,6 +102,9 @@ class StreamChoice {
       quality: quality,
       audio: audio,
       byteSize: size,
+      bingeGroupHint: json['bingeGroup'] is String
+          ? (json['bingeGroup'] as String).trim()
+          : null,
       direct: isTorrent
           ? null
           : StreamResult(

@@ -617,6 +617,8 @@ class TorrentStreamService {
     void Function(String status)? onStatus, {
     required SearchResult media,
     bool requireEpisodeMatch = false,
+    Duration? metadataTimeout,
+    bool Function()? cancelled,
   }) async {
     _log('best="${best.title}" src=${best.source} seeders=${best.seeders} '
         'res=${best.parsed.resolution} type=${best.type} link=${best.link.substring(0, best.link.length.clamp(0, 60))}…');
@@ -630,6 +632,7 @@ class TorrentStreamService {
     _log('engine ready at ${RqbitEngine.instance.baseUrl}; adding torrent…');
     _client = client;
 
+    if (cancelled?.call() == true) return null;
     final add = await client.addTorrent(
       best.link,
       isUrl: best.link.startsWith('http') ? true : null,
@@ -639,30 +642,41 @@ class TorrentStreamService {
     _log('torrent added id=$id; waiting for metadata/files…');
 
     // Magnets resolve metadata from peers — wait for the file list.
+    final metadataWait = Stopwatch()..start();
+    final maxWait = metadataTimeout ?? const Duration(seconds: 60);
     var details = await client.getDetails(id);
-    for (var i = 0; details.files.isEmpty && i < 60; i++) {
+    for (var i = 0; details.files.isEmpty && metadataWait.elapsed < maxWait &&
+        cancelled?.call() != true; i++) {
       onStatus?.call('Fetching metadata from peers… (${i}s)');
       await Future.delayed(const Duration(seconds: 1));
       details = await client.getDetails(id);
     }
-    if (details.files.isEmpty) {
-      _log('=> metadata never arrived (no peers?) after 60s for id=$id');
-      onStatus?.call('Could not fetch metadata (no peers?)');
+    if (details.files.isEmpty || cancelled?.call() == true) {
+      _log('=> torrent metadata wait ended after ${metadataWait.elapsed.inSeconds}s for id=$id');
+      if (cancelled?.call() != true) onStatus?.call('Could not fetch metadata (no peers?)');
       if (id != _activeTorrentId) await _releaseTorrent(id);
       return null;
     }
     _log('metadata ready: ${details.files.length} file(s) in torrent');
+    final season = query is MediaTorrentQuery
+        ? query.season
+        : (query is AnimeQuery ? query.season : null);
+    final absoluteEpisode = query is AnimeQuery ? query.absoluteEpisode : null;
     TorrentFileInfo? file;
     if (best.fileIndex != null) {
       file = details.files.where((f) => f.index == best.fileIndex).firstOrNull;
+      if (file != null && requireEpisodeMatch) {
+        file = TorrentFileResolver.resolve(
+          [file], episode: episode, season: season, absoluteEpisode: absoluteEpisode,
+          requireEpisodeMatch: true,
+        );
+      }
     }
     file ??= TorrentFileResolver.resolve(
       details.files,
       episode: episode,
-      absoluteEpisode: query is AnimeQuery ? query.absoluteEpisode : null,
-      season: query is MediaTorrentQuery
-          ? query.season
-          : (query is AnimeQuery ? query.season : null),
+      absoluteEpisode: absoluteEpisode,
+      season: season,
       requireEpisodeMatch: requireEpisodeMatch,
       allowUnnumberedSingle: !best.isBatch,
     );

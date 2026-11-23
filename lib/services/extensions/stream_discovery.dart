@@ -9,6 +9,8 @@ import 'package:nivio/services/torrent/torrent_models.dart';
 
 import 'extension_repository.dart';
 import 'extension_resolver.dart';
+import 'stream_selection.dart';
+import 'stream_selection_settings.dart';
 
 class StreamDiscovery extends ChangeNotifier {
   StreamDiscovery({
@@ -21,6 +23,7 @@ class StreamDiscovery extends ChangeNotifier {
     required this.subDub,
     required this.preferredQuality,
     this.previous,
+    this.selection = const StreamSelectionSettings(),
   });
 
   final SearchResult media;
@@ -32,6 +35,7 @@ class StreamDiscovery extends ChangeNotifier {
   final String subDub;
   final String? preferredQuality;
   final StreamChoice? previous;
+  final StreamSelectionSettings selection;
 
   final choices = <StreamChoice>[];
   final failures = <String>{};
@@ -42,6 +46,104 @@ class StreamDiscovery extends ChangeNotifier {
   Future<Object>? _torrentRequest;
 
   bool get isAnime => media.mediaType == 'anime';
+
+  List<StreamChoice> get availableChoices =>
+      choices.where((choice) => !unavailable.contains(choice.id)).toList();
+
+  List<StreamChoice> orderForPicker(List<StreamChoice> visible) {
+    final ordered = visible.indexed.toList();
+    ordered.sort((a, b) {
+      final rankA = selection.sourceRank(a.$2.selectionSourceId);
+      final rankB = selection.sourceRank(b.$2.selectionSourceId);
+      if (rankA != rankB) return rankA.compareTo(rankB);
+      if (a.$2.isWebPlayer != b.$2.isWebPlayer)
+        return a.$2.isWebPlayer ? 1 : -1;
+      return a.$1.compareTo(b.$1);
+    });
+    return ordered.map((entry) => entry.$2).toList();
+  }
+
+  Future<void> waitForResults(
+    Duration timeout, {
+    bool Function()? ready,
+  }) async {
+    if (!searching ||
+        _closed ||
+        timeout <= Duration.zero ||
+        ready?.call() == true)
+      return;
+    final done = Completer<void>();
+    void check() {
+      if (!done.isCompleted && (!searching || ready?.call() == true))
+        done.complete();
+    }
+
+    addListener(check);
+    try {
+      await done.future.timeout(timeout, onTimeout: () {});
+    } finally {
+      removeListener(check);
+    }
+  }
+
+  Future<StreamChoice?> firstReachable(
+    StreamSelection policy,
+    Duration timeout,
+    Future<bool> Function(StreamChoice) probe,
+  ) async {
+    if (_closed || timeout <= Duration.zero) return null;
+    final result = Completer<StreamChoice?>();
+    final checked = <String>{};
+    var active = 0;
+
+    void pump() {
+      if (result.isCompleted) return;
+      if (_closed) {
+        result.complete(null);
+        return;
+      }
+      for (final choice in availableChoices) {
+        if (active >= 5) break;
+        if (!choice.isDirect ||
+            !policy.eligible(choice) ||
+            !policy.prefers(choice) ||
+            !policy.confirmedAudio(choice) ||
+            !checked.add(choice.id))
+          continue;
+        active++;
+        unawaited(() async {
+          var reachable = false;
+          try {
+            reachable = await probe(choice);
+          } catch (_) {
+            // Continue racing the other direct sources.
+          }
+          active--;
+          if (result.isCompleted) return;
+          if (reachable) {
+            result.complete(choice);
+          } else {
+            markFailed(choice);
+          }
+        }());
+      }
+      if (!searching && active == 0) result.complete(null);
+    }
+
+    addListener(pump);
+    try {
+      pump();
+      return await result.future.timeout(
+        timeout,
+        onTimeout: () {
+          result.complete(null);
+          return null;
+        },
+      );
+    } finally {
+      removeListener(pump);
+    }
+  }
 
   Future<void> search() async {
     final generation = ++_generation;
@@ -106,13 +208,34 @@ class StreamDiscovery extends ChangeNotifier {
       }
     }
     if (!_current(generation)) return;
-    final providers = [
-      for (var i = 0; i < streaming.totalProvidersFor(isAnime: isAnime); i++)
-        if (streaming.getProviderName(i, isAnime: isAnime) != 'Nivio Torrents')
-          i,
-    ];
-    await _concurrently(providers, 5, generation, (index) async {
-      final name = streaming.getProviderName(index, isAnime: isAnime);
+    final providers =
+        [
+              for (
+                var i = 0;
+                i < streaming.totalProvidersFor(isAnime: isAnime);
+                i++
+              )
+                if (streaming.getProviderName(i, isAnime: isAnime) !=
+                    'Nivio Torrents')
+                  i,
+            ]
+            .map(
+              (index) =>
+                  (index, streaming.getProviderName(index, isAnime: isAnime)),
+            )
+            .toList();
+    if (selection.mode != StreamSelectionMode.first) {
+      providers.sort((a, b) {
+        final rank = selection
+            .sourceRank(streamSelectionSourceId('builtin:${a.$2}'))
+            .compareTo(
+              selection.sourceRank(streamSelectionSourceId('builtin:${b.$2}')),
+            );
+        return rank != 0 ? rank : a.$1.compareTo(b.$1);
+      });
+    }
+    await _concurrently(providers, 5, generation, (provider) async {
+      final (index, name) = provider;
       final isWebPlayer = !streaming.isDirectStream(index, isAnime: isAnime);
       try {
         final result = await streaming
@@ -176,6 +299,16 @@ class StreamDiscovery extends ChangeNotifier {
           )
           .toList();
       if (providers.isEmpty || !_current(generation)) return;
+      if (selection.mode != StreamSelectionMode.first) {
+        final ranked = providers.indexed.toList()
+          ..sort((a, b) {
+            final rank = selection
+                .sourceRank(a.$2.id)
+                .compareTo(selection.sourceRank(b.$2.id));
+            return rank != 0 ? rank : a.$1.compareTo(b.$1);
+          });
+        providers.setAll(0, ranked.map((entry) => entry.$2));
+      }
       final target = await extensionMedia(media, season, episode);
       final resolver = ExtensionResolver(repository);
       await _concurrently(providers, 4, generation, (provider) async {
@@ -276,8 +409,9 @@ class StreamDiscovery extends ChangeNotifier {
 
   Future<StreamResult?> open(
     StreamChoice choice,
-    void Function(String) status,
-  ) async {
+    void Function(String) status, {
+    Duration? torrentMetadataTimeout,
+  }) async {
     if (choice.direct case final StreamResult direct) return direct;
     final release = choice.torrent;
     if (!torrentsEnabled || release == null) return null;
@@ -306,6 +440,8 @@ class StreamDiscovery extends ChangeNotifier {
           status,
           media: media,
           requireEpisodeMatch: media.mediaType != 'movie' && release.isBatch,
+          metadataTimeout: torrentMetadataTimeout,
+          cancelled: () => _closed,
         );
     if (handle == null) return null;
     await service.rememberReleaseGroup(

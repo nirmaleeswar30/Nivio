@@ -46,6 +46,7 @@ import 'package:nivio/screens/all_providers_screen.dart';
 import 'package:nivio/screens/player_screen.dart';
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/screens/auth_screen.dart';
+import 'package:nivio/screens/onboarding_screen.dart';
 import 'package:nivio/screens/library_screen.dart';
 import 'package:nivio/screens/profile_screen.dart';
 import 'package:nivio/screens/provider_content_screen.dart';
@@ -600,28 +601,31 @@ final appRouter = GoRouter(
   initialLocation: '/splash',
   // Optimize: Use refreshListenable for auth state instead of checking on every navigation
   refreshListenable: _AuthStateNotifier(),
-  redirect: (context, state) {
+  redirect: (context, state) async {
     final user = FirebaseAuth.instance.currentUser;
     final location = state.matchedLocation;
     final isSplashRoute = location == '/splash';
     final isAuthRoute = location == '/auth';
+    final isOnboardingRoute = location == '/onboarding';
 
     // Allow splash/preloader screen to play uninterrupted
     if (isSplashRoute) {
       return null;
     }
 
-    // If not signed in and not on auth route, redirect to auth
-    if (user == null && !isAuthRoute) {
-      return '/auth';
+    final destination = onboardingDestination(
+      isAuthRoute || isOnboardingRoute
+          ? state.uri.queryParameters['next']
+          : state.uri.toString(),
+    );
+    if (user == null) {
+      return isAuthRoute ? null : Uri(path: '/auth', queryParameters: {'next': destination}).toString();
     }
-
-    // If signed in and on auth route, redirect to home
-    if (user != null && isAuthRoute) {
-      return '/home';
+    if (!await hasCompletedOnboarding(user.uid)) {
+      return isOnboardingRoute ? null
+          : Uri(path: '/onboarding', queryParameters: {'next': destination}).toString();
     }
-
-    // Otherwise, no redirect needed
+    if (isAuthRoute || isOnboardingRoute) return destination;
     return null;
   },
   routes: [
@@ -637,6 +641,18 @@ final appRouter = GoRouter(
       ),
     ),
     GoRoute(path: '/auth', builder: (context, state) => const AuthScreen()),
+    GoRoute(
+      path: '/onboarding',
+      builder: (context, state) {
+        final userId = FirebaseAuth.instance.currentUser?.uid;
+        if (userId == null) return const AuthScreen();
+        return OnboardingScreen(
+          key: ValueKey(userId),
+          userId: userId,
+          destination: onboardingDestination(state.uri.queryParameters['next']),
+        );
+      },
+    ),
     GoRoute(
       path: '/search',
       pageBuilder: (context, state) => CustomTransitionPage(

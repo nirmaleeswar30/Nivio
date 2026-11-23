@@ -30,6 +30,8 @@ import 'package:nivio/services/extensions/extension_repository.dart';
 import 'package:nivio/services/extensions/extension_resolver.dart';
 import 'package:nivio/services/extensions/stream_discovery.dart';
 import 'package:nivio/widgets/stream_picker_sheet.dart';
+import 'package:nivio/services/extensions/stream_selection.dart';
+import 'package:nivio/services/extensions/stream_selection_settings.dart';
 import 'package:nivio/services/hdr_tone_mapping.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/screens/player/widgets/custom_player_controls.dart';
@@ -114,6 +116,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
 /// One rendition listed in an HLS master playlist.
 typedef _HlsVariant = ({String url, int height, int bandwidth});
+typedef _StreamProbe = ({bool ok, int? status, List<_HlsVariant>? variants});
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen>
     with WidgetsBindingObserver, TickerProviderStateMixin {
@@ -217,6 +220,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   StreamDiscovery? _streamDiscovery;
   StreamFilter? _pickerFilter;
   StreamChoice? _lastStreamChoice;
+  int _autoStreamAttempts = 0;
+  Stopwatch? _streamSelectionClock;
+  _StreamProbe? _firstReachableProbe;
   bool _streamPickerOpen = false;
 
   bool get _usesStreamPicker => widget.providerIndex == null &&
@@ -340,11 +346,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// Called right after a successful direct-stream _player.open(). Arms a timer
   /// that fires if the position is still 0:00 after a grace period, and logs the
   /// full player state so we can tell which anime servers open but never play.
-  void _startStuckWatchdog() {
+  void _startStuckWatchdog({VoidCallback? onAutomaticFailure}) {
     _stuckWatchdog?.cancel();
     _openStartedAt = DateTime.now();
-    _sawFirstFrame = false;
+    final startedAt = _openStartedAt;
     _stuckReported = false;
+    if (_sawFirstFrame) return;
 
     void snapshot(String tag) {
       final s = _player.state;
@@ -365,6 +372,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (_sawFirstFrame) return;
       _stuckReported = true;
       snapshot('STUCK at 0:00 after 8s');
+      if (onAutomaticFailure != null && _currentProvider != 'Nivio Torrents') {
+        onAutomaticFailure();
+        return;
+      }
 
       // If a torrent stream is stuck at 0:00, rqbit may have finished hash-checking/connecting.
       // Re-trigger open() so mpv re-connects to the localhost stream endpoint.
@@ -377,12 +388,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
 
       // Re-check once more a few seconds later to distinguish "slow" from "dead".
-      Timer(const Duration(seconds: 7), () {
-        if (!mounted || _isDeactivated) return;
+      _stuckWatchdog = Timer(const Duration(seconds: 7), () {
+        if (!mounted || _isDeactivated || _openStartedAt != startedAt) return;
         if (_sawFirstFrame) {
           appDebugLog('✅ [STUCK_DEBUG] PlayerScreen#$_sid recovered — playback started late for "$_currentProvider"');
         } else {
           snapshot('STILL STUCK at 0:00 after 15s (server likely dead — user must switch)');
+          if (onAutomaticFailure != null) {
+            onAutomaticFailure();
+            return;
+          }
           if (_currentProvider == 'Nivio Torrents' && _streamResult != null) {
             _player.open(
               Media(_streamResult!.url, httpHeaders: _streamResult!.headers),
@@ -1075,35 +1090,60 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // ├────────────────────────────────────────────────────────────────────────────────────────── Player initialization ──────────────────────────────────────────────────────────────────────────────────────────
   Future<StreamPickerOutcome?> _chooseStream(
-    SearchResult media, String? preferredQuality, String subDub,
-  ) async {
+    SearchResult media,
+    String? preferredQuality,
+    String subDub, {
+    bool allowAuto = false,
+  }) async {
     if (_streamPickerOpen) return null;
     _streamPickerOpen = true;
     final repository = ref.read(extensionRepositoryProvider);
     try {
-      final oldSearch = _streamDiscovery;
-      if (oldSearch == null || oldSearch.episode != _currentEpisode ||
-          oldSearch.season != widget.season || oldSearch.media.id != media.id) {
-        _pickerFilter = await repository.preferredFilter();
-      }
-      while (mounted) {
+      while (mounted && !_isDeactivated) {
+        final settings = await ref.read(streamSelectionSettingsProvider.future);
+        if (!mounted || _isDeactivated) return null;
         final torrentsEnabled = ref.read(enableTorrentsProvider);
         var search = _streamDiscovery;
-        if (search == null || search.episode != _currentEpisode || search.season != widget.season ||
-            search.media.id != media.id || search.torrentsEnabled != torrentsEnabled) {
+        if (search == null || search.episode != _currentEpisode ||
+            search.season != widget.season || search.media.id != media.id ||
+            search.media.mediaType != media.mediaType ||
+            search.torrentsEnabled != torrentsEnabled || search.selection != settings ||
+            search.preferredQuality != preferredQuality || search.subDub != subDub) {
           search?.dispose();
-          search = StreamDiscovery(media: media, season: widget.season, episode: _currentEpisode,
-            streaming: ref.read(streamingServiceProvider), repository: repository,
-            torrentsEnabled: torrentsEnabled, subDub: subDub, preferredQuality: preferredQuality,
+          _pickerFilter = settings.preferredType;
+          search = StreamDiscovery(
+            media: media,
+            season: widget.season,
+            episode: _currentEpisode,
+            streaming: ref.read(streamingServiceProvider),
+            repository: repository,
+            torrentsEnabled: torrentsEnabled,
+            subDub: subDub,
+            preferredQuality: preferredQuality,
             previous: _lastStreamChoice,
+            selection: settings,
           );
           _streamDiscovery = search;
+          _autoStreamAttempts = 0;
+          _streamSelectionClock = Stopwatch()..start();
           unawaited(search.search());
         }
-        final outcome = await StreamPickerSheet.show(context, search, _pickerFilter ?? StreamFilter.all,
+        if (allowAuto && settings.mode != StreamSelectionMode.manual) {
+          final automatic = await _autoSelectStream(search, settings);
+          if (!mounted || _isDeactivated) return null;
+          if (automatic != null) return automatic;
+        }
+        final outcome = await StreamPickerSheet.show(
+          context,
+          search,
+          _pickerFilter ?? StreamFilter.all,
           (filter) => _pickerFilter = filter,
+          fallbackMessage: allowAuto && settings.mode != StreamSelectionMode.manual
+              ? 'Autoplay couldn’t start a matching stream. You can choose one here.'
+              : null,
         );
         if (outcome?.refresh != true || !mounted) return outcome;
+        allowAuto = false;
         // The modal is still animating out. Keep its old results alive until it
         // has detached, then re-query with the updated settings and repositories.
         await Future<void>.delayed(const Duration(milliseconds: 250));
@@ -1117,7 +1157,95 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  Future<void> _initializePlayer({bool isRetry = true, StreamPickerOutcome? picked}) async {
+  String _streamBingeKey(SearchResult media) =>
+      'stream_selection_binge_${media.mediaType}_${media.id}';
+
+  Future<void> _rememberStreamChoice(SearchResult? media, StreamChoice choice) async {
+    _lastStreamChoice = choice;
+    if (media == null || media.mediaType == 'movie' || choice.isWebPlayer) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_streamBingeKey(media), choice.bingeGroup);
+  }
+
+  Future<StreamPickerOutcome?> _autoSelectStream(
+    StreamDiscovery search,
+    StreamSelectionSettings settings,
+  ) async {
+    const maxAttempts = 4;
+    if (_autoStreamAttempts >= maxAttempts) return null;
+    final audio = ref.read(preferredAudioLanguageProvider);
+    final effectiveSettings = !search.torrentsEnabled && settings.preferredType == StreamFilter.torrents
+        ? settings.copyWith(preferredType: StreamFilter.direct)
+        : settings;
+    final policy = StreamSelection(
+      effectiveSettings,
+      audio: audio,
+      animeAudio: search.subDub,
+      isAnime: search.isAnime,
+    );
+    String? bingeGroup;
+    if (settings.reuseBingeGroup && search.media.mediaType != 'movie') {
+      final prefs = await SharedPreferences.getInstance();
+      bingeGroup = prefs.getString(_streamBingeKey(search.media));
+    }
+    if (!mounted || _isDeactivated) return null;
+    setState(() => _loadingMessage = 'Finding a stream…');
+    final budget = Duration(seconds: settings.timeoutSeconds);
+    final remaining = budget - (_streamSelectionClock?.elapsed ?? budget);
+    StreamChoice? fastChoice;
+    if (_autoStreamAttempts == 0) {
+      if (settings.mode == StreamSelectionMode.first &&
+          effectiveSettings.preferredType != StreamFilter.torrents) {
+        final probes = <String, _StreamProbe>{};
+        fastChoice = await search.firstReachable(policy, remaining, (choice) async {
+          final direct = choice.direct!;
+          final result = await _probeStreamCandidate(
+            StreamSource(url: direct.url, quality: direct.quality, isM3U8: direct.isM3U8),
+            _buildPlaybackHeaders(direct.headers),
+          );
+          if (result == null || !result.ok) return false;
+          probes[choice.id] = result;
+          return true;
+        });
+        _firstReachableProbe = probes[fastChoice?.id];
+      } else {
+        await search.waitForResults(
+          remaining,
+          ready: settings.mode == StreamSelectionMode.first
+              ? () => search.availableChoices.any((choice) =>
+                    choice.isTorrent && policy.eligible(choice) && policy.confirmedAudio(choice))
+              : null,
+        );
+      }
+    }
+    if (!mounted || _isDeactivated) return null;
+    final candidates = fastChoice == null
+        ? await policy.ranked(search.availableChoices, bingeGroup: bingeGroup)
+        : [fastChoice];
+    for (final choice in candidates.take(maxAttempts - _autoStreamAttempts)) {
+      if (!mounted || _isDeactivated) return null;
+      _autoStreamAttempts++;
+      setState(() => _loadingMessage = 'Opening ${choice.provider}…');
+      try {
+        final result = await search.open(choice, (status) {
+          if (mounted && !_isDeactivated) setState(() => _loadingMessage = status);
+        }, torrentMetadataTimeout: const Duration(seconds: 12));
+        if (result != null) {
+          return StreamPickerOutcome(choice: choice, result: result, automatic: true);
+        }
+      } catch (_) {
+        // Keep working through the eligible results before offering the picker.
+      }
+      search.markFailed(choice);
+    }
+    return null;
+  }
+
+  Future<void> _initializePlayer({
+    bool isRetry = true,
+    StreamPickerOutcome? picked,
+    bool allowAuto = true,
+  }) async {
     if (!mounted || _streamPickerOpen) return;
     appDebugLog(
       '🧪 [CW_DEBUG] PlayerScreen#$_sid _initializePlayer(isRetry=$isRetry) '
@@ -1130,8 +1258,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // every provider while the first stream kept playing in the background.
     var mediaOpened = false;
     StreamChoice? manualChoice;
+    var choseAutomatically = false;
+    _firstReachableProbe = null;
     // Cancel any watchdog from a previous load/retry before starting a new one.
     _stuckWatchdog?.cancel();
+    _openStartedAt = null;
     _sawFirstFrame = false;
     _hasAppliedGlobalTracks = false;
     _autoFullscreenTriggeredForCurrentLoad = false;
@@ -1434,7 +1565,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           subtitles: hasSrt ? [StreamSubtitleTrack(lang: subLang, url: srtPath)] : [],
         );
       } else if (_usesStreamPicker && media != null) {
-        final selected = picked ?? await _chooseStream(media, preferredQuality, subDubPref);
+        final selected = picked ?? await _chooseStream(
+          media, preferredQuality, subDubPref, allowAuto: allowAuto,
+        );
         if (!mounted) return;
         if (selected?.result == null) {
           setState(() {
@@ -1444,6 +1577,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           return;
         }
         manualChoice = selected!.choice;
+        choseAutomatically = selected.automatic;
         result = selected.result;
       } else if (_prefetchedStreams.containsKey(_currentEpisode) &&
           (!_bingeMode || streamingService.getProviderName(
@@ -1615,7 +1749,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
         // Fire all candidate verifications simultaneously to prevent 10-15s sequential timeout delays!
         appDebugLog('⏳ [FLOW] Starting parallel stream verification for ${candidates.length} candidates from ${result.provider}');
-        final checkFutures = candidates.map((cand) => _probeStreamCandidate(cand, headers)).toList();
+        final verified = choseAutomatically ? _firstReachableProbe : null;
+        final checkFutures = [
+          for (final (index, candidate) in candidates.indexed)
+            if (index == 0 && verified != null)
+              Future<_StreamProbe?>.value(verified)
+            else
+              _probeStreamCandidate(candidate, headers),
+        ];
 
         // Take the first working one, strictly respecting original order (primary first, then
         // alternates), as soon as it answers instead of waiting for every candidate.
@@ -1627,7 +1768,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             working = candidates[i];
             final variants = res.variants;
             if (variants != null) {
-              final chosen = _pickVariant(variants, preferredQuality);
+              final selection = choseAutomatically ? _streamDiscovery?.selection : null;
+              final resolutions = selection?.mode == StreamSelectionMode.match &&
+                      selection!.regex.isEmpty ? selection.resolutions : const <int>[];
+              final presetVariant = resolutions.map(
+                (height) => variants.where((variant) => variant.height == height).firstOrNull,
+              ).nonNulls.firstOrNull;
+              final matchedHeight = selection?.mode == StreamSelectionMode.match &&
+                      selection!.regex.isNotEmpty ? manualChoice?.resolution : null;
+              final chosen = presetVariant ?? _pickVariant(
+                variants, matchedHeight == null ? preferredQuality : '${matchedHeight}p',
+              );
               playbackVariantUrl = chosen.url;
               if (variants.length > 1) {
                 _hlsVariants = variants;
@@ -1674,7 +1825,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       // Embed providers use WebView
       if (!_isDirectStream) {
-        if (manualChoice != null) _lastStreamChoice = manualChoice;
+        if (manualChoice != null) unawaited(_rememberStreamChoice(media, manualChoice));
         _dismissTooltips('loading → WebView player');
         setState(() {
           _isLoading = false;
@@ -1818,7 +1969,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         return;
       }
       // Watch for servers that open cleanly but never produce a frame.
-      _startStuckWatchdog();
+      final automaticChoice = choseAutomatically ? manualChoice : null;
+      _startStuckWatchdog(onAutomaticFailure: automaticChoice == null ? null : () {
+        final discovery = _streamDiscovery;
+        if (_streamPickerOpen || discovery?.episode != _currentEpisode) return;
+        discovery?.markFailed(automaticChoice);
+        _streamResult = null;
+        _progressTimer?.cancel();
+        unawaited(() async {
+          await _player.stop();
+          if (mounted && !_isDeactivated && discovery == _streamDiscovery) {
+            await _initializePlayer();
+          }
+        }());
+      });
 
       // Load custom remote subtitle if saved
       try {
@@ -1911,7 +2075,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       });
 
       _startProgressTracking();
-      if (manualChoice != null) _lastStreamChoice = manualChoice;
+      if (manualChoice != null) unawaited(_rememberStreamChoice(media, manualChoice));
       _updateWatchPartyHostSyncTimer();
       _scheduleWatchPartyBootstrapSyncs();
       appDebugLog('🧪 [CW_DEBUG] PlayerScreen#$_sid _initializePlayer SUCCESS on provider[$_currentProviderIndex] $_currentProvider');
@@ -1938,7 +2102,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (manualChoice != null) {
         _streamDiscovery?.markFailed(manualChoice);
         _streamResult = null;
-        unawaited(_initializePlayer());
+        unawaited(_initializePlayer(allowAuto: choseAutomatically));
         return;
       }
       setState(() {
@@ -3937,7 +4101,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// HLS demuxer (ffmpeg) downloads every variant playlist one after another
   /// before the first frame, and slow CDNs take 1-6 s per playlist (VidRock's
   /// three-variant masters cost 10-15 s that way).
-  Future<({bool ok, int? status, List<_HlsVariant>? variants})?> _probeStreamCandidate(
+  Future<_StreamProbe?> _probeStreamCandidate(
     StreamSource cand,
     Map<String, String> headers,
   ) async {
@@ -7630,7 +7794,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     _streamResult = null;
                     _runningFetchers = null;
                   });
-                  _initializePlayer();
+                  _initializePlayer(allowAuto: !_usesStreamPicker);
                 },
                 icon: Icon(Icons.refresh, size: 20),
                 label: Text(_usesStreamPicker ? 'CHOOSE STREAM' : 'RETRY'),

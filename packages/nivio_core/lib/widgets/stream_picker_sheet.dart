@@ -1,15 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:nivio/models/stream_result.dart';
-import 'package:nivio/screens/extensions_screen.dart';
+import 'package:nivio/screens/stream_selection_screen.dart';
 import 'package:nivio/services/extensions/extension_repository.dart';
 import 'package:nivio/services/extensions/extension_resolver.dart';
 import 'package:nivio/services/extensions/stream_discovery.dart';
+import 'package:nivio/services/extensions/stream_selection.dart';
 
 class StreamPickerOutcome {
-  const StreamPickerOutcome({this.choice, this.result, this.refresh = false});
+  const StreamPickerOutcome({
+    this.choice,
+    this.result,
+    this.refresh = false,
+    this.automatic = false,
+  });
   final StreamChoice? choice;
   final StreamResult? result;
   final bool refresh;
+  final bool automatic;
 }
 
 class StreamPickerSheet extends StatefulWidget {
@@ -18,18 +25,21 @@ class StreamPickerSheet extends StatefulWidget {
     required this.discovery,
     required this.initialFilter,
     required this.onFilter,
+    this.fallbackMessage,
   });
 
   final StreamDiscovery discovery;
   final StreamFilter initialFilter;
   final ValueChanged<StreamFilter> onFilter;
+  final String? fallbackMessage;
 
   static Future<StreamPickerOutcome?> show(
     BuildContext context,
     StreamDiscovery discovery,
     StreamFilter initialFilter,
-    ValueChanged<StreamFilter> onFilter,
-  ) => showModalBottomSheet<StreamPickerOutcome>(
+    ValueChanged<StreamFilter> onFilter, {
+    String? fallbackMessage,
+  }) => showModalBottomSheet<StreamPickerOutcome>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
@@ -42,6 +52,7 @@ class StreamPickerSheet extends StatefulWidget {
       discovery: discovery,
       initialFilter: initialFilter,
       onFilter: onFilter,
+      fallbackMessage: fallbackMessage,
     ),
   );
 
@@ -121,125 +132,126 @@ class _StreamPickerSheetState extends State<StreamPickerSheet> {
                 )
                 .toList();
             final previous = discovery.previous;
-            final ordered = [
-              ...visible.where((choice) => choice.variant == previous?.variant),
-              ...visible.where(
-                (choice) =>
-                    choice.variant != previous?.variant && !choice.isWebPlayer,
-              ),
-              ...visible.where(
-                (choice) =>
-                    choice.variant != previous?.variant && choice.isWebPlayer,
-              ),
-            ];
+            final ordered = discovery.orderForPicker(visible);
             final media = discovery.media;
             final episode = media.mediaType == 'movie'
                 ? 'Movie'
                 : discovery.isAnime
                 ? 'Episode ${discovery.episode}'
                 : 'Season ${discovery.season} · Episode ${discovery.episode}';
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                ListTile(
-                  title: const Text(
-                    'Choose stream',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    '${media.title ?? media.name ?? 'Video'} · $episode',
-                  ),
-                  trailing: IconButton(
-                    tooltip: 'Close',
-                    icon: const Icon(Icons.close),
-                    onPressed: _opening == null
-                        ? () => Navigator.of(context).pop()
-                        : null,
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [
-                      _tab(StreamFilter.all, available.length),
-                      _tab(StreamFilter.direct, direct),
-                      _tab(StreamFilter.torrents, torrents),
-                    ],
-                  ),
-                ),
-                ListTile(
-                  dense: true,
-                  title: const Text(
-                    'Set your default to All, Direct, or Torrents in Settings.',
-                  ),
-                  trailing: TextButton(
-                    onPressed: _opening == null
-                        ? () async {
-                            final filter = await showStreamPickerSettings(
-                              context,
-                            );
-                            if (!context.mounted) return;
-                            if (filter != null) _setFilter(filter);
-                            Navigator.of(
-                              context,
-                            ).pop(const StreamPickerOutcome(refresh: true));
-                          }
-                        : null,
-                    child: const Text('Settings'),
-                  ),
-                ),
-                if (discovery.isAnime)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Wrap(
-                      spacing: 8,
-                      children: [
-                        for (final audio in <String?>[null, 'Sub', 'Dub'])
-                          ChoiceChip(
-                            label: Text(audio ?? 'All audio'),
-                            selected: _audio == audio,
-                            onSelected: _opening == null
-                                ? (_) => setState(() => _audio = audio)
-                                : null,
-                          ),
-                      ],
-                    ),
-                  ),
-                if (_status != null || discovery.searching)
-                  const LinearProgressIndicator(),
-                if (_status != null ||
-                    discovery.searching ||
-                    discovery.failures.isNotEmpty)
-                  ListTile(
-                    dense: true,
-                    title: Semantics(
-                      liveRegion: true,
-                      child: Text(
-                        _status ??
-                            (discovery.searching
-                                ? 'Searching providers…'
-                                : '${discovery.failures.length} provider(s) couldn’t be reached.'),
+            return CustomScrollView(
+              slivers: [
+                SliverList.list(
+                  children: [
+                    ListTile(
+                      title: const Text(
+                        'Choose stream',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: Text(
+                        '${media.title ?? media.name ?? 'Video'} · $episode',
+                      ),
+                      trailing: IconButton(
+                        tooltip: 'Close',
+                        icon: const Icon(Icons.close),
+                        onPressed: _opening == null
+                            ? () => Navigator.of(context).pop()
+                            : null,
                       ),
                     ),
-                    trailing: _opening == null && discovery.searching
-                        ? TextButton(
-                            onPressed: discovery.stop,
-                            child: const Text('Stop search'),
-                          )
-                        : null,
-                  ),
-                Expanded(
-                  child: ordered.isEmpty
-                      ? _empty(direct, torrents)
-                      : ListView.separated(
-                          itemCount: ordered.length,
-                          separatorBuilder: (_, _) => const Divider(height: 1),
-                          itemBuilder: (_, index) =>
-                              _choice(ordered[index], previous),
+                    if (widget.fallbackMessage case final String message)
+                      ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.info_outline),
+                        title: Text(message),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          _tab(StreamFilter.all, available.length),
+                          _tab(StreamFilter.direct, direct),
+                          _tab(StreamFilter.torrents, torrents),
+                        ],
+                      ),
+                    ),
+                    ListTile(
+                      dense: true,
+                      title: const Text(
+                        'Set your preferred stream type, autoplay mode, and source order in Settings.',
+                      ),
+                      trailing: TextButton(
+                        onPressed: _opening == null
+                            ? () async {
+                                await showStreamPickerSettings(context);
+                                if (!context.mounted) return;
+                                Navigator.of(
+                                  context,
+                                ).pop(const StreamPickerOutcome(refresh: true));
+                              }
+                            : null,
+                        child: const Text('Settings'),
+                      ),
+                    ),
+                    if (discovery.isAnime)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Wrap(
+                          spacing: 8,
+                          children: [
+                            for (final audio in <String?>[null, 'Sub', 'Dub'])
+                              ChoiceChip(
+                                label: Text(audio ?? 'All audio'),
+                                selected: _audio == audio,
+                                onSelected: _opening == null
+                                    ? (_) => setState(() => _audio = audio)
+                                    : null,
+                              ),
+                          ],
                         ),
+                      ),
+                    if (_status != null || discovery.searching)
+                      const LinearProgressIndicator(),
+                    if (_status != null ||
+                        discovery.searching ||
+                        discovery.failures.isNotEmpty)
+                      ListTile(
+                        dense: true,
+                        title: Semantics(
+                          liveRegion: true,
+                          child: Text(
+                            _status ??
+                                (discovery.searching
+                                    ? 'Searching providers…'
+                                    : '${discovery.failures.length} provider(s) couldn’t be reached.'),
+                          ),
+                        ),
+                        trailing: _opening == null && discovery.searching
+                            ? TextButton(
+                                onPressed: discovery.stop,
+                                child: const Text('Stop search'),
+                              )
+                            : null,
+                      ),
+                  ],
                 ),
+                if (ordered.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _empty(direct, torrents),
+                  )
+                else
+                  SliverList.separated(
+                    itemCount: ordered.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (_, index) =>
+                        _choice(ordered[index], previous),
+                  ),
               ],
             );
           },
@@ -326,14 +338,17 @@ class _StreamPickerSheetState extends State<StreamPickerSheet> {
       choice.quality,
       if (choice.audioType != null)
         choice.audioType!
-      else if (discovery.isAnime && choice.audio == null)
+      else if (choice.audio == null && discovery.selection.matchAudio)
         'Audio unconfirmed',
       if (choice.audio != null && choice.audio != choice.audioType)
         choice.audio!,
       if (bytes != null)
         bytes < 1073741824
-            ? '${(bytes / 1048576).toStringAsFixed(1)} MB'
-            : '${(bytes / 1073741824).toStringAsFixed(1)} GB',
+            ? '${(bytes / 1048576).toStringAsFixed(1)} MiB'
+            : '${(bytes / 1073741824).toStringAsFixed(1)} GiB',
+      if (discovery.selection.maxFileGb > 0 && bytes == null) 'Size unknown',
+      if (discovery.selection.maxFileGb > 0 && torrent?.isBatch == true)
+        'Episode size unknown',
       if (torrent != null && torrent.seeders > 0) '${torrent.seeders} seeders',
       if (torrent?.isBatch == true) 'Pack · episode ${discovery.episode}',
       if (subtitles.isNotEmpty) 'Subtitles: ${subtitles.take(3).join(', ')}',
@@ -351,7 +366,7 @@ class _StreamPickerSheetState extends State<StreamPickerSheet> {
         [
           details.join(' · '),
           '${choice.provider} · ${choice.origin}',
-          if (choice.variant == previous?.variant) 'Previous source',
+          if (choice.bingeGroup == previous?.bingeGroup) 'Previous source',
           if (failed) 'Couldn’t open this stream. Choose another result.',
         ].join('\n'),
       ),
