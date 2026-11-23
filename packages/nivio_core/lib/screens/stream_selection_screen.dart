@@ -441,26 +441,6 @@ class StreamPlaybackSettings extends ConsumerWidget {
                     ],
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      icon: const Icon(
-                        PhosphorIconsRegular.lightning,
-                        size: 16,
-                      ),
-                      label: const Text('Fastest Load'),
-                      onPressed: () => change(
-                        (value) => value.copyWith(
-                          mode: StreamSelectionMode.first,
-                          matchAudio: true,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-
                 ExpansionTile(
                   key: const PageStorageKey('stream-customise'),
                   title: const Text('Customise'),

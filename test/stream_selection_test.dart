@@ -447,11 +447,12 @@ void main() {
     await tester.drag(find.byType(PageView), const Offset(-300, 0));
     await tester.pumpAndSettle();
     expect(find.text('Set your playback preferences'), findsOneWidget);
-    final fastestLoad = find.text('Fastest Load');
-    await tester.ensureVisible(fastestLoad);
+    expect(find.text('Fastest Load'), findsNothing);
+    final fastestFirst = find.text('Fastest First');
+    await tester.ensureVisible(fastestFirst);
     await tester.pumpAndSettle();
-    expect(fastestLoad.hitTestable(), findsOneWidget);
-    await tester.tap(fastestLoad.hitTestable());
+    expect(fastestFirst.hitTestable(), findsOneWidget);
+    await tester.tap(fastestFirst.hitTestable());
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     final prefs = await SharedPreferences.getInstance();
