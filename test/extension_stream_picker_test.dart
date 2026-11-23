@@ -8,8 +8,14 @@ import 'package:nivio/services/extensions/extension_resolver.dart';
 import 'package:nivio/services/extensions/nuvio_script_runtime.dart';
 import 'package:nivio/services/extensions/stream_discovery.dart';
 import 'package:nivio/services/streaming_service.dart';
+import 'package:nivio/services/tmdb_service.dart';
+import 'package:nivio/services/torrent/media_torrent_models.dart';
+import 'package:nivio/services/torrent/torrent_models.dart';
+import 'package:nivio/services/torrent/torrent_stream_service.dart';
+import 'package:nivio/widgets/playback_picker.dart';
 import 'package:nivio/widgets/stream_picker_sheet.dart';
-import 'package:nivio/widgets/stream_surfaces.dart';
+import 'package:nivio/widgets/torrent_picker_sheet.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 final _repo = ExtensionRepo(
   url: Uri.https('example.com', '/manifest.json'),
@@ -42,6 +48,28 @@ final _torrent = StreamChoice.fromExtension(_repo.providers.single, {
 class _UnusedStreamingService implements StreamingService {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _PickerTmdb implements TmdbService {
+  @override
+  Future<String?> getImdbId({
+    required int tmdbId,
+    required bool isMovie,
+  }) async => 'tt1234567';
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _PickerTorrents extends TorrentStreamService {
+  _PickerTorrents() : super(tmdbService: _PickerTmdb());
+
+  @override
+  Future<List<TorrentResult>> searchMediaTorrents({
+    required MediaTorrentQuery query,
+    void Function(String status)? onStatus,
+    bool rank = true,
+  }) async => [_torrent.torrent!];
 }
 
 StreamDiscovery _readyDiscovery({required bool torrentsEnabled}) =>
@@ -124,11 +152,11 @@ void main() {
       expect(find.text('Direct link'), findsOneWidget);
       expect(
         find
-            .widgetWithText(StreamSegment, 'Torrents 0')
+            .widgetWithText(PlaybackPickerTab, 'Torrents 0')
             .evaluate()
             .single
             .widget,
-        isA<StreamSegment>().having(
+        isA<PlaybackPickerTab>().having(
           (segment) => segment.onTap,
           'onTap',
           isNull,
@@ -168,12 +196,54 @@ void main() {
     await tester.tap(find.text('Choose a source'));
     await tester.pumpAndSettle();
     expect(find.text('Choose stream'), findsOneWidget);
+    expect(find.byType(PlaybackPickerFrame), findsOneWidget);
+    expect(find.byType(PlaybackPickerRow), findsOneWidget);
     await tester.tap(find.text('Direct link'));
     await tester.pumpAndSettle();
     expect(picked?.choice, _direct);
     expect(picked?.result, _direct.direct);
     expect(find.text('Choose stream'), findsNothing);
     discovery.dispose();
+  });
+
+  testWidgets('the original torrent picker uses the shared frame and row', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'torrent_auto_select': false});
+    (TorrentResult, dynamic, {bool automatic})? picked;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () async {
+                picked = await TorrentPickerSheet.show(
+                  context,
+                  media: const SearchResult(
+                    id: 10,
+                    mediaType: 'movie',
+                    title: 'Example movie',
+                  ),
+                  initialEpisode: 1,
+                  initialSeason: 1,
+                  initialResolution: '1080',
+                  torrentStreamService: _PickerTorrents(),
+                );
+              },
+              child: const Text('Open torrent picker'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open torrent picker'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PlaybackPickerFrame), findsOneWidget);
+    expect(find.byType(PlaybackPickerRow), findsOneWidget);
+    await tester.tap(find.text('Torrent release'));
+    await tester.pumpAndSettle();
+    expect(picked?.$1, _torrent.torrent);
+    expect(picked?.automatic, isFalse);
   });
 
   test(

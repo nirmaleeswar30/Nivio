@@ -20,21 +20,40 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen> {
   static final _cloudstreamRepositories = Uri.https('rentry.org', '/cs3-repos');
 
   final _url = TextEditingController();
-  late Future<List<ExtensionRepo>> _repos;
-  bool _busy = false;
+  List<ExtensionRepo>? _repos;
+  bool _busy = true;
+  bool _loadFailed = false;
 
   ExtensionRepository get _service => ref.read(extensionRepositoryProvider);
 
   @override
   void initState() {
     super.initState();
-    _repos = _service.list();
+    _reload();
   }
 
   @override
   void dispose() {
     _url.dispose();
     super.dispose();
+  }
+
+  Future<void> _reload() async {
+    try {
+      final repos = await _service.list();
+      if (!mounted) return;
+      setState(() {
+        _repos = repos;
+        _loadFailed = false;
+        _busy = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loadFailed = true;
+        _busy = false;
+      });
+    }
   }
 
   Future<void> _update(Future<void> Function() action) async {
@@ -54,11 +73,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen> {
           ),
         );
     } finally {
-      if (mounted)
-        setState(() {
-          _busy = false;
-          _repos = _service.list();
-        });
+      if (mounted) await _reload();
     }
   }
 
@@ -147,85 +162,82 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen> {
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
-          child: FutureBuilder<List<ExtensionRepo>>(
-            future: _repos,
-            builder: (context, snapshot) => ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                StreamPanel(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const StreamSectionLabel('BROWSE REPOSITORIES'),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 4,
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed: () => _openDirectory(_nuvioPlugins),
-                            icon: const Icon(
-                              PhosphorIconsRegular.arrowUpRight,
-                              size: 16,
-                            ),
-                            label: const Text('Nuvio plugins'),
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              StreamPanel(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const StreamSectionLabel('BROWSE REPOSITORIES'),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () => _openDirectory(_nuvioPlugins),
+                          icon: const Icon(
+                            PhosphorIconsRegular.arrowUpRight,
+                            size: 16,
                           ),
-                          OutlinedButton.icon(
-                            onPressed: () =>
-                                _openDirectory(_cloudstreamRepositories),
-                            icon: const Icon(
-                              PhosphorIconsRegular.arrowUpRight,
-                              size: 16,
-                            ),
-                            label: const Text('Cloudstream repos'),
+                          label: const Text('Nuvio plugins'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () =>
+                              _openDirectory(_cloudstreamRepositories),
+                          icon: const Icon(
+                            PhosphorIconsRegular.arrowUpRight,
+                            size: 16,
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _url,
-                        enabled: !_busy,
-                        keyboardType: TextInputType.url,
-                        autocorrect: false,
-                        onSubmitted: (_) => _add(),
-                        decoration: InputDecoration(
-                          labelText: 'Repository URL',
-                          hintText: 'https://…/manifest.json',
-                          prefixIcon: const Icon(PhosphorIconsRegular.link),
-                          suffixIcon: Padding(
-                            padding: const EdgeInsets.only(right: 5),
-                            child: TextButton(
-                              onPressed: _busy ? null : _paste,
-                              child: const Text('Paste'),
-                            ),
+                          label: const Text('Cloudstream repos'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _url,
+                      enabled: !_busy,
+                      keyboardType: TextInputType.url,
+                      autocorrect: false,
+                      onSubmitted: (_) => _add(),
+                      decoration: InputDecoration(
+                        labelText: 'Repository URL',
+                        hintText: 'https://…/manifest.json',
+                        prefixIcon: const Icon(PhosphorIconsRegular.link),
+                        suffixIcon: Padding(
+                          padding: const EdgeInsets.only(right: 5),
+                          child: TextButton(
+                            onPressed: _busy ? null : _paste,
+                            child: const Text('Paste'),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      FilledButton.icon(
-                        onPressed: _busy ? null : _add,
-                        icon: const Icon(PhosphorIconsRegular.plus),
-                        label: const Text('Add repository'),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 10),
+                    FilledButton.icon(
+                      onPressed: _busy ? null : _add,
+                      icon: const Icon(PhosphorIconsRegular.plus),
+                      label: const Text('Add repository'),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                if (_busy ||
-                    (snapshot.connectionState == ConnectionState.waiting &&
-                        !snapshot.hasData))
-                  const LinearProgressIndicator(),
-                if (snapshot.hasError)
-                  const ListTile(
-                    title: Text('Could not read installed repositories.'),
-                  ),
-                if (snapshot.data?.isEmpty == true)
-                  const ListTile(title: Text('No repositories installed')),
-                for (final repo in snapshot.data ?? const <ExtensionRepo>[])
-                  _repositoryCard(repo),
-              ],
-            ),
+              ),
+              const SizedBox(height: 12),
+              if (_busy)
+                const LinearProgressIndicator()
+              else
+                const SizedBox(height: 4),
+              if (_loadFailed)
+                const ListTile(
+                  title: Text('Could not read installed repositories.'),
+                ),
+              if (_repos?.isEmpty == true)
+                const ListTile(title: Text('No repositories installed')),
+              for (final repo in _repos ?? const <ExtensionRepo>[])
+                _repositoryCard(repo),
+            ],
           ),
         ),
       ),
@@ -237,6 +249,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen> {
     final available = ExtensionResolver.supports(repo.format);
     final count = repo.enabledIds.length;
     return Padding(
+      key: PageStorageKey(repo.url),
       padding: const EdgeInsets.only(bottom: 8),
       child: StreamPanel(
         child: ExpansionTile(

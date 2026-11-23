@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -304,6 +305,7 @@ void main() {
     await tester.tap(find.text('Skip this step'));
     await tester.pumpAndSettle();
     expect(find.text('Watch together'), findsOneWidget);
+    expect(find.text('Start or join from Watch Party'), findsOneWidget);
     await tester.tap(find.text('Skip setup'));
     await tester.pumpAndSettle();
     expect(find.text('Party TEST'), findsOneWidget);
@@ -344,5 +346,46 @@ void main() {
       TextSelection.collapsed(offset: url.length),
     );
     expect(find.text('No repositories installed'), findsOneWidget);
+  });
+
+  testWidgets('enabling providers keeps the repository expanded', (
+    tester,
+  ) async {
+    final repo = ExtensionRepo(
+      url: Uri.https('example.com', '/manifest.json'),
+      name: 'Test repository',
+      format: ExtensionFormat.javascript,
+      entries: [
+        {'id': 'first', 'name': 'First source'},
+        {'id': 'second', 'name': 'Second source'},
+      ],
+      enabledIds: {},
+    );
+    SharedPreferences.setMockInitialValues({
+      'stream_extension_repositories': jsonEncode([repo.toJson()]),
+    });
+    await tester.pumpWidget(
+      const ProviderScope(child: MaterialApp(home: ExtensionsScreen())),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Test repository'));
+    await tester.pumpAndSettle();
+
+    final first = find.widgetWithText(SwitchListTile, 'First source');
+    final second = find.widgetWithText(SwitchListTile, 'Second source');
+    await tester.ensureVisible(first);
+    await tester.tap(first);
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(first).value, isTrue);
+    expect(second, findsOneWidget);
+
+    await tester.ensureVisible(second);
+    await tester.tap(second);
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(second).value, isTrue);
+    expect(
+      (await ExtensionRepository().list()).single.enabledIds,
+      hasLength(2),
+    );
   });
 }

@@ -81,7 +81,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
 
   late final _light = AnimationController(
     vsync: this,
-    duration: const Duration(seconds: 34),
+    duration: const Duration(seconds: 15),
     value: .14,
   );
   final _pages = PageController();
@@ -450,15 +450,6 @@ class _WatchPartyIntro extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Column(
     children: [
-      ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Image.asset(
-          'assets/images/watch-party.jpg',
-          fit: BoxFit.contain,
-          semanticLabel: 'Nivio Watch Party screen',
-        ),
-      ),
-      const SizedBox(height: 12),
       const ListTile(
         leading: Icon(Icons.group_outlined),
         title: Text('Start or join from Watch Party'),

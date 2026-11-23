@@ -1,16 +1,13 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:nivio/core/tmdb_artwork.dart';
+import 'package:nivio/widgets/playback_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/services/torrent/torrent_models.dart';
 import 'package:nivio/services/torrent/media_torrent_models.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
 import 'package:nivio/widgets/skeleton.dart';
 import 'package:nivio/services/streaming_service.dart';
-import 'package:nivio/widgets/marquee_text.dart';
 
 class TorrentPickerSheet extends StatefulWidget {
   final SearchResult media;
@@ -44,44 +41,17 @@ class TorrentPickerSheet extends StatefulWidget {
     required TorrentStreamService torrentStreamService,
     void Function(String status)? onStatusUpdate,
   }) {
-    final isMobile = Platform.isAndroid || Platform.isIOS;
-    if (isMobile) {
-      return Navigator.of(context).push<(TorrentResult, dynamic, {bool automatic})>(
-        MaterialPageRoute(
-          builder: (context) => Scaffold(
-            backgroundColor: const Color(0xFF0F0F0F),
-            body: TorrentPickerSheet(
-              media: media,
-              initialEpisode: initialEpisode,
-              initialSeason: initialSeason,
-              initialAbsoluteEpisode: initialAbsoluteEpisode,
-              initialResolution: initialResolution,
-              torrentStreamService: torrentStreamService,
-              onStatusUpdate: onStatusUpdate,
-              isFullScreen: true,
-            ),
-          ),
-        ),
-      );
-    }
-
-    return showDialog<(TorrentResult, dynamic, {bool automatic})>(
-      context: context,
-      barrierDismissible: true,
-      barrierColor: Colors.black.withOpacity(0.8), // Darker backdrop for cinematic feel
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: TorrentPickerSheet(
-          media: media,
-          initialEpisode: initialEpisode,
-          initialSeason: initialSeason,
-          initialAbsoluteEpisode: initialAbsoluteEpisode,
-          initialResolution: initialResolution,
-          torrentStreamService: torrentStreamService,
-          onStatusUpdate: onStatusUpdate,
-          isFullScreen: false,
-        ),
+    return PlaybackPickerFrame.show<(TorrentResult, dynamic, {bool automatic})>(
+      context,
+      (fullScreen) => TorrentPickerSheet(
+        media: media,
+        initialEpisode: initialEpisode,
+        initialSeason: initialSeason,
+        initialAbsoluteEpisode: initialAbsoluteEpisode,
+        initialResolution: initialResolution,
+        torrentStreamService: torrentStreamService,
+        onStatusUpdate: onStatusUpdate,
+        isFullScreen: fullScreen,
       ),
     );
   }
@@ -253,7 +223,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
             );
 
       _cancelAutoPlay();
-      Navigator.of(context).pop((syntheticResult, dummyQuery));
+      Navigator.of(context).pop((syntheticResult, dummyQuery, automatic: false));
       return;
     }
 
@@ -397,198 +367,72 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
   @override
   Widget build(BuildContext context) {
     final isFullScreen = widget.isFullScreen;
-    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
-    final isCompactLandscape = isFullScreen && isLandscape;
+    final isCompactLandscape =
+        isFullScreen && MediaQuery.orientationOf(context) == Orientation.landscape;
     final spacing = isCompactLandscape ? 8.0 : 16.0;
     final horizontalPadding = isFullScreen ? 16.0 : 24.0;
-    
-    final title = widget.media.title ?? widget.media.name ?? 'Select Torrent';
-    final backdropPath = widget.media.backdropPath ?? widget.media.posterPath;
-    
+
     return MouseRegion(
       onHover: (_) => _cancelAutoPlay(),
       child: Listener(
         onPointerHover: (_) => _cancelAutoPlay(),
         onPointerDown: (_) => _cancelAutoPlay(),
-        child: Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFF0F0F0F),
-            borderRadius: isFullScreen ? BorderRadius.zero : BorderRadius.circular(12),
-            border: isFullScreen ? null : Border.all(color: Colors.white.withOpacity(0.05)),
-            boxShadow: isFullScreen ? null : [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.8),
-                blurRadius: 30,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          constraints: isFullScreen
-              ? const BoxConstraints.expand()
-              : BoxConstraints(
-                  maxWidth: 800,
-                  maxHeight: MediaQuery.of(context).size.height * 0.85,
-                ),
-          child: ClipRRect(
-            borderRadius: isFullScreen ? BorderRadius.zero : BorderRadius.circular(12),
-            child: Stack(
-              children: [
-                if (backdropPath != null)
-                  Positioned(
-                    top: 0, left: 0, right: 0, 
-                    height: isCompactLandscape ? 180 : 320,
-                    child: ShaderMask(
-                      shaderCallback: (rect) {
-                        return const LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Colors.black, Colors.transparent],
-                          stops: [0.4, 0.9],
-                        ).createShader(rect);
-                      },
-                      blendMode: BlendMode.dstIn,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          image: DecorationImage(
-                            image: artworkImageProvider(
-                              backdropPath,
-                              width: isFullScreen
-                                  ? MediaQuery.sizeOf(context).width
-                                  : MediaQuery.sizeOf(context).width.clamp(0, 800),
-                              height: MediaQuery.sizeOf(context).height *
-                                  (isFullScreen ? 1 : 0.85),
-                              pixelRatio: MediaQuery.devicePixelRatioOf(context),
-                              kind: widget.media.backdropPath != null
-                                  ? ArtworkKind.backdrop
-                                  : ArtworkKind.poster,
-                            ),
-                            fit: BoxFit.cover,
-                            alignment: Alignment.topCenter,
-                          ),
-                        ),
-                        foregroundDecoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              const Color(0xFF0F0F0F).withOpacity(0.4),
-                              const Color(0xFF0F0F0F).withOpacity(0.7),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                
-                SafeArea(
-                  top: isFullScreen,
-                  bottom: isFullScreen,
-                  left: isFullScreen,
-                  right: isFullScreen,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Header
-                      Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          isFullScreen ? 8.0 : 24.0, 
-                          isFullScreen ? (isCompactLandscape ? 4.0 : 8.0) : 20.0, 
-                          16.0, 
-                          spacing,
-                        ),
-                        child: Row(
-                          children: [
-                            if (isFullScreen) ...[
-                              IconButton(
-                                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                                onPressed: () {
-                                  _cancelAutoPlay();
-                                  Navigator.of(context).pop();
-                                },
-                                splashRadius: 20,
-                              ),
-                              const SizedBox(width: 4),
-                            ],
-                            Expanded(
-                              child: MarqueeText(
-                                text: title,
-                                style: TextStyle(
-                                  fontSize: isFullScreen ? 19 : 22,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
-                                blankSpace: 40.0,
-                                velocity: 30.0,
-                              ),
-                            ),
-                            if (!isFullScreen)
-                              IconButton(
-                                icon: const Icon(Icons.close, color: Colors.white70),
-                                onPressed: () {
-                                  _cancelAutoPlay();
-                                  Navigator.of(context).pop();
-                                },
-                                hoverColor: Colors.white.withOpacity(0.1),
-                                splashRadius: 20,
-                              ),
+        child: PlaybackPickerFrame(
+          media: widget.media,
+          fullScreen: isFullScreen,
+          label: 'Choose torrent',
+          onClose: () {
+            _cancelAutoPlay();
+            Navigator.of(context).pop();
+          },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (isCompactLandscape)
+                      Row(
+                        children: [
+                          Expanded(child: _buildSearchTextField(spacing)),
+                          if (!_isMovie) ...[
+                            const SizedBox(width: 12),
+                            _buildEpisodeSelector(),
                           ],
-                        ),
-                      ),
-                      
-                      // Controls (Search, Episode, Resolution)
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (isCompactLandscape)
-                              Row(
-                                children: [
-                                  Expanded(child: _buildSearchTextField(spacing)),
-                                  if (!_isMovie) ...[
-                                    const SizedBox(width: 12),
-                                    _buildEpisodeSelector(),
-                                  ],
-                                  const SizedBox(width: 12),
-                                  _buildResolutionSelector(),
-                                ],
-                              )
-                            else ...[
-                              _buildSearchTextField(spacing),
-                              SizedBox(height: spacing),
-                              Row(
-                                children: [
-                                  if (!_isMovie) ...[
-                                    _buildEpisodeSelector(),
-                                    const SizedBox(width: 24),
-                                  ],
-                                  _buildResolutionSelector(),
-                                ],
-                              ),
-                            ],
-                            SizedBox(height: spacing),
-                            _buildAutoSelectButton(spacing),
-                          ],
-                        ),
-                      ),
-                      
+                          const SizedBox(width: 12),
+                          _buildResolutionSelector(),
+                        ],
+                      )
+                    else ...[
+                      _buildSearchTextField(spacing),
                       SizedBox(height: spacing),
-                      const Divider(height: 1, thickness: 1, color: Color(0xFF2A2A2A)),
-                      
-                      // Results List
-                      Expanded(
-                        child: _buildContent(),
+                      Row(
+                        children: [
+                          if (!_isMovie) ...[
+                            _buildEpisodeSelector(),
+                            const SizedBox(width: 24),
+                          ],
+                          _buildResolutionSelector(),
+                        ],
                       ),
                     ],
-                  ),
+                    SizedBox(height: spacing),
+                    _buildAutoSelectButton(spacing),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              SizedBox(height: spacing),
+              const Divider(height: 1, thickness: 1, color: Colors.white12),
+              Expanded(child: _buildContent()),
+            ],
           ),
         ),
       ),
     );
   }
+
 
   Widget _buildSearchTextField(double spacing) {
     return TextField(
@@ -601,12 +445,12 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         hintStyle: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 14),
         prefixIcon: Icon(Icons.search, color: Colors.white.withOpacity(0.5), size: 20),
         suffixIcon: IconButton(
-          icon: const Icon(Icons.arrow_forward_rounded, color: Color(0xFF38Bdf8), size: 20),
+          icon: const Icon(Icons.arrow_forward_rounded, color: playbackPickerAccent, size: 20),
           onPressed: _executeCustomSearch,
           splashRadius: 20,
         ),
         filled: true,
-        fillColor: const Color(0xFF1A1A1A),
+        fillColor: playbackPickerField,
         contentPadding: EdgeInsets.symmetric(vertical: spacing),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
@@ -658,7 +502,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
       return ElevatedButton(
         onPressed: () => _playResult(_filteredResults!.first, automatic: true),
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF38Bdf8),
+          backgroundColor: playbackPickerAccent,
           foregroundColor: Colors.black,
           padding: EdgeInsets.symmetric(vertical: spacing),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -673,7 +517,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
       return ElevatedButton(
         onPressed: () => _playResult(_filteredResults!.first, automatic: true),
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF38Bdf8),
+          backgroundColor: playbackPickerAccent,
           foregroundColor: Colors.black,
           padding: EdgeInsets.symmetric(vertical: spacing),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -704,14 +548,14 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
       height: 36,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: playbackPickerField,
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: Colors.white.withOpacity(0.05)),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: value,
-          dropdownColor: const Color(0xFF1A1A1A),
+          dropdownColor: playbackPickerField,
           icon: const Padding(
             padding: EdgeInsets.only(left: 8.0),
             child: Icon(Icons.unfold_more, color: Colors.white54, size: 16),
@@ -756,7 +600,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
     }
 
     if (_filteredResults == null) {
-      final isMobile = Platform.isAndroid || Platform.isIOS;
+      final isMobile = widget.isFullScreen;
       return Skeletonizer(
         child: ListView.builder(
           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -827,205 +671,25 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         final isBest = index == 0;
         final isTrusted = _isTrusted(r);
         
-        return _HoverTorrentCard(
-          r: r,
-          isBest: isBest,
-          isTrusted: isTrusted,
-          isCancelled: _isCancelled,
+        return PlaybackPickerRow(
+          title: r.title,
+          marker: isBest ? 'BEST MATCH' : null,
+          highlighted: isBest && !_isCancelled,
+          tags: [
+            if (isTrusted)
+              const PlaybackPickerTag('Verified', color: playbackPickerAccent, icon: Icons.verified_rounded),
+            PlaybackPickerTag(r.source.toUpperCase(), color: playbackPickerProviderColor),
+            if (r.parsed.resolution != null)
+              PlaybackPickerTag('${r.parsed.resolution}p', color: playbackPickerQualityColor),
+            PlaybackPickerTag(formatPlaybackPickerSize(r.sizeBytes), color: Colors.white70),
+            ...playbackPickerPeerTags(r),
+          ],
           onTap: () {
             _cancelAutoPlay();
             _playResult(r);
           },
         );
       },
-    );
-  }
-}
-
-class _HoverTorrentCard extends StatefulWidget {
-  final TorrentResult r;
-  final bool isBest;
-  final bool isTrusted;
-  final bool isCancelled;
-  final VoidCallback onTap;
-
-  const _HoverTorrentCard({
-    Key? key,
-    required this.r,
-    required this.isBest,
-    required this.isTrusted,
-    required this.isCancelled,
-    required this.onTap,
-  }) : super(key: key);
-
-  @override
-  State<_HoverTorrentCard> createState() => _HoverTorrentCardState();
-}
-
-class _HoverTorrentCardState extends State<_HoverTorrentCard> {
-  bool _isHovered = false;
-
-  String _formatSize(int bytes) {
-    if (bytes <= 0) return '0 B';
-    final kb = bytes / 1024;
-    final mb = kb / 1024;
-    final gb = mb / 1024;
-    if (gb >= 1) return '${gb.toStringAsFixed(2)} GB';
-    if (mb >= 1) return '${mb.toStringAsFixed(1)} MB';
-    return '${kb.toStringAsFixed(1)} KB';
-  }
-
-  Widget _buildTag(String text, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withOpacity(0.2)),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.3,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatTag(IconData icon, String text, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 14, color: color),
-          const SizedBox(width: 4),
-          Text(
-            text,
-            style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isMobile = Platform.isAndroid || Platform.isIOS;
-    final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
-    final hideVerifiedText = isMobile && isPortrait;
-    final r = widget.r;
-    final isBest = widget.isBest;
-    final isTrusted = widget.isTrusted;
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      cursor: SystemMouseCursors.click,
-      child: FocusableTap(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-          padding: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 24, vertical: isMobile ? 12 : 16),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(color: Colors.white.withOpacity(0.05)),
-            ),
-            color: _isHovered 
-                ? Colors.white.withOpacity(0.05)
-                : (isBest && !widget.isCancelled 
-                    ? Colors.white.withOpacity(0.03) 
-                    : Colors.transparent),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Text(
-                      r.title,
-                      style: TextStyle(
-                        fontSize: isMobile ? 13.5 : 14.5,
-                        height: 1.4,
-                        fontWeight: isBest ? FontWeight.bold : FontWeight.normal,
-                        color: isBest ? Colors.white : Colors.white.withOpacity(0.8),
-                      ),
-                    ),
-                  ),
-                  if (isBest)
-                    Container(
-                      margin: const EdgeInsets.only(left: 12),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF38Bdf8).withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: const Color(0xFF38Bdf8).withOpacity(0.3)),
-                      ),
-                      child: const Text(
-                        'BEST MATCH',
-                        style: TextStyle(
-                          color: Color(0xFF38Bdf8),
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          if (isTrusted) ...[
-                            const Icon(Icons.verified_rounded, color: Color(0xFF38Bdf8), size: 16),
-                            if (!hideVerifiedText) ...[
-                              const SizedBox(width: 4),
-                              const Text(
-                                'Verified',
-                                style: TextStyle(color: Color(0xFF38Bdf8), fontSize: 12, fontWeight: FontWeight.bold),
-                              ),
-                            ],
-                            const SizedBox(width: 8),
-                          ],
-                          _buildTag(r.source.toUpperCase(), const Color(0xFFC084FC)),
-                          const SizedBox(width: 8),
-                          if (r.parsed.resolution != null) ...[
-                            _buildTag('${r.parsed.resolution}p', const Color(0xFF60A5FA)),
-                            const SizedBox(width: 8),
-                          ],
-                          _buildTag(_formatSize(r.sizeBytes), Colors.grey),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _buildStatTag(Icons.arrow_upward_rounded, r.seeders.toString(), const Color(0xFF4ADE80)),
-                  const SizedBox(width: 8),
-                  _buildStatTag(Icons.arrow_downward_rounded, r.leechers.toString(), const Color(0xFFF87171)),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

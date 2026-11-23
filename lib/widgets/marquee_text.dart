@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 class MarqueeText extends StatefulWidget {
@@ -23,14 +25,13 @@ class MarqueeText extends StatefulWidget {
 }
 
 class _MarqueeTextState extends State<MarqueeText> {
-  late ScrollController _scrollController;
-  bool _isScrolling = false;
+  final _scrollController = ScrollController();
+  Timer? _pause;
   double _currentScrollDistance = 0.0;
 
   @override
   void initState() {
     super.initState();
-    _scrollController = ScrollController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _startScrolling();
     });
@@ -38,32 +39,30 @@ class _MarqueeTextState extends State<MarqueeText> {
 
   @override
   void dispose() {
-    _isScrolling = false;
+    _pause?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
 
-  void _startScrolling() async {
-    _isScrolling = true;
-    while (_isScrolling && mounted) {
-      await Future.delayed(widget.pauseAfterRound);
-      if (!_isScrolling || !mounted) break;
-      
+  void _startScrolling() {
+    _pause = Timer(widget.pauseAfterRound, () async {
       if (_scrollController.hasClients && _currentScrollDistance > 0) {
-        final int durationMs = (_currentScrollDistance / widget.velocity * 1000).toInt();
-        
+        final int durationMs = (_currentScrollDistance / widget.velocity * 1000)
+            .toInt();
+
         await _scrollController.animateTo(
           _currentScrollDistance,
           duration: Duration(milliseconds: durationMs),
           curve: Curves.linear,
         );
-        
-        if (!_isScrolling || !mounted || !_scrollController.hasClients) break;
-        
+
+        if (!mounted || !_scrollController.hasClients) return;
+
         // Jump back to start immediately for continuous effect
         _scrollController.jumpTo(0.0);
       }
-    }
+      if (mounted) _startScrolling();
+    });
   }
 
   @override
@@ -79,7 +78,7 @@ class _MarqueeTextState extends State<MarqueeText> {
 
         if (textPainter.size.width > constraints.maxWidth) {
           _currentScrollDistance = textPainter.size.width + widget.blankSpace;
-          
+
           return SizedBox(
             height: textPainter.size.height,
             child: SingleChildScrollView(
@@ -91,7 +90,9 @@ class _MarqueeTextState extends State<MarqueeText> {
                   Text(widget.text, style: textStyle),
                   SizedBox(width: widget.blankSpace),
                   Text(widget.text, style: textStyle),
-                  SizedBox(width: constraints.maxWidth), // Extra padding to fill the rest of the screen after the second text
+                  SizedBox(
+                    width: constraints.maxWidth,
+                  ), // Extra padding to fill the rest of the screen after the second text
                 ],
               ),
             ),
