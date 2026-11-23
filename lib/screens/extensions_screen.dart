@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/services/extensions/extension_repository.dart';
 import 'package:nivio/services/extensions/extension_resolver.dart';
 import 'package:nivio/widgets/stream_surfaces.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ExtensionsScreen extends ConsumerStatefulWidget {
   const ExtensionsScreen({super.key});
@@ -14,6 +16,9 @@ class ExtensionsScreen extends ConsumerStatefulWidget {
 }
 
 class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen> {
+  static final _nuvioPlugins = Uri.https('nuvioplugin.com', '/');
+  static final _cloudstreamRepositories = Uri.https('rentry.org', '/cs3-repos');
+
   final _url = TextEditingController();
   late Future<List<ExtensionRepo>> _repos;
   bool _busy = false;
@@ -92,6 +97,41 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen> {
     });
   }
 
+  Future<void> _paste() async {
+    final before = _url.value;
+    String? text;
+    try {
+      text = (await Clipboard.getData(Clipboard.kTextPlain))?.text?.trim();
+    } on PlatformException {
+      if (mounted) _showMessage('Couldn’t read the clipboard.');
+      return;
+    }
+    if (!mounted || _busy || _url.value != before) return;
+    if (text == null || text.isEmpty) {
+      _showMessage('The clipboard is empty.');
+      return;
+    }
+    _url.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
+  Future<void> _openDirectory(Uri url) async {
+    try {
+      if (await launchUrl(url, mode: LaunchMode.externalApplication)) return;
+    } on PlatformException {
+      // Show the same feedback when a platform has no browser handler.
+    }
+    if (mounted) _showMessage('Couldn’t open the repository directory.');
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -117,8 +157,30 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const StreamSectionLabel(
-                        'NUVIO AND CLOUDSTREAM REPOSITORIES',
+                      const StreamSectionLabel('BROWSE REPOSITORIES'),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () => _openDirectory(_nuvioPlugins),
+                            icon: const Icon(
+                              PhosphorIconsRegular.arrowUpRight,
+                              size: 16,
+                            ),
+                            label: const Text('Nuvio plugins'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: () =>
+                                _openDirectory(_cloudstreamRepositories),
+                            icon: const Icon(
+                              PhosphorIconsRegular.arrowUpRight,
+                              size: 16,
+                            ),
+                            label: const Text('Cloudstream repos'),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 12),
                       TextField(
@@ -127,10 +189,17 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen> {
                         keyboardType: TextInputType.url,
                         autocorrect: false,
                         onSubmitted: (_) => _add(),
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Repository URL',
                           hintText: 'https://…/manifest.json',
-                          prefixIcon: Icon(PhosphorIconsRegular.link),
+                          prefixIcon: const Icon(PhosphorIconsRegular.link),
+                          suffixIcon: Padding(
+                            padding: const EdgeInsets.only(right: 5),
+                            child: TextButton(
+                              onPressed: _busy ? null : _paste,
+                              child: const Text('Paste'),
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 10),

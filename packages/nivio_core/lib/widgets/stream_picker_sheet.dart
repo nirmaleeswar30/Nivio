@@ -62,7 +62,7 @@ class StreamPickerSheet extends StatefulWidget {
     if (wide) {
       return showGeneralDialog<StreamPickerOutcome>(
         context: context,
-        barrierColor: const Color(0x70000000),
+        barrierColor: const Color(0x38000000),
         transitionDuration: MediaQuery.disableAnimationsOf(context)
             ? Duration.zero
             : const Duration(milliseconds: 240),
@@ -91,7 +91,7 @@ class StreamPickerSheet extends StatefulWidget {
       isDismissible: false,
       showDragHandle: false,
       backgroundColor: Colors.transparent,
-      barrierColor: const Color(0x80000000),
+      barrierColor: const Color(0x38000000),
       constraints: const BoxConstraints(maxWidth: 680),
       builder: (_) => FractionallySizedBox(heightFactor: .88, child: sheet),
     );
@@ -157,7 +157,7 @@ class _StreamPickerSheetState extends State<StreamPickerSheet> {
         ? const BorderRadius.all(Radius.circular(22))
         : const BorderRadius.vertical(top: Radius.circular(24));
     final content = Material(
-      color: palette.surface.withValues(alpha: widget.sidePanel ? .94 : 1),
+      color: palette.surface.withValues(alpha: .40),
       shape: RoundedRectangleBorder(
         borderRadius: radius,
         side: BorderSide(color: palette.border),
@@ -300,12 +300,10 @@ class _StreamPickerSheetState extends State<StreamPickerSheet> {
       canPop: _opening == null,
       child: ClipRRect(
         borderRadius: radius,
-        child: widget.sidePanel
-            ? BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-                child: content,
-              )
-            : content,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: content,
+        ),
       ),
     );
   }
@@ -329,8 +327,8 @@ class _StreamPickerSheetState extends State<StreamPickerSheet> {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            palette.primary.withValues(alpha: .13),
-            palette.surfaceContainer.withValues(alpha: .20),
+            palette.primary.withValues(alpha: .10),
+            palette.textPrimary.withValues(alpha: .05),
           ],
         ),
         border: Border(
@@ -525,14 +523,8 @@ class _StreamPickerSheetState extends State<StreamPickerSheet> {
     const radius = BorderRadius.all(Radius.circular(12));
     return Material(
       color: isPrevious
-          ? Color.alphaBlend(
-              palette.primary.withValues(alpha: .09),
-              palette.surface,
-            )
-          : Color.alphaBlend(
-              palette.textPrimary.withValues(alpha: .04),
-              palette.surface,
-            ),
+          ? palette.primary.withValues(alpha: .19)
+          : palette.textPrimary.withValues(alpha: .08),
       shape: RoundedRectangleBorder(
         borderRadius: radius,
         side: BorderSide(

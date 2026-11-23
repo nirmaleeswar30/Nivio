@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
+import 'package:nivio/screens/extensions_screen.dart';
 import 'package:nivio/screens/onboarding_screen.dart';
 import 'package:nivio/services/extensions/extension_repository.dart';
 import 'package:nivio/services/extensions/extension_resolver.dart';
@@ -251,9 +253,7 @@ void main() {
     },
   );
 
-  testWidgets('onboarding skips steps and preserves the original destination', (
-    tester,
-  ) async {
+  testWidgets('onboarding swipes and skips to the destination', (tester) async {
     await tester.binding.setSurfaceSize(const Size(360, 640));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     SharedPreferences.setMockInitialValues({});
@@ -289,6 +289,12 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Choose your sources'), findsOneWidget);
+    await tester.drag(find.byType(PageView), const Offset(-300, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('Set your playback preferences'), findsOneWidget);
+    await tester.drag(find.byType(PageView), const Offset(300, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('Choose your sources'), findsOneWidget);
     await tester.tap(find.text('Skip this step'));
     await tester.pumpAndSettle();
     expect(find.text('Set your playback preferences'), findsOneWidget);
@@ -304,5 +310,39 @@ void main() {
     expect(await hasCompletedOnboarding('test-user'), isTrue);
     expect(await hasCompletedOnboarding('different-user'), isFalse);
     expect(onboardingDestination('https://example.com/'), '/home');
+  });
+
+  testWidgets('Extensions shows repository directories and pastes the URL', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    SharedPreferences.setMockInitialValues({});
+    const url = 'https://example.com/manifest.json';
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.getData') return {'text': '  $url\n'};
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+
+    await tester.pumpWidget(
+      const ProviderScope(child: MaterialApp(home: ExtensionsScreen())),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Nuvio plugins'), findsOneWidget);
+    expect(find.text('Cloudstream repos'), findsOneWidget);
+    await tester.tap(find.text('Paste'));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.controller!.text, url);
+    expect(
+      field.controller!.selection,
+      TextSelection.collapsed(offset: url.length),
+    );
+    expect(find.text('No repositories installed'), findsOneWidget);
   });
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
@@ -294,7 +295,12 @@ class _SourcePriorityScreenState extends ConsumerState<_SourcePriorityScreen> {
     final settings = ref.watch(streamSelectionSettingsProvider).valueOrNull;
     final streaming = ref.watch(streamingServiceProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Source priority')),
+      appBar: AppBar(
+        title: const Text('Source priority'),
+        titleTextStyle: AppPlatform.useDesktopLayout
+            ? null
+            : Theme.of(context).textTheme.titleLarge,
+      ),
       body: FutureBuilder<List<ExtensionRepo>>(
         future: _sources,
         builder: (context, snapshot) {

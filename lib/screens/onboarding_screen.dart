@@ -84,12 +84,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     duration: const Duration(seconds: 34),
     value: .14,
   );
+  final _pages = PageController();
   var _step = 0;
   var _finishing = false;
 
   @override
   void dispose() {
     _light.dispose();
+    _pages.dispose();
     super.dispose();
   }
 
@@ -115,9 +117,23 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     if (_step == _steps.length - 1) {
       _finish();
     } else {
-      HapticFeedback.selectionClick();
-      setState(() => _step++);
+      _goToStep(_step + 1);
     }
+  }
+
+  void _goToStep(int step) {
+    if (!_pages.hasClients || _finishing) return;
+    HapticFeedback.selectionClick();
+    if (!ref.read(animationsEnabledProvider) ||
+        MediaQuery.disableAnimationsOf(context)) {
+      _pages.jumpToPage(step);
+      return;
+    }
+    _pages.animateToPage(
+      step,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
@@ -187,26 +203,24 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                                   const SizedBox(width: 24),
                                 ],
                                 Expanded(
-                                  child: StreamPanel(
-                                    child: Column(
-                                      children: [
-                                        Expanded(
-                                          child: AnimatedSwitcher(
-                                            duration: animate
-                                                ? const Duration(
-                                                    milliseconds: 180,
-                                                  )
-                                                : Duration.zero,
-                                            child: _stepContent(wide, palette),
-                                          ),
+                                  child: Column(
+                                    children: [
+                                      Expanded(
+                                        child: PageView.builder(
+                                          controller: _pages,
+                                          physics: _finishing
+                                              ? const NeverScrollableScrollPhysics()
+                                              : null,
+                                          onPageChanged: (step) =>
+                                              setState(() => _step = step),
+                                          itemCount: _steps.length,
+                                          itemBuilder: (context, step) =>
+                                              _stepContent(step, wide, palette),
                                         ),
-                                        Divider(
-                                          height: 1,
-                                          color: palette.border,
-                                        ),
-                                        _controls(palette),
-                                      ],
-                                    ),
+                                      ),
+                                      Divider(height: 1, color: palette.border),
+                                      _controls(palette),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -289,10 +303,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     ),
   );
 
-  Widget _stepContent(bool wide, NivioThemeColors palette) {
-    final (label, title, description) = _steps[_step];
+  Widget _stepContent(int step, bool wide, NivioThemeColors palette) {
+    final (label, title, description) = _steps[step];
     return ListView(
-      key: ValueKey(_step),
+      key: PageStorageKey(step),
       primary: false,
       padding: EdgeInsets.fromLTRB(
         wide ? 24 : 15,
@@ -303,7 +317,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
       children: [
         Row(
           children: [
-            StreamGlyph(_icons[_step], active: true, size: 38),
+            StreamGlyph(_icons[step], active: true, size: 38),
             const SizedBox(width: 10),
             StreamSectionLabel(label.toUpperCase()),
           ],
@@ -323,7 +337,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
           style: TextStyle(color: palette.textSecondary, height: 1.4),
         ),
         const SizedBox(height: 20),
-        switch (_step) {
+        switch (step) {
           0 => const StreamSourceSettings(showHeading: false),
           1 => const StreamPlaybackSettings(),
           2 => const ProfileScreen(connectionsOnly: true),
@@ -341,7 +355,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
           IconButton(
             tooltip: 'Previous step',
             icon: const Icon(PhosphorIconsRegular.caretLeft),
-            onPressed: _finishing ? null : () => setState(() => _step--),
+            onPressed: _finishing ? null : () => _goToStep(_step - 1),
           ),
         Expanded(
           child: Row(

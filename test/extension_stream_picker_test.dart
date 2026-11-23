@@ -91,6 +91,7 @@ void main() {
         ),
       );
       expect(find.text('Direct link'), findsOneWidget);
+      expect(find.byType(BackdropFilter), findsOneWidget);
       expect(find.text('Torrent release'), findsNothing);
       await tester.tap(find.text('All 2'));
       await tester.pump();
