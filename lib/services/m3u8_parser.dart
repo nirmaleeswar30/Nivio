@@ -17,6 +17,21 @@ class M3u8VideoResolution {
 
 class M3u8Parser {
   static final Dio _dio = Dio();
+  static final _resolution = RegExp(
+    r'(?:^|[:,])\s*RESOLUTION=\d+x(\d+)',
+    caseSensitive: false,
+  );
+
+  static List<int> videoHeights(String manifest) {
+    final heights = <int>{};
+    for (final rawLine in manifest.split('\n')) {
+      final line = rawLine.trim();
+      if (!line.startsWith('#EXT-X-STREAM-INF:')) continue;
+      final height = int.tryParse(_resolution.firstMatch(line)?.group(1) ?? '');
+      if (height != null && height > 0) heights.add(height);
+    }
+    return heights.toList()..sort((a, b) => b.compareTo(a));
+  }
 
   static Future<List<M3u8VideoResolution>> parseVideoResolutions(
       String url, Map<String, String>? headers) async {
@@ -33,10 +48,10 @@ class M3u8Parser {
       for (int i = 0; i < lines.length; i++) {
         final line = lines[i].trim();
         if (line.startsWith('#EXT-X-STREAM-INF:')) {
-          final resMatch = RegExp(r'RESOLUTION=(\d+)x(\d+)').firstMatch(line);
+          final resMatch = _resolution.firstMatch(line);
           String quality = 'auto';
           if (resMatch != null) {
-            quality = '${resMatch.group(2)}p';
+            quality = '${resMatch.group(1)}p';
           }
           if (i + 1 < lines.length) {
             final uri = lines[i + 1].trim();

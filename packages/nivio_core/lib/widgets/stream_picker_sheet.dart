@@ -18,12 +18,14 @@ class StreamPickerOutcome {
     this.result,
     this.refresh = false,
     this.automatic = false,
+    this.preferredResolution,
   });
 
   final StreamChoice? choice;
   final StreamResult? result;
   final bool refresh;
   final bool automatic;
+  final int? preferredResolution;
 }
 
 class DirectStreamPickerSheet extends StatefulWidget {
@@ -87,7 +89,8 @@ class DirectStreamPickerSheet extends StatefulWidget {
 
 class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
   final _searchController = TextEditingController();
-  var _resolution = '';
+  late int? _resolution = _discovery.selection.resolutions.firstOrNull;
+  var _changedResolution = false;
   var _autoCancelled = false;
   var _selecting = false;
   var _closed = false;
@@ -143,7 +146,13 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
 
   void _play(StreamChoice choice) {
     if (!_discovery.unavailable.contains(choice.id) && choice.isDirect) {
-      _finish(StreamPickerOutcome(choice: choice, result: choice.direct));
+      _finish(
+        StreamPickerOutcome(
+          choice: choice,
+          result: choice.direct,
+          preferredResolution: _resolution,
+        ),
+      );
     }
   }
 
@@ -160,17 +169,25 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
 
   List<StreamChoice> _visibleChoices() {
     final text = _searchController.text.trim().toLowerCase();
-    return _discovery.orderForPicker(
+    final ordered = _discovery.orderForPicker(
       _discovery.choices.where((choice) {
         if (!choice.isDirect) return false;
-        if (_resolution.isNotEmpty && '${choice.resolution}' != _resolution)
-          return false;
         return text.isEmpty ||
             '${choice.title} ${choice.provider} ${choice.origin}'
                 .toLowerCase()
                 .contains(text);
       }).toList(),
     );
+    final requested = _resolution;
+    if (requested == null) return ordered;
+    final matches = ordered.where(
+      (choice) => choice.knownResolutions.contains(requested),
+    );
+    if (matches.isEmpty && !_changedResolution) return ordered;
+    return [
+      ...matches,
+      ...ordered.where((choice) => choice.knownResolutions.isEmpty),
+    ];
   }
 
   @override
@@ -315,6 +332,15 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
                               velocity: 30.0,
                             ),
                           ),
+                          IconButton(
+                            tooltip: 'Stream settings',
+                            icon: const Icon(
+                              Icons.settings_outlined,
+                              color: Colors.white70,
+                            ),
+                            onPressed: _openSettings,
+                            splashRadius: 20,
+                          ),
                           if (!isFullScreen)
                             IconButton(
                               icon: const Icon(
@@ -411,13 +437,6 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
             ),
           ),
         _buildResolutionSelector(),
-        TextButton(
-          onPressed: _openSettings,
-          child: const Text(
-            'Settings',
-            style: TextStyle(color: Color(0xFF38BDF8)),
-          ),
-        ),
       ],
     );
     return Column(
@@ -440,28 +459,54 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
         ListenableBuilder(
           listenable: _discovery,
           builder: (context, _) {
-            final first = _visibleChoices()
+            final visible = _visibleChoices();
+            final first = visible
                 .where((choice) => !_discovery.unavailable.contains(choice.id))
                 .firstOrNull;
             if (first == null) return const SizedBox.shrink();
-            return ElevatedButton(
-              onPressed: () => _play(first),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF38BDF8),
-                foregroundColor: Colors.black,
-                padding: EdgeInsets.symmetric(vertical: spacing),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+            final resolution = _resolution;
+            final showingFallback =
+                !_changedResolution &&
+                !_discovery.searching &&
+                resolution != null &&
+                visible.any((choice) => choice.knownResolutions.isNotEmpty) &&
+                !visible.any(
+                  (choice) => choice.knownResolutions.contains(resolution),
+                );
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (showingFallback)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'No confirmed ${resolution}p match. Showing available streams.',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ElevatedButton(
+                  onPressed: () => _play(first),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF38BDF8),
+                    foregroundColor: Colors.black,
+                    padding: EdgeInsets.symmetric(vertical: spacing),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: Text(
+                    _selecting ? 'Selecting stream…' : 'Auto Select Stream',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
-                elevation: 0,
-              ),
-              child: Text(
-                _selecting ? 'Selecting stream…' : 'Auto Select Stream',
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              ],
             );
           },
         ),
@@ -490,8 +535,8 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
           border: Border.all(color: Colors.white.withValues(alpha: .05)),
         ),
         child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            value: _resolution,
+          child: DropdownButton<int>(
+            value: _resolution ?? 0,
             dropdownColor: const Color(0xFF1A1A1A),
             icon: const Padding(
               padding: EdgeInsets.only(left: 8),
@@ -503,11 +548,23 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
               fontWeight: FontWeight.w500,
             ),
             onChanged: (value) {
-              if (value != null) setState(() => _resolution = value);
+              if (value == null) return;
+              _cancelAutoPlay();
+              setState(() {
+                _resolution = value == 0 ? null : value;
+                _changedResolution = true;
+              });
             },
             items: [
-              const DropdownMenuItem(value: '', child: Text('Any')),
-              for (final height in ['480', '720', '1080', '2160'])
+              const DropdownMenuItem(value: 0, child: Text('Any')),
+              for (final height in {
+                480,
+                720,
+                1080,
+                1440,
+                2160,
+                ..._discovery.selection.resolutions,
+              }.toList()..sort())
                 DropdownMenuItem(value: height, child: Text('${height}p')),
             ],
           ),
@@ -525,7 +582,6 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
         return Center(
           child: Text(
             _searchController.text.trim().isEmpty &&
-                    _resolution.isEmpty &&
                     _discovery.failures.isNotEmpty
                 ? 'Couldn’t reach some direct sources.'
                 : 'No direct streams found.',
@@ -545,6 +601,22 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
     final disabled = _discovery.unavailable.contains(choice.id);
     final previous = choice.bingeGroup == _discovery.previous?.bingeGroup;
     final isMobile = Platform.isAndroid || Platform.isIOS;
+    final heights = choice.knownResolutions;
+    final qualityLabel = heights.isEmpty
+        ? (choice.direct!.isM3U8
+              ? 'Auto · resolution unknown'
+              : 'Resolution unknown')
+        : heights.map((height) => '${height}p').join(' / ');
+    final serverLabel = choice.quality.trim();
+    final showServer =
+        ![
+          '',
+          'auto',
+          'unknown',
+          'unknown quality',
+        ].contains(serverLabel.toLowerCase()) &&
+        choice.reportedResolution == null &&
+        serverLabel != qualityLabel;
     return MouseRegion(
       cursor: disabled ? MouseCursor.defer : SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hoveredChoice = choice.id),
@@ -605,7 +677,11 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
                       const Color(0xFFC084FC),
                     ),
                     const SizedBox(width: 8),
-                    _tag(choice.quality, const Color(0xFF60A5FA)),
+                    _tag(qualityLabel, const Color(0xFF60A5FA)),
+                    if (showServer) ...[
+                      const SizedBox(width: 8),
+                      _tag(serverLabel, Colors.grey),
+                    ],
                     const SizedBox(width: 8),
                     _tag(choice.origin, Colors.grey),
                     if (choice.audioType ?? choice.audio

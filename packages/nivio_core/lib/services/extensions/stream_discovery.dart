@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:nivio/models/search_result.dart';
+import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/services/streaming_service.dart';
 
 import 'extension_repository.dart';
@@ -19,6 +20,7 @@ class StreamDiscovery extends ChangeNotifier {
     required this.subDub,
     required this.preferredQuality,
     this.previous,
+    this.inspectVideoHeights,
     this.selection = const StreamSelectionSettings(),
   });
 
@@ -30,6 +32,7 @@ class StreamDiscovery extends ChangeNotifier {
   final String subDub;
   final String? preferredQuality;
   final StreamChoice? previous;
+  final Future<List<int>> Function(StreamResult)? inspectVideoHeights;
   final StreamSelectionSettings selection;
 
   final choices = <StreamChoice>[];
@@ -243,7 +246,7 @@ class StreamDiscovery extends ChangeNotifier {
                     : result.selectedAudio,
               ),
         ];
-        _add(generation, [
+        final results = [
           for (var i = 0; i < selected.length; i++)
             StreamChoice(
               id: 'builtin:$name:$i',
@@ -257,7 +260,29 @@ class StreamDiscovery extends ChangeNotifier {
                   : selected[i].selectedAudio,
               direct: selected[i],
             ),
-        ]);
+        ];
+        _add(generation, results);
+        final inspect = inspectVideoHeights;
+        if (inspect != null) {
+          final unlabelled = results
+              .where(
+                (choice) =>
+                    choice.direct!.isM3U8 && choice.knownResolutions.isEmpty,
+              )
+              .toList();
+          await _concurrently(unlabelled, 2, generation, (choice) async {
+            try {
+              final heights = await inspect(choice.direct!);
+              if (!_current(generation) || heights.isEmpty) return;
+              final position = choices.indexOf(choice);
+              if (position < 0) return;
+              choices[position] = choice.withVideoHeights(heights);
+              notifyListeners();
+            } catch (_) {
+              // A manifest without readable metadata can still be played.
+            }
+          });
+        }
       } catch (_) {
         _failed(generation, name);
       }

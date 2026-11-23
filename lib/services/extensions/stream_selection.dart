@@ -203,11 +203,11 @@ class StreamSelection {
   }
 
   int _qualityRank(StreamChoice choice) {
-    final height = choice.resolution;
-    final index = settings.resolutions.indexOf(height ?? 0);
+    final heights = choice.knownResolutions;
+    final index = settings.resolutions.indexWhere(heights.contains);
     return index >= 0
         ? index
-        : settings.resolutions.length + (height == null ? 1 : 0);
+        : settings.resolutions.length + (heights.isEmpty ? 1 : 0);
   }
 
   int _featureScore(StreamChoice choice) {
@@ -242,12 +242,21 @@ extension StreamSelectionMetadata on StreamChoice {
   String get releaseLabel =>
       '$provider $quality ${audio ?? ''} $title'.split('\n').join(' ').trim();
   int? get resolution {
-    final qualityLabel = quality.toLowerCase().trim();
-    if (qualityLabel == '4k' || qualityLabel == 'uhd') return 2160;
-    return int.tryParse(_height.firstMatch(qualityLabel)?.group(1) ?? '') ??
+    if (videoHeights.length == 1) return videoHeights.single;
+    return reportedResolution ??
         torrent?.parsed.resolution ??
         int.tryParse(_height.firstMatch(title)?.group(1) ?? '');
   }
+
+  int? get reportedResolution {
+    final qualityLabel = quality.toLowerCase().trim();
+    if (qualityLabel == '4k' || qualityLabel == 'uhd') return 2160;
+    return int.tryParse(_height.firstMatch(qualityLabel)?.group(1) ?? '');
+  }
+
+  List<int> get knownResolutions => videoHeights.isNotEmpty
+      ? videoHeights
+      : [if (resolution case final int height) height];
 
   String get bingeGroup {
     final hint = bingeGroupHint;

@@ -59,6 +59,7 @@ import 'dart:async';
 import 'package:nivio/services/download_service.dart';
 import 'package:nivio/widgets/webview_player.dart';
 import 'package:nivio/services/hls_proxy_service.dart';
+import 'package:nivio/services/m3u8_parser.dart';
 import 'package:nivio/services/aniskip_service.dart';
 import 'package:nivio/services/theintrodb_service.dart';
 import 'package:nivio/services/skip_times_models.dart';
@@ -117,7 +118,12 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
 /// One rendition listed in an HLS master playlist.
 typedef _HlsVariant = ({String url, int height, int bandwidth});
-typedef _StreamProbe = ({bool ok, int? status, List<_HlsVariant>? variants});
+typedef _StreamProbe = ({
+  bool ok,
+  int? status,
+  List<_HlsVariant>? variants,
+  List<int> videoHeights,
+});
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen>
     with WidgetsBindingObserver, TickerProviderStateMixin {
@@ -1125,12 +1131,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           );
           return result == null ? null : StreamPickerOutcome(result: result);
         }
+        final presetHeight = settings.resolutions.firstOrNull;
+        final directQuality =
+            preferredQuality ?? (presetHeight == null ? null : '${presetHeight}p');
         var search = _streamDiscovery;
         if (search == null || search.episode != _currentEpisode ||
             search.season != widget.season || search.media.id != media.id ||
             search.media.mediaType != media.mediaType ||
             search.selection != settings ||
-            search.preferredQuality != preferredQuality || search.subDub != subDub) {
+            search.preferredQuality != directQuality || search.subDub != subDub) {
           search?.dispose();
           search = StreamDiscovery(
             media: media,
@@ -1139,8 +1148,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             streaming: streaming,
             repository: repository,
             subDub: subDub,
-            preferredQuality: preferredQuality,
+            preferredQuality: directQuality,
             previous: _lastStreamChoice,
+            inspectVideoHeights: (stream) async {
+              final probe = await _probeStreamCandidate(
+                StreamSource(
+                  url: stream.url,
+                  quality: stream.quality,
+                  isM3U8: stream.isM3U8,
+                ),
+                _buildPlaybackHeaders(stream.headers),
+              );
+              return probe?.videoHeights ?? const [];
+            },
             selection: settings,
           );
           _streamDiscovery = search;
@@ -1247,6 +1267,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // every provider while the first stream kept playing in the background.
     var mediaOpened = false;
     StreamChoice? manualChoice;
+    int? pickedDirectResolution;
     var choseAutomatically = false;
     _firstReachableProbe = null;
     // Cancel any watchdog from a previous load/retry before starting a new one.
@@ -1567,6 +1588,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         }
         manualChoice = selected!.choice;
         choseAutomatically = selected.automatic;
+        pickedDirectResolution = selected.preferredResolution;
         result = selected.result;
       } else if (_prefetchedStreams.containsKey(_currentEpisode) &&
           (!_bingeMode || streamingService.getProviderName(
@@ -1764,8 +1786,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               final presetVariant = resolutions.map(
                 (height) => variants.where((variant) => variant.height == height).firstOrNull,
               ).nonNulls.firstOrNull;
-              final matchedHeight = selection?.mode == StreamSelectionMode.match &&
-                      selection!.regex.isNotEmpty ? manualChoice?.resolution : null;
+              final matchedHeight = pickedDirectResolution ??
+                  (selection?.mode == StreamSelectionMode.match &&
+                      selection!.regex.isNotEmpty ? manualChoice?.resolution : null);
               final chosen = presetVariant ?? _pickVariant(
                 variants, matchedHeight == null ? preferredQuality : '${matchedHeight}p',
               );
@@ -4106,11 +4129,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final status = response.statusCode;
       if (status >= 400) {
         appDebugLog('⚠️ Source "${cand.quality}" returned $status');
-        return (ok: false, status: status, variants: null);
+        return (
+          ok: false, status: status, variants: null, videoHeights: const <int>[],
+        );
       }
       appDebugLog('✅ Stream pre-verification passed (${cand.quality}) with status: $status');
 
       List<_HlsVariant>? variants;
+      List<int> videoHeights = const [];
       try {
         final bytes = <int>[];
         await for (final chunk in response.stream.timeout(const Duration(seconds: 1))) {
@@ -4119,9 +4145,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           // Only playlists are worth reading; stop as soon as it's clearly not one.
           if (bytes.length >= 16 && !_looksLikeM3u(bytes)) break;
         }
-        if (bytes.length < 65536) variants = _masterVariants(bytes, cand.url);
+        if (bytes.length < 65536 && _looksLikeM3u(bytes)) {
+          final manifest = utf8.decode(bytes, allowMalformed: true);
+          videoHeights = M3u8Parser.videoHeights(manifest);
+          variants = _masterVariants(manifest, cand.url);
+        }
       } catch (_) {}
-      return (ok: true, status: status, variants: variants);
+      return (
+        ok: true, status: status, variants: variants, videoHeights: videoHeights,
+      );
     } catch (e) {
       appDebugLog('⚠️ Source "${cand.quality}" error: $e');
       return null;
@@ -4137,9 +4169,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// Variants of an HLS master playlist, or null when the playlist isn't a
   /// master or has separate audio/subtitle renditions (those need the master).
-  static List<_HlsVariant>? _masterVariants(List<int> bytes, String masterUrl) {
-    if (!_looksLikeM3u(bytes)) return null;
-    final text = utf8.decode(bytes, allowMalformed: true);
+  static List<_HlsVariant>? _masterVariants(String text, String masterUrl) {
     if (text.contains('#EXTINF') || text.contains('#EXT-X-MEDIA:') || text.contains('#EXT-X-SESSION-KEY')) {
       return null;
     }

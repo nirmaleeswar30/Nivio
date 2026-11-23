@@ -3,10 +3,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nivio/models/search_result.dart';
+import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/services/extensions/extension_repository.dart';
 import 'package:nivio/services/extensions/extension_resolver.dart';
 import 'package:nivio/services/extensions/nuvio_script_runtime.dart';
 import 'package:nivio/services/extensions/stream_discovery.dart';
+import 'package:nivio/services/m3u8_parser.dart';
 import 'package:nivio/services/streaming_service.dart';
 import 'package:nivio/services/tmdb_service.dart';
 import 'package:nivio/services/torrent/media_torrent_models.dart';
@@ -43,6 +45,21 @@ final _torrent = StreamChoice.fromExtension(_repo.providers.single, {
   'seeders': 17,
   'fileIdx': 2,
 }, 1)!;
+
+final _vidRock = StreamChoice(
+  id: 'builtin:VidRock:0',
+  providerId: 'builtin:VidRock',
+  provider: 'VidRock',
+  origin: 'Built-in source',
+  title: 'VidRock',
+  quality: 'Nova',
+  direct: StreamResult(
+    url: 'https://example.com/master.m3u8',
+    provider: 'VidRock',
+    quality: 'Nova',
+    isM3U8: true,
+  ),
+);
 
 class _UnusedStreamingService implements StreamingService {
   @override
@@ -82,7 +99,6 @@ StreamDiscovery _readyDiscovery() =>
         episode: 1,
         streaming: _UnusedStreamingService(),
         repository: ExtensionRepository(),
-
         subDub: 'sub',
         preferredQuality: null,
       )
@@ -90,6 +106,26 @@ StreamDiscovery _readyDiscovery() =>
       ..stop();
 
 void main() {
+  test(
+    'HLS resolution labels read variants from masters with alternate audio',
+    () {
+      expect(
+        M3u8Parser.videoHeights('''
+#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="en",NAME="English",URI="audio.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=1500000,RESOLUTION=1280x720,AUDIO="en"
+720.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080,AUDIO="en"
+1080.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720,AUDIO="en"
+720-other.m3u8
+'''),
+        [1080, 720],
+      );
+      expect(M3u8Parser.videoHeights('#EXTM3U\n#EXTINF:6\npart.ts'), isEmpty);
+    },
+  );
+
   test('classifies each result and preserves the selected stream metadata', () {
     expect(_direct.isTorrent, isFalse);
     expect(_direct.direct!.headers, {'Referer': 'https://example.com'});
@@ -106,7 +142,19 @@ void main() {
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(360, 640));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      final discovery = _readyDiscovery();
+      final discovery = _readyDiscovery()
+        ..choices.addAll([
+          _vidRock.withVideoHeights([1080, 720]),
+          StreamChoice(
+            id: 'builtin:VidRock:1',
+            providerId: 'builtin:VidRock',
+            title: 'VidRock alternate',
+            provider: 'VidRock',
+            origin: 'Built-in source',
+            quality: 'Luna',
+            direct: _vidRock.direct,
+          ),
+        ]);
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -121,6 +169,16 @@ void main() {
       expect(find.text('Direct link'), findsOneWidget);
       expect(find.text('Torrent release'), findsNothing);
       expect(find.text('Auto Select Stream'), findsOneWidget);
+      expect(
+        tester
+            .widget<DropdownButton<int>>(find.byType(DropdownButton<int>))
+            .value,
+        1080,
+      );
+      expect(find.byTooltip('Stream settings'), findsOneWidget);
+      expect(find.text('1080p / 720p'), findsOneWidget);
+      expect(find.text('Nova'), findsOneWidget);
+      expect(find.text('Auto · resolution unknown'), findsOneWidget);
 
       await tester.enterText(find.byType(TextField), 'unknown');
       await tester.pumpAndSettle();
@@ -164,6 +222,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(picked?.choice, _direct);
     expect(picked?.result, _direct.direct);
+    expect(picked?.preferredResolution, 1080);
     expect(find.byType(DirectStreamPickerSheet), findsNothing);
     discovery.dispose();
   });

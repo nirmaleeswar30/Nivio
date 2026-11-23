@@ -23,6 +23,7 @@ class StreamChoice {
     this.audio,
     this.byteSize,
     this.bingeGroupHint,
+    this.videoHeights = const [],
   });
 
   final String id;
@@ -34,11 +35,27 @@ class StreamChoice {
   final String? audio;
   final int? byteSize;
   final String? bingeGroupHint;
+  final List<int> videoHeights;
   final StreamResult? direct;
   final TorrentResult? torrent;
 
   bool get isTorrent => torrent != null;
   bool get isDirect => direct != null;
+
+  StreamChoice withVideoHeights(List<int> heights) => StreamChoice(
+    id: id,
+    providerId: providerId,
+    provider: provider,
+    origin: origin,
+    title: title,
+    quality: quality,
+    direct: direct,
+    torrent: torrent,
+    audio: audio,
+    byteSize: byteSize,
+    bingeGroupHint: bingeGroupHint,
+    videoHeights: heights,
+  );
   String? get audioType {
     final text = '${audio ?? ''} $title'.toLowerCase();
     if (RegExp(r'\bdual[ .-]?audio\b').hasMatch(text)) return 'Both';
