@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:nivio/core/theme.dart';
 import 'package:nivio/services/extensions/extension_repository.dart';
 import 'package:nivio/services/extensions/extension_resolver.dart';
+import 'package:nivio/widgets/stream_surfaces.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 class ExtensionsScreen extends ConsumerStatefulWidget {
   const ExtensionsScreen({super.key});
@@ -91,46 +94,71 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Extensions')),
-    body: FutureBuilder<List<ExtensionRepo>>(
-      future: _repos,
-      builder: (context, snapshot) => ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          TextField(
-            controller: _url,
-            enabled: !_busy,
-            keyboardType: TextInputType.url,
-            autocorrect: false,
-            onSubmitted: (_) => _add(),
-            decoration: const InputDecoration(
-              labelText: 'Repository URL',
-              hintText: 'https://…/manifest.json',
-              border: OutlineInputBorder(),
+    appBar: AppBar(
+      title: const Text('Extensions'),
+      titleTextStyle: Theme.of(
+        context,
+      ).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800),
+    ),
+    body: DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: NivioTheme.backgroundGradientOf(context),
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: FutureBuilder<List<ExtensionRepo>>(
+            future: _repos,
+            builder: (context, snapshot) => ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                StreamPanel(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const StreamSectionLabel(
+                        'NUVIO AND CLOUDSTREAM REPOSITORIES',
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _url,
+                        enabled: !_busy,
+                        keyboardType: TextInputType.url,
+                        autocorrect: false,
+                        onSubmitted: (_) => _add(),
+                        decoration: const InputDecoration(
+                          labelText: 'Repository URL',
+                          hintText: 'https://…/manifest.json',
+                          prefixIcon: Icon(PhosphorIconsRegular.link),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      FilledButton.icon(
+                        onPressed: _busy ? null : _add,
+                        icon: const Icon(PhosphorIconsRegular.plus),
+                        label: const Text('Add repository'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (_busy ||
+                    (snapshot.connectionState == ConnectionState.waiting &&
+                        !snapshot.hasData))
+                  const LinearProgressIndicator(),
+                if (snapshot.hasError)
+                  const ListTile(
+                    title: Text('Could not read installed repositories.'),
+                  ),
+                if (snapshot.data?.isEmpty == true)
+                  const ListTile(title: Text('No repositories installed')),
+                for (final repo in snapshot.data ?? const <ExtensionRepo>[])
+                  _repositoryCard(repo),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
-              onPressed: _busy ? null : _add,
-              icon: const Icon(Icons.add),
-              label: const Text('Add repository'),
-            ),
-          ),
-          if (_busy ||
-              (snapshot.connectionState == ConnectionState.waiting &&
-                  !snapshot.hasData))
-            const LinearProgressIndicator(),
-          if (snapshot.hasError)
-            const ListTile(
-              title: Text('Could not read installed repositories.'),
-            ),
-          if (snapshot.data?.isEmpty == true)
-            const ListTile(title: Text('No repositories installed')),
-          for (final repo in snapshot.data ?? const <ExtensionRepo>[])
-            _repositoryCard(repo),
-        ],
+        ),
       ),
     ),
   );
@@ -139,46 +167,50 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen> {
     final isCloudstream = repo.format == ExtensionFormat.cloudstream;
     final available = ExtensionResolver.supports(repo.format);
     final count = repo.enabledIds.length;
-    return Card(
-      child: ExpansionTile(
-        title: Text(repo.name),
-        subtitle: Text(
-          '${isCloudstream ? 'Cloudstream' : 'Nuvio JavaScript'} · $count enabled${available ? '' : ' · Android only'}',
-        ),
-        children: [
-          OverflowBar(
-            alignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: _busy
-                    ? null
-                    : () => _update(() => _service.refresh(repo)),
-                child: const Text('Refresh'),
-              ),
-              TextButton(
-                onPressed: _busy
-                    ? null
-                    : () => _update(() => _service.remove(repo)),
-                child: const Text('Remove'),
-              ),
-            ],
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: StreamPanel(
+        child: ExpansionTile(
+          leading: const StreamGlyph(PhosphorIconsRegular.puzzlePiece),
+          title: Text(repo.name),
+          subtitle: Text(
+            '${isCloudstream ? 'Cloudstream' : 'Nuvio JavaScript'} · $count enabled${available ? '' : ' · Android only'}',
           ),
-          for (final provider in repo.providers)
-            SwitchListTile(
-              title: Text(provider.name),
-              subtitle: provider.description.isEmpty
-                  ? null
-                  : Text(provider.description),
-              value: provider.enabled,
-              onChanged:
-                  _busy ||
-                      !available ||
-                      provider.entry['enabled'] == false ||
-                      (isCloudstream && provider.entry['status'] == 0)
-                  ? null
-                  : (enabled) => _enable(provider, enabled),
+          children: [
+            OverflowBar(
+              alignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: _busy
+                      ? null
+                      : () => _update(() => _service.refresh(repo)),
+                  child: const Text('Refresh'),
+                ),
+                TextButton(
+                  onPressed: _busy
+                      ? null
+                      : () => _update(() => _service.remove(repo)),
+                  child: const Text('Remove'),
+                ),
+              ],
             ),
-        ],
+            for (final provider in repo.providers)
+              SwitchListTile(
+                title: Text(provider.name),
+                subtitle: provider.description.isEmpty
+                    ? null
+                    : Text(provider.description),
+                value: provider.enabled,
+                onChanged:
+                    _busy ||
+                        !available ||
+                        provider.entry['enabled'] == false ||
+                        (isCloudstream && provider.entry['status'] == 0)
+                    ? null
+                    : (enabled) => _enable(provider, enabled),
+              ),
+          ],
+        ),
       ),
     );
   }

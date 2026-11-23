@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:nivio/core/theme.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/services/extensions/extension_repository.dart';
 import 'package:nivio/services/extensions/extension_resolver.dart';
 import 'package:nivio/services/extensions/stream_selection.dart';
 import 'package:nivio/services/extensions/stream_selection_settings.dart';
+import 'package:nivio/widgets/dpad_focusable.dart';
+import 'package:nivio/widgets/stream_surfaces.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'extensions_screen.dart';
 
@@ -14,32 +18,116 @@ Future<void> showStreamPickerSettings(BuildContext context) =>
       MaterialPageRoute(builder: (_) => const StreamPickerSettingsScreen()),
     );
 
-class StreamPickerSettingsScreen extends StatelessWidget {
+class StreamPickerSettingsScreen extends StatefulWidget {
   const StreamPickerSettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Stream selection')),
-    body: SafeArea(
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-            children: const [
-              StreamSourceSettings(),
-              Divider(),
-              StreamPlaybackSettings(),
-            ],
+  State<StreamPickerSettingsScreen> createState() =>
+      _StreamPickerSettingsScreenState();
+}
+
+class _StreamPickerSettingsScreenState
+    extends State<StreamPickerSettingsScreen> {
+  var _sources = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = NivioTheme.themeColorsOf(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Stream selection'),
+        titleTextStyle: Theme.of(
+          context,
+        ).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800),
+        backgroundColor: palette.background,
+        leading: IconButton(
+          tooltip: 'Back',
+          icon: const Icon(PhosphorIconsRegular.caretLeft),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+      ),
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: NivioTheme.backgroundGradientOf(context),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1120),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final wide = constraints.maxWidth >= 820;
+                  return Padding(
+                    padding: EdgeInsets.symmetric(horizontal: wide ? 26 : 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (!wide)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                StreamSegment(
+                                  label: 'Playback',
+                                  selected: !_sources,
+                                  onTap: () => setState(() => _sources = false),
+                                ),
+                                StreamSegment(
+                                  label: 'Sources',
+                                  selected: _sources,
+                                  onTap: () => setState(() => _sources = true),
+                                ),
+                              ],
+                            ),
+                          ),
+                        Expanded(
+                          child: ListView(
+                            key: PageStorageKey(
+                              wide ? 'stream-wide' : 'stream-$_sources',
+                            ),
+                            padding: const EdgeInsets.only(top: 8, bottom: 24),
+                            children: [
+                              if (wide)
+                                const Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      flex: 5,
+                                      child: StreamPlaybackSettings(),
+                                    ),
+                                    SizedBox(width: 18),
+                                    Expanded(
+                                      flex: 3,
+                                      child: StreamSourceSettings(),
+                                    ),
+                                  ],
+                                )
+                              else if (_sources)
+                                const StreamSourceSettings()
+                              else
+                                const StreamPlaybackSettings(),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class StreamSourceSettings extends ConsumerStatefulWidget {
-  const StreamSourceSettings({super.key});
+  const StreamSourceSettings({super.key, this.showHeading = true});
+
+  final bool showHeading;
 
   @override
   ConsumerState<StreamSourceSettings> createState() =>
@@ -63,78 +151,131 @@ class _StreamSourceSettingsState extends ConsumerState<StreamSourceSettings> {
   Widget build(BuildContext context) {
     final torrentsEnabled = ref.watch(enableTorrentsProvider);
     final settings = ref.watch(streamSelectionSettingsProvider).valueOrNull;
-    return Column(
-      children: [
-        FutureBuilder<List<ExtensionRepo>>(
-          future: _repositories,
-          builder: (context, snapshot) {
-            final count = snapshot.data
-                ?.expand((repo) => repo.providers)
-                .where((provider) => provider.enabled)
-                .length;
-            return ListTile(
-              leading: const Icon(Icons.extension_outlined),
-              title: const Text('Extensions'),
-              subtitle: Text(
-                count == null || count == 0
-                    ? 'Add a Nuvio or Cloudstream repository'
-                    : '$count enabled · Manage repositories',
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: _openExtensions,
-            );
-          },
-        ),
-        ListTile(
-          leading: const Icon(Icons.low_priority),
-          title: const Text('Source priority'),
-          subtitle: const Text(
-            'Reorder built-in sources and enabled extensions together.',
+    final palette = NivioTheme.themeColorsOf(context);
+    return StreamPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.showHeading)
+            const _SectionHeading('SOURCES', PhosphorIconsRegular.stack),
+          FutureBuilder<List<ExtensionRepo>>(
+            future: _repositories,
+            builder: (context, snapshot) {
+              final count = snapshot.data
+                  ?.expand((repo) => repo.providers)
+                  .where((provider) => provider.enabled)
+                  .length;
+              return ListTile(
+                leading: const StreamGlyph(PhosphorIconsRegular.puzzlePiece),
+                visualDensity: VisualDensity.compact,
+                title: const Text('Extensions'),
+                subtitle: Text(
+                  count == null || count == 0
+                      ? 'Add a plugin repository'
+                      : '$count enabled',
+                ),
+                trailing: const Icon(PhosphorIconsRegular.caretRight, size: 16),
+                onTap: _openExtensions,
+              );
+            },
           ),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.of(context).push<void>(
-            MaterialPageRoute(builder: (_) => const _SourcePriorityScreen()),
-          ),
-        ),
-        SwitchListTile(
-          secondary: const Icon(Icons.download_outlined),
-          title: const Text('Enable torrents'),
-          subtitle: const Text('Applies to built-in and extension streams.'),
-          value: torrentsEnabled,
-          onChanged: ref.read(enableTorrentsProvider.notifier).setEnabled,
-        ),
-        if (settings != null)
           ListTile(
-            title: const Text('Preferred stream type'),
-            subtitle: Text(
-              settings.preferredType == StreamFilter.torrents &&
-                      !torrentsEnabled
-                  ? 'Using Direct while torrents are disabled.'
-                  : 'Opens that picker tab and favors that type in autoplay.',
-            ),
-            trailing: DropdownButton<StreamFilter>(
-              value: settings.preferredType,
-              items: [
-                for (final type in StreamFilter.values)
-                  DropdownMenuItem(
-                    value: type,
-                    enabled: type != StreamFilter.torrents || torrentsEnabled,
-                    child: Text(type.label),
-                  ),
-              ],
-              onChanged: (type) {
-                if (type != null)
-                  ref
-                      .read(streamSelectionSettingsProvider.notifier)
-                      .change(
-                        (current) => current.copyWith(preferredType: type),
-                      );
-              },
+            leading: const StreamGlyph(PhosphorIconsRegular.arrowsDownUp),
+            visualDensity: VisualDensity.compact,
+            title: const Text('Source priority'),
+            subtitle: const Text('Reorder built-ins and extensions.'),
+            trailing: const Icon(PhosphorIconsRegular.caretRight, size: 16),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const _SourcePriorityScreen()),
             ),
           ),
-      ],
+          SwitchListTile(
+            secondary: const StreamGlyph(PhosphorIconsRegular.downloadSimple),
+            visualDensity: VisualDensity.compact,
+            title: const Text('Enable torrents'),
+            subtitle: const Text('For built-in and extension streams.'),
+            value: torrentsEnabled,
+            onChanged: ref.read(enableTorrentsProvider.notifier).setEnabled,
+          ),
+          if (settings != null) ...[
+            Divider(
+              height: 1,
+              color: palette.border.withValues(alpha: palette.border.a * .60),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Preferred stream type',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    settings.preferredType == StreamFilter.torrents &&
+                            !torrentsEnabled
+                        ? 'Using Direct while torrents are disabled.'
+                        : 'Sets the opening tab and guides autoplay.',
+                    style: TextStyle(
+                      color: palette.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final type in StreamFilter.values)
+                        StreamSegment(
+                          label: type.label,
+                          selected: settings.preferredType == type,
+                          onTap:
+                              type == StreamFilter.torrents && !torrentsEnabled
+                              ? null
+                              : () => ref
+                                    .read(
+                                      streamSelectionSettingsProvider.notifier,
+                                    )
+                                    .change(
+                                      (current) =>
+                                          current.copyWith(preferredType: type),
+                                    ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
+}
+
+class _SectionHeading extends StatelessWidget {
+  const _SectionHeading(this.label, this.icon);
+
+  final String label;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+    child: Row(
+      children: [
+        Icon(
+          icon,
+          size: 16,
+          color: NivioTheme.themeColorsOf(context).textSecondary,
+        ),
+        const SizedBox(width: 7),
+        StreamSectionLabel(label),
+      ],
+    ),
+  );
 }
 
 class _SourcePriorityScreen extends ConsumerStatefulWidget {
@@ -206,8 +347,17 @@ class _SourcePriorityScreenState extends ConsumerState<_SourcePriorityScreen> {
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
                   header: const Padding(
                     padding: EdgeInsets.all(16),
-                    child: Text(
-                      'Higher sources appear first in the picker and break ties in Match Preferences.',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _SectionHeading(
+                          'PLAYBACK ORDER',
+                          PhosphorIconsRegular.arrowsDownUp,
+                        ),
+                        Text(
+                          'Higher sources appear first in the picker and break ties in Match Preferences.',
+                        ),
+                      ],
                     ),
                   ),
                   buildDefaultDragHandles: false,
@@ -216,19 +366,29 @@ class _SourcePriorityScreenState extends ConsumerState<_SourcePriorityScreen> {
                   itemBuilder: (_, index) {
                     final id = order[index];
                     final (title, origin) = available[id]!;
-                    return ListTile(
+                    return Padding(
                       key: ValueKey(id),
-                      leading: ReorderableDragStartListener(
-                        index: index,
-                        child: const Icon(Icons.drag_handle),
-                      ),
-                      title: Text(title),
-                      subtitle: Text(origin),
-                      trailing: _MoveButtons(
-                        up: index > 0 ? () => move(index, index - 1) : null,
-                        down: index + 1 < order.length
-                            ? () => move(index, index + 1)
-                            : null,
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: StreamPanel(
+                        child: ListTile(
+                          leading: ReorderableDragStartListener(
+                            index: index,
+                            child: const StreamGlyph(
+                              PhosphorIconsRegular.dotsSixVertical,
+                            ),
+                          ),
+                          title: Text(
+                            title,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          subtitle: Text(origin),
+                          trailing: _MoveButtons(
+                            up: index > 0 ? () => move(index, index - 1) : null,
+                            down: index + 1 < order.length
+                                ? () => move(index, index + 1)
+                                : null,
+                          ),
+                        ),
                       ),
                     );
                   },
@@ -261,203 +421,419 @@ class StreamPlaybackSettings extends ConsumerWidget {
       data: (current) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ListTile(
-            title: const Text('Playback mode'),
-            subtitle: Text(switch (current.mode) {
-              StreamSelectionMode.manual =>
-                'Open the stream picker when you press Play.',
-              StreamSelectionMode.first =>
-                'Play the first reachable stream that fits your preferences.',
-              StreamSelectionMode.match =>
-                'Pick the best match within the selection timeout.',
-            }),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Wrap(
-              spacing: 8,
+          StreamPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                const _SectionHeading(
+                  'PLAYBACK MODE',
+                  PhosphorIconsRegular.playCircle,
+                ),
                 for (final mode in StreamSelectionMode.values)
-                  ChoiceChip(
-                    label: Text(mode.label),
-                    selected: mode == current.mode,
-                    onSelected: (_) =>
-                        change((value) => value.copyWith(mode: mode)),
+                  _PlaybackModeRow(
+                    mode: mode,
+                    active: mode == current.mode,
+                    onTap: () => change((value) => value.copyWith(mode: mode)),
                   ),
+                const SizedBox(height: 6),
               ],
             ),
           ),
           const SizedBox(height: 12),
-          ListTile(
-            title: const Text('Quality preset'),
-            subtitle: Text(
-              current.mode == StreamSelectionMode.match
-                  ? current.preset.description
-                  : '${current.preset.description} Used by Match Preferences.',
+          StreamPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _SectionHeading(
+                  'QUALITY PRESET',
+                  PhosphorIconsRegular.filmStrip,
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (final preset in StreamPreset.values)
+                            Expanded(
+                              child: Padding(
+                                padding: EdgeInsets.only(
+                                  right: preset == StreamPreset.values.last
+                                      ? 0
+                                      : 6,
+                                ),
+                                child: _PresetOption(
+                                  preset: preset,
+                                  active: preset == current.preset,
+                                  onTap: () => change(
+                                    (value) => value.copyWith(preset: preset),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 9),
+                      Text(
+                        current.mode == StreamSelectionMode.match
+                            ? current.preset.description
+                            : '${current.preset.description} Used by Match Preferences.',
+                        style: TextStyle(
+                          color: NivioTheme.themeColorsOf(
+                            context,
+                          ).textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      icon: const Icon(
+                        PhosphorIconsRegular.lightning,
+                        size: 16,
+                      ),
+                      label: const Text('Fastest Load'),
+                      onPressed: () => change(
+                        (value) => value.copyWith(
+                          mode: StreamSelectionMode.first,
+                          matchAudio: true,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                ExpansionTile(
+                  title: const Text('Customise'),
+                  children: [
+                    ListTile(
+                      title: const Text('Resolution priority'),
+                      subtitle: Text(
+                        current.resolutions
+                            .map((height) => '${height}p')
+                            .join(' → '),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _editResolutions(
+                        context,
+                        current.resolutions,
+                        (order) => change(
+                          (value) => value.copyWith(customResolutions: order),
+                        ),
+                      ),
+                    ),
+                    const ListTile(dense: true, title: Text('Block releases')),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Wrap(
+                          spacing: 8,
+                          children: [
+                            for (final exclusion in StreamExclusion.values)
+                              FilterChip(
+                                label: Text(exclusion.label),
+                                selected: current.exclusions.contains(
+                                  exclusion,
+                                ),
+                                onSelected: (enabled) => change(
+                                  (value) => value.copyWith(
+                                    customExclusions: {...value.exclusions}
+                                      ..remove(exclusion)
+                                      ..addAll([if (enabled) exclusion]),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const ListTile(
+                      dense: true,
+                      title: Text('Prefer these formats'),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Wrap(
+                          spacing: 8,
+                          children: [
+                            for (final feature in StreamFeature.values)
+                              FilterChip(
+                                label: Text(feature.label),
+                                selected: current.features.contains(feature),
+                                onSelected: (enabled) => change(
+                                  (value) => value.copyWith(
+                                    customFeatures: {...value.features}
+                                      ..remove(feature)
+                                      ..addAll([if (enabled) feature]),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    _NumberSlider(
+                      label: 'Maximum file size',
+                      valueText: current.maxFileGb == 0
+                          ? 'No limit'
+                          : '${current.maxFileGb} GiB',
+                      value: current.maxFileGb,
+                      min: 0,
+                      max: 100,
+                      description:
+                          'With a limit, streams with unknown file sizes remain available in the picker.',
+                      onChanged: (max) =>
+                          change((value) => value.copyWith(maxFileGb: max)),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Wrap(
-              spacing: 8,
+          const SizedBox(height: 12),
+          StreamPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                for (final preset in StreamPreset.values)
-                  ChoiceChip(
-                    label: Text(preset.label),
-                    selected: preset == current.preset,
-                    onSelected: (selected) {
-                      if (selected)
-                        change((value) => value.copyWith(preset: preset));
-                    },
+                const _SectionHeading(
+                  'AUTOPLAY RULES',
+                  PhosphorIconsRegular.faders,
+                ),
+                SwitchListTile(
+                  title: const Text('Match saved audio preference'),
+                  subtitle: const Text(
+                    'Use reported languages and the preferred anime Sub or Dub setting.',
                   ),
-                ActionChip(
-                  avatar: const Icon(Icons.bolt, size: 17),
-                  label: const Text('Fastest Load'),
-                  onPressed: () => change(
-                    (value) => value.copyWith(
-                      mode: StreamSelectionMode.first,
-                      matchAudio: true,
+                  value: current.matchAudio,
+                  onChanged: (enabled) =>
+                      change((value) => value.copyWith(matchAudio: enabled)),
+                ),
+                SwitchListTile(
+                  title: const Text('Reuse binge group'),
+                  subtitle: const Text(
+                    'Prefer the previous episode’s source and release in Match Preferences.',
+                  ),
+                  value: current.reuseBingeGroup,
+                  onChanged: (enabled) => change(
+                    (value) => value.copyWith(reuseBingeGroup: enabled),
+                  ),
+                ),
+                _NumberSlider(
+                  label: 'Stream selection timeout',
+                  valueText: '${current.timeoutSeconds} seconds',
+                  value: current.timeoutSeconds,
+                  min: 1,
+                  max: 30,
+                  description:
+                      'How long autoplay waits for search results before choosing or opening the picker.',
+                  onChanged: (seconds) => change(
+                    (value) => value.copyWith(timeoutSeconds: seconds),
+                  ),
+                ),
+                ExpansionTile(
+                  title: const Text('Advanced'),
+                  children: [
+                    ListTile(
+                      title: const Text('Custom Regex Override'),
+                      subtitle: Text(
+                        current.regex.isEmpty
+                            ? 'In Match Preferences, match the source name, release label, quality, or reported audio.'
+                            : current.regex,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: const Icon(Icons.edit_outlined),
+                      onTap: () async {
+                        final regex = await showDialog<String>(
+                          context: context,
+                          builder: (_) => _RegexDialog(initial: current.regex),
+                        );
+                        if (regex != null && context.mounted) {
+                          await change((value) => value.copyWith(regex: regex));
+                        }
+                      },
                     ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlaybackModeRow extends StatelessWidget {
+  const _PlaybackModeRow({
+    required this.mode,
+    required this.active,
+    required this.onTap,
+  });
+
+  final StreamSelectionMode mode;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = NivioTheme.themeColorsOf(context);
+    final (icon, description) = switch (mode) {
+      StreamSelectionMode.manual => (
+        PhosphorIconsRegular.handPointing,
+        'Open the picker when you press Play.',
+      ),
+      StreamSelectionMode.first => (
+        PhosphorIconsRegular.lightning,
+        'Play the first reachable stream that fits.',
+      ),
+      StreamSelectionMode.match => (
+        PhosphorIconsRegular.sliders,
+        'Match your quality, audio, and source preferences.',
+      ),
+    };
+    const radius = BorderRadius.all(Radius.circular(11));
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      child: Semantics(
+        selected: active,
+        button: true,
+        child: Material(
+          color: active
+              ? palette.primary.withValues(alpha: .085)
+              : Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: radius,
+            side: BorderSide(
+              color: active
+                  ? palette.primary.withValues(alpha: .40)
+                  : Colors.transparent,
+            ),
+          ),
+          child: FocusableInkWell(
+            onTap: onTap,
+            borderRadius: radius,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+              child: Row(
+                children: [
+                  StreamGlyph(icon, active: active, size: 35),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          mode.label,
+                          style: TextStyle(
+                            color: palette.textPrimary,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        Text(
+                          description,
+                          style: TextStyle(
+                            color: palette.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    active
+                        ? PhosphorIconsFill.checkCircle
+                        : PhosphorIconsRegular.circle,
+                    color: active
+                        ? palette.primary
+                        : palette.textSecondary.withValues(alpha: .50),
+                    size: 17,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PresetOption extends StatelessWidget {
+  const _PresetOption({
+    required this.preset,
+    required this.active,
+    required this.onTap,
+  });
+
+  final StreamPreset preset;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = NivioTheme.themeColorsOf(context);
+    final icon = switch (preset) {
+      StreamPreset.dataSaver => PhosphorIconsRegular.leaf,
+      StreamPreset.balanced => PhosphorIconsRegular.scales,
+      StreamPreset.maxQuality => PhosphorIconsRegular.sparkle,
+    };
+    const radius = BorderRadius.all(Radius.circular(11));
+    return Semantics(
+      selected: active,
+      button: true,
+      child: Material(
+        color: active
+            ? palette.primary.withValues(alpha: .13)
+            : palette.textPrimary.withValues(alpha: .045),
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(
+            color: active
+                ? palette.primary.withValues(alpha: .54)
+                : palette.border.withValues(alpha: palette.border.a * .60),
+          ),
+        ),
+        child: FocusableInkWell(
+          borderRadius: radius,
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 76),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 9),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  color: active ? palette.primary : palette.textSecondary,
+                  size: 20,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  preset.label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: palette.textPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
             ),
           ),
-          ExpansionTile(
-            title: const Text('Customise'),
-            children: [
-              ListTile(
-                title: const Text('Resolution priority'),
-                subtitle: Text(
-                  current.resolutions.map((height) => '${height}p').join(' → '),
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _editResolutions(
-                  context,
-                  current.resolutions,
-                  (order) => change(
-                    (value) => value.copyWith(customResolutions: order),
-                  ),
-                ),
-              ),
-              const ListTile(dense: true, title: Text('Block releases')),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final exclusion in StreamExclusion.values)
-                        FilterChip(
-                          label: Text(exclusion.label),
-                          selected: current.exclusions.contains(exclusion),
-                          onSelected: (enabled) => change(
-                            (value) => value.copyWith(
-                              customExclusions: {...value.exclusions}
-                                ..remove(exclusion)
-                                ..addAll([if (enabled) exclusion]),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              const ListTile(dense: true, title: Text('Prefer these formats')),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final feature in StreamFeature.values)
-                        FilterChip(
-                          label: Text(feature.label),
-                          selected: current.features.contains(feature),
-                          onSelected: (enabled) => change(
-                            (value) => value.copyWith(
-                              customFeatures: {...value.features}
-                                ..remove(feature)
-                                ..addAll([if (enabled) feature]),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              _NumberSlider(
-                label: 'Maximum file size',
-                valueText: current.maxFileGb == 0
-                    ? 'No limit'
-                    : '${current.maxFileGb} GiB',
-                value: current.maxFileGb,
-                min: 0,
-                max: 100,
-                description:
-                    'With a limit, streams with unknown file sizes remain available in the picker.',
-                onChanged: (max) =>
-                    change((value) => value.copyWith(maxFileGb: max)),
-              ),
-            ],
-          ),
-          SwitchListTile(
-            title: const Text('Match saved audio preference'),
-            subtitle: const Text(
-              'Use reported languages and the preferred anime Sub or Dub setting.',
-            ),
-            value: current.matchAudio,
-            onChanged: (enabled) =>
-                change((value) => value.copyWith(matchAudio: enabled)),
-          ),
-          SwitchListTile(
-            title: const Text('Reuse binge group'),
-            subtitle: const Text(
-              'Prefer the previous episode’s source and release in Match Preferences.',
-            ),
-            value: current.reuseBingeGroup,
-            onChanged: (enabled) =>
-                change((value) => value.copyWith(reuseBingeGroup: enabled)),
-          ),
-          _NumberSlider(
-            label: 'Stream selection timeout',
-            valueText: '${current.timeoutSeconds} seconds',
-            value: current.timeoutSeconds,
-            min: 1,
-            max: 30,
-            description:
-                'How long autoplay waits for search results before choosing or opening the picker.',
-            onChanged: (seconds) =>
-                change((value) => value.copyWith(timeoutSeconds: seconds)),
-          ),
-          ExpansionTile(
-            title: const Text('Advanced'),
-            children: [
-              ListTile(
-                title: const Text('Custom Regex Override'),
-                subtitle: Text(
-                  current.regex.isEmpty
-                      ? 'In Match Preferences, match the source name, release label, quality, or reported audio.'
-                      : current.regex,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                trailing: const Icon(Icons.edit_outlined),
-                onTap: () async {
-                  final regex = await showDialog<String>(
-                    context: context,
-                    builder: (_) => _RegexDialog(initial: current.regex),
-                  );
-                  if (regex != null && context.mounted) {
-                    await change((value) => value.copyWith(regex: regex));
-                  }
-                },
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -476,6 +852,7 @@ Future<void> _editResolutions(
         void move(int from, int to) =>
             setState(() => order.insert(to, order.removeAt(from)));
         return AlertDialog(
+          backgroundColor: NivioTheme.surfaceColorOf(context),
           title: const Text('Resolution priority'),
           content: SizedBox(
             width: 340,
@@ -488,7 +865,9 @@ Future<void> _editResolutions(
                 key: ValueKey(order[index]),
                 leading: ReorderableDragStartListener(
                   index: index,
-                  child: const Icon(Icons.drag_handle),
+                  child: const StreamGlyph(
+                    PhosphorIconsRegular.dotsSixVertical,
+                  ),
                 ),
                 title: Text('${order[index]}p'),
                 trailing: _MoveButtons(
@@ -614,6 +993,7 @@ class _RegexDialogState extends State<_RegexDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
+    backgroundColor: NivioTheme.surfaceColorOf(context),
     title: const Text('Custom Regex Override'),
     content: SizedBox(
       width: 440,

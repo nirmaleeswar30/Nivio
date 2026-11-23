@@ -9,6 +9,7 @@ import 'package:nivio/services/extensions/nuvio_script_runtime.dart';
 import 'package:nivio/services/extensions/stream_discovery.dart';
 import 'package:nivio/services/streaming_service.dart';
 import 'package:nivio/widgets/stream_picker_sheet.dart';
+import 'package:nivio/widgets/stream_surfaces.dart';
 
 final _repo = ExtensionRepo(
   url: Uri.https('example.com', '/manifest.json'),
@@ -98,7 +99,7 @@ void main() {
       discovery.markFailed(_direct);
       await tester.pump();
       expect(find.textContaining('Couldn’t open this stream'), findsOneWidget);
-      expect(find.text('Buffer & play'), findsOneWidget);
+      expect(find.byTooltip('Buffer & play'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       discovery.dispose();
     },
@@ -121,10 +122,14 @@ void main() {
       );
       expect(find.text('Direct link'), findsOneWidget);
       expect(
-        find.widgetWithText(ChoiceChip, 'Torrents 0').evaluate().single.widget,
-        isA<ChoiceChip>().having(
-          (chip) => chip.onSelected,
-          'onSelected',
+        find
+            .widgetWithText(StreamSegment, 'Torrents 0')
+            .evaluate()
+            .single
+            .widget,
+        isA<StreamSegment>().having(
+          (segment) => segment.onTap,
+          'onTap',
           isNull,
         ),
       );
@@ -132,6 +137,43 @@ void main() {
       discovery.dispose();
     },
   );
+
+  testWidgets('the picker route returns the stream selected from its card', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1100, 680));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final discovery = _readyDiscovery(torrentsEnabled: false);
+    StreamPickerOutcome? picked;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () async {
+                picked = await StreamPickerSheet.show(
+                  context,
+                  discovery,
+                  StreamFilter.direct,
+                  (_) {},
+                );
+              },
+              child: const Text('Choose a source'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Choose a source'));
+    await tester.pumpAndSettle();
+    expect(find.text('Choose stream'), findsOneWidget);
+    await tester.tap(find.text('Direct link'));
+    await tester.pumpAndSettle();
+    expect(picked?.choice, _direct);
+    expect(picked?.result, _direct.direct);
+    expect(find.text('Choose stream'), findsNothing);
+    discovery.dispose();
+  });
 
   test(
     'QuickJS runs a CommonJS provider with episode arguments and host modules',
