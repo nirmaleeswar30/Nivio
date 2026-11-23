@@ -48,14 +48,18 @@ class StreamSelection {
   StreamSelection(
     this.settings, {
     required this.audio,
+    this.subtitle = 'Auto',
     required this.animeAudio,
     required this.isAnime,
   });
 
   final StreamSelectionSettings settings;
   final String audio;
+  final String subtitle;
   final String animeAudio;
   final bool isAnime;
+  late final _wantedAudio = _languageCodes(audio);
+  late final _wantedSubtitles = _languageCodes(subtitle);
 
   static final _blocked = {
     StreamExclusion.cam: RegExp(
@@ -86,22 +90,32 @@ class StreamSelection {
   }
 
   int _audioMatch(StreamChoice choice) {
+    if (_wantedAudio.isNotEmpty) {
+      final tracks = _languageCodes(choice.audio ?? '');
+      if (tracks.isEmpty) return 1;
+      return _wantedAudio.any(tracks.contains) ? 2 : 0;
+    }
     if (isAnime) {
       final type = choice.audioType?.toLowerCase();
       if (type == 'both' || type == animeAudio.toLowerCase()) return 2;
       if (type != null) return 0;
     }
-    final wanted = audio.toLowerCase().trim();
-    if (wanted.isEmpty || wanted == 'original' || wanted == 'auto')
-      return isAnime ? 1 : 2;
-    final wantedCode = _languageCode(wanted);
-    final reported = (choice.audio ?? '').toLowerCase();
-    final tracks = [
-      for (final value in reported.split(RegExp(r'[,/;+|\s]+')))
-        if (_languageCode(value) case final String language) language,
-    ];
-    if (wantedCode == null || tracks.isEmpty) return 1;
-    return tracks.contains(wantedCode) ? 2 : 0;
+    final requested = audio.trim().toLowerCase();
+    return isAnime || !const {'', 'original', 'auto'}.contains(requested)
+        ? 1
+        : 2;
+  }
+
+  static Set<String> _languageCodes(String label) => {
+    for (final value in label.toLowerCase().split(RegExp(r'[^a-z0-9_-]+')))
+      if (_languageCode(value) case final String code) code,
+  };
+
+  static bool matchesLanguage(String label, String preference) {
+    final wanted = preference.trim().toLowerCase();
+    if (wanted.isEmpty) return false;
+    return label.trim().toLowerCase() == wanted ||
+        _languageCodes(label).any(_languageCodes(wanted).contains);
   }
 
   static String? _languageCode(String label) {
@@ -114,7 +128,7 @@ class StreamSelection {
 
   static const _languages = {
     'en': ['eng', 'english'],
-    'ja': ['jpn', 'japanese'],
+    'ja': ['jp', 'jpn', 'japanese'],
     'hi': ['hin', 'hindi'],
     'es': ['spa', 'spanish'],
     'fr': ['fre', 'fra', 'french'],
@@ -141,6 +155,29 @@ class StreamSelection {
 
   bool confirmedAudio(StreamChoice choice) =>
       !settings.matchAudio || _audioMatch(choice) == 2;
+
+  bool hasPreferredSubtitles(StreamChoice choice) {
+    return _wantedSubtitles.isNotEmpty &&
+        (choice.direct?.subtitles.any(
+              (track) =>
+                  _languageCodes(track.lang).any(_wantedSubtitles.contains),
+            ) ??
+            false);
+  }
+
+  int compareLanguagePreferences(
+    StreamChoice a,
+    StreamChoice b, {
+    bool matchAudio = true,
+  }) {
+    if (matchAudio) {
+      final byAudio = _audioMatch(b).compareTo(_audioMatch(a));
+      if (byAudio != 0) return byAudio;
+    }
+    final aMatches = hasPreferredSubtitles(a);
+    final bMatches = hasPreferredSubtitles(b);
+    return aMatches == bMatches ? 0 : (aMatches ? -1 : 1);
+  }
 
   int compareSources(StreamChoice a, StreamChoice b) => settings
       .sourceRank(a.selectionSourceId)
@@ -171,10 +208,12 @@ class StreamSelection {
     indexed.sort((a, b) {
       final x = a.$2;
       final y = b.$2;
-      if (settings.matchAudio) {
-        final byAudio = _audioMatch(y).compareTo(_audioMatch(x));
-        if (byAudio != 0) return byAudio;
-      }
+      final byLanguage = compareLanguagePreferences(
+        x,
+        y,
+        matchAudio: settings.matchAudio,
+      );
+      if (byLanguage != 0) return byLanguage;
       if (bingeGroup != null) {
         final byBinge = (y.bingeGroup == bingeGroup ? 1 : 0).compareTo(
           x.bingeGroup == bingeGroup ? 1 : 0,

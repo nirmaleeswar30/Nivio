@@ -19,6 +19,8 @@ class StreamDiscovery extends ChangeNotifier {
     required this.repository,
     required this.subDub,
     required this.preferredQuality,
+    this.preferredAudio = 'Original',
+    this.preferredSubtitle = 'Auto',
     this.previous,
     this.inspectVideoHeights,
     this.selection = const StreamSelectionSettings(),
@@ -31,6 +33,8 @@ class StreamDiscovery extends ChangeNotifier {
   final ExtensionRepository repository;
   final String subDub;
   final String? preferredQuality;
+  final String preferredAudio;
+  final String preferredSubtitle;
   final StreamChoice? previous;
   final Future<List<int>> Function(StreamResult)? inspectVideoHeights;
   final StreamSelectionSettings selection;
@@ -44,15 +48,32 @@ class StreamDiscovery extends ChangeNotifier {
 
   bool get isAnime => media.mediaType == 'anime';
 
+  late final policy = StreamSelection(
+    selection,
+    audio: preferredAudio,
+    subtitle: preferredSubtitle,
+    animeAudio: subDub,
+    isAnime: isAnime,
+  );
+
   List<StreamChoice> get availableChoices =>
       choices.where((choice) => !unavailable.contains(choice.id)).toList();
 
-  List<StreamChoice> orderForPicker(List<StreamChoice> visible) {
+  List<StreamChoice> orderForPicker(
+    List<StreamChoice> visible, {
+    int? resolution,
+  }) {
     final ordered = visible.indexed.toList();
     ordered.sort((a, b) {
-      final rankA = selection.sourceRank(a.$2.selectionSourceId);
-      final rankB = selection.sourceRank(b.$2.selectionSourceId);
-      if (rankA != rankB) return rankA.compareTo(rankB);
+      final byLanguage = policy.compareLanguagePreferences(a.$2, b.$2);
+      if (byLanguage != 0) return byLanguage;
+      if (resolution != null) {
+        final aMatches = a.$2.knownResolutions.contains(resolution);
+        final bMatches = b.$2.knownResolutions.contains(resolution);
+        if (aMatches != bMatches) return aMatches ? -1 : 1;
+      }
+      final bySource = policy.compareSources(a.$2, b.$2);
+      if (bySource != 0) return bySource;
       return a.$1.compareTo(b.$1);
     });
     return ordered.map((entry) => entry.$2).toList();
@@ -227,6 +248,9 @@ class StreamDiscovery extends ChangeNotifier {
               episode: episode,
               providerIndex: index,
               preferredQuality: preferredQuality,
+              preferredAudio: !isAnime && preferredAudio != 'Original'
+                  ? preferredAudio
+                  : null,
               subDubPreference: subDub,
             )
             .timeout(const Duration(seconds: 24));

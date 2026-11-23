@@ -390,7 +390,8 @@ final preferredSubtitleLanguageProvider =
     });
 
 class PreferredSubtitleLanguageNotifier extends StateNotifier<String> {
-  PreferredSubtitleLanguageNotifier() : super('Auto') {
+  PreferredSubtitleLanguageNotifier()
+    : super(_startupPrefs?.getString('preferred_subtitle_language') ?? 'Auto') {
     _loadSetting();
   }
 
@@ -452,7 +453,8 @@ final preferredAudioLanguageProvider =
     });
 
 class PreferredAudioLanguageNotifier extends StateNotifier<String> {
-  PreferredAudioLanguageNotifier() : super('Original') {
+  PreferredAudioLanguageNotifier()
+    : super(_startupPrefs?.getString('preferred_audio_language') ?? 'Original') {
     _loadSetting();
   }
 

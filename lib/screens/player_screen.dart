@@ -1134,11 +1134,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         final presetHeight = settings.resolutions.firstOrNull;
         final directQuality =
             preferredQuality ?? (presetHeight == null ? null : '${presetHeight}p');
+        final String audioLanguage =
+            _currentHistory?.preferredAudioTrack ??
+            ref.read(preferredAudioLanguageProvider);
+        final String subtitleLanguage =
+            _currentHistory?.preferredSubtitleTrack ??
+            ref.read(preferredSubtitleLanguageProvider);
         var search = _streamDiscovery;
         if (search == null || search.episode != _currentEpisode ||
             search.season != widget.season || search.media.id != media.id ||
             search.media.mediaType != media.mediaType ||
             search.selection != settings ||
+            search.preferredAudio != audioLanguage ||
+            search.preferredSubtitle != subtitleLanguage ||
             search.preferredQuality != directQuality || search.subDub != subDub) {
           search?.dispose();
           search = StreamDiscovery(
@@ -1149,6 +1157,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             repository: repository,
             subDub: subDub,
             preferredQuality: directQuality,
+            preferredAudio: audioLanguage,
+            preferredSubtitle: subtitleLanguage,
             previous: _lastStreamChoice,
             inspectVideoHeights: (stream) async {
               final probe = await _probeStreamCandidate(
@@ -1204,13 +1214,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ) async {
     const maxAttempts = 4;
     if (_autoStreamAttempts >= maxAttempts) return null;
-    final audio = ref.read(preferredAudioLanguageProvider);
-    final policy = StreamSelection(
-      settings,
-      audio: audio,
-      animeAudio: search.subDub,
-      isAnime: search.isAnime,
-    );
+    final policy = search.policy;
     String? bingeGroup;
     if (settings.reuseBingeGroup && search.media.mediaType != 'movie') {
       final prefs = await SharedPreferences.getInstance();
@@ -2179,40 +2183,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
 
-  bool _isLanguageMatch(String trackLang, String preferredLang) {
-    if (trackLang.isEmpty || preferredLang.isEmpty) return false;
-    final t = trackLang.toLowerCase().trim();
-    final p = preferredLang.toLowerCase().trim();
-    if (t == p || t.contains(p) || p.contains(t)) return true;
-    
-    // Map preferred language to ISO codes
-    final map = {
-      'english': ['en', 'eng'],
-      'japanese': ['ja', 'jpn'],
-      'hindi': ['hi', 'hin'],
-      'tamil': ['ta', 'tam'],
-      'telugu': ['te', 'tel'],
-      'spanish': ['es', 'spa'],
-      'french': ['fr', 'fre', 'fra'],
-      'korean': ['ko', 'kor'],
-      'german': ['de', 'ger', 'deu'],
-      'italian': ['it', 'ita'],
-      'arabic': ['ar', 'ara'],
-    };
-
-    final pIsoCodes = map[p] ?? [p];
-    final tIsoCodes = map[t] ?? [t];
-
-    if (pIsoCodes.any((code) => t.contains(code) || t == code)) return true;
-    if (tIsoCodes.any((code) => p.contains(code) || p == code)) return true;
-
-    for (final iso in pIsoCodes) {
-      final regex = RegExp(r'\b' + iso + r'\b', caseSensitive: false);
-      if (regex.hasMatch(t)) return true;
-    }
-    
-    return false;
-  }
+  bool _isLanguageMatch(String trackLang, String preferredLang) =>
+      StreamSelection.matchesLanguage(trackLang, preferredLang);
 
   // Common ISO 639-1/639-2 codes → readable names for track labels.
   static const Map<String, String> _langNames = {
@@ -2320,56 +2292,43 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _player.setSubtitleTrack(SubtitleTrack.no());
     } else {
       SubtitleTrack? chosen;
+      final externalSubtitles =
+          _streamResult?.subtitles ?? const <StreamSubtitleTrack>[];
+      StreamSubtitleTrack? externalMatch;
 
-      // 1. Try to honour a specific preferred language (skipped for 'Auto').
       if (preferredSubtitle.isNotEmpty && preferredSubtitle != 'Auto') {
         for (int i = 0; i < selectableSubs.length; i++) {
           final track = selectableSubs[i];
           final title = (track.title ?? '').trim();
           final lang = (track.language ?? '').trim();
           final label = _trackLabel(track.title, track.language, i, 'Subtitle');
-          if (title == preferredSubtitle ||
-              lang == preferredSubtitle ||
-              label == preferredSubtitle ||
-              _isLanguageMatch(title, preferredSubtitle) ||
+          if (_isLanguageMatch(title, preferredSubtitle) ||
               _isLanguageMatch(lang, preferredSubtitle) ||
               _isLanguageMatch(label, preferredSubtitle)) {
             chosen = track;
             break;
           }
         }
+        if (chosen == null) {
+          externalMatch = externalSubtitles.where(
+            (track) => _isLanguageMatch(track.lang, preferredSubtitle),
+          ).firstOrNull;
+        }
       }
 
-      // 2. Fallback: enable the FIRST embedded subtitle track. This is what
-      //    fixes anime torrents/streams whose single sub track has a blank title and
-      //    no/undetermined language — previously nothing matched, so subtitles
-      //    silently stayed off. Subs-on-by-default matches how the app plays.
-      chosen ??= selectableSubs.isNotEmpty ? selectableSubs.first : null;
+      if (chosen == null && externalMatch == null) {
+        // Some releases have one embedded track without language metadata.
+        chosen = selectableSubs.firstOrNull;
+        externalMatch = externalSubtitles.firstOrNull;
+      }
 
       if (chosen != null) {
         _player.setSubtitleTrack(chosen);
-      } else if (_streamResult != null && _streamResult!.subtitles.isNotEmpty) {
-        // 3. No embedded tracks: check if an external subtitle matches preferred,
-        //    else pick the first external subtitle.
-        final ext = _streamResult!.subtitles;
-        final match = ext.firstWhere(
-          (s) =>
-              preferredSubtitle != 'Auto' &&
-              s.lang.isNotEmpty &&
-              (s.lang == preferredSubtitle ||
-                  _isLanguageMatch(s.lang, preferredSubtitle)),
-          orElse: () => ext.first,
-        );
-        final alreadyLoaded = selectableSubs.any((t) {
-          final tTitle = (t.title ?? '').trim().toLowerCase();
-          final tLang = (t.language ?? '').trim().toLowerCase();
-          final mLang = match.lang.trim().toLowerCase();
-          return (mLang.isNotEmpty && (tTitle == mLang || tLang == mLang)) ||
-                 (match.url.isNotEmpty && (tTitle.contains(match.url) || match.url.endsWith(tTitle)));
-        });
-        if (!alreadyLoaded) {
-          _player.setSubtitleTrack(SubtitleTrack.uri(match.url, title: match.lang.isNotEmpty ? match.lang : 'Default Subtitle'));
-        }
+      } else if (externalMatch != null) {
+        _player.setSubtitleTrack(SubtitleTrack.uri(
+          externalMatch.url,
+          title: externalMatch.lang.isEmpty ? 'Default Subtitle' : externalMatch.lang,
+        ));
       } else {
         _player.setSubtitleTrack(SubtitleTrack.auto());
       }

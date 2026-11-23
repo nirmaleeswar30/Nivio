@@ -26,6 +26,7 @@ StreamChoice _choice(
   String? audio,
   String? group,
   int? bytes,
+  List<StreamSubtitleTrack> subtitles = const [],
 }) => StreamChoice(
   id: id,
   providerId: provider,
@@ -40,6 +41,7 @@ StreamChoice _choice(
     url: 'https://example.com/$id',
     quality: quality,
     provider: provider,
+    subtitles: subtitles,
   ),
 );
 
@@ -49,6 +51,52 @@ class _UnusedStreamingService implements StreamingService {
 }
 
 void main() {
+  test(
+    'direct picker ranks preferred audio and subtitles ahead of resolution',
+    () {
+      final wrongAudio = _choice('other', 'Film', '1080p', audio: 'French');
+      final unknown = _choice('unknown', 'Film', '1080p');
+      final audio = _choice('audio', 'Film', '1080p', audio: 'English');
+      final both = _choice(
+        'both',
+        'Film',
+        '720p',
+        audio: 'en-US',
+        subtitles: [
+          StreamSubtitleTrack(
+            url: 'https://example.com/es.vtt',
+            lang: 'es-419',
+          ),
+        ],
+      );
+      final discovery = StreamDiscovery(
+        media: const SearchResult(id: 1, mediaType: 'movie'),
+        season: 1,
+        episode: 1,
+        streaming: _UnusedStreamingService(),
+        repository: ExtensionRepository(),
+        subDub: 'sub',
+        preferredQuality: '1080p',
+        preferredAudio: 'English',
+        preferredSubtitle: 'Spanish',
+      );
+      addTearDown(discovery.dispose);
+      expect(
+        discovery.orderForPicker([
+          wrongAudio,
+          unknown,
+          audio,
+          both,
+        ], resolution: 1080),
+        [both, audio, unknown, wrongAudio],
+      );
+      expect(discovery.policy.hasPreferredSubtitles(both), isTrue);
+      expect(discovery.policy.hasPreferredSubtitles(audio), isFalse);
+      expect(StreamSelection.matchesLanguage('French', 'English'), isFalse);
+      expect(StreamSelection.matchesLanguage('English (CC)', 'en-US'), isTrue);
+    },
+  );
+
   test(
     'Max Quality falls back across resolutions while keeping the audio and size limits',
     () async {

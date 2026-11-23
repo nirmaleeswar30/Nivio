@@ -169,25 +169,21 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
 
   List<StreamChoice> _visibleChoices() {
     final text = _searchController.text.trim().toLowerCase();
-    final ordered = _discovery.orderForPicker(
-      _discovery.choices.where((choice) {
-        if (!choice.isDirect) return false;
-        return text.isEmpty ||
-            '${choice.title} ${choice.provider} ${choice.origin}'
-                .toLowerCase()
-                .contains(text);
-      }).toList(),
-    );
     final requested = _resolution;
-    if (requested == null) return ordered;
-    final matches = ordered.where(
-      (choice) => choice.knownResolutions.contains(requested),
-    );
-    if (matches.isEmpty && !_changedResolution) return ordered;
-    return [
-      ...matches,
-      ...ordered.where((choice) => choice.knownResolutions.isEmpty),
-    ];
+    final visible = _discovery.choices.where((choice) {
+      if (!choice.isDirect) return false;
+      final heights = choice.knownResolutions;
+      if (_changedResolution &&
+          requested != null &&
+          heights.isNotEmpty &&
+          !heights.contains(requested))
+        return false;
+      return text.isEmpty ||
+          '${choice.title} ${choice.provider} ${choice.origin}'
+              .toLowerCase()
+              .contains(text);
+    }).toList();
+    return _discovery.orderForPicker(visible, resolution: requested);
   }
 
   @override
@@ -688,6 +684,10 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
                         case final String audio) ...[
                       const SizedBox(width: 8),
                       _tag(audio, Colors.grey),
+                    ],
+                    if (_discovery.policy.hasPreferredSubtitles(choice)) ...[
+                      const SizedBox(width: 8),
+                      _tag('Matching subtitles', const Color(0xFF4ADE80)),
                     ],
                   ],
                 ),
