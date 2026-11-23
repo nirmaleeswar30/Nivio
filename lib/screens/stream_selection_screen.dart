@@ -778,54 +778,96 @@ Future<void> _editResolutions(
   ValueChanged<List<int>> onSave,
 ) async {
   final order = [...initial];
-  final selected = await showDialog<List<int>>(
-    context: context,
-    builder: (context) => StatefulBuilder(
-      builder: (context, setState) {
-        void move(int from, int to) =>
-            setState(() => order.insert(to, order.removeAt(from)));
+  final compact =
+      !AppPlatform.useDesktopLayout || MediaQuery.sizeOf(context).width < 600;
+  Widget buildEditor(BuildContext context) => StatefulBuilder(
+    builder: (context, setState) {
+      void move(int from, int to) =>
+          setState(() => order.insert(to, order.removeAt(from)));
+      final resolutions = ReorderableListView.builder(
+        shrinkWrap: compact,
+        padding: compact ? const EdgeInsets.symmetric(horizontal: 8) : null,
+        buildDefaultDragHandles: false,
+        itemCount: order.length,
+        onReorder: (from, to) => move(from, from < to ? to - 1 : to),
+        itemBuilder: (_, index) => ListTile(
+          key: ValueKey(order[index]),
+          leading: ReorderableDragStartListener(
+            index: index,
+            child: StreamGlyph(
+              PhosphorIconsRegular.dotsSixVertical,
+              size: compact ? 44 : 36,
+            ),
+          ),
+          title: Text('${order[index]}p'),
+          trailing: _MoveButtons(
+            up: index > 0 ? () => move(index, index - 1) : null,
+            down: index + 1 < order.length
+                ? () => move(index, index + 1)
+                : null,
+          ),
+        ),
+      );
+      final actions = [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, order),
+          child: const Text('Save'),
+        ),
+      ];
+
+      if (!compact) {
         return AlertDialog(
           backgroundColor: NivioTheme.surfaceColorOf(context),
           title: const Text('Resolution priority'),
-          content: SizedBox(
-            width: 340,
-            height: 290,
-            child: ReorderableListView.builder(
-              buildDefaultDragHandles: false,
-              itemCount: order.length,
-              onReorder: (from, to) => move(from, from < to ? to - 1 : to),
-              itemBuilder: (_, index) => ListTile(
-                key: ValueKey(order[index]),
-                leading: ReorderableDragStartListener(
-                  index: index,
-                  child: const StreamGlyph(
-                    PhosphorIconsRegular.dotsSixVertical,
-                  ),
-                ),
-                title: Text('${order[index]}p'),
-                trailing: _MoveButtons(
-                  up: index > 0 ? () => move(index, index - 1) : null,
-                  down: index + 1 < order.length
-                      ? () => move(index, index + 1)
-                      : null,
-                ),
+          content: SizedBox(width: 340, height: 290, child: resolutions),
+          actions: actions,
+        );
+      }
+      return SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                'Resolution priority',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, order),
-              child: const Text('Save'),
+            Flexible(child: resolutions),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: OverflowBar(
+                alignment: MainAxisAlignment.end,
+                spacing: 8,
+                children: actions,
+              ),
             ),
           ],
-        );
-      },
-    ),
+        ),
+      );
+    },
   );
+  final selected = compact
+      ? await showModalBottomSheet<List<int>>(
+          context: context,
+          useSafeArea: true,
+          isScrollControlled: true,
+          enableDrag: false,
+          showDragHandle: true,
+          backgroundColor: NivioTheme.surfaceColorOf(context),
+          constraints: const BoxConstraints(maxWidth: 560),
+          builder: buildEditor,
+        )
+      : await showDialog<List<int>>(context: context, builder: buildEditor);
   if (selected != null && context.mounted) onSave(selected);
 }
 

@@ -254,17 +254,8 @@ class StreamSelection {
   }
 
   int _featureScore(StreamChoice choice) {
-    final text = choice.releaseLabel.toLowerCase();
-    var score = _preferredFormats
-        .where((pattern) => pattern.hasMatch(text))
-        .length;
-    if (settings.preset == StreamPreset.balanced &&
-        RegExp(r'\b(?:web[ ._-]?dl|blu[ ._-]?ray)\b').hasMatch(text))
-      score++;
-    if (settings.preset == StreamPreset.maxQuality &&
-        RegExp(r'\bremux\b').hasMatch(text))
-      score++;
-    return score;
+    final text = choice.releaseLabel;
+    return _preferredFormats.where((pattern) => pattern.hasMatch(text)).length;
   }
 }
 

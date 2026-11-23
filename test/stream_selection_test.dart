@@ -227,7 +227,9 @@ void main() {
   test('each preferred format promotes a matching release', () async {
     const samples = {
       StreamFeature.webSources: 'Film WEBRip',
+      StreamFeature.webDl: 'Film WEB-DL',
       StreamFeature.bluRayQuality: 'Film BDRip',
+      StreamFeature.bluRay: 'Film BluRay',
       StreamFeature.remux: 'Film Remux',
       StreamFeature.hevc: 'Film H.265',
       StreamFeature.avc: 'Film H.264',
@@ -249,6 +251,104 @@ void main() {
       );
       expect(await selection.ranked([untagged, tagged]), [tagged, untagged]);
     }
+  });
+
+  test('former built-in boosts migrate and can be turned off', () async {
+    SharedPreferences.setMockInitialValues({
+      'stream_selection_preferences': jsonEncode({
+        'mode': 'match',
+        'presetOptions': {
+          'balanced': {
+            'features': ['avc'],
+          },
+          'maxQuality': {
+            'features': ['hdr'],
+          },
+        },
+      }),
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final saved = StreamSelectionSettings.read(prefs);
+    expect(saved.features, {
+      StreamFeature.avc,
+      StreamFeature.webDl,
+      StreamFeature.bluRay,
+    });
+    expect(saved.copyWith(preset: StreamPreset.maxQuality).features, {
+      StreamFeature.hdr,
+      StreamFeature.remux,
+    });
+
+    await saved.copyWith(customFeatures: {}).save(prefs);
+    final restored = StreamSelectionSettings.read(prefs);
+    expect(restored.features, isEmpty);
+    final selection = StreamSelection(
+      restored,
+      audio: 'Original',
+      animeAudio: 'sub',
+      isAnime: false,
+    );
+    final choices = [
+      _choice('plain', 'Film', '1080p'),
+      _choice('web', 'Film WEB-DL', '1080p'),
+    ];
+    expect(await selection.ranked(choices), choices);
+  });
+
+  testWidgets('resolution priority keeps actions visible on a short phone', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 390);
+    tester.view.padding = const FakeViewPadding(bottom: 24);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetPadding);
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(home: StreamPickerSettingsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final customise = find.text('Customise');
+    await tester.ensureVisible(customise);
+    await tester.pumpAndSettle();
+    await tester.tap(customise);
+    await tester.pumpAndSettle();
+    final priority = find.text('Resolution priority');
+    await tester.ensureVisible(priority);
+    await tester.pumpAndSettle();
+    await tester.tap(priority);
+    await tester.pumpAndSettle();
+
+    final sheet = find.byType(BottomSheet);
+    expect(sheet, findsOneWidget);
+    final save = find.widgetWithText(FilledButton, 'Save').hitTestable();
+    expect(save, findsOneWidget);
+    final moveDown = find.descendant(
+      of: find.widgetWithText(ListTile, '1080p'),
+      matching: find.byTooltip('Move down'),
+    );
+    await tester.tap(moveDown);
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(find.text('720p')).dy,
+      lessThan(tester.getTopLeft(find.text('1080p')).dy),
+    );
+    await tester.drag(find.byType(ReorderableListView), const Offset(0, -220));
+    await tester.pumpAndSettle();
+    expect(find.text('480p').hitTestable(), findsOneWidget);
+    expect(save, findsOneWidget);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(StreamSelectionSettings.read(prefs).resolutions.take(2), [
+      720,
+      1080,
+    ]);
   });
 
   test(
@@ -303,8 +403,24 @@ void main() {
       }
 
       await tapVisible(find.text('Customise'));
-      for (final feature in StreamFeature.values) {
-        expect(find.widgetWithText(FilterChip, feature.label), findsOneWidget);
+      const defaultFeatures = {
+        StreamPreset.balanced: {StreamFeature.webDl, StreamFeature.bluRay},
+        StreamPreset.maxQuality: {
+          StreamFeature.hdr,
+          StreamFeature.dolbyVision,
+          StreamFeature.remux,
+        },
+        StreamPreset.dataSaver: {StreamFeature.hevc},
+      };
+      for (final preset in defaultFeatures.keys) {
+        await tapVisible(find.text(preset.label));
+        for (final feature in StreamFeature.values) {
+          final chip = find.widgetWithText(FilterChip, feature.label);
+          expect(
+            tester.widget<FilterChip>(chip).selected,
+            defaultFeatures[preset]!.contains(feature),
+          );
+        }
       }
       await tapVisible(
         find.widgetWithText(FilterChip, StreamFeature.avc.label),

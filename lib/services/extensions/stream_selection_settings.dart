@@ -53,10 +53,12 @@ enum StreamExclusion {
 
 enum StreamFeature {
   webSources('WEB Sources', r'\bweb[ ._-]?(?:dl|rip)\b'),
+  webDl('WEB-DL', r'\bweb[ ._-]?dl\b'),
   bluRayQuality(
     'BluRay Quality',
     r'\b(?:blu[ ._-]?ray|b[dr][ ._-]?rip|remux)\b',
   ),
+  bluRay('BluRay', r'\bblu[ ._-]?ray\b'),
   remux('Remux', r'\bremux\b'),
   hevc('HEVC / x265', r'\b(?:x265|h[ ._-]?265|hevc|hev1|hvc1)\b'),
   avc('AVC / x264', r'\b(?:x264|h[ ._-]?264|avc1?)\b'),
@@ -112,8 +114,9 @@ class StreamPresetOptions {
 
   factory StreamPresetOptions.fromJson(
     Map<String, dynamic> data,
-    StreamPreset preset,
-  ) {
+    StreamPreset preset, {
+    required bool migrateFormatBoosts,
+  }) {
     final resolutions = (data['resolutions'] as List?)
         ?.whereType<int>()
         .toSet();
@@ -124,6 +127,18 @@ class StreamPresetOptions {
           : null;
     }
 
+    final features = readSet(StreamFeature.values, 'features');
+    if (migrateFormatBoosts && features != null) {
+      // These format boosts used to apply even to a customised preset.
+      features.addAll(switch (preset) {
+        StreamPreset.dataSaver => const {},
+        StreamPreset.balanced => const {
+          StreamFeature.webDl,
+          StreamFeature.bluRay,
+        },
+        StreamPreset.maxQuality => const {StreamFeature.remux},
+      });
+    }
     return StreamPresetOptions(
       resolutions: resolutions == null
           ? null
@@ -134,7 +149,7 @@ class StreamPresetOptions {
               ),
             ],
       exclusions: readSet(StreamExclusion.values, 'exclusions'),
-      features: readSet(StreamFeature.values, 'features'),
+      features: features,
       maxFileGb: (data['maxFileGb'] as int? ?? 0).clamp(0, 100),
     );
   }
@@ -178,10 +193,11 @@ class StreamSelectionSettings {
       presetOptions[preset]?.features ??
       switch (preset) {
         StreamPreset.dataSaver => {StreamFeature.hevc},
-        StreamPreset.balanced => {},
+        StreamPreset.balanced => {StreamFeature.webDl, StreamFeature.bluRay},
         StreamPreset.maxQuality => {
           StreamFeature.hdr,
           StreamFeature.dolbyVision,
+          StreamFeature.remux,
         },
       };
 
@@ -230,6 +246,7 @@ class StreamSelectionSettings {
   }
 
   static const _key = 'stream_selection_preferences';
+  static const _version = 2;
 
   static StreamSelectionSettings read(SharedPreferences prefs) {
     final raw = prefs.getString(_key);
@@ -246,6 +263,7 @@ class StreamSelectionSettings {
       );
       final savedOptions =
           data['presetOptions'] as Map<String, dynamic>? ?? const {};
+      final savedVersion = data['version'] as int? ?? 1;
       return StreamSelectionSettings(
         mode: readEnum(
           StreamSelectionMode.values,
@@ -263,7 +281,11 @@ class StreamSelectionSettings {
           for (final preset in StreamPreset.values)
             if (savedOptions[preset.name]
                 case final Map<String, dynamic> options)
-              preset: StreamPresetOptions.fromJson(options, preset),
+              preset: StreamPresetOptions.fromJson(
+                options,
+                preset,
+                migrateFormatBoosts: savedVersion < _version,
+              ),
         },
         regex: data['regex'] as String? ?? '',
         timeoutSeconds: (data['timeoutSeconds'] as int? ?? 8).clamp(1, 30),
@@ -280,6 +302,7 @@ class StreamSelectionSettings {
   Future<bool> save(SharedPreferences prefs) => prefs.setString(
     _key,
     jsonEncode({
+      'version': _version,
       'mode': mode.name,
       'preset': preset.name,
       'sourceOrder': sourceOrder,
