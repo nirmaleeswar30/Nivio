@@ -19,6 +19,7 @@ import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
+import 'package:nivio/screens/extensions_screen.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
@@ -133,6 +134,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ),
               ),
               const SizedBox(height: 20),
+              TextButton(onPressed: () => showStreamPickerSettings(context), child: const Text('Stream selection settings')),
               ElevatedButton(
                 onPressed: () => context.go('/auth'),
                 child: const Text('Sign In'),
@@ -280,6 +282,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                     title: 'Playback',
                     child: Column(
                       children: [
+                        if (_matches('stream selection default filter direct torrents extensions'))
+                          _streamSelectionTile(),
                         if (_matches('auto play next episode automatically'))
                           _buildSwitchTile(
                             icon: Icons.skip_next_rounded,
@@ -1603,6 +1607,13 @@ Widget _buildMobileLayout(BuildContext context, User user) {
       child: Column(children: results),
     );
   }
+
+  Widget _streamSelectionTile() => _buildActionTile(
+    icon: Icons.filter_list,
+    title: 'Stream selection',
+    subtitle: 'Default stream tab and extensions',
+    onTap: () => showStreamPickerSettings(context),
+  );
 
   Widget _buildActionTile({
     required IconData icon,
@@ -4649,6 +4660,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
       case 1: // Playback
         return Column(
           children: [
+            _streamSelectionTile(),
             _buildSwitchTile(
               icon: Icons.skip_next_rounded,
               title: 'Auto Play Next Episode',

@@ -24,6 +24,7 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : PipCallbackHelperActivityWrapper() {
+    private var cloudstreamExtensions: CloudstreamExtensions? = null
     private val CHANNEL = "com.nivio/gesture_exclusion"
     private val MEDIA_SESSION_CHANNEL = "com.nivio/media_session"
     private val WATCH_PARTY_CHANNEL = "com.nivio/watch_party_keepalive"
@@ -48,6 +49,7 @@ class MainActivity : PipCallbackHelperActivityWrapper() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        cloudstreamExtensions = CloudstreamExtensions(this, flutterEngine.dartExecutor.binaryMessenger)
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
@@ -257,6 +259,8 @@ class MainActivity : PipCallbackHelperActivityWrapper() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        cloudstreamExtensions?.close()
+        cloudstreamExtensions = null
         stopDolbyRouteUpdates()
         dolbyRouteChannel?.setStreamHandler(null)
         dolbyRouteChannel = null

@@ -70,6 +70,16 @@ flutter {
     source = "../.."
 }
 
+dependencies {
+    implementation("com.github.recloudstream.cloudstream:library:v4.7.0") {
+        // Nivio already handles YouTube and uses Firebase's Protobuf version.
+        exclude(group = "com.github.teamnewpipe", module = "NewPipeExtractor")
+        exclude(group = "com.github.AmarullisVFX", module = "newpipeextractor")
+        exclude(group = "com.github.AmaryllisVFX", module = "newpipeextractor")
+        exclude(group = "com.github.AmaryllisVFX.newpipeextractor")
+    }
+}
+
 // ── mpv: mpvlibAndroid instead of media_kit's bundled libmpv ──
 // media_kit ships an mpv 0.36 build with only the OpenGL renderer. mpvlibAndroid
 // (MIT wrapper; mpv/FFmpeg are LGPL, loaded as shared libraries) adds Vulkan,

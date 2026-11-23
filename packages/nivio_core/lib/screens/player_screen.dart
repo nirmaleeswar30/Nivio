@@ -26,6 +26,10 @@ import 'package:nivio/widgets/hdr_video_surface.dart';
 import 'package:nivio/widgets/windows_hdr_video_surface.dart';
 import 'package:nivio/widgets/linux_hdr_video_surface.dart';
 import 'package:nivio/widgets/player_stats_overlay.dart';
+import 'package:nivio/services/extensions/extension_repository.dart';
+import 'package:nivio/services/extensions/extension_resolver.dart';
+import 'package:nivio/services/extensions/stream_discovery.dart';
+import 'package:nivio/widgets/stream_picker_sheet.dart';
 import 'package:nivio/services/hdr_tone_mapping.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/screens/player/widgets/custom_player_controls.dart';
@@ -210,6 +214,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String _currentProvider = '';
   int _retryCount = 0;
   int _currentProviderIndex = 0;
+  StreamDiscovery? _streamDiscovery;
+  StreamFilter? _pickerFilter;
+  StreamChoice? _lastStreamChoice;
+  bool _streamPickerOpen = false;
+
+  bool get _usesStreamPicker => widget.providerIndex == null &&
+      widget.watchPartyCode == null && widget.directStreamUrl == null &&
+      widget.localPath == null && widget.downloadStreamId == null;
   static const int _maxRetries = 3;
   final FocusNode _focusNode = FocusNode();
   final GlobalKey<CustomPlayerControlsState> _controlsKey = GlobalKey<CustomPlayerControlsState>();
@@ -1062,7 +1074,51 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   // ├────────────────────────────────────────────────────────────────────────────────────────── Player initialization ──────────────────────────────────────────────────────────────────────────────────────────
-  Future<void> _initializePlayer({bool isRetry = true}) async {
+  Future<StreamPickerOutcome?> _chooseStream(
+    SearchResult media, String? preferredQuality, String subDub,
+  ) async {
+    if (_streamPickerOpen) return null;
+    _streamPickerOpen = true;
+    final repository = ref.read(extensionRepositoryProvider);
+    try {
+      final oldSearch = _streamDiscovery;
+      if (oldSearch == null || oldSearch.episode != _currentEpisode ||
+          oldSearch.season != widget.season || oldSearch.media.id != media.id) {
+        _pickerFilter = await repository.preferredFilter();
+      }
+      while (mounted) {
+        final torrentsEnabled = ref.read(enableTorrentsProvider);
+        var search = _streamDiscovery;
+        if (search == null || search.episode != _currentEpisode || search.season != widget.season ||
+            search.media.id != media.id || search.torrentsEnabled != torrentsEnabled) {
+          search?.dispose();
+          search = StreamDiscovery(media: media, season: widget.season, episode: _currentEpisode,
+            streaming: ref.read(streamingServiceProvider), repository: repository,
+            torrentsEnabled: torrentsEnabled, subDub: subDub, preferredQuality: preferredQuality,
+            previous: _lastStreamChoice,
+          );
+          _streamDiscovery = search;
+          unawaited(search.search());
+        }
+        final outcome = await StreamPickerSheet.show(context, search, _pickerFilter ?? StreamFilter.all,
+          (filter) => _pickerFilter = filter,
+        );
+        if (outcome?.refresh != true || !mounted) return outcome;
+        // The modal is still animating out. Keep its old results alive until it
+        // has detached, then re-query with the updated settings and repositories.
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        if (!mounted) return null;
+        _streamDiscovery?.dispose();
+        _streamDiscovery = null;
+      }
+      return null;
+    } finally {
+      _streamPickerOpen = false;
+    }
+  }
+
+  Future<void> _initializePlayer({bool isRetry = true, StreamPickerOutcome? picked}) async {
+    if (!mounted || _streamPickerOpen) return;
     appDebugLog(
       '🧪 [CW_DEBUG] PlayerScreen#$_sid _initializePlayer(isRetry=$isRetry) '
       'providerIdx=$_currentProviderIndex runningFetchers=${_runningFetchers?.keys.toList()} '
@@ -1073,6 +1129,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // must not be treated as a provider failure — that used to cycle through
     // every provider while the first stream kept playing in the background.
     var mediaOpened = false;
+    StreamChoice? manualChoice;
     // Cancel any watchdog from a previous load/retry before starting a new one.
     _stuckWatchdog?.cancel();
     _sawFirstFrame = false;
@@ -1181,7 +1238,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         subDubPref = _selectedAudioOverride!.toLowerCase().contains('dub') ? 'dub' : 'sub';
       }
       
-      if (media != null && _isAnimeMedia(media)) {
+      if (media != null && _isAnimeMedia(media) && !_usesStreamPicker) {
         final isTorrent = streamingService.getProviderName(
           _currentProviderIndex,
           isAnime: true,
@@ -1376,6 +1433,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           headers: {},
           subtitles: hasSrt ? [StreamSubtitleTrack(lang: subLang, url: srtPath)] : [],
         );
+      } else if (_usesStreamPicker && media != null) {
+        final selected = picked ?? await _chooseStream(media, preferredQuality, subDubPref);
+        if (!mounted) return;
+        if (selected?.result == null) {
+          setState(() {
+            _isLoading = false;
+            _error = 'Choose a stream to start playback.';
+          });
+          return;
+        }
+        manualChoice = selected!.choice;
+        result = selected.result;
       } else if (_prefetchedStreams.containsKey(_currentEpisode) &&
           (!_bingeMode || streamingService.getProviderName(
             _currentProviderIndex,
@@ -1500,7 +1569,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _currentProvider = result.provider;
       _setSeekPreview(result);
       // A local downloaded file is always played directly (never via WebView).
-      _isDirectStream = ((isInitialEpisode && widget.directStreamUrl != null) || _isDownloadStream || (_effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty))
+      _isDirectStream = manualChoice != null ? !manualChoice.isWebPlayer
+          : ((isInitialEpisode && widget.directStreamUrl != null) || _isDownloadStream || (_effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty))
           ? true
           : ref.read(streamingServiceProvider).isDirectStream(
               _currentProviderIndex,
@@ -1571,7 +1641,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (!mounted) return;
         if (working == null) {
           appDebugLog('❌ All ${candidates.length} source(s) failed for ${result.provider}');
-          if (_hasNextProvider) {
+          if (manualChoice == null && _hasNextProvider) {
             _advanceProvider();
             setState(() => _error = lastStatus != null
                 ? 'Stream returned $lastStatus, trying next...'
@@ -1604,6 +1674,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       // Embed providers use WebView
       if (!_isDirectStream) {
+        if (manualChoice != null) _lastStreamChoice = manualChoice;
         _dismissTooltips('loading → WebView player');
         setState(() {
           _isLoading = false;
@@ -1840,6 +1911,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       });
 
       _startProgressTracking();
+      if (manualChoice != null) _lastStreamChoice = manualChoice;
       _updateWatchPartyHostSyncTimer();
       _scheduleWatchPartyBootstrapSyncs();
       appDebugLog('🧪 [CW_DEBUG] PlayerScreen#$_sid _initializePlayer SUCCESS on provider[$_currentProviderIndex] $_currentProvider');
@@ -1860,6 +1932,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _retryCount = 0;
         });
         _startProgressTracking();
+        return;
+      }
+      if (!mounted) return;
+      if (manualChoice != null) {
+        _streamDiscovery?.markFailed(manualChoice);
+        _streamResult = null;
+        unawaited(_initializePlayer());
         return;
       }
       setState(() {
@@ -3061,6 +3140,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Future<void> _prefetchNextEpisode() async {
+    if (_usesStreamPicker) return;
     if (_isPrefetching) return;
     if (!_hasNextEpisode()) return;
     
@@ -4778,6 +4858,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   @override
   void dispose() {
+    _streamDiscovery?.dispose();
     final zombieMs = _deactivatedAt == null
         ? 'n/a'
         : '${DateTime.now().difference(_deactivatedAt!).inMilliseconds}ms';
@@ -5171,6 +5252,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // ——————————————————————————————————————————————————————————————————————————————————————————
   void _showServerOverlayPanel() {
     final media = ref.read(selectedMediaProvider) ?? _cachedMedia;
+    if (_usesStreamPicker && media != null) {
+      unawaited(_switchManualStream(media));
+      return;
+    }
     showGeneralDialog(
       context: context,
       barrierDismissible: true,
@@ -5240,6 +5325,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
       }
     });
+  }
+
+  Future<void> _switchManualStream(SearchResult media) async {
+    final quality = ref.read(videoQualityProvider);
+    final subDub = ref.read(languagePreferencesProvider).animePreferredAudio;
+    final selected = await _chooseStream(media, quality == 'auto' ? null : quality, subDub);
+    if (!mounted || selected?.result == null) return;
+    _resumePosition = _isDirectStream ? _player.state.position : _webViewPosition;
+    _disposePlayer();
+    await _initializePlayer(picked: selected);
   }
 
   // ignore: unused_element
@@ -6537,7 +6632,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       'failed: $errorMessage — native player=${_hash(_player)} '
                       'playing=${_player.state.playing} (if true, audio you hear is NOT from this WebView)',
                     );
-                    if (_hasNextProvider) {
+                    final choice = _lastStreamChoice;
+                    if (_usesStreamPicker && choice?.isWebPlayer == true) {
+                      if (_streamPickerOpen || _streamResult == null) return;
+                      _streamDiscovery?.markFailed(choice!);
+                      _streamResult = null;
+                      unawaited(_initializePlayer());
+                    } else if (_hasNextProvider) {
                       setState(() {
                         _advanceProvider();
                         _error = 'Provider unavailable, switching to next...';
@@ -7478,7 +7579,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ),
           const SizedBox(height: 32),
           const Text(
-            'Failed to Load Stream',
+            'Stream unavailable',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
@@ -7497,7 +7598,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             runSpacing: 12,
             alignment: WrapAlignment.center,
             children: [
-              if (_currentProviderIndex < _maxProviders - 1)
+              if (!_usesStreamPicker && _currentProviderIndex < _maxProviders - 1)
                 ElevatedButton.icon(
                   onPressed: () {
                     _disposePlayer();
@@ -7532,7 +7633,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   _initializePlayer();
                 },
                 icon: Icon(Icons.refresh, size: 20),
-                label: const Text('RETRY'),
+                label: Text(_usesStreamPicker ? 'CHOOSE STREAM' : 'RETRY'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: NivioTheme.accentColorOf(context),
                   foregroundColor: Colors.white,
