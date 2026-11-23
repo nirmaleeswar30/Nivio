@@ -28,6 +28,7 @@ import 'package:nivio/widgets/linux_hdr_video_surface.dart';
 import 'package:nivio/widgets/player_stats_overlay.dart';
 import 'package:nivio/services/extensions/extension_repository.dart';
 import 'package:nivio/services/extensions/extension_resolver.dart';
+import 'package:nivio/services/extensions/extension_torrent_search.dart';
 import 'package:nivio/services/extensions/stream_discovery.dart';
 import 'package:nivio/widgets/stream_picker_sheet.dart';
 import 'package:nivio/services/extensions/stream_selection.dart';
@@ -218,7 +219,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   int _retryCount = 0;
   int _currentProviderIndex = 0;
   StreamDiscovery? _streamDiscovery;
-  StreamFilter? _pickerFilter;
   StreamChoice? _lastStreamChoice;
   int _autoStreamAttempts = 0;
   Stopwatch? _streamSelectionClock;
@@ -1102,22 +1102,42 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       while (mounted && !_isDeactivated) {
         final settings = await ref.read(streamSelectionSettingsProvider.future);
         if (!mounted || _isDeactivated) return null;
-        final torrentsEnabled = ref.read(enableTorrentsProvider);
+        final streaming = ref.read(streamingServiceProvider);
+        if (ref.read(enableTorrentsProvider)) {
+          final pickerSearch = await ExtensionTorrentSearch.forPicker(
+            builtIn: streaming.torrentStreamService,
+            media: media,
+            repository: repository,
+            settings: settings,
+          );
+          if (!mounted || _isDeactivated) return null;
+          final result = await streaming.fetchTorrentStream(
+            media: media,
+            season: widget.season,
+            episode: _currentEpisode,
+            preferredQuality: preferredQuality,
+            context: context,
+            binge: allowAuto && _bingeMode && _currentEpisode != widget.episode,
+            pickerSearch: pickerSearch,
+            onStatusUpdate: (status) {
+              if (mounted && !_isDeactivated) setState(() => _loadingMessage = status);
+            },
+          );
+          return result == null ? null : StreamPickerOutcome(result: result);
+        }
         var search = _streamDiscovery;
         if (search == null || search.episode != _currentEpisode ||
             search.season != widget.season || search.media.id != media.id ||
             search.media.mediaType != media.mediaType ||
-            search.torrentsEnabled != torrentsEnabled || search.selection != settings ||
+            search.selection != settings ||
             search.preferredQuality != preferredQuality || search.subDub != subDub) {
           search?.dispose();
-          _pickerFilter = settings.preferredType;
           search = StreamDiscovery(
             media: media,
             season: widget.season,
             episode: _currentEpisode,
-            streaming: ref.read(streamingServiceProvider),
+            streaming: streaming,
             repository: repository,
-            torrentsEnabled: torrentsEnabled,
             subDub: subDub,
             preferredQuality: preferredQuality,
             previous: _lastStreamChoice,
@@ -1128,26 +1148,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _streamSelectionClock = Stopwatch()..start();
           unawaited(search.search());
         }
-        if (allowAuto && settings.mode != StreamSelectionMode.manual) {
-          final automatic = await _autoSelectStream(search, settings);
-          if (!mounted || _isDeactivated) return null;
-          if (automatic != null) return automatic;
-        }
-        final outcome = await StreamPickerSheet.show(
+        final directSearch = search;
+        final outcome = await DirectStreamPickerSheet.show(
           context,
-          search,
-          _pickerFilter ?? StreamFilter.all,
-          (filter) => _pickerFilter = filter,
-          fallbackMessage: allowAuto && settings.mode != StreamSelectionMode.manual
-              ? 'Autoplay couldn’t start a matching stream. You can choose one here.'
+          directSearch,
+          selectAutomatically: allowAuto && settings.mode != StreamSelectionMode.manual
+              ? () => _autoSelectStream(directSearch, settings)
               : null,
         );
         if (outcome?.refresh != true || !mounted) return outcome;
         allowAuto = false;
-        // The modal is still animating out. Keep its old results alive until it
-        // has detached, then re-query with the updated settings and repositories.
-        await Future<void>.delayed(const Duration(milliseconds: 250));
-        if (!mounted) return null;
+        // The picker has detached. Re-query with the updated settings and repositories.
         _streamDiscovery?.dispose();
         _streamDiscovery = null;
       }
@@ -1162,7 +1173,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   Future<void> _rememberStreamChoice(SearchResult? media, StreamChoice choice) async {
     _lastStreamChoice = choice;
-    if (media == null || media.mediaType == 'movie' || choice.isWebPlayer) return;
+    if (media == null || media.mediaType == 'movie') return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_streamBingeKey(media), choice.bingeGroup);
   }
@@ -1174,11 +1185,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     const maxAttempts = 4;
     if (_autoStreamAttempts >= maxAttempts) return null;
     final audio = ref.read(preferredAudioLanguageProvider);
-    final effectiveSettings = !search.torrentsEnabled && settings.preferredType == StreamFilter.torrents
-        ? settings.copyWith(preferredType: StreamFilter.direct)
-        : settings;
     final policy = StreamSelection(
-      effectiveSettings,
+      settings,
       audio: audio,
       animeAudio: search.subDub,
       isAnime: search.isAnime,
@@ -1194,8 +1202,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final remaining = budget - (_streamSelectionClock?.elapsed ?? budget);
     StreamChoice? fastChoice;
     if (_autoStreamAttempts == 0) {
-      if (settings.mode == StreamSelectionMode.first &&
-          effectiveSettings.preferredType != StreamFilter.torrents) {
+      if (settings.mode == StreamSelectionMode.first) {
         final probes = <String, _StreamProbe>{};
         fastChoice = await search.firstReachable(policy, remaining, (choice) async {
           final direct = choice.direct!;
@@ -1209,36 +1216,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         });
         _firstReachableProbe = probes[fastChoice?.id];
       } else {
-        await search.waitForResults(
-          remaining,
-          ready: settings.mode == StreamSelectionMode.first
-              ? () => search.availableChoices.any((choice) =>
-                    choice.isTorrent && policy.eligible(choice) && policy.confirmedAudio(choice))
-              : null,
-        );
+        await search.waitForResults(remaining);
       }
     }
     if (!mounted || _isDeactivated) return null;
     final candidates = fastChoice == null
         ? await policy.ranked(search.availableChoices, bingeGroup: bingeGroup)
         : [fastChoice];
-    for (final choice in candidates.take(maxAttempts - _autoStreamAttempts)) {
-      if (!mounted || _isDeactivated) return null;
-      _autoStreamAttempts++;
-      setState(() => _loadingMessage = 'Opening ${choice.provider}…');
-      try {
-        final result = await search.open(choice, (status) {
-          if (mounted && !_isDeactivated) setState(() => _loadingMessage = status);
-        }, torrentMetadataTimeout: const Duration(seconds: 12));
-        if (result != null) {
-          return StreamPickerOutcome(choice: choice, result: result, automatic: true);
-        }
-      } catch (_) {
-        // Keep working through the eligible results before offering the picker.
-      }
-      search.markFailed(choice);
-    }
-    return null;
+    if (!mounted || _isDeactivated) return null;
+    final choice = candidates.firstOrNull;
+    if (choice == null) return null;
+    _autoStreamAttempts++;
+    return StreamPickerOutcome(choice: choice, result: choice.direct, automatic: true);
   }
 
   Future<void> _initializePlayer({
@@ -1703,7 +1692,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _currentProvider = result.provider;
       _setSeekPreview(result);
       // A local downloaded file is always played directly (never via WebView).
-      _isDirectStream = manualChoice != null ? !manualChoice.isWebPlayer
+      _isDirectStream = result.provider == 'Nivio Torrents' || manualChoice != null
+          ? true
           : ((isInitialEpisode && widget.directStreamUrl != null) || _isDownloadStream || (_effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty))
           ? true
           : ref.read(streamingServiceProvider).isDirectStream(
@@ -2110,6 +2100,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _isLoading = false;
       });
 
+      if (_usesStreamPicker) return;
       if (_hasNextProvider) {
         _advanceProvider();
         setState(() => _error = 'Switching to next provider...');
@@ -3304,7 +3295,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Future<void> _prefetchNextEpisode() async {
-    if (_usesStreamPicker) return;
     if (_isPrefetching) return;
     if (!_hasNextEpisode()) return;
     
@@ -3315,6 +3305,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
       return;
     }
+    if (_usesStreamPicker) return;
     // Don't prefetch while streaming a still-downloading item.
     if (_isDownloadStream) return;
 
@@ -6796,13 +6787,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       'failed: $errorMessage — native player=${_hash(_player)} '
                       'playing=${_player.state.playing} (if true, audio you hear is NOT from this WebView)',
                     );
-                    final choice = _lastStreamChoice;
-                    if (_usesStreamPicker && choice?.isWebPlayer == true) {
-                      if (_streamPickerOpen || _streamResult == null) return;
-                      _streamDiscovery?.markFailed(choice!);
-                      _streamResult = null;
-                      unawaited(_initializePlayer());
-                    } else if (_hasNextProvider) {
+                    if (_hasNextProvider) {
                       setState(() {
                         _advanceProvider();
                         _error = 'Provider unavailable, switching to next...';

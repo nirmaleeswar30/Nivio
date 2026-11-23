@@ -71,7 +71,7 @@ class _PickerTorrents extends TorrentStreamService {
   }) async => [_torrent.torrent!];
 }
 
-StreamDiscovery _readyDiscovery({required bool torrentsEnabled}) =>
+StreamDiscovery _readyDiscovery() =>
     StreamDiscovery(
         media: const SearchResult(
           id: 10,
@@ -82,11 +82,11 @@ StreamDiscovery _readyDiscovery({required bool torrentsEnabled}) =>
         episode: 1,
         streaming: _UnusedStreamingService(),
         repository: ExtensionRepository(),
-        torrentsEnabled: torrentsEnabled,
+
         subDub: 'sub',
         preferredQuality: null,
       )
-      ..choices.addAll([_direct, if (torrentsEnabled) _torrent])
+      ..choices.addAll([_direct, _torrent])
       ..stop();
 
 void main() {
@@ -102,61 +102,33 @@ void main() {
   });
 
   testWidgets(
-    'the Direct default filters the sheet and All shows both results',
+    'the direct picker only shows direct sources and filters results',
     (tester) async {
-      final discovery = _readyDiscovery(torrentsEnabled: true);
-      final filters = <StreamFilter>[];
+      await tester.binding.setSurfaceSize(const Size(360, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final discovery = _readyDiscovery();
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: StreamPickerSheet(
+            body: DirectStreamPickerSheet(
               discovery: discovery,
-              initialFilter: StreamFilter.direct,
-              onFilter: filters.add,
+              isFullScreen: true,
             ),
           ),
         ),
       );
+      await tester.pumpAndSettle();
       expect(find.text('Direct link'), findsOneWidget);
-      expect(find.byType(TorrentPickerSheet), findsOneWidget);
       expect(find.text('Torrent release'), findsNothing);
-      await tester.tap(find.text('All 2'));
-      await tester.pump();
-      expect(find.text('Torrent release'), findsOneWidget);
-      expect(filters, [StreamFilter.all]);
-      discovery.markFailed(_direct);
-      await tester.pump();
-      expect(find.textContaining('Couldn’t open this stream'), findsOneWidget);
-      expect(find.byTooltip('Buffer & play'), findsOneWidget);
-      await tester.pumpWidget(const SizedBox());
-      discovery.dispose();
-    },
-  );
+      expect(find.text('Auto Select Stream'), findsOneWidget);
 
-  testWidgets(
-    'a saved Torrent default falls back to Direct while torrents are disabled',
-    (tester) async {
-      final discovery = _readyDiscovery(torrentsEnabled: false);
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: StreamPickerSheet(
-              discovery: discovery,
-              initialFilter: StreamFilter.torrents,
-              onFilter: (_) {},
-            ),
-          ),
-        ),
-      );
-      expect(find.text('Direct link'), findsOneWidget);
-      expect(
-        find.widgetWithText(ChoiceChip, 'Torrents 0').evaluate().single.widget,
-        isA<ChoiceChip>().having(
-          (chip) => chip.onSelected,
-          'onSelected',
-          isNull,
-        ),
-      );
+      await tester.enterText(find.byType(TextField), 'unknown');
+      await tester.pumpAndSettle();
+      expect(find.text('No direct streams found.'), findsOneWidget);
+      await tester.enterText(find.byType(TextField), '');
+      discovery.markFailed(_direct);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Couldn’t open this stream'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       discovery.dispose();
     },
@@ -167,7 +139,7 @@ void main() {
   ) async {
     await tester.binding.setSurfaceSize(const Size(1100, 680));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    final discovery = _readyDiscovery(torrentsEnabled: false);
+    final discovery = _readyDiscovery();
     StreamPickerOutcome? picked;
     await tester.pumpWidget(
       MaterialApp(
@@ -175,12 +147,7 @@ void main() {
           builder: (context) => Scaffold(
             body: TextButton(
               onPressed: () async {
-                picked = await StreamPickerSheet.show(
-                  context,
-                  discovery,
-                  StreamFilter.direct,
-                  (_) {},
-                );
+                picked = await DirectStreamPickerSheet.show(context, discovery);
               },
               child: const Text('Choose a source'),
             ),
@@ -191,17 +158,17 @@ void main() {
     await tester.tap(find.text('Choose a source'));
     await tester.pumpAndSettle();
     expect(find.text('Example movie'), findsOneWidget);
-    expect(find.byType(TorrentPickerSheet), findsOneWidget);
-    expect(find.byType(TorrentPickerResultRow), findsOneWidget);
+    expect(find.byType(DirectStreamPickerSheet), findsOneWidget);
+
     await tester.tap(find.text('Direct link'));
     await tester.pumpAndSettle();
     expect(picked?.choice, _direct);
     expect(picked?.result, _direct.direct);
-    expect(find.byType(TorrentPickerSheet), findsNothing);
+    expect(find.byType(DirectStreamPickerSheet), findsNothing);
     discovery.dispose();
   });
 
-  testWidgets('the original torrent picker uses the shared frame and row', (
+  testWidgets('the original torrent picker returns the selected torrent', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({'torrent_auto_select': false});
@@ -234,7 +201,7 @@ void main() {
     await tester.tap(find.text('Open torrent picker'));
     await tester.pumpAndSettle();
     expect(find.byType(TorrentPickerSheet), findsOneWidget);
-    expect(find.byType(TorrentPickerResultRow), findsOneWidget);
+
     await tester.tap(find.text('Torrent release'));
     await tester.pumpAndSettle();
     expect(picked?.$1, _torrent.torrent);

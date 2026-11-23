@@ -61,8 +61,10 @@ class StreamingService {
   static const List<String> _standardProviders = [];
 
   Iterable<String> get streamSelectionBuiltIns => [
-    ..._premiumProviders,
-    ..._standardProviders,
+    for (var i = 0; i < totalProvidersFor(isAnime: false); i++)
+      if (getProviderName(i, isAnime: false) != 'Nivio Torrents' &&
+          isDirectStream(i, isAnime: false))
+        getProviderName(i, isAnime: false),
     'Miruro',
     'Animetsu',
     'Animex',
@@ -189,6 +191,7 @@ class StreamingService {
     String resolution,
     void Function(String)? onStatusUpdate,
     BuildContext context,
+    TorrentStreamService? pickerSearch,
   ) async {
     final selection = await TorrentPickerSheet.show(
       context,
@@ -197,10 +200,10 @@ class StreamingService {
       initialSeason: season,
       initialAbsoluteEpisode: absoluteEpisode,
       initialResolution: resolution,
-      torrentStreamService: torrentStreamService,
+      torrentStreamService: pickerSearch ?? torrentStreamService,
       onStatusUpdate: onStatusUpdate,
     );
-    if (selection == null) return null;
+    if (selection == null || !context.mounted) return null;
     final ep = selection.$2 is AnimeQuery
         ? (selection.$2 as AnimeQuery).episode
         : (selection.$2 as MediaTorrentQuery).episode ?? 1;
@@ -219,6 +222,107 @@ class StreamingService {
       );
     }
     return handle;
+  }
+
+  Future<StreamResult?> fetchTorrentStream({
+    required SearchResult media,
+    required int season,
+    required int episode,
+    int? absoluteEpisode,
+    String? preferredQuality,
+    void Function(String)? onStatusUpdate,
+    BuildContext? context,
+    bool binge = false,
+    TorrentStreamService? pickerSearch,
+  }) async {
+    final resMatch =
+        preferredQuality == null ? null : RegExp(r'\d{3,4}').firstMatch(preferredQuality);
+    final resolution = resMatch?.group(0) ?? '1080';
+
+    TorrentStreamHandle? handle;
+    if (binge) {
+      // Binge mode: never show the picker. Use the prefetched next episode
+      // if it's ready, else the season-pack fast path (next episode already
+      // inside the streaming torrent), then a silent same-release-group
+      // resolve; fall back to the picker only if all fail and we have a context.
+      final group = await torrentStreamService.recallReleaseGroup(media);
+      handle = await torrentStreamService.consumePrefetch(
+        media: media,
+        episode: episode,
+        season: season,
+        preferredGroup: group,
+      );
+      final prefetched = handle != null;
+      handle ??= await torrentStreamService.nextEpisodeInActiveTorrent(
+        media: media,
+        episode: episode,
+        season: season,
+        absoluteEpisode: absoluteEpisode,
+        preferredGroup: group,
+      );
+      if (handle == null) {
+        handle = await torrentStreamService.resolveStream(
+          media: media,
+          episode: episode,
+          season: season,
+          resolution: resolution,
+          absoluteEpisode: absoluteEpisode,
+          preferredGroup: group,
+          binge: true,
+          onStatus: onStatusUpdate,
+        );
+      }
+      final usePicker = handle == null && context != null && context.mounted;
+      if (usePicker) {
+        handle = await _pickTorrentInteractively(
+          media, episode, season, absoluteEpisode, resolution, onStatusUpdate, context, pickerSearch,
+        );
+      }
+      if (handle != null) {
+        final title = handle.title.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
+        final fileName = handle.fileName.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
+        final releaseGroup = handle.releaseGroup;
+        final String reason;
+        if (usePicker) {
+          reason = 'picker fallback';
+        } else if (handle.fromPack) {
+          reason = 'reused current torrent';
+        } else if (group != null && releaseGroup?.trim().toLowerCase() == group.toLowerCase()) {
+          reason = 'matched release group';
+        } else {
+          reason = group == null ? 'best-ranked torrent' : 'fallback ranking';
+        }
+        debugPrint(
+          '[Binge Mode] Season $season episode $episode | $reason'
+          '${prefetched ? ' (prefetched)' : ''} | torrent: "$title"'
+          ' | file: "$fileName" | group: ${releaseGroup ?? "unknown"}'
+          ' | preferred: ${group ?? "none"}',
+        );
+      }
+    } else if (context != null) {
+      handle = await _pickTorrentInteractively(
+        media, episode, season, absoluteEpisode, resolution, onStatusUpdate, context, pickerSearch,
+      );
+      if (handle == null) return null; // user cancelled
+    } else {
+      // Silent / background mode
+      handle = await torrentStreamService.resolveStream(
+        media: media,
+        episode: episode,
+        season: season,
+        resolution: resolution,
+        absoluteEpisode: absoluteEpisode,
+        onStatus: onStatusUpdate,
+      );
+    }
+
+    if (handle == null) return null;
+    return StreamResult(
+      url: handle.url,
+      quality: handle.resolution != null ? '${handle.resolution}p' : 'Auto',
+      provider: 'Nivio Torrents',
+      headers: const {},
+    );
   }
 
   Future<StreamResult?> fetchStreamUrl({
@@ -251,95 +355,16 @@ class StreamingService {
       final providerName = providersList[providerIndex];
       appDebugLog('fetchStreamUrl: providerIdx=$providerIndex → "$providerName"');
 
-      // Handle Nivio Torrents (embedded rqbit P2P streaming)
       if (providerName == 'Nivio Torrents') {
-        final resMatch =
-            preferredQuality == null ? null : RegExp(r'\d{3,4}').firstMatch(preferredQuality);
-        final resolution = resMatch?.group(0) ?? '1080';
-
-        TorrentStreamHandle? handle;
-        if (binge) {
-          // Binge mode: never show the picker. Use the prefetched next episode
-          // if it's ready, else the season-pack fast path (next episode already
-          // inside the streaming torrent), then a silent same-release-group
-          // resolve; fall back to the picker only if all fail and we have a context.
-          final group = await torrentStreamService.recallReleaseGroup(media);
-          handle = await torrentStreamService.consumePrefetch(
-            media: media,
-            episode: episode,
-            season: season,
-            preferredGroup: group,
-          );
-          final prefetched = handle != null;
-          handle ??= await torrentStreamService.nextEpisodeInActiveTorrent(
-            media: media,
-            episode: episode,
-            season: season,
-            absoluteEpisode: absoluteEpisode,
-            preferredGroup: group,
-          );
-          if (handle == null) {
-            handle = await torrentStreamService.resolveStream(
-              media: media,
-              episode: episode,
-              season: season,
-              resolution: resolution,
-              absoluteEpisode: absoluteEpisode,
-              preferredGroup: group,
-              binge: true,
-              onStatus: onStatusUpdate,
-            );
-          }
-          final usePicker = handle == null && context != null;
-          if (usePicker) {
-            handle = await _pickTorrentInteractively(
-              media, episode, season, absoluteEpisode, resolution, onStatusUpdate, context,
-            );
-          }
-          if (handle != null) {
-            final title = handle.title.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
-            final fileName = handle.fileName.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
-            final releaseGroup = handle.releaseGroup;
-            final String reason;
-            if (usePicker) {
-              reason = 'picker fallback';
-            } else if (handle.fromPack) {
-              reason = 'reused current torrent';
-            } else if (group != null && releaseGroup?.trim().toLowerCase() == group.toLowerCase()) {
-              reason = 'matched release group';
-            } else {
-              reason = group == null ? 'best-ranked torrent' : 'fallback ranking';
-            }
-            debugPrint(
-              '[Binge Mode] Season $season episode $episode | $reason'
-              '${prefetched ? ' (prefetched)' : ''} | torrent: "$title"'
-              ' | file: "$fileName" | group: ${releaseGroup ?? "unknown"}'
-              ' | preferred: ${group ?? "none"}',
-            );
-          }
-        } else if (context != null) {
-          handle = await _pickTorrentInteractively(
-            media, episode, season, absoluteEpisode, resolution, onStatusUpdate, context,
-          );
-          if (handle == null) return null; // user cancelled
-        } else {
-          // Silent / background mode
-          handle = await torrentStreamService.resolveStream(
-            media: media,
-            episode: episode,
-            season: season,
-            resolution: resolution,
-            absoluteEpisode: absoluteEpisode,
-            onStatus: onStatusUpdate,
-          );
-        }
-
-        if (handle == null) return null;
-        return StreamResult(
-          url: handle.url,
-          quality: handle.resolution != null ? '${handle.resolution}p' : 'Auto',
-          provider: 'Nivio Torrents',
-          headers: const {},
+        return await fetchTorrentStream(
+          media: media,
+          season: season,
+          episode: episode,
+          absoluteEpisode: absoluteEpisode,
+          preferredQuality: preferredQuality,
+          onStatusUpdate: onStatusUpdate,
+          context: context,
+          binge: binge,
         );
       }
 
@@ -599,10 +624,6 @@ class StreamingService {
       final pirateBayEnabled = ref.read(torrentPirateBayEnabledProvider);
       return torrentioEnabled || pirateBayEnabled;
     }
-  }
-
-  bool isTorrentEnabledForMedia(SearchResult media) {
-    return isTorrentEnabled(isAnime: isAnimeMedia(media));
   }
 
   int totalProvidersFor({required bool isAnime}) {

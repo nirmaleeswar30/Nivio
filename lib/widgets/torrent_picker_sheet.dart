@@ -18,12 +18,9 @@ class TorrentPickerSheet extends StatefulWidget {
   final int initialSeason;
   final int? initialAbsoluteEpisode;
   final String initialResolution;
-  final TorrentStreamService? _torrentStreamService;
-  TorrentStreamService get torrentStreamService => _torrentStreamService!;
+  final TorrentStreamService torrentStreamService;
   final void Function(String status)? onStatusUpdate;
   final bool isFullScreen;
-  final Widget? streamContent;
-  final VoidCallback? onStreamClose;
 
   const TorrentPickerSheet({
     super.key,
@@ -32,26 +29,10 @@ class TorrentPickerSheet extends StatefulWidget {
     required this.initialSeason,
     this.initialAbsoluteEpisode,
     required this.initialResolution,
-    required TorrentStreamService torrentStreamService,
+    required this.torrentStreamService,
     this.onStatusUpdate,
     this.isFullScreen = false,
-  }) : _torrentStreamService = torrentStreamService,
-       streamContent = null,
-       onStreamClose = null;
-
-  const TorrentPickerSheet.streams({
-    super.key,
-    required this.media,
-    required this.isFullScreen,
-    required Widget streamContent,
-    required this.onStreamClose,
-  }) : initialEpisode = 1,
-       initialSeason = 1,
-       initialAbsoluteEpisode = null,
-       initialResolution = '',
-       _torrentStreamService = null,
-       onStatusUpdate = null,
-       streamContent = streamContent;
+  });
 
   static Future<(TorrentResult, dynamic, {bool automatic})?> show(
     BuildContext context, {
@@ -62,44 +43,45 @@ class TorrentPickerSheet extends StatefulWidget {
     required String initialResolution,
     required TorrentStreamService torrentStreamService,
     void Function(String status)? onStatusUpdate,
-  }) => showPicker<(TorrentResult, dynamic, {bool automatic})>(
-    context,
-    (isFullScreen) => TorrentPickerSheet(
-      media: media,
-      initialEpisode: initialEpisode,
-      initialSeason: initialSeason,
-      initialAbsoluteEpisode: initialAbsoluteEpisode,
-      initialResolution: initialResolution,
-      torrentStreamService: torrentStreamService,
-      onStatusUpdate: onStatusUpdate,
-      isFullScreen: isFullScreen,
-    ),
-  );
-
-  static Future<T?> showPicker<T>(
-    BuildContext context,
-    Widget Function(bool isFullScreen) builder,
-  ) {
+  }) {
     final isMobile = Platform.isAndroid || Platform.isIOS;
     if (isMobile) {
-      return Navigator.of(context).push<T>(
+      return Navigator.of(context).push<(TorrentResult, dynamic, {bool automatic})>(
         MaterialPageRoute(
           builder: (context) => Scaffold(
             backgroundColor: const Color(0xFF0F0F0F),
-            body: builder(true),
+            body: TorrentPickerSheet(
+              media: media,
+              initialEpisode: initialEpisode,
+              initialSeason: initialSeason,
+              initialAbsoluteEpisode: initialAbsoluteEpisode,
+              initialResolution: initialResolution,
+              torrentStreamService: torrentStreamService,
+              onStatusUpdate: onStatusUpdate,
+              isFullScreen: true,
+            ),
           ),
         ),
       );
     }
 
-    return showDialog<T>(
+    return showDialog<(TorrentResult, dynamic, {bool automatic})>(
       context: context,
       barrierDismissible: true,
       barrierColor: Colors.black.withOpacity(0.8), // Darker backdrop for cinematic feel
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: builder(false),
+        child: TorrentPickerSheet(
+          media: media,
+          initialEpisode: initialEpisode,
+          initialSeason: initialSeason,
+          initialAbsoluteEpisode: initialAbsoluteEpisode,
+          initialResolution: initialResolution,
+          torrentStreamService: torrentStreamService,
+          onStatusUpdate: onStatusUpdate,
+          isFullScreen: false,
+        ),
       ),
     );
   }
@@ -111,13 +93,13 @@ class TorrentPickerSheet extends StatefulWidget {
 class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
   List<TorrentResult>? _filteredResults;
   String? _error;
-
+  
   late int _episode;
   late String _resolution;
-
+  
   final _searchController = TextEditingController();
   dynamic _currentQuery;
-
+  
   Timer? _autoPlayTimer;
   int _countdown = 5;
   bool _isCancelled = false;
@@ -128,19 +110,13 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
   @override
   void initState() {
     super.initState();
-    if (widget.streamContent != null) return;
     _episode = widget.initialEpisode;
     _resolution = widget.initialResolution;
-
+    
     // We try to load preferred resolution from SharedPreferences, if not, use initial.
     _initResolutionAndLoad();
   }
-
-  void _close() {
-    _cancelAutoPlay();
-    Navigator.of(context).pop();
-  }
-
+  
   Future<void> _initResolutionAndLoad() async {
     final prefs = await SharedPreferences.getInstance();
     final savedRes = prefs.getString('nivio_torrent_resolution');
@@ -159,9 +135,9 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
       _error = null;
       _isCancelled = false;
     });
-
+    
     _autoPlayTimer?.cancel();
-
+    
     try {
       List<TorrentResult> results;
       if (_isAnime) {
@@ -173,7 +149,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
           absoluteEpisode: widget.initialAbsoluteEpisode,
         );
         _currentQuery = animeQuery;
-
+        
         results = await widget.torrentStreamService.searchTorrents(
           query: animeQuery,
           onStatus: widget.onStatusUpdate,
@@ -188,7 +164,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
             isMovie: isMovie,
           );
         }
-
+        
         if (imdbId == null || imdbId.isEmpty) {
           if (!mounted) return;
           setState(() {
@@ -213,9 +189,9 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
           onStatus: widget.onStatusUpdate,
         );
       }
-
+      
       if (!mounted) return;
-
+      
       // Preserve the ranking order from the service (TorrentRanking for anime,
       // MediaRanking for movies/shows) — it already accounts for the selected
       // resolution, so re-sorting by seeders here would override that.
@@ -223,7 +199,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
       setState(() {
         _filteredResults = results;
       });
-
+      
       if (results.isNotEmpty) {
         final prefs = await SharedPreferences.getInstance();
         final autoSelect = prefs.getBool('torrent_auto_select') ?? true;
@@ -260,7 +236,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         source: 'magnet',
         accuracy: 'high',
       );
-
+      
       final dummyQuery = _isAnime
           ? AnimeQuery(
               titles: [text],
@@ -277,7 +253,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
             );
 
       _cancelAutoPlay();
-      Navigator.of(context).pop((syntheticResult, dummyQuery, automatic: false));
+      Navigator.of(context).pop((syntheticResult, dummyQuery));
       return;
     }
 
@@ -325,7 +301,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
       }
 
       if (!mounted) return;
-
+      
       // Preserve the ranking order from the service (TorrentRanking for anime,
       // MediaRanking for movies/shows) — it already accounts for the selected
       // resolution, so re-sorting by seeders here would override that.
@@ -373,23 +349,23 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
     _autoPlayTimer?.cancel();
     Navigator.of(context).pop((result, _currentQuery!, automatic: automatic));
   }
-
+  
   Future<void> _updateResolution(String? newRes) async {
     if (newRes == null || newRes == _resolution) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('nivio_torrent_resolution', newRes);
-
+    
     setState(() {
       _resolution = newRes;
     });
     _loadTorrents();
   }
-
+  
   Future<void> _updateEpisode(String? newEpStr) async {
     if (newEpStr == null) return;
     final newEp = int.tryParse(newEpStr);
     if (newEp == null || newEp == _episode) return;
-
+    
     setState(() {
       _episode = newEp;
     });
@@ -425,11 +401,10 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
     final isCompactLandscape = isFullScreen && isLandscape;
     final spacing = isCompactLandscape ? 8.0 : 16.0;
     final horizontalPadding = isFullScreen ? 16.0 : 24.0;
-
+    
     final title = widget.media.title ?? widget.media.name ?? 'Select Torrent';
     final backdropPath = widget.media.backdropPath ?? widget.media.posterPath;
-    final close = widget.streamContent == null ? _close : widget.onStreamClose;
-
+    
     return MouseRegion(
       onHover: (_) => _cancelAutoPlay(),
       child: Listener(
@@ -460,7 +435,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
               children: [
                 if (backdropPath != null)
                   Positioned(
-                    top: 0, left: 0, right: 0,
+                    top: 0, left: 0, right: 0, 
                     height: isCompactLandscape ? 180 : 320,
                     child: ShaderMask(
                       shaderCallback: (rect) {
@@ -504,7 +479,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
                       ),
                     ),
                   ),
-
+                
                 SafeArea(
                   top: isFullScreen,
                   bottom: isFullScreen,
@@ -516,9 +491,9 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
                       // Header
                       Padding(
                         padding: EdgeInsets.fromLTRB(
-                          isFullScreen ? 8.0 : 24.0,
-                          isFullScreen ? (isCompactLandscape ? 4.0 : 8.0) : 20.0,
-                          16.0,
+                          isFullScreen ? 8.0 : 24.0, 
+                          isFullScreen ? (isCompactLandscape ? 4.0 : 8.0) : 20.0, 
+                          16.0, 
                           spacing,
                         ),
                         child: Row(
@@ -526,7 +501,10 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
                             if (isFullScreen) ...[
                               IconButton(
                                 icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                                onPressed: close,
+                                onPressed: () {
+                                  _cancelAutoPlay();
+                                  Navigator.of(context).pop();
+                                },
                                 splashRadius: 20,
                               ),
                               const SizedBox(width: 4),
@@ -546,62 +524,61 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
                             if (!isFullScreen)
                               IconButton(
                                 icon: const Icon(Icons.close, color: Colors.white70),
-                                onPressed: close,
+                                onPressed: () {
+                                  _cancelAutoPlay();
+                                  Navigator.of(context).pop();
+                                },
                                 hoverColor: Colors.white.withOpacity(0.1),
                                 splashRadius: 20,
                               ),
                           ],
                         ),
                       ),
-
-                      if (widget.streamContent case final Widget content)
-                        Expanded(child: content)
-                      else ...[
-                        // Controls (Search, Episode, Resolution)
-                        Padding(
-                          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              if (isCompactLandscape)
-                                Row(
-                                  children: [
-                                    Expanded(child: _buildSearchTextField(spacing)),
-                                    if (!_isMovie) ...[
-                                      const SizedBox(width: 12),
-                                      _buildEpisodeSelector(),
-                                    ],
+                      
+                      // Controls (Search, Episode, Resolution)
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (isCompactLandscape)
+                              Row(
+                                children: [
+                                  Expanded(child: _buildSearchTextField(spacing)),
+                                  if (!_isMovie) ...[
                                     const SizedBox(width: 12),
-                                    _buildResolutionSelector(),
+                                    _buildEpisodeSelector(),
                                   ],
-                                )
-                              else ...[
-                                _buildSearchTextField(spacing),
-                                SizedBox(height: spacing),
-                                Row(
-                                  children: [
-                                    if (!_isMovie) ...[
-                                      _buildEpisodeSelector(),
-                                      const SizedBox(width: 24),
-                                    ],
-                                    _buildResolutionSelector(),
-                                  ],
-                                ),
-                              ],
+                                  const SizedBox(width: 12),
+                                  _buildResolutionSelector(),
+                                ],
+                              )
+                            else ...[
+                              _buildSearchTextField(spacing),
                               SizedBox(height: spacing),
-                              _buildAutoSelectButton(spacing),
+                              Row(
+                                children: [
+                                  if (!_isMovie) ...[
+                                    _buildEpisodeSelector(),
+                                    const SizedBox(width: 24),
+                                  ],
+                                  _buildResolutionSelector(),
+                                ],
+                              ),
                             ],
-                          ),
+                            SizedBox(height: spacing),
+                            _buildAutoSelectButton(spacing),
+                          ],
                         ),
-
-                        SizedBox(height: spacing),
-                        const Divider(height: 1, thickness: 1, color: Color(0xFF2A2A2A)),
-
-                        // Results List
-                        Expanded(
-                          child: _buildContent(),
-                        ),
-                      ],
+                      ),
+                      
+                      SizedBox(height: spacing),
+                      const Divider(height: 1, thickness: 1, color: Color(0xFF2A2A2A)),
+                      
+                      // Results List
+                      Expanded(
+                        child: _buildContent(),
+                      ),
                     ],
                   ),
                 ),
@@ -651,7 +628,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         _buildDropdown(
           value: _episode.toString(),
           items: List.generate(
-            epCount,
+            epCount, 
             (i) => (i + 1).toString()
           ),
           onChanged: _updateEpisode,
@@ -710,7 +687,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
     }
     return const SizedBox.shrink();
   }
-
+  
   Widget _buildDropdown({
     required String value,
     required List<String> items,
@@ -722,7 +699,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
       items = [...items, value];
       items.sort((a, b) => (int.tryParse(a) ?? 0).compareTo(int.tryParse(b) ?? 0));
     }
-
+    
     return Container(
       height: 36,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -835,7 +812,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
           child: Text(
             _isMovie
                 ? 'No torrents found for this movie.'
-                : 'No torrents found for this episode.',
+                : 'No torrents found for this episode.', 
             style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 16)
           ),
         ),
@@ -849,8 +826,8 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         final r = _filteredResults![index];
         final isBest = index == 0;
         final isTrusted = _isTrusted(r);
-
-        return TorrentPickerResultRow(
+        
+        return _HoverTorrentCard(
           r: r,
           isBest: isBest,
           isTrusted: isTrusted,
@@ -865,59 +842,27 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
   }
 }
 
-class TorrentPickerResultRow extends StatefulWidget {
-  final String title;
-  final String source;
-  final String? quality;
-  final int? sizeBytes;
-  final TorrentResult? torrent;
-  final List<({String text, Color color})> tags;
-  final String? marker;
-  final String? message;
-  final String? actionLabel;
+class _HoverTorrentCard extends StatefulWidget {
+  final TorrentResult r;
   final bool isBest;
   final bool isTrusted;
   final bool isCancelled;
-  final VoidCallback? onTap;
+  final VoidCallback onTap;
 
-  TorrentPickerResultRow({
-    super.key,
-    required TorrentResult r,
+  const _HoverTorrentCard({
+    Key? key,
+    required this.r,
     required this.isBest,
     required this.isTrusted,
     required this.isCancelled,
     required this.onTap,
-  }) : title = r.title,
-       source = r.source,
-       quality = r.parsed.resolution == null ? null : '${r.parsed.resolution}p',
-       sizeBytes = r.sizeBytes,
-       torrent = r,
-       tags = const [],
-       marker = isBest ? 'BEST MATCH' : null,
-       message = null,
-       actionLabel = null;
-
-  const TorrentPickerResultRow.stream({
-    super.key,
-    required this.title,
-    required this.source,
-    required this.quality,
-    required this.sizeBytes,
-    this.torrent,
-    required this.tags,
-    this.marker,
-    this.message,
-    this.actionLabel,
-    required this.onTap,
-  }) : isBest = marker != null,
-       isTrusted = false,
-       isCancelled = false;
+  }) : super(key: key);
 
   @override
-  State<TorrentPickerResultRow> createState() => _HoverTorrentCardState();
+  State<_HoverTorrentCard> createState() => _HoverTorrentCardState();
 }
 
-class _HoverTorrentCardState extends State<TorrentPickerResultRow> {
+class _HoverTorrentCardState extends State<_HoverTorrentCard> {
   bool _isHovered = false;
 
   String _formatSize(int bytes) {
@@ -979,14 +924,14 @@ class _HoverTorrentCardState extends State<TorrentPickerResultRow> {
     final isMobile = Platform.isAndroid || Platform.isIOS;
     final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
     final hideVerifiedText = isMobile && isPortrait;
-    final torrent = widget.torrent;
+    final r = widget.r;
     final isBest = widget.isBest;
     final isTrusted = widget.isTrusted;
 
-    final row = MouseRegion(
+    return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
-      cursor: widget.onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
+      cursor: SystemMouseCursors.click,
       child: FocusableTap(
         onTap: widget.onTap,
         child: AnimatedContainer(
@@ -997,10 +942,10 @@ class _HoverTorrentCardState extends State<TorrentPickerResultRow> {
             border: Border(
               bottom: BorderSide(color: Colors.white.withOpacity(0.05)),
             ),
-            color: _isHovered
+            color: _isHovered 
                 ? Colors.white.withOpacity(0.05)
-                : (isBest && !widget.isCancelled
-                    ? Colors.white.withOpacity(0.03)
+                : (isBest && !widget.isCancelled 
+                    ? Colors.white.withOpacity(0.03) 
                     : Colors.transparent),
           ),
           child: Column(
@@ -1011,7 +956,7 @@ class _HoverTorrentCardState extends State<TorrentPickerResultRow> {
                 children: [
                   Expanded(
                     child: Text(
-                      widget.title,
+                      r.title,
                       style: TextStyle(
                         fontSize: isMobile ? 13.5 : 14.5,
                         height: 1.4,
@@ -1020,7 +965,7 @@ class _HoverTorrentCardState extends State<TorrentPickerResultRow> {
                       ),
                     ),
                   ),
-                  if (widget.marker case final String marker)
+                  if (isBest)
                     Container(
                       margin: const EdgeInsets.only(left: 12),
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1029,9 +974,9 @@ class _HoverTorrentCardState extends State<TorrentPickerResultRow> {
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(color: const Color(0xFF38Bdf8).withOpacity(0.3)),
                       ),
-                      child: Text(
-                        marker,
-                        style: const TextStyle(
+                      child: const Text(
+                        'BEST MATCH',
+                        style: TextStyle(
                           color: Color(0xFF38Bdf8),
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
@@ -1060,42 +1005,27 @@ class _HoverTorrentCardState extends State<TorrentPickerResultRow> {
                             ],
                             const SizedBox(width: 8),
                           ],
-                          _buildTag(widget.source.toUpperCase(), const Color(0xFFC084FC)),
+                          _buildTag(r.source.toUpperCase(), const Color(0xFFC084FC)),
                           const SizedBox(width: 8),
-                          if (widget.quality case final String quality) ...[
-                            _buildTag(quality, const Color(0xFF60A5FA)),
+                          if (r.parsed.resolution != null) ...[
+                            _buildTag('${r.parsed.resolution}p', const Color(0xFF60A5FA)),
                             const SizedBox(width: 8),
                           ],
-                          if (widget.sizeBytes case final int size)
-                            _buildTag(_formatSize(size), Colors.grey),
-                          for (final tag in widget.tags) ...[
-                            const SizedBox(width: 8),
-                            _buildTag(tag.text, tag.color),
-                          ],
+                          _buildTag(_formatSize(r.sizeBytes), Colors.grey),
                         ],
                       ),
                     ),
                   ),
-                  if (torrent != null) ...[
-                    const SizedBox(width: 8),
-                    _buildStatTag(Icons.arrow_upward_rounded, torrent.seeders.toString(), const Color(0xFF4ADE80)),
-                    const SizedBox(width: 8),
-                    _buildStatTag(Icons.arrow_downward_rounded, torrent.leechers.toString(), const Color(0xFFF87171)),
-                  ],
+                  const SizedBox(width: 8),
+                  _buildStatTag(Icons.arrow_upward_rounded, r.seeders.toString(), const Color(0xFF4ADE80)),
+                  const SizedBox(width: 8),
+                  _buildStatTag(Icons.arrow_downward_rounded, r.leechers.toString(), const Color(0xFFF87171)),
                 ],
               ),
-              if (widget.message case final String message)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(message, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
-                ),
             ],
           ),
         ),
       ),
     );
-    return widget.actionLabel == null
-        ? row
-        : Tooltip(message: widget.actionLabel!, child: row);
   }
 }

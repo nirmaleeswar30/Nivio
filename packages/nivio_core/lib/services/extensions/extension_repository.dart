@@ -9,15 +9,6 @@ import 'package:http/io_client.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum StreamFilter {
-  all('All'),
-  direct('Direct'),
-  torrents('Torrents');
-
-  const StreamFilter(this.label);
-  final String label;
-}
-
 enum ExtensionFormat { javascript, cloudstream }
 
 final extensionRepositoryProvider = Provider((ref) => ExtensionRepository());
@@ -113,7 +104,6 @@ class ExtensionRepo {
 
 class ExtensionRepository {
   static const _repoKey = 'stream_extension_repositories';
-  static const _filterKey = 'stream_picker_default_filter';
   static const _limit = 8 * 1024 * 1024;
 
   Future<List<ExtensionRepo>> list() async {
@@ -123,19 +113,6 @@ class ExtensionRepository {
         .cast<Map<String, dynamic>>()
         .map(ExtensionRepo.fromJson)
         .toList();
-  }
-
-  Future<StreamFilter> preferredFilter() async {
-    final prefs = await SharedPreferences.getInstance();
-    return StreamFilter.values.firstWhere(
-      (filter) => filter.name == prefs.getString(_filterKey),
-      orElse: () => StreamFilter.all,
-    );
-  }
-
-  Future<void> setPreferredFilter(StreamFilter filter) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_filterKey, filter.name);
   }
 
   Future<void> _save(List<ExtensionRepo> repositories) async {

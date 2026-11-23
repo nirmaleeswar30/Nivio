@@ -151,8 +151,6 @@ class _StreamSourceSettingsState extends ConsumerState<StreamSourceSettings> {
   @override
   Widget build(BuildContext context) {
     final torrentsEnabled = ref.watch(enableTorrentsProvider);
-    final settings = ref.watch(streamSelectionSettingsProvider).valueOrNull;
-    final palette = NivioTheme.themeColorsOf(context);
     return StreamPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -194,62 +192,14 @@ class _StreamSourceSettingsState extends ConsumerState<StreamSourceSettings> {
             secondary: const StreamGlyph(PhosphorIconsRegular.downloadSimple),
             visualDensity: VisualDensity.compact,
             title: const Text('Enable torrents'),
-            subtitle: const Text('For built-in and extension streams.'),
+            subtitle: Text(
+              torrentsEnabled
+                  ? 'Play opens the torrent picker.'
+                  : 'Play opens the direct stream picker.',
+            ),
             value: torrentsEnabled,
             onChanged: ref.read(enableTorrentsProvider.notifier).setEnabled,
           ),
-          if (settings != null) ...[
-            Divider(
-              height: 1,
-              color: palette.border.withValues(alpha: palette.border.a * .60),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Preferred stream type',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    settings.preferredType == StreamFilter.torrents &&
-                            !torrentsEnabled
-                        ? 'Using Direct while torrents are disabled.'
-                        : 'Sets the opening tab and guides autoplay.',
-                    style: TextStyle(
-                      color: palette.textSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (final type in StreamFilter.values)
-                        StreamSegment(
-                          label: type.label,
-                          selected: settings.preferredType == type,
-                          onTap:
-                              type == StreamFilter.torrents && !torrentsEnabled
-                              ? null
-                              : () => ref
-                                    .read(
-                                      streamSelectionSettingsProvider.notifier,
-                                    )
-                                    .change(
-                                      (current) =>
-                                          current.copyWith(preferredType: type),
-                                    ),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -314,11 +264,6 @@ class _SourcePriorityScreenState extends ConsumerState<_SourcePriorityScreen> {
                 name,
                 'Built-in source',
               ),
-            for (final source in {
-              ...streaming.torrentStreamService.animeSources.map((s) => s.name),
-              ...streaming.torrentStreamService.mediaSources.map((s) => s.name),
-            })
-              'torrent:$source': (source, 'Built-in torrent source'),
             for (final repo in snapshot.data!)
               for (final provider in repo.providers)
                 if (provider.enabled && ExtensionResolver.supports(repo.format))
@@ -361,7 +306,7 @@ class _SourcePriorityScreenState extends ConsumerState<_SourcePriorityScreen> {
                           PhosphorIconsRegular.arrowsDownUp,
                         ),
                         Text(
-                          'Higher sources appear first in the picker and break ties in Match Preferences.',
+                          'Higher sources appear first in the direct picker and break ties in Match Preferences.',
                         ),
                       ],
                     ),
@@ -432,7 +377,7 @@ class StreamPlaybackSettings extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const _SectionHeading(
-                  'PLAYBACK MODE',
+                  'DIRECT PLAYBACK MODE',
                   PhosphorIconsRegular.playCircle,
                 ),
                 for (final mode in StreamSelectionMode.values)

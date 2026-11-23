@@ -1,13 +1,16 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/screens/stream_selection_screen.dart';
-import 'package:nivio/services/extensions/extension_repository.dart';
 import 'package:nivio/services/extensions/extension_resolver.dart';
 import 'package:nivio/services/extensions/stream_discovery.dart';
 import 'package:nivio/services/extensions/stream_selection.dart';
-import 'package:nivio/widgets/torrent_picker_sheet.dart';
-
-const _accent = Color(0xFF38BDF8);
+import 'package:nivio/widgets/dpad_focusable.dart';
+import 'package:nivio/widgets/marquee_text.dart';
+import 'package:nivio/widgets/skeleton.dart';
 
 class StreamPickerOutcome {
   const StreamPickerOutcome({
@@ -16,388 +19,704 @@ class StreamPickerOutcome {
     this.refresh = false,
     this.automatic = false,
   });
+
   final StreamChoice? choice;
   final StreamResult? result;
   final bool refresh;
   final bool automatic;
 }
 
-class StreamPickerSheet extends StatefulWidget {
-  const StreamPickerSheet({
+class DirectStreamPickerSheet extends StatefulWidget {
+  const DirectStreamPickerSheet({
     super.key,
     required this.discovery,
-    required this.initialFilter,
-    required this.onFilter,
-    this.fallbackMessage,
-    this.fullScreen = false,
+    this.selectAutomatically,
+    this.isFullScreen = false,
   });
 
   final StreamDiscovery discovery;
-  final StreamFilter initialFilter;
-  final ValueChanged<StreamFilter> onFilter;
-  final String? fallbackMessage;
-  final bool fullScreen;
+  final Future<StreamPickerOutcome?> Function()? selectAutomatically;
+  final bool isFullScreen;
 
   static Future<StreamPickerOutcome?> show(
     BuildContext context,
-    StreamDiscovery discovery,
-    StreamFilter initialFilter,
-    ValueChanged<StreamFilter> onFilter, {
-    String? fallbackMessage,
-  }) => TorrentPickerSheet.showPicker<StreamPickerOutcome>(
-    context,
-    (fullScreen) => StreamPickerSheet(
-      discovery: discovery,
-      initialFilter: initialFilter,
-      onFilter: onFilter,
-      fallbackMessage: fallbackMessage,
-      fullScreen: fullScreen,
-    ),
-  );
-
-  @override
-  State<StreamPickerSheet> createState() => _StreamPickerSheetState();
-}
-
-class _StreamPickerSheetState extends State<StreamPickerSheet> {
-  late StreamFilter _filter =
-      widget.initialFilter == StreamFilter.torrents &&
-          !discovery.torrentsEnabled
-      ? StreamFilter.direct
-      : widget.initialFilter;
-  String? _audio;
-  StreamChoice? _opening;
-  String? _status;
-
-  StreamDiscovery get discovery => widget.discovery;
-
-  void _setFilter(StreamFilter filter) {
-    setState(() => _filter = filter);
-    widget.onFilter(filter);
+    StreamDiscovery discovery, {
+    Future<StreamPickerOutcome?> Function()? selectAutomatically,
+  }) async {
+    final isMobile = Platform.isAndroid || Platform.isIOS;
+    final navigator = Navigator.of(context, rootNavigator: !isMobile);
+    final route = isMobile
+        ? MaterialPageRoute<StreamPickerOutcome>(
+            builder: (_) => Scaffold(
+              backgroundColor: const Color(0xFF0F0F0F),
+              body: DirectStreamPickerSheet(
+                discovery: discovery,
+                selectAutomatically: selectAutomatically,
+                isFullScreen: true,
+              ),
+            ),
+          )
+        : DialogRoute<StreamPickerOutcome>(
+            context: context,
+            themes: InheritedTheme.capture(
+              from: context,
+              to: navigator.context,
+            ),
+            barrierColor: Colors.black.withValues(alpha: .8),
+            builder: (_) => Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 24,
+              ),
+              child: DirectStreamPickerSheet(
+                discovery: discovery,
+                selectAutomatically: selectAutomatically,
+              ),
+            ),
+          );
+    final outcome = await navigator.push(route);
+    if (outcome?.refresh == true) await route.completed;
+    return outcome;
   }
 
-  bool _matchesAudio(StreamChoice choice) =>
-      _audio == null ||
-      choice.audioType == 'Both' ||
-      choice.audioType == _audio;
+  @override
+  State<DirectStreamPickerSheet> createState() =>
+      _DirectStreamPickerSheetState();
+}
 
-  Future<void> _open(StreamChoice choice) async {
-    if (_opening != null) return;
-    setState(() {
-      _opening = choice;
-      _status = 'Opening ${choice.provider}…';
-    });
-    try {
-      final result = await discovery.open(choice, (status) {
-        if (mounted) setState(() => _status = status);
+class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
+  final _searchController = TextEditingController();
+  var _resolution = '';
+  var _autoCancelled = false;
+  var _selecting = false;
+  var _closed = false;
+  String? _hoveredChoice;
+
+  StreamDiscovery get _discovery => widget.discovery;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.selectAutomatically != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_autoSelect());
       });
-      if (!mounted) return;
-      if (result != null) {
-        Navigator.of(
-          context,
-        ).pop(StreamPickerOutcome(choice: choice, result: result));
-        return;
-      }
-    } catch (_) {
-      // Keep the other search results visible for manual recovery.
     }
-    if (!mounted) return;
-    discovery.markFailed(choice);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _autoSelect() async {
+    if (_autoCancelled) return;
+    setState(() => _selecting = true);
+    StreamPickerOutcome? outcome;
+    try {
+      outcome = await widget.selectAutomatically!();
+    } catch (_) {
+      // Leave the picker open if autoplay fails.
+    }
+    if (!mounted || _closed || ModalRoute.of(context)?.isCurrent != true)
+      return;
+    setState(() => _selecting = false);
+    if (!_autoCancelled && outcome != null) _finish(outcome);
+  }
+
+  void _cancelAutoPlay() {
+    if (!_selecting || _autoCancelled) return;
     setState(() {
-      _opening = null;
-      _status = null;
+      _autoCancelled = true;
+      _selecting = false;
     });
+  }
+
+  void _finish([StreamPickerOutcome? outcome]) {
+    if (_closed) return;
+    _closed = true;
+    _autoCancelled = true;
+    Navigator.of(context).pop(outcome);
+  }
+
+  void _play(StreamChoice choice) {
+    if (!_discovery.unavailable.contains(choice.id) && choice.isDirect) {
+      _finish(StreamPickerOutcome(choice: choice, result: choice.direct));
+    }
   }
 
   Future<void> _openSettings() async {
+    _cancelAutoPlay();
     await showStreamPickerSettings(context);
-    if (!mounted) return;
-    Navigator.of(context).pop(const StreamPickerOutcome(refresh: true));
+    if (mounted) _finish(const StreamPickerOutcome(refresh: true));
+  }
+
+  void _filterChanged(String _) {
+    _cancelAutoPlay();
+    setState(() {});
+  }
+
+  List<StreamChoice> _visibleChoices() {
+    final text = _searchController.text.trim().toLowerCase();
+    return _discovery.orderForPicker(
+      _discovery.choices.where((choice) {
+        if (!choice.isDirect) return false;
+        if (_resolution.isNotEmpty && '${choice.resolution}' != _resolution)
+          return false;
+        return text.isEmpty ||
+            '${choice.title} ${choice.provider} ${choice.origin}'
+                .toLowerCase()
+                .contains(text);
+      }).toList(),
+    );
   }
 
   @override
-  Widget build(BuildContext context) => PopScope(
-    canPop: _opening == null,
-    child: TorrentPickerSheet.streams(
-      media: discovery.media,
-      isFullScreen: widget.fullScreen,
-      onStreamClose: _opening == null
-          ? () => Navigator.of(context).pop()
-          : null,
-      streamContent: TextButtonTheme(
-        data: TextButtonThemeData(
-          style: TextButton.styleFrom(foregroundColor: _accent),
-        ),
-        child: ListenableBuilder(
-          listenable: discovery,
-          builder: (context, _) {
-            final available = discovery.choices.where(_matchesAudio).toList();
-            final direct = available.where((item) => item.isDirect).length;
-            final torrents = available.where((item) => item.isTorrent).length;
-            final ordered = discovery.orderForPicker(
-              available
-                  .where(
-                    (choice) => switch (_filter) {
-                      StreamFilter.all => true,
-                      StreamFilter.direct => choice.isDirect,
-                      StreamFilter.torrents => choice.isTorrent,
-                    },
-                  )
-                  .toList(),
-            );
-            return CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: _filters(available.length, direct, torrents),
-                ),
-                const SliverToBoxAdapter(
-                  child: Divider(height: 1, color: Colors.white12),
-                ),
-                if (ordered.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _empty(direct, torrents),
-                  )
-                else
-                  SliverList.builder(
-                    itemCount: ordered.length,
-                    itemBuilder: (_, index) => _choice(ordered[index]),
-                  ),
-              ],
-            );
-          },
-        ),
-      ),
-    ),
-  );
+  Widget build(BuildContext context) {
+    final isFullScreen = widget.isFullScreen;
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+    final isCompactLandscape = isFullScreen && isLandscape;
+    final spacing = isCompactLandscape ? 8.0 : 16.0;
+    final horizontalPadding = isFullScreen ? 16.0 : 24.0;
 
-  Widget _filters(int total, int direct, int torrents) {
-    final preferred =
-        discovery.selection.preferredType == StreamFilter.torrents &&
-            !discovery.torrentsEnabled
-        ? StreamFilter.direct
-        : discovery.selection.preferredType;
-    final episode = switch (discovery.media.mediaType) {
-      'movie' => 'Movie',
-      'anime' => 'Episode ${discovery.episode}',
-      _ => 'S${discovery.season} · E${discovery.episode}',
-    };
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        widget.fullScreen ? 16 : 24,
-        0,
-        widget.fullScreen ? 16 : 24,
-        10,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '$episode  ·  Preferred type: ${preferred.label}',
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
-                ),
-              ),
-              TextButton.icon(
-                onPressed: _opening == null ? _openSettings : null,
-                icon: const Icon(Icons.tune, size: 17),
-                label: const Text('Settings'),
-              ),
-            ],
-          ),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              _tab(StreamFilter.all, total),
-              _tab(StreamFilter.direct, direct),
-              _tab(StreamFilter.torrents, torrents),
-            ],
-          ),
-          if (discovery.isAnime)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  for (final audio in <String?>[null, 'Sub', 'Dub'])
-                    ChoiceChip(
-                      label: Text(audio ?? 'All audio'),
-                      selectedColor: _accent.withValues(alpha: .20),
-                      showCheckmark: false,
-                      selected: _audio == audio,
-                      onSelected: _opening == null
-                          ? (_) => setState(() => _audio = audio)
-                          : null,
-                    ),
+    final title =
+        _discovery.media.title ?? _discovery.media.name ?? 'Select Stream';
+    final backdropPath =
+        _discovery.media.backdropPath ?? _discovery.media.posterPath;
+
+    return Listener(
+      onPointerDown: (_) => _cancelAutoPlay(),
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F0F0F),
+          borderRadius: isFullScreen
+              ? BorderRadius.zero
+              : BorderRadius.circular(12),
+          border: isFullScreen
+              ? null
+              : Border.all(color: Colors.white.withOpacity(0.05)),
+          boxShadow: isFullScreen
+              ? null
+              : [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.8),
+                    blurRadius: 30,
+                    offset: const Offset(0, 10),
+                  ),
                 ],
+        ),
+        constraints: isFullScreen
+            ? const BoxConstraints.expand()
+            : BoxConstraints(
+                maxWidth: 800,
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
               ),
-            ),
-          if (widget.fallbackMessage case final String message)
-            Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Text(
-                message,
-                style: const TextStyle(color: Colors.white70, fontSize: 13),
-              ),
-            ),
-          if (_status != null || discovery.searching)
-            const Padding(
-              padding: EdgeInsets.only(top: 10),
-              child: LinearProgressIndicator(minHeight: 2, color: _accent),
-            ),
-          if (_status != null ||
-              discovery.searching ||
-              discovery.failures.isNotEmpty)
-            Row(
-              children: [
-                Expanded(
-                  child: Semantics(
-                    liveRegion: true,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Text(
-                        _status ??
-                            (discovery.searching
-                                ? 'Searching providers…'
-                                : '${discovery.failures.length} provider(s) couldn’t be reached.'),
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
+        child: ClipRRect(
+          borderRadius: isFullScreen
+              ? BorderRadius.zero
+              : BorderRadius.circular(12),
+          child: Stack(
+            children: [
+              if (backdropPath != null)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: isCompactLandscape ? 180 : 320,
+                  child: ShaderMask(
+                    shaderCallback: (rect) {
+                      return const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.black, Colors.transparent],
+                        stops: [0.4, 0.9],
+                      ).createShader(rect);
+                    },
+                    blendMode: BlendMode.dstIn,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        image: DecorationImage(
+                          image: artworkImageProvider(
+                            backdropPath,
+                            width: isFullScreen
+                                ? MediaQuery.sizeOf(context).width
+                                : MediaQuery.sizeOf(
+                                    context,
+                                  ).width.clamp(0, 800),
+                            height:
+                                MediaQuery.sizeOf(context).height *
+                                (isFullScreen ? 1 : 0.85),
+                            pixelRatio: MediaQuery.devicePixelRatioOf(context),
+                            kind: _discovery.media.backdropPath != null
+                                ? ArtworkKind.backdrop
+                                : ArtworkKind.poster,
+                          ),
+                          fit: BoxFit.cover,
+                          alignment: Alignment.topCenter,
+                        ),
+                      ),
+                      foregroundDecoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            const Color(0xFF0F0F0F).withOpacity(0.4),
+                            const Color(0xFF0F0F0F).withOpacity(0.7),
+                          ],
                         ),
                       ),
                     ),
                   ),
                 ),
-                if (_opening == null && discovery.searching)
-                  TextButton(
-                    onPressed: discovery.stop,
-                    child: const Text('Stop search'),
-                  ),
-              ],
-            ),
-        ],
+
+              SafeArea(
+                top: isFullScreen,
+                bottom: isFullScreen,
+                left: isFullScreen,
+                right: isFullScreen,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Header
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        isFullScreen ? 8.0 : 24.0,
+                        isFullScreen ? (isCompactLandscape ? 4.0 : 8.0) : 20.0,
+                        16.0,
+                        spacing,
+                      ),
+                      child: Row(
+                        children: [
+                          if (isFullScreen) ...[
+                            IconButton(
+                              icon: const Icon(
+                                Icons.arrow_back_rounded,
+                                color: Colors.white,
+                              ),
+                              onPressed: () {
+                                _finish();
+                              },
+                              splashRadius: 20,
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                          Expanded(
+                            child: MarqueeText(
+                              text: title,
+                              style: TextStyle(
+                                fontSize: isFullScreen ? 19 : 22,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                              blankSpace: 40.0,
+                              velocity: 30.0,
+                            ),
+                          ),
+                          if (!isFullScreen)
+                            IconButton(
+                              icon: const Icon(
+                                Icons.close,
+                                color: Colors.white70,
+                              ),
+                              onPressed: () {
+                                _finish();
+                              },
+                              hoverColor: Colors.white.withOpacity(0.1),
+                              splashRadius: 20,
+                            ),
+                        ],
+                      ),
+                    ),
+
+                    Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: horizontalPadding,
+                      ),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) => _buildControls(
+                          spacing,
+                          isCompactLandscape && constraints.maxWidth >= 520,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: spacing),
+                    const Divider(
+                      height: 1,
+                      thickness: 1,
+                      color: Color(0xFF2A2A2A),
+                    ),
+
+                    // Results List
+                    Expanded(child: _buildContent()),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _tab(StreamFilter type, int count) => ChoiceChip(
-    label: Text('${type.label} $count'),
-    selectedColor: _accent.withValues(alpha: .20),
-    showCheckmark: false,
-    selected: _filter == type,
-    autofocus: _filter == type,
-    onSelected:
-        _opening != null ||
-            type == StreamFilter.torrents && !discovery.torrentsEnabled
-        ? null
-        : (_) => _setFilter(type),
-  );
-
-  Widget _empty(int direct, int torrents) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            discovery.searching
-                ? 'Looking for streams…'
-                : switch (_filter) {
-                    StreamFilter.all => 'No streams found',
-                    StreamFilter.direct => 'No direct streams found',
-                    StreamFilter.torrents => 'No torrents found',
-                  },
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white70, fontSize: 16),
+  Widget _buildControls(double spacing, bool compact) {
+    final search = TextField(
+      controller: _searchController,
+      style: const TextStyle(color: Colors.white, fontSize: 14),
+      onChanged: _filterChanged,
+      textInputAction: TextInputAction.search,
+      decoration: InputDecoration(
+        hintText: 'Search direct streams...',
+        hintStyle: TextStyle(
+          color: Colors.white.withValues(alpha: .3),
+          fontSize: 14,
+        ),
+        prefixIcon: Icon(
+          Icons.search,
+          color: Colors.white.withValues(alpha: .5),
+          size: 20,
+        ),
+        suffixIcon: IconButton(
+          tooltip: 'Search',
+          icon: const Icon(
+            Icons.arrow_forward_rounded,
+            color: Color(0xFF38BDF8),
+            size: 20,
           ),
-          if (!discovery.searching)
-            Wrap(
-              spacing: 8,
-              alignment: WrapAlignment.center,
-              children: [
-                if (_audio != null)
-                  TextButton(
-                    onPressed: () => setState(() => _audio = null),
-                    child: const Text('Show all audio'),
-                  ),
-                if (_filter != StreamFilter.all)
-                  TextButton(
-                    onPressed: () => _setFilter(StreamFilter.all),
-                    child: const Text('Show all'),
-                  ),
-                if (direct > 0 && _filter != StreamFilter.direct)
-                  TextButton(
-                    onPressed: () => _setFilter(StreamFilter.direct),
-                    child: const Text('Show direct'),
-                  ),
-                if (torrents > 0 && _filter != StreamFilter.torrents)
-                  TextButton(
-                    onPressed: () => _setFilter(StreamFilter.torrents),
-                    child: const Text('Show torrents'),
-                  ),
-                TextButton(
-                  onPressed: discovery.search,
-                  child: const Text('Search again'),
-                ),
-              ],
-            ),
-        ],
+          onPressed: () => FocusScope.of(context).unfocus(),
+        ),
+        filled: true,
+        fillColor: const Color(0xFF1A1A1A),
+        contentPadding: EdgeInsets.symmetric(vertical: spacing),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide.none,
+        ),
       ),
-    ),
-  );
-
-  Widget _choice(StreamChoice choice) {
-    final failed = discovery.unavailable.contains(choice.id);
-    final torrent = choice.torrent;
-    final subtitles =
-        choice.direct?.subtitles.map((track) => track.lang).toSet() ?? {};
-    final bytes = choice.byteSize;
-    final isPrevious = choice.bingeGroup == discovery.previous?.bingeGroup;
-    final transport = choice.isTorrent
-        ? 'Torrent'
-        : choice.isWebPlayer
-        ? 'Web player'
-        : 'Direct';
-    return TorrentPickerResultRow.stream(
-      title: choice.title,
-      source: choice.provider,
-      quality: choice.quality,
-      sizeBytes: bytes,
-      torrent: torrent,
-      marker: isPrevious ? 'PREVIOUS SOURCE' : null,
-      onTap: _opening != null || failed ? null : () => _open(choice),
-      message: failed
-          ? 'Couldn’t open this stream. Choose another result.'
-          : null,
-      actionLabel: choice.isTorrent ? 'Buffer & play' : 'Play',
-      tags: [
-        (text: transport, color: _accent),
-        (text: choice.origin, color: Colors.white70),
-        if (choice.audioType case final String audio)
-          (text: audio, color: Colors.white70)
-        else if (choice.audio == null && discovery.selection.matchAudio)
-          (text: 'Audio unconfirmed', color: Colors.white70),
-        if (choice.audio != null && choice.audio != choice.audioType)
-          (text: choice.audio!, color: Colors.white70),
-        if (bytes == null && discovery.selection.maxFileGb > 0)
-          (text: 'Size unknown', color: Colors.white70),
-        if (torrent?.isBatch == true)
-          (
-            text: discovery.selection.maxFileGb > 0
-                ? 'Episode size unknown'
-                : 'Pack · episode ${discovery.episode}',
-            color: Colors.white70,
+    );
+    final filters = Wrap(
+      spacing: 16,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (_discovery.media.mediaType != 'movie')
+          Text(
+            'Episode ${_discovery.episode}',
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-        if (subtitles.isNotEmpty)
-          (
-            text: 'Subtitles: ${subtitles.take(3).join(', ')}',
-            color: Colors.white70,
+        _buildResolutionSelector(),
+        TextButton(
+          onPressed: _openSettings,
+          child: const Text(
+            'Settings',
+            style: TextStyle(color: Color(0xFF38BDF8)),
           ),
+        ),
+      ],
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (compact)
+          Row(
+            children: [
+              Expanded(child: search),
+              const SizedBox(width: 12),
+              Flexible(child: filters),
+            ],
+          )
+        else ...[
+          search,
+          SizedBox(height: spacing),
+          filters,
+        ],
+        SizedBox(height: spacing),
+        ListenableBuilder(
+          listenable: _discovery,
+          builder: (context, _) {
+            final first = _visibleChoices()
+                .where((choice) => !_discovery.unavailable.contains(choice.id))
+                .firstOrNull;
+            if (first == null) return const SizedBox.shrink();
+            return ElevatedButton(
+              onPressed: () => _play(first),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF38BDF8),
+                foregroundColor: Colors.black,
+                padding: EdgeInsets.symmetric(vertical: spacing),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                elevation: 0,
+              ),
+              child: Text(
+                _selecting ? 'Selecting stream…' : 'Auto Select Stream',
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            );
+          },
+        ),
       ],
     );
   }
+
+  Widget _buildResolutionSelector() => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      const Text(
+        'Resolution ',
+        style: TextStyle(
+          color: Colors.white70,
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      const SizedBox(width: 8),
+      Container(
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.white.withValues(alpha: .05)),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: _resolution,
+            dropdownColor: const Color(0xFF1A1A1A),
+            icon: const Padding(
+              padding: EdgeInsets.only(left: 8),
+              child: Icon(Icons.unfold_more, color: Colors.white54, size: 16),
+            ),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+            onChanged: (value) {
+              if (value != null) setState(() => _resolution = value);
+            },
+            items: [
+              const DropdownMenuItem(value: '', child: Text('Any')),
+              for (final height in ['480', '720', '1080', '2160'])
+                DropdownMenuItem(value: height, child: Text('${height}p')),
+            ],
+          ),
+        ),
+      ),
+    ],
+  );
+
+  Widget _buildContent() => ListenableBuilder(
+    listenable: _discovery,
+    builder: (context, _) {
+      final results = _visibleChoices();
+      if (results.isEmpty && _discovery.searching) return _buildLoading();
+      if (results.isEmpty) {
+        return Center(
+          child: Text(
+            _searchController.text.trim().isEmpty &&
+                    _resolution.isEmpty &&
+                    _discovery.failures.isNotEmpty
+                ? 'Couldn’t reach some direct sources.'
+                : 'No direct streams found.',
+            style: const TextStyle(color: Colors.white70, fontSize: 16),
+          ),
+        );
+      }
+      return ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: results.length,
+        itemBuilder: (_, index) => _buildRow(results[index], index == 0),
+      );
+    },
+  );
+
+  Widget _buildRow(StreamChoice choice, bool best) {
+    final disabled = _discovery.unavailable.contains(choice.id);
+    final previous = choice.bingeGroup == _discovery.previous?.bingeGroup;
+    final isMobile = Platform.isAndroid || Platform.isIOS;
+    return MouseRegion(
+      cursor: disabled ? MouseCursor.defer : SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hoveredChoice = choice.id),
+      onExit: (_) {
+        if (_hoveredChoice == choice.id) setState(() => _hoveredChoice = null);
+      },
+      child: FocusableTap(
+        onTap: disabled ? null : () => _play(choice),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.symmetric(
+            horizontal: isMobile ? 16 : 24,
+            vertical: isMobile ? 12 : 16,
+          ),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: Colors.white.withValues(alpha: .05)),
+            ),
+            color: _hoveredChoice == choice.id && !disabled
+                ? Colors.white.withValues(alpha: .05)
+                : best
+                ? Colors.white.withValues(alpha: .03)
+                : Colors.transparent,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      choice.title,
+                      style: TextStyle(
+                        fontSize: isMobile ? 13.5 : 14.5,
+                        height: 1.4,
+                        fontWeight: best ? FontWeight.bold : FontWeight.normal,
+                        color: best
+                            ? Colors.white
+                            : Colors.white.withValues(alpha: .8),
+                      ),
+                    ),
+                  ),
+                  if (best || previous) ...[
+                    const SizedBox(width: 12),
+                    _marker(previous ? 'PREVIOUS SOURCE' : 'BEST MATCH'),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 10),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _tag(
+                      choice.provider.toUpperCase(),
+                      const Color(0xFFC084FC),
+                    ),
+                    const SizedBox(width: 8),
+                    _tag(choice.quality, const Color(0xFF60A5FA)),
+                    const SizedBox(width: 8),
+                    _tag(choice.origin, Colors.grey),
+                    if (choice.audioType ?? choice.audio
+                        case final String audio) ...[
+                      const SizedBox(width: 8),
+                      _tag(audio, Colors.grey),
+                    ],
+                  ],
+                ),
+              ),
+              if (disabled) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'Couldn’t open this stream. Choose another result.',
+                  style: TextStyle(color: Colors.redAccent, fontSize: 12),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _marker(String label) {
+    const color = Color(0xFF38BDF8);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .15),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withValues(alpha: .30)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          letterSpacing: .5,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoading() {
+    final isMobile = Platform.isAndroid || Platform.isIOS;
+    return Skeletonizer(
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: 7,
+        itemBuilder: (_, _) => Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: isMobile ? 16 : 24,
+            vertical: isMobile ? 12 : 16,
+          ),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: Colors.white.withValues(alpha: .05)),
+            ),
+          ),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SkeletonBox(width: double.infinity, height: 15),
+              SizedBox(height: 10),
+              Row(
+                children: [
+                  SkeletonBox(
+                    width: 60,
+                    height: 20,
+                    borderRadius: BorderRadius.all(Radius.circular(4)),
+                  ),
+                  SizedBox(width: 8),
+                  SkeletonBox(
+                    width: 74,
+                    height: 20,
+                    borderRadius: BorderRadius.all(Radius.circular(4)),
+                  ),
+                  SizedBox(width: 8),
+                  SkeletonBox(
+                    width: 54,
+                    height: 20,
+                    borderRadius: BorderRadius.all(Radius.circular(4)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tag(String text, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: .1),
+      borderRadius: BorderRadius.circular(4),
+      border: Border.all(color: color.withValues(alpha: .2)),
+    ),
+    child: Text(
+      text,
+      style: TextStyle(
+        color: color,
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        letterSpacing: .3,
+      ),
+    ),
+  );
 }

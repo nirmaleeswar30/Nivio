@@ -23,7 +23,6 @@ class StreamChoice {
     this.audio,
     this.byteSize,
     this.bingeGroupHint,
-    this.isWebPlayer = false,
   });
 
   final String id;
@@ -37,10 +36,9 @@ class StreamChoice {
   final String? bingeGroupHint;
   final StreamResult? direct;
   final TorrentResult? torrent;
-  final bool isWebPlayer;
 
   bool get isTorrent => torrent != null;
-  bool get isDirect => !isTorrent && !isWebPlayer;
+  bool get isDirect => direct != null;
   String? get audioType {
     final text = '${audio ?? ''} $title'.toLowerCase();
     if (RegExp(r'\bdual[ .-]?audio\b').hasMatch(text)) return 'Both';

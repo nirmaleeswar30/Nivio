@@ -3,7 +3,6 @@ import 'dart:isolate';
 
 import 'package:nivio/services/torrent/anitomy.dart';
 
-import 'extension_repository.dart';
 import 'extension_resolver.dart';
 import 'stream_selection_settings.dart';
 
@@ -75,22 +74,16 @@ class StreamSelection {
   };
 
   bool eligible(StreamChoice choice) {
-    if (choice.isWebPlayer) return false;
+    if (!choice.isDirect) return false;
     final text = choice.releaseLabel;
     if (settings.exclusions.any((term) => _blocked[term]!.hasMatch(text)))
       return false;
-    final size = choice.torrent?.isBatch == true ? null : choice.byteSize;
+    final size = choice.byteSize;
     if (settings.maxFileGb > 0 &&
         (size == null || size > settings.maxFileGb * 1073741824))
       return false;
     return !settings.matchAudio || _audioMatch(choice) > 0;
   }
-
-  bool prefers(StreamChoice choice) => switch (settings.preferredType) {
-    StreamFilter.all => true,
-    StreamFilter.direct => choice.isDirect,
-    StreamFilter.torrents => choice.isTorrent,
-  };
 
   int _audioMatch(StreamChoice choice) {
     if (isAnime) {
@@ -182,8 +175,6 @@ class StreamSelection {
         final byAudio = _audioMatch(y).compareTo(_audioMatch(x));
         if (byAudio != 0) return byAudio;
       }
-      final byType = (prefers(y) ? 1 : 0).compareTo(prefers(x) ? 1 : 0);
-      if (byType != 0) return byType;
       if (bingeGroup != null) {
         final byBinge = (y.bingeGroup == bingeGroup ? 1 : 0).compareTo(
           x.bingeGroup == bingeGroup ? 1 : 0,

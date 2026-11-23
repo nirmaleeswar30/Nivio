@@ -2,10 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:nivio/models/search_result.dart';
-import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/services/streaming_service.dart';
-import 'package:nivio/services/torrent/media_torrent_models.dart';
-import 'package:nivio/services/torrent/torrent_models.dart';
 
 import 'extension_repository.dart';
 import 'extension_resolver.dart';
@@ -19,7 +16,6 @@ class StreamDiscovery extends ChangeNotifier {
     required this.episode,
     required this.streaming,
     required this.repository,
-    required this.torrentsEnabled,
     required this.subDub,
     required this.preferredQuality,
     this.previous,
@@ -31,7 +27,6 @@ class StreamDiscovery extends ChangeNotifier {
   final int episode;
   final StreamingService streaming;
   final ExtensionRepository repository;
-  final bool torrentsEnabled;
   final String subDub;
   final String? preferredQuality;
   final StreamChoice? previous;
@@ -43,7 +38,6 @@ class StreamDiscovery extends ChangeNotifier {
   bool searching = true;
   bool _closed = false;
   int _generation = 0;
-  Future<Object>? _torrentRequest;
 
   bool get isAnime => media.mediaType == 'anime';
 
@@ -56,26 +50,16 @@ class StreamDiscovery extends ChangeNotifier {
       final rankA = selection.sourceRank(a.$2.selectionSourceId);
       final rankB = selection.sourceRank(b.$2.selectionSourceId);
       if (rankA != rankB) return rankA.compareTo(rankB);
-      if (a.$2.isWebPlayer != b.$2.isWebPlayer)
-        return a.$2.isWebPlayer ? 1 : -1;
       return a.$1.compareTo(b.$1);
     });
     return ordered.map((entry) => entry.$2).toList();
   }
 
-  Future<void> waitForResults(
-    Duration timeout, {
-    bool Function()? ready,
-  }) async {
-    if (!searching ||
-        _closed ||
-        timeout <= Duration.zero ||
-        ready?.call() == true)
-      return;
+  Future<void> waitForResults(Duration timeout) async {
+    if (!searching || _closed || timeout <= Duration.zero) return;
     final done = Completer<void>();
     void check() {
-      if (!done.isCompleted && (!searching || ready?.call() == true))
-        done.complete();
+      if (!done.isCompleted && !searching) done.complete();
     }
 
     addListener(check);
@@ -106,7 +90,6 @@ class StreamDiscovery extends ChangeNotifier {
         if (active >= 5) break;
         if (!choice.isDirect ||
             !policy.eligible(choice) ||
-            !policy.prefers(choice) ||
             !policy.confirmedAudio(choice) ||
             !checked.add(choice.id))
           continue;
@@ -155,8 +138,6 @@ class StreamDiscovery extends ChangeNotifier {
     await Future.wait([
       _searchBuiltIn(generation),
       _searchExtensions(generation),
-      if (torrentsEnabled && streaming.isTorrentEnabledForMedia(media))
-        _searchTorrents(generation),
     ]);
     if (_current(generation)) {
       searching = false;
@@ -180,9 +161,7 @@ class StreamDiscovery extends ChangeNotifier {
 
   void _add(int generation, List<StreamChoice> results) {
     if (!_current(generation)) return;
-    choices.addAll(
-      results.where((choice) => !choice.isTorrent || torrentsEnabled),
-    );
+    choices.addAll(results.where((choice) => choice.isDirect));
     notifyListeners();
   }
 
@@ -216,7 +195,8 @@ class StreamDiscovery extends ChangeNotifier {
                 i++
               )
                 if (streaming.getProviderName(i, isAnime: isAnime) !=
-                    'Nivio Torrents')
+                        'Nivio Torrents' &&
+                    streaming.isDirectStream(i, isAnime: isAnime))
                   i,
             ]
             .map(
@@ -236,7 +216,6 @@ class StreamDiscovery extends ChangeNotifier {
     }
     await _concurrently(providers, 5, generation, (provider) async {
       final (index, name) = provider;
-      final isWebPlayer = !streaming.isDirectStream(index, isAnime: isAnime);
       try {
         final result = await streaming
             .fetchStreamUrl(
@@ -277,7 +256,6 @@ class StreamDiscovery extends ChangeNotifier {
                   ? null
                   : selected[i].selectedAudio,
               direct: selected[i],
-              isWebPlayer: isWebPlayer,
             ),
         ]);
       } catch (_) {
@@ -342,118 +320,6 @@ class StreamDiscovery extends ChangeNotifier {
     }
 
     await Future.wait(List.generate(workers, (_) => work()));
-  }
-
-  Future<Object> _buildTorrentRequest() async {
-    final torrent = streaming.torrentStreamService;
-    final resolution =
-        RegExp(r'\d{3,4}').firstMatch(preferredQuality ?? '')?.group(0) ??
-        '1080';
-    if (isAnime)
-      return torrent.queryBuilder.build(
-        media,
-        episode,
-        season: season,
-        resolution: resolution,
-      );
-    final movie = media.mediaType == 'movie';
-    return MediaTorrentQuery(
-      imdbId:
-          await streaming.tmdbService.getImdbId(
-            tmdbId: media.id,
-            isMovie: movie,
-          ) ??
-          '',
-      tmdbId: media.id,
-      title: media.title ?? media.name ?? '',
-      isMovie: movie,
-      season: movie ? null : season,
-      episode: movie ? null : episode,
-      resolution: resolution,
-    );
-  }
-
-  Future<void> _searchTorrents(int generation) async {
-    try {
-      final request = await (_torrentRequest ??= _buildTorrentRequest());
-      if (!_current(generation)) return;
-      final torrent = streaming.torrentStreamService;
-      if (request is MediaTorrentQuery && (request.imdbId?.isEmpty ?? true))
-        return;
-      final results =
-          await (request is AnimeQuery
-                  ? torrent.searchTorrents(query: request)
-                  : torrent.searchMediaTorrents(
-                      query: request as MediaTorrentQuery,
-                    ))
-              .timeout(const Duration(seconds: 25));
-      _add(generation, [
-        for (final release in results.take(80))
-          StreamChoice(
-            id: 'torrent:${release.infoHash ?? release.link}:${release.fileIndex}',
-            providerId: 'torrent:${release.source}',
-            provider: release.source,
-            origin: 'Built-in source',
-            title: release.title,
-            quality: release.parsed.resolution == null
-                ? 'Unknown quality'
-                : '${release.parsed.resolution}p',
-            byteSize: release.sizeBytes > 0 ? release.sizeBytes : null,
-            torrent: release,
-          ),
-      ]);
-    } catch (_) {
-      _failed(generation, 'Built-in torrent sources');
-    }
-  }
-
-  Future<StreamResult?> open(
-    StreamChoice choice,
-    void Function(String) status, {
-    Duration? torrentMetadataTimeout,
-  }) async {
-    if (choice.direct case final StreamResult direct) return direct;
-    final release = choice.torrent;
-    if (!torrentsEnabled || release == null) return null;
-    final service = streaming.torrentStreamService;
-    status('Connecting to peers…');
-    final request = await (_torrentRequest ??= _buildTorrentRequest());
-    final active = previous?.torrent;
-    final sameRelease = active != null && active.link == release.link;
-    final reused = sameRelease && release.isBatch
-        ? await service.nextEpisodeInActiveTorrent(
-            media: media,
-            episode: episode,
-            season: season,
-            absoluteEpisode: request is AnimeQuery
-                ? request.absoluteEpisode
-                : null,
-            preferredGroup: active.parsed.releaseGroup,
-          )
-        : null;
-    final handle =
-        reused ??
-        await service.startTorrent(
-          release,
-          request,
-          episode,
-          status,
-          media: media,
-          requireEpisodeMatch: media.mediaType != 'movie' && release.isBatch,
-          metadataTimeout: torrentMetadataTimeout,
-          cancelled: () => _closed,
-        );
-    if (handle == null) return null;
-    await service.rememberReleaseGroup(
-      media,
-      release,
-      fileName: handle.fileName,
-    );
-    return StreamResult(
-      url: handle.url,
-      quality: choice.quality,
-      provider: 'Nivio Torrents',
-    );
   }
 
   @override

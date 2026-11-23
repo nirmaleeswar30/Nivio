@@ -191,7 +191,6 @@ void main() {
         episode: 1,
         streaming: _UnusedStreamingService(),
         repository: ExtensionRepository(),
-        torrentsEnabled: false,
         subDub: 'sub',
         preferredQuality: null,
         selection: settings,
@@ -214,7 +213,7 @@ void main() {
   );
 
   test(
-    'saved picker tab migrates and new selection settings persist',
+    'obsolete picker preferences are ignored and playback settings persist',
     () async {
       SharedPreferences.setMockInitialValues({
         'stream_picker_default_filter': 'direct',
@@ -224,7 +223,6 @@ void main() {
       final initial = await container.read(
         streamSelectionSettingsProvider.future,
       );
-      expect(initial.preferredType, StreamFilter.direct);
       expect(initial.mode, StreamSelectionMode.manual);
       await container
           .read(streamSelectionSettingsProvider.notifier)
@@ -235,16 +233,15 @@ void main() {
             ),
           );
       final prefs = await SharedPreferences.getInstance();
-      final saved = StreamSelectionSettings.read(prefs, StreamFilter.all);
+      final saved = StreamSelectionSettings.read(prefs);
       expect(saved.mode, StreamSelectionMode.match);
-      expect(saved.preferredType, StreamFilter.direct);
       expect(saved.resolutions.first, 720);
       final switched = saved.copyWith(
         preset: StreamPreset.maxQuality,
         maxFileGb: 5,
       );
       await switched.save(prefs);
-      final restored = StreamSelectionSettings.read(prefs, StreamFilter.all);
+      final restored = StreamSelectionSettings.read(prefs);
       expect(restored.maxFileGb, 5);
       expect(restored.resolutions.first, 2160);
       expect(
@@ -301,10 +298,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     final prefs = await SharedPreferences.getInstance();
-    expect(
-      StreamSelectionSettings.read(prefs, StreamFilter.all).mode,
-      StreamSelectionMode.first,
-    );
+    expect(StreamSelectionSettings.read(prefs).mode, StreamSelectionMode.first);
     await tester.drag(find.byType(PageView), const Offset(300, 0));
     await tester.pumpAndSettle();
     expect(find.text('Choose your sources'), findsOneWidget);

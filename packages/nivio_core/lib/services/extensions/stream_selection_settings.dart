@@ -3,8 +3,6 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'extension_repository.dart';
-
 enum StreamSelectionMode {
   manual('Manual'),
   first('Fastest First'),
@@ -116,7 +114,6 @@ class StreamSelectionSettings {
   const StreamSelectionSettings({
     this.mode = StreamSelectionMode.manual,
     this.preset = StreamPreset.balanced,
-    this.preferredType = StreamFilter.all,
     this.sourceOrder = const [],
     this.presetOptions = const {},
     this.regex = '',
@@ -127,7 +124,6 @@ class StreamSelectionSettings {
 
   final StreamSelectionMode mode;
   final StreamPreset preset;
-  final StreamFilter preferredType;
   final List<String> sourceOrder;
   final Map<StreamPreset, StreamPresetOptions> presetOptions;
   final String regex;
@@ -155,7 +151,6 @@ class StreamSelectionSettings {
   StreamSelectionSettings copyWith({
     StreamSelectionMode? mode,
     StreamPreset? preset,
-    StreamFilter? preferredType,
     List<String>? sourceOrder,
     List<int>? customResolutions,
     Set<StreamExclusion>? customExclusions,
@@ -171,7 +166,6 @@ class StreamSelectionSettings {
     return StreamSelectionSettings(
       mode: mode ?? this.mode,
       preset: activePreset,
-      preferredType: preferredType ?? this.preferredType,
       sourceOrder: sourceOrder ?? this.sourceOrder,
       presetOptions: {
         ...presetOptions,
@@ -200,13 +194,9 @@ class StreamSelectionSettings {
 
   static const _key = 'stream_selection_preferences';
 
-  static StreamSelectionSettings read(
-    SharedPreferences prefs,
-    StreamFilter previousFilter,
-  ) {
+  static StreamSelectionSettings read(SharedPreferences prefs) {
     final raw = prefs.getString(_key);
-    if (raw == null)
-      return StreamSelectionSettings(preferredType: previousFilter);
+    if (raw == null) return const StreamSelectionSettings();
     try {
       final data = jsonDecode(raw) as Map<String, dynamic>;
       T readEnum<T extends Enum>(List<T> values, String key, T fallback) =>
@@ -226,11 +216,6 @@ class StreamSelectionSettings {
           StreamSelectionMode.manual,
         ),
         preset: preset,
-        preferredType: readEnum(
-          StreamFilter.values,
-          'preferredType',
-          previousFilter,
-        ),
         sourceOrder:
             (data['sourceOrder'] as List?)
                 ?.whereType<String>()
@@ -249,9 +234,9 @@ class StreamSelectionSettings {
         matchAudio: data['matchAudio'] as bool? ?? true,
       );
     } on FormatException {
-      return StreamSelectionSettings(preferredType: previousFilter);
+      return const StreamSelectionSettings();
     } on TypeError {
-      return StreamSelectionSettings(preferredType: previousFilter);
+      return const StreamSelectionSettings();
     }
   }
 
@@ -260,7 +245,6 @@ class StreamSelectionSettings {
     jsonEncode({
       'mode': mode.name,
       'preset': preset.name,
-      'preferredType': preferredType.name,
       'sourceOrder': sourceOrder,
       'presetOptions': {
         for (final entry in presetOptions.entries)
@@ -283,10 +267,8 @@ final streamSelectionSettingsProvider =
 class StreamSelectionSettingsNotifier
     extends AsyncNotifier<StreamSelectionSettings> {
   @override
-  Future<StreamSelectionSettings> build() async => StreamSelectionSettings.read(
-    await SharedPreferences.getInstance(),
-    await ref.read(extensionRepositoryProvider).preferredFilter(),
-  );
+  Future<StreamSelectionSettings> build() async =>
+      StreamSelectionSettings.read(await SharedPreferences.getInstance());
 
   Future<void> change(
     StreamSelectionSettings Function(StreamSelectionSettings) update,
