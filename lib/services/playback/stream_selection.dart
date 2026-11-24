@@ -3,7 +3,7 @@ import 'dart:isolate';
 
 import 'package:nivio/services/torrent/anitomy.dart';
 
-import 'extension_resolver.dart';
+import 'stream_choice.dart';
 import 'stream_selection_settings.dart';
 
 String? validateStreamRegex(String pattern) {
@@ -82,7 +82,6 @@ class StreamSelection {
   };
 
   bool eligible(StreamChoice choice) {
-    if (!choice.isDirect) return false;
     final text = choice.releaseLabel;
     if (settings.exclusions.any((term) => _blocked[term]!.hasMatch(text)))
       return false;
@@ -306,11 +305,9 @@ class StreamSelection {
 
   bool hasPreferredSubtitles(StreamChoice choice) {
     return _wantedSubtitles.isNotEmpty &&
-        (choice.direct?.subtitles.any(
-              (track) =>
-                  _languageCodes(track.lang).any(_wantedSubtitles.contains),
-            ) ??
-            false);
+        choice.direct.subtitles.any(
+          (track) => _languageCodes(track.lang).any(_wantedSubtitles.contains),
+        );
   }
 
   int compareLanguagePreferences(
@@ -442,9 +439,7 @@ extension StreamSelectionMetadata on StreamChoice {
       '$provider $quality ${audio ?? ''} $title'.split('\n').join(' ').trim();
   int? get resolution {
     if (videoHeights.length == 1) return videoHeights.single;
-    return reportedResolution ??
-        torrent?.parsed.resolution ??
-        _readHeight(title);
+    return reportedResolution ?? _readHeight(title);
   }
 
   int? get reportedResolution => _readHeight(quality);
@@ -456,9 +451,9 @@ extension StreamSelectionMetadata on StreamChoice {
   String get bingeGroup {
     final hint = bingeGroupHint;
     if (hint != null && hint.isNotEmpty) {
-      return '$providerId|${isTorrent ? 'torrent' : 'direct'}|$hint';
+      return '$providerId|direct|$hint';
     }
-    final parsed = torrent?.parsed ?? Anitomy.parse(title);
+    final parsed = Anitomy.parse(title);
     final label = title
         .toLowerCase()
         .replaceAll(
@@ -472,7 +467,7 @@ extension StreamSelectionMetadata on StreamChoice {
         .trim();
     return [
       providerId,
-      isTorrent ? 'torrent' : 'direct',
+      'direct',
       resolution ?? quality,
       (audioType ?? audio ?? '').toLowerCase(),
       parsed.releaseGroup ?? label,

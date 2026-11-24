@@ -9,14 +9,14 @@ import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_size.dart';
 import 'package:nivio/services/torrent/torrent_models.dart';
 import 'package:nivio/services/torrent/media_torrent_models.dart';
+import 'package:nivio/services/torrent/media_ranking.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
 import 'package:nivio/widgets/skeleton.dart';
 import 'package:nivio/services/streaming_service.dart';
 import 'package:nivio/widgets/marquee_text.dart';
 import 'package:nivio/widgets/mobile_stream_picker.dart';
 import 'package:nivio/screens/stream_selection_screen.dart';
-import 'package:nivio/services/extensions/stream_selection_settings.dart';
-import 'package:nivio/services/extensions/stream_selection.dart';
+import 'package:nivio/services/playback/stream_selection.dart';
 
 class TorrentPickerSheet extends StatefulWidget {
   final SearchResult media;
@@ -31,7 +31,7 @@ class TorrentPickerSheet extends StatefulWidget {
   final bool? autoSelect;
   final bool groupBySource;
   final int? maxFileBytes;
-  final Future<TorrentStreamService> Function(StreamSelectionSettings)? refreshSearch;
+  final List<RegExp> preferredFormats;
 
   const TorrentPickerSheet({
     super.key,
@@ -46,7 +46,7 @@ class TorrentPickerSheet extends StatefulWidget {
     this.autoSelect,
     this.groupBySource = true,
     this.maxFileBytes,
-    this.refreshSearch,
+    this.preferredFormats = const [],
   });
 
   static Future<(TorrentResult, dynamic, {bool automatic})?> show(
@@ -62,7 +62,7 @@ class TorrentPickerSheet extends StatefulWidget {
     bool groupBySource = true,
     int? maxFileBytes,
     List<DeviceOrientation> restoreOrientations = const [],
-    Future<TorrentStreamService> Function(StreamSelectionSettings)? refreshSearch,
+    List<RegExp> preferredFormats = const [],
   }) async {
     final isMobile = Platform.isAndroid || Platform.isIOS;
     if (isMobile) {
@@ -83,7 +83,7 @@ class TorrentPickerSheet extends StatefulWidget {
               autoSelect: autoSelect,
               groupBySource: groupBySource,
               maxFileBytes: maxFileBytes,
-              refreshSearch: refreshSearch,
+              preferredFormats: preferredFormats,
             ),
           ),
         ),
@@ -111,7 +111,7 @@ class TorrentPickerSheet extends StatefulWidget {
           autoSelect: autoSelect,
           groupBySource: groupBySource,
           maxFileBytes: maxFileBytes,
-          refreshSearch: refreshSearch,
+          preferredFormats: preferredFormats,
         ),
       ),
     );
@@ -140,7 +140,8 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
   int _countdown = 5;
   bool _isCancelled = false;
   String? _mobileSource;
-  late var _searchService = widget.torrentStreamService;
+  TorrentStreamService get _searchService => widget.torrentStreamService;
+  late var _preferredFormats = widget.preferredFormats;
   late var _maxFileBytes = widget.maxFileBytes;
   late var _groupBySource = widget.groupBySource;
 
@@ -248,10 +249,15 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         );
         _currentQuery = mediaQuery;
 
+        final formats = _preferredFormats;
         results = await _searchService.searchMediaTorrents(
           query: mediaQuery,
           onStatus: widget.onStatusUpdate,
+          rank: formats.isEmpty,
         );
+        if (formats.isNotEmpty) {
+          results = MediaRanking.rank(results, mediaQuery, preferredFormats: formats);
+        }
       }
       
       if (!mounted || request != _searchRequest) return;
@@ -414,9 +420,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
     _cancelAutoPlay();
     final updated = await editPickerPlaybackSettings(context, asSheet: widget.isFullScreen);
     if (!mounted || updated == null) return;
-    final refreshed = await widget.refreshSearch?.call(updated);
-    if (!mounted) return;
-    _searchService = refreshed ?? _searchService;
+    _preferredFormats = updated.torrentFormatPreferences;
     _maxFileBytes = updated.maxFileBytes;
     _groupBySource = updated.groupBySource;
     await _loadTorrents();

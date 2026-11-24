@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:media_kit/media_kit.dart';
 import 'package:nivio/core/mpv_android_setup.dart';
-import 'package:nivio/services/extensions/stream_selection.dart';
+import 'package:nivio/services/playback/stream_selection.dart';
 
 /// Reads tracks with a separate, paused player. It owns no video surface
 /// and does not take over the active player's audio or media session.

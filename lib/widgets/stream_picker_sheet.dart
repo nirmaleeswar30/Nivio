@@ -7,10 +7,10 @@ import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/models/stream_size.dart';
 import 'package:nivio/screens/stream_selection_screen.dart';
-import 'package:nivio/services/extensions/extension_resolver.dart';
-import 'package:nivio/services/extensions/stream_discovery.dart';
-import 'package:nivio/services/extensions/stream_selection.dart';
-import 'package:nivio/services/extensions/stream_selection_settings.dart';
+import 'package:nivio/services/playback/stream_choice.dart';
+import 'package:nivio/services/playback/stream_discovery.dart';
+import 'package:nivio/services/playback/stream_selection.dart';
+import 'package:nivio/services/playback/stream_selection_settings.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/widgets/marquee_text.dart';
 import 'package:nivio/widgets/mobile_stream_picker.dart';
@@ -181,7 +181,6 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
 
   void _play(StreamChoice choice) {
     if (!_discovery.unavailable.contains(choice.id) &&
-        choice.isDirect &&
         _discovery.policy.fitsFileSizeLimit(choice, allowUnknown: true)) {
       _finish(
         StreamPickerOutcome(
@@ -206,7 +205,6 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
   List<StreamChoice> _visibleChoices() {
     final requested = _resolution;
     final visible = _discovery.choices.where((choice) {
-      if (!choice.isDirect) return false;
       final heights = choice.knownResolutions;
       return !_changedResolution ||
           requested == null ||
@@ -427,15 +425,9 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
           final movie =
               media.mediaType == 'movie' || media.animeFormat == 'MOVIE';
           final sources = {
-            for (final choice in _discovery.choices.where(
-              (choice) =>
-                  choice.isDirect &&
-                  _discovery.policy.fitsFileSizeLimit(
-                    choice,
-                    allowUnknown: true,
-                  ),
-            ))
-              choice.providerId: choice.provider,
+            for (final choice in _discovery.choices)
+              if (_discovery.policy.fitsFileSizeLimit(choice, allowUnknown: true))
+                choice.providerId: choice.provider,
           };
           final source = sources.containsKey(_mobileSource)
               ? _mobileSource
@@ -445,8 +437,7 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
               .where((choice) => source == null || choice.providerId == source)
               .toList();
           final best = _preferredChoice(ordered);
-          final notice =
-              _discovery.fileSizeEmptyMessage ?? _discovery.extensionSearchNotice;
+          final notice = _discovery.fileSizeEmptyMessage;
           return MobileStreamPicker(
             media: media,
             season: movie ? null : _discovery.season,
@@ -665,13 +656,11 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
     listenable: _discovery,
     builder: (context, _) {
       final results = _visibleChoices();
-      final extensionNotice = _discovery.extensionSearchNotice;
       if (results.isEmpty && _discovery.searching) return _buildLoading();
       if (results.isEmpty) {
         return Center(
           child: Text(
             _discovery.fileSizeEmptyMessage ??
-                extensionNotice ??
                 (_discovery.failures.isNotEmpty
                     ? 'Couldn’t reach some direct sources.'
                     : 'No direct streams found.'),
@@ -682,19 +671,9 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
       final best = _preferredChoice(results);
       return ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: results.length + (extensionNotice == null ? 0 : 1),
+        itemCount: results.length,
         itemBuilder: (_, index) {
-          if (extensionNotice != null && index == 0) {
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: Text(
-                extensionNotice,
-                style: const TextStyle(color: Colors.white70),
-              ),
-            );
-          }
-          final resultIndex = extensionNotice == null ? index : index - 1;
-          final choice = results[resultIndex];
+          final choice = results[index];
           return _buildRow(choice, identical(choice, best));
         },
       );
@@ -704,7 +683,7 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
   String _qualityLabel(StreamChoice choice) {
     final heights = choice.knownResolutions;
     return heights.isEmpty
-        ? (choice.direct!.isM3U8
+        ? (choice.direct.isM3U8
               ? 'Auto · resolution unknown'
               : 'Resolution unknown')
         : heights.map((height) => '${height}p').join(' / ');
@@ -796,8 +775,6 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
                       const SizedBox(width: 8),
                       _tag(choice.quality.trim(), Colors.grey),
                     ],
-                    const SizedBox(width: 8),
-                    _tag(choice.origin, Colors.grey),
                     if (choice.pickerAudioLabel case final String audio) ...[
                       const SizedBox(width: 8),
                       _tag(audio, Colors.grey),

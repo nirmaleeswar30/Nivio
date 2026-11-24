@@ -29,13 +29,11 @@ import 'package:nivio/widgets/hdr_video_surface.dart';
 import 'package:nivio/widgets/windows_hdr_video_surface.dart';
 import 'package:nivio/widgets/linux_hdr_video_surface.dart';
 import 'package:nivio/widgets/player_stats_overlay.dart';
-import 'package:nivio/services/extensions/extension_repository.dart';
-import 'package:nivio/services/extensions/extension_resolver.dart';
-import 'package:nivio/services/extensions/extension_torrent_search.dart';
-import 'package:nivio/services/extensions/stream_discovery.dart';
+import 'package:nivio/services/playback/stream_choice.dart';
+import 'package:nivio/services/playback/stream_discovery.dart';
 import 'package:nivio/widgets/stream_picker_sheet.dart';
-import 'package:nivio/services/extensions/stream_selection.dart';
-import 'package:nivio/services/extensions/stream_selection_settings.dart';
+import 'package:nivio/services/playback/stream_selection.dart';
+import 'package:nivio/services/playback/stream_selection_settings.dart';
 import 'package:nivio/services/hdr_tone_mapping.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/screens/player/widgets/custom_player_controls.dart';
@@ -1169,7 +1167,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }) async {
     if (_streamPickerOpen) return null;
     _streamPickerOpen = true;
-    final repository = ref.read(extensionRepositoryProvider);
     try {
       await _syncAutoPipAvailability();
       while (mounted && !_isDeactivated) {
@@ -1180,13 +1177,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             media,
             preferredQuality,
             settings,
-            repository,
             allowAuto: allowAuto,
             binge: allowAuto && _bingeMode && _currentEpisode != widget.episode,
           );
         }
         final search = _discoverDirectStreams(
-          media, preferredQuality, subDub, settings, repository,
+          media, preferredQuality, subDub, settings,
         );
         final outcome = await DirectStreamPickerSheet.show(
           context,
@@ -1200,7 +1196,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (outcome == null) return const StreamPickerOutcome(dismissed: true);
         if (!outcome.refresh) return outcome;
         allowAuto = false;
-        // The picker has detached. Re-query with the updated settings and repositories.
+        // The picker has detached. Re-query with the updated settings.
         _streamDiscovery?.dispose();
         _streamDiscovery = null;
       }
@@ -1214,21 +1210,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Future<StreamPickerOutcome?> _chooseTorrentStream(
     SearchResult media,
     String? preferredQuality,
-    StreamSelectionSettings settings,
-    ExtensionRepository repository, {
+    StreamSelectionSettings settings, {
     bool allowAuto = false,
     bool binge = false,
     bool Function()? onManualSwitch,
   }) async {
     final streaming = ref.read(streamingServiceProvider);
     final episode = _currentEpisode;
-    final pickerSearch = await ExtensionTorrentSearch.forPicker(
-      builtIn: streaming.torrentStreamService,
-      media: media,
-      repository: repository,
-      settings: settings,
-    );
-    if (!mounted || _isDeactivated || episode != _currentEpisode) return null;
+    if (!mounted || _isDeactivated) return null;
     final autoSelect = switch (settings.mode) {
       StreamSelectionMode.manual => false,
       StreamSelectionMode.match => allowAuto,
@@ -1242,7 +1231,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       preferredQuality: preferredQuality,
       context: context,
       binge: binge,
-      pickerSearch: pickerSearch,
       restoreOrientations: _playerOrientations,
       autoSelect: autoSelect,
       onManualSwitch: onManualSwitch,
@@ -1261,7 +1249,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     String? preferredQuality,
     String subDub,
     StreamSelectionSettings settings,
-    ExtensionRepository repository,
   ) {
     final presetHeight = settings.resolutions.firstOrNull;
     final directQuality =
@@ -1288,7 +1275,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       season: widget.season,
       episode: _currentEpisode,
       streaming: ref.read(streamingServiceProvider),
-      repository: repository,
       subDub: subDub,
       preferredQuality: directQuality,
       preferredAudio: audioLanguage,
@@ -1374,7 +1360,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (settings.mode == StreamSelectionMode.first) {
         final probes = <String, _StreamProbe>{};
         fastChoice = await search.firstReachable(policy, remaining, (choice) async {
-          final direct = choice.direct!;
+          final direct = choice.direct;
           final result = await _probeStreamCandidate(
             StreamSource(url: direct.url, quality: direct.quality, isM3U8: direct.isM3U8),
             _buildPlaybackHeaders(direct.headers),
@@ -5785,7 +5771,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!isCurrentStream() || _isLoading) return;
       final quality = ref.read(videoQualityProvider);
       final preferredQuality = quality == 'auto' ? null : quality;
-      final repository = ref.read(extensionRepositoryProvider);
       StreamPickerOutcome? selected;
       Duration? resumePosition;
 
@@ -5811,7 +5796,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           media,
           preferredQuality,
           settings,
-          repository,
           onManualSwitch: () {
             if (!isCurrentStream() || _isLoading) return false;
             resumePosition = playbackPosition();
@@ -5826,7 +5810,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       } else {
         final subDub = ref.read(languagePreferencesProvider).animePreferredAudio;
         final search = _discoverDirectStreams(
-          media, preferredQuality, subDub, settings, repository,
+          media, preferredQuality, subDub, settings,
         );
         final choice = await _showServerOverlay<StreamChoice>(
           (panelContext) => _buildDirectSourceCards(
@@ -5886,9 +5870,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ) => ListenableBuilder(
     listenable: search,
     builder: (context, _) {
-      final extensionNotice = search.extensionSearchNotice;
       final choices = search.orderForPicker(
-        search.availableChoices.where((choice) => choice.isDirect).toList(),
+        search.availableChoices,
         resolution: search.selection.resolutions.firstOrNull,
       );
       if (choices.isEmpty) {
@@ -5897,7 +5880,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ? const CircularProgressIndicator()
               : Text(
                   search.fileSizeEmptyMessage ??
-                      extensionNotice ??
                       'No direct streams found.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white70),
@@ -5908,11 +5890,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         padding: EdgeInsets.zero,
         children: [
           _providerSectionLabel('Direct'),
-          if (extensionNotice != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Text(extensionNotice, style: const TextStyle(color: Colors.white70)),
-            ),
           _sourceCardGrid([
             for (final choice in choices)
               _buildSourceCard(
@@ -5929,7 +5906,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   if (choice.pickerAudioLabel case final String audio) audio,
                 ].join(' · '),
                 icon: Icons.bolt_rounded,
-                isCurrent: choice.direct?.url == currentStream.url &&
+                isCurrent: choice.direct.url == currentStream.url &&
                     choice.provider == currentStream.provider,
                 onTap: () => Navigator.of(panelContext).pop(choice),
               ),

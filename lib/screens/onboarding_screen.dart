@@ -55,7 +55,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     (
       'Sources',
       'Choose your sources',
-      'Use Nivio’s built-in sources or add your own extensions.',
+      'Set your source priority for movies, shows, and anime.',
     ),
     (
       'Playback',

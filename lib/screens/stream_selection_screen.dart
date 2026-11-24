@@ -4,18 +4,12 @@ import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
-import 'package:nivio/services/extensions/cnc_direct_sources.dart';
-import 'package:nivio/services/extensions/nuvio_direct_sources.dart';
-import 'package:nivio/services/extensions/extension_repository.dart';
-import 'package:nivio/services/extensions/extension_resolver.dart';
-import 'package:nivio/services/extensions/stream_selection.dart';
-import 'package:nivio/services/extensions/stream_selection_settings.dart';
+import 'package:nivio/services/playback/stream_selection.dart';
+import 'package:nivio/services/playback/stream_selection_settings.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/widgets/stream_surfaces.dart';
 import 'package:nivio/widgets/settings_page_header.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
-
-import 'extensions_screen.dart';
 
 Future<void> showStreamPickerSettings(
   BuildContext context, {
@@ -77,60 +71,18 @@ class StreamPickerSettingsScreen extends StatelessWidget {
   );
 }
 
-class StreamSourceSettings extends ConsumerStatefulWidget {
+class StreamSourceSettings extends StatelessWidget {
   const StreamSourceSettings({super.key, this.inPanel = true});
 
   final bool inPanel;
-
-  @override
-  ConsumerState<StreamSourceSettings> createState() =>
-      _StreamSourceSettingsState();
-}
-
-class _StreamSourceSettingsState extends ConsumerState<StreamSourceSettings> {
-  late Future<List<ExtensionRepo>> _repositories = _loadRepositories();
-
-  Future<List<ExtensionRepo>> _loadRepositories() =>
-      ref.read(extensionRepositoryProvider).list();
-
-  Future<void> _openExtensions() async {
-    await Navigator.of(
-      context,
-    ).push<void>(MaterialPageRoute(builder: (_) => const ExtensionsScreen()));
-    if (!mounted) return;
-    setState(() {
-      _repositories = _loadRepositories();
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
     final rows = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (!widget.inPanel)
+        if (!inPanel)
           const _SectionHeading('SOURCES', PhosphorIconsRegular.stack),
-        FutureBuilder<List<ExtensionRepo>>(
-          future: _repositories,
-          builder: (context, snapshot) {
-            final count = snapshot.data
-                ?.expand((repo) => repo.providers)
-                .where((provider) => provider.enabled)
-                .length;
-            return ListTile(
-              leading: const StreamGlyph(PhosphorIconsRegular.puzzlePiece),
-              visualDensity: VisualDensity.compact,
-              title: const Text('Extensions'),
-              subtitle: Text(
-                count == null || count == 0
-                    ? 'Add a plugin repository'
-                    : '$count enabled',
-              ),
-              trailing: const Icon(PhosphorIconsRegular.caretRight, size: 16),
-              onTap: _openExtensions,
-            );
-          },
-        ),
         ListTile(
           leading: const StreamGlyph(PhosphorIconsRegular.arrowsDownUp),
           visualDensity: VisualDensity.compact,
@@ -145,7 +97,7 @@ class _StreamSourceSettingsState extends ConsumerState<StreamSourceSettings> {
           leading: const StreamGlyph(PhosphorIconsRegular.arrowsDownUp),
           visualDensity: VisualDensity.compact,
           title: const Text('Anime source priority'),
-          subtitle: const Text('Reorder anime built-ins and extensions.'),
+          subtitle: const Text('Reorder anime sources.'),
           trailing: const Icon(PhosphorIconsRegular.caretRight, size: 16),
           onTap: () => Navigator.of(context).push<void>(
             MaterialPageRoute(
@@ -156,7 +108,7 @@ class _StreamSourceSettingsState extends ConsumerState<StreamSourceSettings> {
         const TorrentSourceSettingsLink(),
       ],
     );
-    return widget.inPanel ? StreamPanel(child: rows) : rows;
+    return inPanel ? StreamPanel(child: rows) : rows;
   }
 }
 
@@ -324,142 +276,119 @@ class _SectionHeading extends StatelessWidget {
   );
 }
 
-class _SourcePriorityScreen extends ConsumerStatefulWidget {
+class _SourcePriorityScreen extends ConsumerWidget {
   const _SourcePriorityScreen({this.isAnime = false});
 
   final bool isAnime;
 
   @override
-  ConsumerState<_SourcePriorityScreen> createState() =>
-      _SourcePriorityScreenState();
-}
-
-class _SourcePriorityScreenState extends ConsumerState<_SourcePriorityScreen> {
-  late final _sources = ref.read(extensionRepositoryProvider).list();
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(streamSelectionSettingsProvider).valueOrNull;
     final streaming = ref.watch(streamingServiceProvider);
     return Scaffold(
       appBar: SettingsPageHeader(
-        widget.isAnime ? 'Anime source priority' : 'Source priority',
+        isAnime ? 'Anime source priority' : 'Source priority',
         titleTextStyle: AppPlatform.useDesktopLayout
             ? null
             : Theme.of(context).textTheme.titleLarge,
       ),
-      body: FutureBuilder<List<ExtensionRepo>>(
-        future: _sources,
-        builder: (context, snapshot) {
-          if (snapshot.hasError)
-            return const Center(child: Text('Couldn’t load sources.'));
-          if (!snapshot.hasData || settings == null)
-            return const Center(child: CircularProgressIndicator());
-          final available = <String, (String, String)>{
-            for (final name in streaming.streamSelectionBuiltIns(
-              isAnime: widget.isAnime,
-            ))
-              streamSelectionSourceId('builtin:$name'): (
-                name,
-                'Built-in source',
-              ),
-            for (final repo in snapshot.data!)
-              for (final provider in repo.providers)
-                if (provider.enabled &&
-                    ExtensionResolver.supports(repo.format) &&
-                    !CncDirectSource.replacesPackage(provider) &&
-                    (widget.isAnime ||
-                        NuvioDirectSources.replacementId(provider.id) ==
-                            null) &&
-                    (widget.isAnime
-                        ? provider.supports('anime')
-                        : provider.supports('movie') ||
-                              provider.supports('tv')))
-                  provider.id: (provider.name, repo.name),
-          };
-          final order = {
-            ...settings
-                .sourceOrderFor(isAnime: widget.isAnime)
-                .where(available.containsKey),
-            ...available.keys,
-          }.toList();
-          void move(int from, int to) {
-            final next = [...order];
-            next.insert(to, next.removeAt(from));
-            ref.read(streamSelectionSettingsProvider.notifier).change((
-              current,
-            ) {
-              final saved = [
-                ...next,
-                ...current
-                    .sourceOrderFor(isAnime: widget.isAnime)
-                    .where((id) => !available.containsKey(id)),
-              ];
-              return widget.isAnime
-                  ? current.copyWith(animeSourceOrder: saved)
-                  : current.copyWith(sourceOrder: saved);
-            });
-          }
+      body: settings == null
+          ? const Center(child: CircularProgressIndicator())
+          : Builder(
+              builder: (context) {
+                final available = {
+                  for (final name in streaming.streamSelectionBuiltIns(
+                    isAnime: isAnime,
+                  ))
+                    streamSelectionSourceId('builtin:$name'): name,
+                };
+                final order = {
+                  ...settings
+                      .sourceOrderFor(isAnime: isAnime)
+                      .where(available.containsKey),
+                  ...available.keys,
+                }.toList();
+                void move(int from, int to) {
+                  final next = [...order];
+                  next.insert(to, next.removeAt(from));
+                  ref.read(streamSelectionSettingsProvider.notifier).change((
+                    current,
+                  ) {
+                    final saved = [
+                      ...next,
+                      ...current
+                          .sourceOrderFor(isAnime: isAnime)
+                          .where((id) => !available.containsKey(id)),
+                    ];
+                    return isAnime
+                        ? current.copyWith(animeSourceOrder: saved)
+                        : current.copyWith(sourceOrder: saved);
+                  });
+                }
 
-          return SafeArea(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 680),
-                child: ReorderableListView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
-                  header: const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _SectionHeading(
-                          'PLAYBACK ORDER',
-                          PhosphorIconsRegular.arrowsDownUp,
+                return SafeArea(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 680),
+                      child: ReorderableListView.builder(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
+                        header: const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _SectionHeading(
+                                'PLAYBACK ORDER',
+                                PhosphorIconsRegular.arrowsDownUp,
+                              ),
+                              Text(
+                                'Source priority breaks ties in the direct picker and Autoplay.',
+                              ),
+                            ],
+                          ),
                         ),
-                        Text(
-                          'Source priority breaks ties in the direct picker and Autoplay.',
-                        ),
-                      ],
+                        buildDefaultDragHandles: false,
+                        itemCount: order.length,
+                        onReorder: (from, to) =>
+                            move(from, from < to ? to - 1 : to),
+                        itemBuilder: (_, index) {
+                          final id = order[index];
+                          final title = available[id]!;
+                          return Padding(
+                            key: ValueKey(id),
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: StreamPanel(
+                              child: ListTile(
+                                leading: ReorderableDragStartListener(
+                                  index: index,
+                                  child: const StreamGlyph(
+                                    PhosphorIconsRegular.dotsSixVertical,
+                                  ),
+                                ),
+                                title: Text(
+                                  title,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                trailing: _MoveButtons(
+                                  up: index > 0
+                                      ? () => move(index, index - 1)
+                                      : null,
+                                  down: index + 1 < order.length
+                                      ? () => move(index, index + 1)
+                                      : null,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ),
-                  buildDefaultDragHandles: false,
-                  itemCount: order.length,
-                  onReorder: (from, to) => move(from, from < to ? to - 1 : to),
-                  itemBuilder: (_, index) {
-                    final id = order[index];
-                    final (title, origin) = available[id]!;
-                    return Padding(
-                      key: ValueKey(id),
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: StreamPanel(
-                        child: ListTile(
-                          leading: ReorderableDragStartListener(
-                            index: index,
-                            child: const StreamGlyph(
-                              PhosphorIconsRegular.dotsSixVertical,
-                            ),
-                          ),
-                          title: Text(
-                            title,
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          subtitle: Text(origin),
-                          trailing: _MoveButtons(
-                            up: index > 0 ? () => move(index, index - 1) : null,
-                            down: index + 1 < order.length
-                                ? () => move(index, index + 1)
-                                : null,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
+                );
+              },
             ),
-          );
-        },
-      ),
     );
   }
 }

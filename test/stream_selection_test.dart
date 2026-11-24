@@ -1,22 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/models/stream_size.dart';
-import 'package:nivio/screens/extensions_screen.dart';
 import 'package:nivio/screens/onboarding_screen.dart';
 import 'package:nivio/screens/stream_selection_screen.dart';
-import 'package:nivio/services/extensions/extension_repository.dart';
-import 'package:nivio/services/extensions/extension_resolver.dart';
-import 'package:nivio/services/extensions/stream_discovery.dart';
-import 'package:nivio/services/extensions/stream_selection.dart';
-import 'package:nivio/services/extensions/stream_selection_settings.dart';
+import 'package:nivio/services/playback/stream_choice.dart';
+import 'package:nivio/services/playback/stream_discovery.dart';
+import 'package:nivio/services/playback/stream_selection.dart';
+import 'package:nivio/services/playback/stream_selection_settings.dart';
 import 'package:nivio/services/m3u8_parser.dart';
 import 'package:nivio/services/mp4_metadata.dart';
 import 'package:nivio/services/streaming_service.dart';
@@ -37,7 +35,6 @@ StreamChoice _choice(
   id: id,
   providerId: provider,
   provider: 'Example provider',
-  origin: 'Example repo',
   title: title,
   quality: quality,
   audio: audio,
@@ -117,19 +114,27 @@ void main() {
     'anime source priority migrates and saves separately from movies',
     () async {
       SharedPreferences.setMockInitialValues({
-        'stream_selection_preferences':
-            '{"version":2,"sourceOrder":["first","second"]}',
+        'stream_selection_preferences': jsonEncode({
+          'version': 2,
+          'sourceOrder': [
+            'builtin:CastleTV',
+            'builtin:Miruro',
+            'builtin:Animex',
+            'https://example.com/manifest.json#retired',
+          ],
+        }),
       });
       final prefs = await SharedPreferences.getInstance();
       final original = StreamSelectionSettings.read(prefs);
-      expect(original.sourceRank('first', isAnime: true), 0);
+      expect(original.sourceRank('builtin:Miruro', isAnime: true), 1);
+      expect(original.sourceOrder, hasLength(3));
       await original
-          .copyWith(animeSourceOrder: ['second', 'first'])
+          .copyWith(animeSourceOrder: ['builtin:Animex', 'builtin:Miruro'])
           .save(prefs);
       final settings = StreamSelectionSettings.read(prefs);
-      expect(settings.sourceRank('first'), 0);
-      expect(settings.sourceRank('first', isAnime: true), 1);
-      expect(settings.sourceRank('second', isAnime: true), 0);
+      expect(settings.sourceRank('builtin:CastleTV'), 0);
+      expect(settings.sourceRank('builtin:Miruro', isAnime: true), 1);
+      expect(settings.sourceRank('builtin:Animex', isAnime: true), 0);
     },
   );
 
@@ -156,7 +161,6 @@ void main() {
       season: 1,
       episode: 2,
       streaming: _UnusedStreamingService(),
-      repository: ExtensionRepository(),
       subDub: 'sub',
       preferredQuality: '1080p',
       selection: const StreamSelectionSettings(
@@ -205,7 +209,6 @@ void main() {
       season: 1,
       episode: 1,
       streaming: _Mp4StreamingService(),
-      repository: ExtensionRepository(),
       subDub: 'sub',
       preferredQuality: null,
       inspectAudioTracks: (stream, _) {
@@ -311,7 +314,6 @@ void main() {
         season: 1,
         episode: 1,
         streaming: _UnusedStreamingService(),
-        repository: ExtensionRepository(),
         subDub: 'sub',
         preferredQuality: '1080p',
         preferredAudio: StreamSelection.pickerAudioPreference(
@@ -327,10 +329,7 @@ void main() {
         extension,
         builtIn,
       ]);
-      expect(
-        extension.pickerAudioLabel,
-        'English / Hindi / Tamil / Telugu',
-      );
+      expect(extension.pickerAudioLabel, 'English / Hindi / Tamil / Telugu');
     },
   );
 
@@ -520,7 +519,6 @@ void main() {
         season: 1,
         episode: 1,
         streaming: _UnusedStreamingService(),
-        repository: ExtensionRepository(),
         subDub: 'sub',
         preferredQuality: '1080p',
         preferredAudio: 'English',
@@ -576,7 +574,6 @@ void main() {
         season: 1,
         episode: 1,
         streaming: _UnusedStreamingService(),
-        repository: ExtensionRepository(),
         subDub: 'sub',
         preferredQuality: '1080p',
         preferredAudio: StreamSelection.pickerAudioPreference(
@@ -690,7 +687,6 @@ void main() {
       season: 1,
       episode: 1,
       streaming: _UnusedStreamingService(),
-      repository: ExtensionRepository(),
       subDub: 'sub',
       preferredQuality: '1080p',
       selection: const StreamSelectionSettings(
@@ -1023,7 +1019,6 @@ void main() {
         season: 1,
         episode: 1,
         streaming: _UnusedStreamingService(),
-        repository: ExtensionRepository(),
         subDub: 'sub',
         preferredQuality: null,
         selection: settings,
@@ -1120,6 +1115,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Choose your sources'), findsOneWidget);
+    expect(find.text('Source priority'), findsOneWidget);
+    expect(find.text('Extensions'), findsNothing);
+    expect(find.textContaining('repository'), findsNothing);
     await tester.drag(find.byType(PageView), const Offset(-300, 0));
     await tester.pumpAndSettle();
     expect(find.text('Set your playback preferences'), findsOneWidget);
@@ -1152,80 +1150,5 @@ void main() {
     expect(await hasCompletedOnboarding('test-user'), isTrue);
     expect(await hasCompletedOnboarding('different-user'), isFalse);
     expect(onboardingDestination('https://example.com/'), '/home');
-  });
-
-  testWidgets('Extensions shows repository directories and pastes the URL', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(360, 640));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    SharedPreferences.setMockInitialValues({});
-    const url = 'https://example.com/manifest.json';
-    final messenger =
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
-      if (call.method == 'Clipboard.getData') return {'text': '  $url\n'};
-      return null;
-    });
-    addTearDown(
-      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
-    );
-
-    await tester.pumpWidget(
-      const ProviderScope(child: MaterialApp(home: ExtensionsScreen())),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Nuvio plugins'), findsOneWidget);
-    expect(find.text('Cloudstream repos'), findsOneWidget);
-    await tester.tap(find.text('Paste'));
-    await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.controller!.text, url);
-    expect(
-      field.controller!.selection,
-      TextSelection.collapsed(offset: url.length),
-    );
-    expect(find.text('No repositories installed'), findsOneWidget);
-  });
-
-  testWidgets('enabling providers keeps the repository expanded', (
-    tester,
-  ) async {
-    final repo = ExtensionRepo(
-      url: Uri.https('example.com', '/manifest.json'),
-      name: 'Test repository',
-      format: ExtensionFormat.javascript,
-      entries: [
-        {'id': 'first', 'name': 'First source'},
-        {'id': 'second', 'name': 'Second source'},
-      ],
-      enabledIds: {},
-    );
-    SharedPreferences.setMockInitialValues({
-      'stream_extension_repositories': jsonEncode([repo.toJson()]),
-    });
-    await tester.pumpWidget(
-      const ProviderScope(child: MaterialApp(home: ExtensionsScreen())),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Test repository'));
-    await tester.pumpAndSettle();
-
-    final first = find.widgetWithText(SwitchListTile, 'First source');
-    final second = find.widgetWithText(SwitchListTile, 'Second source');
-    await tester.ensureVisible(first);
-    await tester.tap(first);
-    await tester.pumpAndSettle();
-    expect(tester.widget<SwitchListTile>(first).value, isTrue);
-    expect(second, findsOneWidget);
-
-    await tester.ensureVisible(second);
-    await tester.tap(second);
-    await tester.pumpAndSettle();
-    expect(tester.widget<SwitchListTile>(second).value, isTrue);
-    expect(
-      (await ExtensionRepository().list()).single.enabledIds,
-      hasLength(2),
-    );
   });
 }

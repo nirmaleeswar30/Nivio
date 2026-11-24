@@ -74,7 +74,6 @@ dependencies:
   flutter_markdown_plus: ^1.0.11
   flutter_cache_manager: any
   http: ^1.6.0
-  flutter_qjs_next: 1.5.2
   html: ^0.15.6
   simple_pip_mode: ^1.1.0
   share_plus: ^13.2.0

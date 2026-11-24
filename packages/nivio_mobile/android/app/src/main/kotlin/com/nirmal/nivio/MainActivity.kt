@@ -38,7 +38,6 @@ class MainActivity : AppCompatActivity(), FlutterEngineConfigurator {
         get() = supportFragmentManager.findFragmentByTag("flutter") as? FlutterFragment
     private val pipCallback = PipCallbackHelper()
     private var pipCallbackReady = false
-    private var cloudstreamExtensions: CloudstreamExtensions? = null
     private val CHANNEL = "com.nivio/gesture_exclusion"
     private val MEDIA_SESSION_CHANNEL = "com.nivio/media_session"
     private val WATCH_PARTY_CHANNEL = "com.nivio/watch_party_keepalive"
@@ -134,7 +133,6 @@ class MainActivity : AppCompatActivity(), FlutterEngineConfigurator {
         GeneratedPluginRegister.registerGeneratedPlugins(flutterEngine)
         pipCallback.configureFlutterEngine(flutterEngine)
         pipCallbackReady = true
-        cloudstreamExtensions = CloudstreamExtensions(this, flutterEngine.dartExecutor.binaryMessenger)
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
@@ -345,8 +343,6 @@ class MainActivity : AppCompatActivity(), FlutterEngineConfigurator {
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         pipCallbackReady = false
-        cloudstreamExtensions?.close()
-        cloudstreamExtensions = null
         stopDolbyRouteUpdates()
         dolbyRouteChannel?.setStreamHandler(null)
         dolbyRouteChannel = null

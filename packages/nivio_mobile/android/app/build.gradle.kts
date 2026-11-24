@@ -72,13 +72,6 @@ flutter {
 
 dependencies {
     implementation("androidx.appcompat:appcompat:1.7.1")
-    implementation("com.github.recloudstream.cloudstream:library:v4.7.0") {
-        // Nivio already handles YouTube and uses Firebase's Protobuf version.
-        exclude(group = "com.github.teamnewpipe", module = "NewPipeExtractor")
-        exclude(group = "com.github.AmarullisVFX", module = "newpipeextractor")
-        exclude(group = "com.github.AmaryllisVFX", module = "newpipeextractor")
-        exclude(group = "com.github.AmaryllisVFX.newpipeextractor")
-    }
 }
 
 // ── mpv: mpvlibAndroid instead of media_kit's bundled libmpv ──

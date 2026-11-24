@@ -4,9 +4,6 @@ allprojects {
     repositories {
         google()
         mavenCentral()
-        maven(url = "https://jitpack.io") {
-            content { includeGroupByRegex("com\\.github\\..*") }
-        }
     }
 }
 

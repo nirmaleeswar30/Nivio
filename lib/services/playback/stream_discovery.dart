@@ -5,10 +5,8 @@ import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/services/streaming_service.dart';
 
-import 'cnc_direct_sources.dart';
-import 'extension_repository.dart';
-import 'extension_resolver.dart';
-import 'nuvio_direct_sources.dart';
+import 'built_in_direct_sources.dart';
+import 'stream_choice.dart';
 import 'stream_selection.dart';
 import 'stream_selection_settings.dart';
 
@@ -20,7 +18,6 @@ class StreamDiscovery extends ChangeNotifier {
     required this.season,
     required this.episode,
     required this.streaming,
-    required this.repository,
     required this.subDub,
     required this.preferredQuality,
     this.preferredAudio = 'Original',
@@ -35,7 +32,6 @@ class StreamDiscovery extends ChangeNotifier {
   final int season;
   final int episode;
   final StreamingService streaming;
-  final ExtensionRepository repository;
   final String subDub;
   final String? preferredQuality;
   final String preferredAudio;
@@ -59,16 +55,8 @@ class StreamDiscovery extends ChangeNotifier {
   bool searching = true;
   bool _closed = false;
   int _generation = 0;
-  int _extensionProviderCount = 0;
 
   bool get isAnime => media.mediaType == 'anime';
-
-  String? get extensionSearchNotice =>
-      !searching &&
-          _extensionProviderCount > 0 &&
-          !choices.any((choice) => !choice.providerId.startsWith('builtin:'))
-      ? 'Enabled extensions returned no direct streams for this title.'
-      : null;
 
   late final policy = StreamSelection(
     selection,
@@ -95,7 +83,7 @@ class StreamDiscovery extends ChangeNotifier {
       _failedAudioChecks.contains(choice.id);
 
   bool canCheckAudio(StreamChoice choice) {
-    final uri = Uri.tryParse(choice.direct?.url ?? '');
+    final uri = Uri.tryParse(choice.direct.url);
     return inspectAudioTracks != null &&
         uri != null &&
         uri.host.isNotEmpty &&
@@ -119,7 +107,7 @@ class StreamDiscovery extends ChangeNotifier {
     _failedAudioChecks.remove(choice.id);
     notifyListeners();
     try {
-      final tracks = await inspect(choice.direct!, cancellation.future);
+      final tracks = await inspect(choice.direct, cancellation.future);
       if (!_current(generation) || cancellation.isCompleted) return;
       final position = choices.indexWhere(
         (current) => current.id == choice.id && current.direct == choice.direct,
@@ -215,8 +203,7 @@ class StreamDiscovery extends ChangeNotifier {
       }
       for (final choice in availableChoices) {
         if (active >= 5) break;
-        if (!choice.isDirect ||
-            !policy.eligible(choice) ||
+        if (!policy.eligible(choice) ||
             !policy.meetsAutoplayAudioPreference(choice) ||
             !checked.add(choice.id))
           continue;
@@ -260,7 +247,6 @@ class StreamDiscovery extends ChangeNotifier {
     cancelAudioCheck();
     final generation = ++_generation;
     searching = true;
-    _extensionProviderCount = 0;
     choices.clear();
     failures.clear();
     unavailable.clear();
@@ -271,13 +257,12 @@ class StreamDiscovery extends ChangeNotifier {
     var progressiveProbes = 0;
     void addResults(List<StreamChoice> results) {
       if (!_current(generation)) return;
-      final direct = results.where((choice) => choice.isDirect).toList();
-      choices.addAll(direct);
+      choices.addAll(results);
       final inspect = inspectVideoHeights;
       if (inspect != null) {
-        for (final choice in direct) {
+        for (final choice in results) {
           if (choice.knownResolutions.isNotEmpty) continue;
-          final stream = choice.direct!;
+          final stream = choice.direct;
           if (!stream.isM3U8) {
             final path = Uri.tryParse(stream.url)?.path.toLowerCase();
             if (path?.endsWith('.mp4') != true ||
@@ -310,10 +295,7 @@ class StreamDiscovery extends ChangeNotifier {
       notifyListeners();
     }
 
-    await Future.wait([
-      _searchBuiltIn(generation, addResults),
-      _searchExtensions(generation, addResults),
-    ]);
+    await _searchBuiltIn(generation, addResults);
     if (!_current(generation)) return;
     await Future.wait(_metadataLanes);
     if (_current(generation)) {
@@ -376,12 +358,7 @@ class StreamDiscovery extends ChangeNotifier {
       for (var i = 0; i < streaming.totalProvidersFor(isAnime: isAnime); i++)
         if (streaming.getProviderName(i, isAnime: isAnime) case final name
             when name != 'Nivio Torrents' &&
-                streaming.isDirectStream(i, isAnime: isAnime) &&
-                StreamingService.extensionBackedSource(
-                      name,
-                      isAnime: isAnime,
-                    ) ==
-                    null)
+                streaming.isDirectStream(i, isAnime: isAnime))
           (i, name),
     ];
     if (selection.mode != StreamSelectionMode.first) {
@@ -403,6 +380,18 @@ class StreamDiscovery extends ChangeNotifier {
     await _concurrently(providers, 5, generation, (provider) async {
       final (index, name) = provider;
       try {
+        if (!isAnime && BuiltInDirectSources.names.contains(name)) {
+          addResults(
+            await BuiltInDirectSources.resolve(
+              name,
+              media,
+              tmdb: streaming.tmdbService,
+              season: season,
+              episode: episode,
+            ),
+          );
+          return;
+        }
         final result = await streaming
             .fetchStreamUrl(
               media: media,
@@ -438,7 +427,6 @@ class StreamDiscovery extends ChangeNotifier {
               id: 'builtin:$name:$i',
               providerId: 'builtin:$name',
               provider: result.provider,
-              origin: 'Built-in source',
               title: result.provider,
               quality: selected[i].quality,
               audio: selected[i].selectedAudio.isEmpty
@@ -452,70 +440,6 @@ class StreamDiscovery extends ChangeNotifier {
         _failed(generation, name);
       }
     });
-  }
-
-  Future<void> _searchExtensions(
-    int generation,
-    void Function(List<StreamChoice>) addResults,
-  ) async {
-    final providers = [
-      for (final source in CncDirectSource.forCategory(isAnime: isAnime))
-        source.provider,
-      if (!isAnime)
-        for (var i = 0; i < streaming.totalProvidersFor(isAnime: false); i++)
-          if (NuvioDirectSources.forName(
-                streaming.getProviderName(i, isAnime: false),
-              )
-              case final provider?)
-            provider,
-    ];
-    try {
-      final repositories = await repository.list();
-      final installed = repositories
-          .expand((repo) => repo.providers)
-          .where(
-            (provider) =>
-                provider.enabled &&
-                ExtensionResolver.supports(provider.repository.format) &&
-                provider.supports(media.mediaType) &&
-                !CncDirectSource.replacesPackage(provider) &&
-                (isAnime ||
-                    NuvioDirectSources.replacementId(provider.id) == null),
-          )
-          .toList();
-      providers.addAll(installed);
-      if (!_current(generation)) return;
-      _extensionProviderCount = installed.length;
-    } catch (_) {
-      _failed(generation, 'Extensions');
-    }
-    try {
-      if (providers.isEmpty || !_current(generation)) return;
-      if (selection.mode != StreamSelectionMode.first) {
-        final ranked = providers.indexed.toList()
-          ..sort((a, b) {
-            final rank = selection
-                .sourceRank(a.$2.sourceId, isAnime: isAnime)
-                .compareTo(
-                  selection.sourceRank(b.$2.sourceId, isAnime: isAnime),
-                );
-            return rank != 0 ? rank : a.$1.compareTo(b.$1);
-          });
-        providers.setAll(0, ranked.map((entry) => entry.$2));
-      }
-      final resolver = ExtensionResolver(repository);
-      final lookup = resolver.lookup(media, season, episode);
-      await resolver.resolveAll(
-        providers,
-        lookup,
-        wantTorrent: false,
-        isCurrent: () => _current(generation),
-        onResult: (_, results) => addResults(results),
-        onError: (provider) => _failed(generation, provider.name),
-      );
-    } catch (_) {
-      _failed(generation, 'Extensions');
-    }
   }
 
   Future<void> _concurrently<T>(

@@ -590,14 +590,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.35"
-  flutter_qjs_next:
-    dependency: transitive
-    description:
-      name: flutter_qjs_next
-      sha256: e5fd66c5abdb3cb81cb6700e3cc203abb5353b244ec8e6a16ba0304faf1f21b5
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.5.2"
   flutter_riverpod:
     dependency: transitive
     description:
