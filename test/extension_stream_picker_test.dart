@@ -238,7 +238,7 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
       final discovery = _readyDiscovery()
         ..choices.addAll([
-          _vidRock.withVideoHeights([1080, 720]),
+          _vidRock.withMetadata(videoHeights: [1080, 720]),
           StreamChoice(
             id: 'builtin:VidRock:1',
             providerId: 'builtin:VidRock',
@@ -263,24 +263,47 @@ void main() {
       expect(find.text('Direct link'), findsOneWidget);
       expect(find.text('Torrent release'), findsNothing);
       expect(find.text('Auto Select Stream'), findsOneWidget);
-      expect(
-        tester
-            .widget<DropdownButton<int>>(find.byType(DropdownButton<int>))
-            .value,
-        1080,
-      );
+      expect(find.byTooltip('Stream filters'), findsNothing);
+      expect(find.byType(TextField), findsNothing);
+      final resolution = find.byType(DropdownButton<int>);
+      expect(tester.widget<DropdownButton<int>>(resolution).value, 1080);
       expect(find.byTooltip('Stream settings'), findsOneWidget);
       expect(find.text('1080p / 720p'), findsOneWidget);
       expect(find.text('Nova'), findsOneWidget);
+      final results = find
+          .descendant(
+            of: find.byWidgetPredicate(
+              (widget) =>
+                  widget is ListView && widget.scrollDirection == Axis.vertical,
+            ),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+      await tester.scrollUntilVisible(
+        find.text('Auto · resolution unknown'),
+        100,
+        scrollable: results,
+      );
       expect(find.text('Auto · resolution unknown'), findsOneWidget);
 
-      await tester.enterText(find.byType(TextField), 'unknown');
+      tester.state<ScrollableState>(results).position.jumpTo(0);
       await tester.pumpAndSettle();
-      expect(find.text('No direct streams found.'), findsOneWidget);
-      await tester.enterText(find.byType(TextField), '');
+      await tester.tap(resolution);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('2160p').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Direct link'), findsNothing);
+      expect(find.text('VidRock alternate'), findsOneWidget);
+      await tester.tap(resolution);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Any').last);
       discovery.markFailed(_direct);
       await tester.pumpAndSettle();
       expect(find.textContaining('Couldn’t open this stream'), findsOneWidget);
+      discovery.markFailed(_direct, rateLimited: true);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('HTTP 429'), findsOneWidget);
+      expect(find.textContaining('Couldn’t open this stream'), findsNothing);
       await tester.pumpWidget(const SizedBox());
       discovery.dispose();
     },
@@ -293,6 +316,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final discovery = _readyDiscovery();
     StreamPickerOutcome? picked;
+    var pickerReturned = false;
     await tester.pumpWidget(
       MaterialApp(
         home: Builder(
@@ -300,6 +324,7 @@ void main() {
             body: TextButton(
               onPressed: () async {
                 picked = await DirectStreamPickerSheet.show(context, discovery);
+                pickerReturned = true;
               },
               child: const Text('Choose a source'),
             ),
@@ -312,6 +337,14 @@ void main() {
     expect(find.text('Example movie'), findsOneWidget);
     expect(find.byType(DirectStreamPickerSheet), findsOneWidget);
 
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(pickerReturned, isFalse);
+    await tester.pumpAndSettle();
+    expect(pickerReturned, isTrue);
+    expect(picked, isNull);
+    await tester.tap(find.text('Choose a source'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Direct link'));
     await tester.pumpAndSettle();
     expect(picked?.choice, _direct);
@@ -331,6 +364,7 @@ void main() {
           'torrent_auto_select': duringPlayback,
         });
         (TorrentResult, dynamic, {bool automatic})? picked;
+        var pickerReturned = false;
         await tester.pumpWidget(
           MaterialApp(
             home: Builder(
@@ -350,6 +384,7 @@ void main() {
                       torrentStreamService: _PickerTorrents(),
                       autoSelect: duringPlayback ? false : null,
                     );
+                    pickerReturned = true;
                   },
                   child: const Text('Open torrent picker'),
                 ),
@@ -366,8 +401,11 @@ void main() {
         if (duringPlayback) {
           await tester.pump(const Duration(seconds: 6));
           expect(picker, findsOneWidget);
-          Navigator.of(tester.element(picker)).pop();
+          await tester.binding.handlePopRoute();
+          await tester.pump();
+          expect(pickerReturned, isFalse);
           await tester.pumpAndSettle();
+          expect(pickerReturned, isTrue);
           expect(picked, isNull);
           await tester.tap(open);
           await tester.pumpAndSettle();

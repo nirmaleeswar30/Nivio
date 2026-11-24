@@ -1,6 +1,5 @@
 import 'package:nivio/widgets/tab_artwork.dart';
 import 'dart:io';
-import 'dart:ui';
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/core/tv_focus.dart';
 import 'package:flutter/material.dart';
@@ -39,10 +38,8 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   bool _scrolled = false;
   String? _lastLocation;
 
-  // Frosted mobile nav: hides when scrolling down, reappears when scrolling up
-  // or when the view is back at the top.
-  bool _navVisible = true;
-  bool _keyboardWasOpen = false;
+  bool _navExpanded = true;
+  double _navScrollDelta = 0;
 
   // TV: the side rail, so Back can jump to it (see _onWillPop).
   final FocusNode _railGroupNode = FocusNode(debugLabel: 'tvRail');
@@ -176,23 +173,23 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     }
   }
 
-  // Drives the hide-on-scroll behaviour of the mobile frosted nav.
+  // Keep the destinations in reach while the pill and its labels collapse.
   bool _handleMobileScroll(ScrollNotification notification) {
-    if (notification.metrics.axis != Axis.vertical) return false;
+    if (notification.depth != 0 || notification.metrics.axis != Axis.vertical) return false;
     if (notification is ScrollUpdateNotification) {
       final pixels = notification.metrics.pixels;
-      final delta = notification.scrollDelta ?? 0;
-
-      // Always reveal near the very top so the bar greets you there.
+      final delta = notification.scrollDelta ?? 0.0;
       if (pixels <= 24) {
-        if (!_navVisible) setState(() => _navVisible = true);
+        _navScrollDelta = 0;
+        if (!_navExpanded) setState(() => _navExpanded = true);
         return false;
       }
-      // Ignore tiny jitter; otherwise hide when scrolling down, show when up.
-      if (delta > 6 && _navVisible) {
-        setState(() => _navVisible = false);
-      } else if (delta < -6 && !_navVisible) {
-        setState(() => _navVisible = true);
+      if (delta == 0) return false;
+      _navScrollDelta = _navScrollDelta.sign == delta.sign ? _navScrollDelta + delta : delta;
+      if (_navScrollDelta.abs() >= 60) {
+        final expanded = _navScrollDelta < 0;
+        _navScrollDelta = 0;
+        if (_navExpanded != expanded) setState(() => _navExpanded = expanded);
       }
     }
     return false;
@@ -205,10 +202,10 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   bool _handleMobileScrollMetrics(ScrollMetricsNotification notification) {
     final metrics = notification.metrics;
     if (notification.depth != 0 || metrics.axis != Axis.vertical) return false;
-    if (_navVisible) return false;
+    if (_navExpanded) return false;
     final notScrollable = metrics.maxScrollExtent <= metrics.minScrollExtent;
     if (notScrollable || metrics.pixels <= 24) {
-      setState(() => _navVisible = true);
+      setState(() => _navExpanded = true);
     }
     return false;
   }
@@ -504,7 +501,8 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     if (_lastLocation != location) {
       _lastLocation = location;
       _scrolled = false;
-      _navVisible = true;
+      _navExpanded = true;
+      _navScrollDelta = 0;
     }
 
     final leftPadding = 0.0;
@@ -565,13 +563,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     final mq = MediaQuery.of(context);
     final navReserve = 64.0 + 12.0 + mq.padding.bottom;
 
-    // The keyboard covers the bar, so hide it while the keyboard is up and
-    // bring it back once the keyboard closes (scrolling a focused field into
-    // view may have hidden it, and the page may no longer be scrollable).
     final keyboardOpen = mq.viewInsets.bottom > 0;
-    if (_keyboardWasOpen && !keyboardOpen) _navVisible = true;
-    _keyboardWasOpen = keyboardOpen;
-    final showNav = _navVisible && !keyboardOpen;
     final useLiquidGlassNav = ref.watch(liquidGlassNavProvider);
 
     return WillPopScope(
@@ -608,39 +600,36 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
               right: 0,
               bottom: 0,
               child: ExcludeSemantics(
-                excluding: !showNav,
+                excluding: keyboardOpen,
                 child: IgnorePointer(
-                  ignoring: !showNav,
+                  ignoring: keyboardOpen,
                   child: AnimatedSlide(
-                    offset: showNav ? Offset.zero : const Offset(0, 1.4),
-                    duration: const Duration(milliseconds: 520),
-                    curve: Curves.easeInOutCubicEmphasized,
-                    // The glass backdrop shader cannot inherit opacity on Impeller.
-                    child: useLiquidGlassNav
-                        ? LiquidGlassNav(
-                            items: [
-                              for (final item in _NivioFloatingNavState._navItems)
-                                LiquidGlassNavItem(
-                                  icon: item.$1,
-                                  selectedIcon: item.$2,
-                                  label: item.$3,
-                                ),
-                            ],
-                            currentIndex: widget.navigationShell.currentIndex,
-                            onTap: _onTap,
-                            isDark: true,
-                            accentColor: accentColor,
-                          )
-                        : AnimatedOpacity(
-                            opacity: showNav ? 1 : 0,
-                            duration: const Duration(milliseconds: 420),
-                            curve: Curves.easeOutCubic,
-                            child: _NivioFloatingNav(
-                              currentIndex: widget.navigationShell.currentIndex,
-                              onTap: _onTap,
-                              accentColor: accentColor,
+                    offset: keyboardOpen ? const Offset(0, 1.4) : Offset.zero,
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween(end: _navExpanded ? 1 : 0),
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : const Duration(milliseconds: 280),
+                      curve: const Cubic(0.2, 0, 0, 1),
+                      builder: (context, fraction, _) => LiquidGlassNav(
+                        items: [
+                          for (final item in _mobileNavItems)
+                            LiquidGlassNavItem(
+                              icon: item.$1,
+                              selectedIcon: item.$2,
+                              label: item.$3,
                             ),
-                          ),
+                        ],
+                        currentIndex: widget.navigationShell.currentIndex,
+                        onTap: _onTap,
+                        isDark: true,
+                        accentColor: accentColor,
+                        labelFraction: fraction,
+                        frosted: !useLiquidGlassNav,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -653,288 +642,12 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
 
 }
 
-/// Floating frosted navigation bar with a sliding radial-glow indicator that
-/// tracks the active tab, plus a bounce on selection. Ported from the standard
-/// floating nav design.
-class _NivioFloatingNav extends StatefulWidget {
-  final int currentIndex;
-  final ValueChanged<int> onTap;
-  final Color accentColor;
-
-  const _NivioFloatingNav({
-    required this.currentIndex,
-    required this.onTap,
-    required this.accentColor,
-  });
-
-  @override
-  State<_NivioFloatingNav> createState() => _NivioFloatingNavState();
-}
-
-class _NivioFloatingNavState extends State<_NivioFloatingNav>
-    with TickerProviderStateMixin {
-  late AnimationController _slideController;
-  late AnimationController _bounceController;
-  late Animation<double> _slideAnimation;
-  late Animation<double> _bounceAnimation;
-  int _previousIndex = 0;
-
-  static const _navItems = <(IconData, IconData, String)>[
-    (PhosphorIconsRegular.house, PhosphorIconsFill.house, 'Home'),
-    (PhosphorIconsRegular.calendarBlank, PhosphorIconsFill.calendarCheck, 'Library'),
-    (PhosphorIconsRegular.television, PhosphorIconsFill.television, 'Live TV'),
-    (PhosphorIconsRegular.users, PhosphorIconsFill.users, 'Party'),
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _previousIndex = widget.currentIndex;
-
-    _slideController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 400),
-    );
-    _bounceController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-
-    _slideAnimation = Tween<double>(
-      begin: widget.currentIndex.toDouble(),
-      end: widget.currentIndex.toDouble(),
-    ).animate(
-      CurvedAnimation(parent: _slideController, curve: Curves.easeOutBack),
-    );
-    _bounceAnimation = _makeBounce();
-  }
-
-  Animation<double> _makeBounce() {
-    return TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.85), weight: 20),
-      TweenSequenceItem(tween: Tween(begin: 0.85, end: 1.1), weight: 40),
-      TweenSequenceItem(tween: Tween(begin: 1.1, end: 1.0), weight: 40),
-    ]).animate(
-      CurvedAnimation(parent: _bounceController, curve: Curves.easeOut),
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant _NivioFloatingNav oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.currentIndex != widget.currentIndex) {
-      _previousIndex = oldWidget.currentIndex;
-      _slideAnimation = Tween<double>(
-        begin: _previousIndex.toDouble(),
-        end: widget.currentIndex.toDouble(),
-      ).animate(
-        CurvedAnimation(parent: _slideController, curve: Curves.easeOutBack),
-      );
-      _slideController.forward(from: 0);
-
-      _bounceAnimation = _makeBounce();
-      _bounceController.forward(from: 0);
-    }
-  }
-
-  @override
-  void dispose() {
-    _slideController.dispose();
-    _bounceController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
-    final accent = widget.accentColor;
-    final bottomMargin = (bottomPadding > 0 ? bottomPadding : 10.0) + 14.0;
-
-    return Padding(
-      padding: EdgeInsets.fromLTRB(10, 0, 10, bottomMargin),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(32),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.30),
-              blurRadius: 16,
-              spreadRadius: 1,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(32),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(
-              height: 64,
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.black.withValues(alpha: 0.62),
-                    const Color(0xFF101010).withValues(alpha: 0.56),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(32),
-                border: Border.all(
-                  color: accent.withValues(alpha: 0.38),
-                  width: 1.0,
-                ),
-              ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final itemWidth = constraints.maxWidth / _navItems.length;
-                  const indicatorWidth = 44.0;
-
-                  return Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Sliding radial glow indicator behind the active tab.
-                      AnimatedBuilder(
-                        animation: _slideController,
-                        builder: (context, child) {
-                          final position = _slideController.isAnimating
-                              ? _slideAnimation.value
-                              : widget.currentIndex.toDouble();
-                          final leftOffset =
-                              (itemWidth - indicatorWidth) / 2 +
-                              (position * itemWidth);
-
-                          return Positioned(
-                            left: leftOffset,
-                            top: (56.0 - indicatorWidth) / 2,
-                            child: Container(
-                              width: indicatorWidth,
-                              height: indicatorWidth,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: RadialGradient(
-                                  colors: [
-                                    accent.withValues(alpha: 0.35),
-                                    accent.withValues(alpha: 0.10),
-                                    accent.withValues(alpha: 0.0),
-                                  ],
-                                  stops: const [0.0, 0.5, 1.0],
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: accent.withValues(alpha: 0.40),
-                                    blurRadius: 16,
-                                    spreadRadius: 2,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      // Nav items.
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: List.generate(_navItems.length, (index) {
-                          final item = _navItems[index];
-                          final isSelected = widget.currentIndex == index;
-
-                          return GestureDetector(
-                            onTap: () {
-                              HapticFeedback.selectionClick();
-                              widget.onTap(index);
-                            },
-                            behavior: HitTestBehavior.opaque,
-                            child: SizedBox(
-                              width: itemWidth,
-                              child: AnimatedBuilder(
-                                animation: _bounceController,
-                                builder: (context, child) {
-                                  final scale = isSelected &&
-                                          _bounceController.isAnimating
-                                      ? _bounceAnimation.value
-                                      : 1.0;
-                                  return Transform.scale(
-                                    scale: scale,
-                                    child: _NivioNavItem(
-                                      icon: item.$1,
-                                      selectedIcon: item.$2,
-                                      label: item.$3,
-                                      isSelected: isSelected,
-                                      accentColor: accent,
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                          );
-                        }),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _NivioNavItem extends StatelessWidget {
-  final IconData icon;
-  final IconData selectedIcon;
-  final String label;
-  final bool isSelected;
-  final Color accentColor;
-
-  const _NivioNavItem({
-    required this.icon,
-    required this.selectedIcon,
-    required this.label,
-    required this.isSelected,
-    required this.accentColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOutCubic,
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isSelected
-                ? accentColor.withValues(alpha: 0.15)
-                : Colors.transparent,
-          ),
-          child: PhosphorIcon(
-            isSelected ? selectedIcon : icon,
-            size: isSelected ? 23 : 21,
-            color: isSelected ? accentColor : NivioTheme.netflixLightGrey,
-          ),
-        ),
-        const SizedBox(height: 1),
-        AnimatedDefaultTextStyle(
-          duration: const Duration(milliseconds: 200),
-          style: TextStyle(
-            fontSize: isSelected ? 10.5 : 9.5,
-            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-            color: isSelected ? accentColor : NivioTheme.netflixLightGrey,
-            letterSpacing: isSelected ? 0.2 : 0,
-          ),
-          child: Text(label),
-        ),
-      ],
-    );
-  }
-}
+const _mobileNavItems = <(IconData, IconData, String)>[
+  (PhosphorIconsRegular.house, PhosphorIconsFill.house, 'Home'),
+  (PhosphorIconsRegular.calendarBlank, PhosphorIconsFill.calendarCheck, 'Library'),
+  (PhosphorIconsRegular.television, PhosphorIconsFill.television, 'Live TV'),
+  (PhosphorIconsRegular.users, PhosphorIconsFill.users, 'Party'),
+];
 
 class _AnimatedIconWrapper extends StatefulWidget {
   final Widget child;

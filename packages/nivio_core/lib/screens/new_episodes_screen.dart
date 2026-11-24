@@ -211,19 +211,6 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
       firstDate: DateTime(2020, 1, 1),
       lastDate: DateTime(2030, 12, 31),
       initialDatePickerMode: DatePickerMode.year,
-      builder: (context, child) {
-        return Theme(
-          data: ThemeData.dark().copyWith(
-            colorScheme: ColorScheme.dark(
-              primary: NivioTheme.accentColorOf(context),
-              onPrimary: Colors.white,
-              surface: const Color(0xFF1E1E1E),
-              onSurface: Colors.white,
-            ),
-          ),
-          child: child!,
-        );
-      },
     );
     if (picked != null) {
       final nowStart = _getStartOfWeek(DateTime.now());
@@ -346,7 +333,9 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                         child: Text(
                           '${date.day}',
                           style: TextStyle(
-                            color: isSelected || isToday ? Colors.white : (isWeekend ? Colors.white70 : Colors.white),
+                            color: isSelected
+                                ? Theme.of(context).colorScheme.onPrimary
+                                : isToday || !isWeekend ? Colors.white : Colors.white70,
                           ),
                         ),
                       ),

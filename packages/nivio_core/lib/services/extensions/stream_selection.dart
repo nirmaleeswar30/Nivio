@@ -86,22 +86,47 @@ class StreamSelection {
     final text = choice.releaseLabel;
     if (settings.exclusions.any((term) => _blocked[term]!.hasMatch(text)))
       return false;
-    final size = choice.byteSize;
+    if (!fitsFileSizeLimit(choice)) return false;
+    return !settings.matchAudio ||
+        (_wantedAudio.isNotEmpty && choice.audioTracks.isEmpty) ||
+        _audioMatch(choice) > 0;
+  }
+
+  bool fitsFileSizeLimit(StreamChoice choice, {bool allowUnknown = false}) {
     final limit = settings.maxFileBytes;
-    if (limit != null && (size == null || size > limit)) return false;
-    return !settings.matchAudio || _audioMatch(choice) > 0;
+    if (limit == null) return true;
+    final size = choice.displaySizeBytes;
+    return size == null ? allowUnknown : size <= limit;
   }
 
   int _audioMatch(StreamChoice choice) {
     if (_wantedAudio.isNotEmpty) {
+      if (choice.audioTracks.isNotEmpty) {
+        final tracks = choice.audioTracks.map(_languageCodes);
+        if (tracks.any((codes) => codes.any(_wantedAudio.contains))) return 2;
+        return tracks.any((codes) => codes.isEmpty) ? 1 : 0;
+      }
       final tracks = _languageCodes(choice.audio ?? '');
+      if (_wantedAudio.any(tracks.contains) ||
+          _wantedAudio.any(choice.namedAudioLanguages.contains)) {
+        return 2;
+      }
       if (tracks.isEmpty) return 1;
-      return _wantedAudio.any(tracks.contains) ? 2 : 0;
+      return 0;
     }
     if (isAnime) {
+      final preference = animeAudio.toLowerCase();
       final type = choice.audioType?.toLowerCase();
-      if (type == 'both' || type == animeAudio.toLowerCase()) return 2;
+      if (type == 'both' || type == preference) return 2;
       if (type != null) return 0;
+      if (preference == 'sub' &&
+          (choice.audioTracks.any(
+                (track) => _languageCodes(track).contains('ja'),
+              ) ||
+              _languageCodes(choice.audio ?? '').contains('ja') ||
+              choice.namedAudioLanguages.contains('ja'))) {
+        return 2;
+      }
     }
     final requested = audio.trim().toLowerCase();
     return isAnime || !const {'', 'original', 'auto'}.contains(requested)
@@ -119,6 +144,17 @@ class StreamSelection {
     if (wanted.isEmpty) return false;
     return label.trim().toLowerCase() == wanted ||
         _languageCodes(label).any(_languageCodes(wanted).contains);
+  }
+
+  /// A title's saved track is a fallback when the picker has no explicit
+  /// language preference in Playback settings.
+  static String pickerAudioPreference(String preferred, {String? savedTrack}) {
+    final preference = preferred.trim();
+    if (const {'', 'original', 'auto'}.contains(preference.toLowerCase())) {
+      final saved = savedTrack?.trim();
+      if (saved != null && saved.isNotEmpty) return saved;
+    }
+    return preference;
   }
 
   static String? _languageCode(String label) {
@@ -156,8 +192,117 @@ class StreamSelection {
     'vi': ['vie', 'vietnamese'],
   };
 
-  bool confirmedAudio(StreamChoice choice) =>
+  static final _releaseGroup = RegExp(r'\[([^\[\]]+)\]|\(([^()]+)\)');
+  static final _releaseMarker = RegExp(
+    r'(?<![a-z0-9])(?:(?:240|360|480|540|576|720|1080|1440|2160)[pi]|4k|uhd|web[ ._-]?dl|web[ ._-]?rip|blu[ ._-]?ray|remux|x26[45]|hevc)(?![a-z0-9])',
+    caseSensitive: false,
+  );
+  static final _labelSeparator = RegExp(r'\s+[-–—]\s+|[|:\n]');
+  static final _subtitleMarker = RegExp(
+    r'(?<![a-z])(?:subtitles?|subbed|subs?|srt|vtt|esubs?)(?![a-z])',
+    caseSensitive: false,
+  );
+  static final _audioMarker = RegExp(
+    r'🎧|🔊|(?<![a-z])(?:dual[ ._-]?audio|multi[ ._-]?audio|multi[ ._-]?dub|audio|dubbed|dub|ddp?|eac3|aac|atmos|dts|truehd)(?![a-z])',
+    caseSensitive: false,
+  );
+  static final _releaseFormats = {
+    'Remux': RegExp(r'\bremux\b', caseSensitive: false),
+    'BluRay': RegExp(r'\bblu[ .-]?ray\b', caseSensitive: false),
+    'WEB-DL': RegExp(r'\bweb[ .-]?dl\b', caseSensitive: false),
+    'WEBRip': RegExp(r'\bweb[ .-]?rip\b', caseSensitive: false),
+  };
+
+  static bool _isLanguageList(String text) {
+    final words = text
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((word) => word.isNotEmpty);
+    return words.isNotEmpty &&
+        words.every((word) => word == 'and' || _languageCode(word) != null);
+  }
+
+  /// Reads language hints only from release metadata, away from the film title.
+  static Set<String> releaseAudioLanguages(String name) {
+    final languages = <String>{};
+    for (final match in _releaseGroup.allMatches(name)) {
+      final tag = match.group(1) ?? match.group(2)!;
+      if (_subtitleMarker.hasMatch(tag)) continue;
+      if (_audioMarker.hasMatch(tag) ||
+          _releaseMarker.hasMatch(tag) ||
+          _isLanguageList(tag)) {
+        languages.addAll(_languageCodes(tag.replaceAll(RegExp(r'[-_]'), ' ')));
+      }
+    }
+
+    final plain = name.replaceAll(_releaseGroup, ' ');
+    final marker = _releaseMarker.firstMatch(plain);
+    // Provider labels can put audio before the quality, e.g. “Mirror -
+    // English, Tamil 1080p”. Only read explicit fields made of language names.
+    final leading = plain.substring(0, marker?.start ?? plain.length);
+    final fields = leading.split(_labelSeparator);
+    final audioFields = fields
+        .skip(1)
+        .toList()
+        .reversed
+        .takeWhile(_isLanguageList);
+    for (final field in audioFields.toList().reversed) {
+      languages.addAll(_languageCodes(field.replaceAll(RegExp(r'[-_]'), ' ')));
+    }
+    for (final line in [
+      if (marker != null) plain.substring(marker.end),
+      ...plain.split('\n').skip(1).where(_audioMarker.hasMatch),
+    ]) {
+      final subtitle = _subtitleMarker.firstMatch(line);
+      // A subtitle marker can follow the language it describes.
+      if (subtitle != null) continue;
+      // Outside brackets, ISO two-letter codes are often ordinary words.
+      for (final word in line.toLowerCase().split(RegExp(r'[^a-z0-9]+'))) {
+        if (word.length < 3) continue;
+        if (_languageCode(word) case final String code) languages.add(code);
+      }
+    }
+    return languages;
+  }
+
+  static String? releaseAudioLabel(String name) {
+    final languages = releaseAudioLanguages(name);
+    if (languages.isNotEmpty) return languages.map(_languageName).join(' / ');
+    final hint = _audioMarker.stringMatch(name)?.toLowerCase();
+    if (hint?.startsWith('dual') == true) return 'Dual audio';
+    if (hint?.startsWith('multi') == true) return 'Multi audio';
+    return null;
+  }
+
+  static Iterable<String> releaseFormats(String name) sync* {
+    final normalized = name.replaceAll('_', ' ');
+    for (final entry in _releaseFormats.entries) {
+      if (entry.value.hasMatch(normalized)) yield entry.key;
+    }
+  }
+
+  static String _languageName(String code) {
+    final name = _languages[code]?.firstWhere((alias) => alias.length > 3);
+    return name == null ? code : '${name[0].toUpperCase()}${name.substring(1)}';
+  }
+
+  bool meetsAutoplayAudioPreference(StreamChoice choice) =>
       !settings.matchAudio || _audioMatch(choice) == 2;
+
+  static bool isUnspecifiedAudioLanguage(String? language) => const {
+    '',
+    'und',
+    'unknown',
+    'auto',
+    'default',
+    'none',
+    'unk',
+  }.contains(language?.trim().toLowerCase() ?? '');
+
+  static String audioTrackLanguage(String? language, String? title) {
+    if (!isUnspecifiedAudioLanguage(language)) return language!.trim();
+    return _languageCodes(title ?? '').isEmpty ? 'und' : title!.trim();
+  }
 
   bool hasPreferredSubtitles(StreamChoice choice) {
     return _wantedSubtitles.isNotEmpty &&
@@ -183,8 +328,8 @@ class StreamSelection {
   }
 
   int compareSources(StreamChoice a, StreamChoice b) => settings
-      .sourceRank(a.selectionSourceId)
-      .compareTo(settings.sourceRank(b.selectionSourceId));
+      .sourceRank(a.selectionSourceId, isAnime: isAnime)
+      .compareTo(settings.sourceRank(b.selectionSourceId, isAnime: isAnime));
 
   Future<List<StreamChoice>> ranked(
     Iterable<StreamChoice> input, {
@@ -203,7 +348,7 @@ class StreamSelection {
     }
     final indexed = choices.indexed.toList();
     final qualities = usePreset
-        ? {for (final choice in choices) choice.id: _qualityRank(choice)}
+        ? {for (final choice in choices) choice.id: resolutionRank(choice)}
         : const <String, int>{};
     final features = usePreset
         ? {for (final choice in choices) choice.id: _featureScore(choice)}
@@ -229,8 +374,8 @@ class StreamSelection {
         final byFeatures = features[y.id]!.compareTo(features[x.id]!);
         if (byFeatures != 0) return byFeatures;
         if (settings.preset == StreamPreset.dataSaver) {
-          final bySize = (x.byteSize ?? 1 << 60).compareTo(
-            y.byteSize ?? 1 << 60,
+          final bySize = (x.displaySizeBytes ?? 1 << 60).compareTo(
+            y.displaySizeBytes ?? 1 << 60,
           );
           if (bySize != 0) return bySize;
         }
@@ -244,12 +389,11 @@ class StreamSelection {
     return indexed.map((entry) => entry.$2).toList();
   }
 
-  int _qualityRank(StreamChoice choice) {
+  int resolutionRank(StreamChoice choice, {List<int>? priority}) {
+    final resolutions = priority ?? settings.resolutions;
     final heights = choice.knownResolutions;
-    final index = settings.resolutions.indexWhere(heights.contains);
-    return index >= 0
-        ? index
-        : settings.resolutions.length + (heights.isEmpty ? 1 : 0);
+    final index = resolutions.indexWhere(heights.contains);
+    return index >= 0 ? index : resolutions.length + (heights.isEmpty ? 1 : 0);
   }
 
   int _featureScore(StreamChoice choice) {
@@ -260,25 +404,50 @@ class StreamSelection {
 
 extension StreamSelectionMetadata on StreamChoice {
   static final _height = RegExp(
-    r'(?<!\d)(2160|1440|1080|720|576|540|480|360|240)(?:[pi](?![a-z])|\b)',
+    r'(?<!\d)(2160|1440|1080|720|576|540|480|360|240)(?:[pi](?![a-z])|\b)|(?<![a-z0-9])(?:4k|uhd)(?![a-z0-9])',
     caseSensitive: false,
   );
 
+  static int? _readHeight(String text) {
+    final match = _height.firstMatch(text.replaceAll('_', ' '));
+    return match == null ? null : int.tryParse(match.group(1) ?? '') ?? 2160;
+  }
+
   String get selectionSourceId => streamSelectionSourceId(providerId);
+  Set<String> get namedAudioLanguages =>
+      StreamSelection.releaseAudioLanguages(title);
+
+  String? get pickerAudioLabel {
+    if (audioTracks.isNotEmpty) {
+      final labels = <String>{};
+      for (final (index, raw) in audioTracks.indexed) {
+        final label = raw.trim();
+        if (StreamSelection.isUnspecifiedAudioLanguage(label)) {
+          labels.add('Track ${index + 1} · Language unknown');
+          continue;
+        }
+        final code = StreamSelection._languageCode(label.toLowerCase());
+        labels.add(code == null ? label : StreamSelection._languageName(code));
+      }
+      return labels.join(' / ');
+    }
+    final reported = audio?.trim();
+    final fromName = StreamSelection.releaseAudioLabel(title);
+    if (fromName != null) return fromName;
+    return audioType ??
+        (reported == null || reported.isEmpty ? null : reported);
+  }
+
   String get releaseLabel =>
       '$provider $quality ${audio ?? ''} $title'.split('\n').join(' ').trim();
   int? get resolution {
     if (videoHeights.length == 1) return videoHeights.single;
     return reportedResolution ??
         torrent?.parsed.resolution ??
-        int.tryParse(_height.firstMatch(title)?.group(1) ?? '');
+        _readHeight(title);
   }
 
-  int? get reportedResolution {
-    final qualityLabel = quality.toLowerCase().trim();
-    if (qualityLabel == '4k' || qualityLabel == 'uhd') return 2160;
-    return int.tryParse(_height.firstMatch(qualityLabel)?.group(1) ?? '');
-  }
+  int? get reportedResolution => _readHeight(quality);
 
   List<int> get knownResolutions => videoHeights.isNotEmpty
       ? videoHeights

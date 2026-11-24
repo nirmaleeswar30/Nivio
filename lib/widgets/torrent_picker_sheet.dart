@@ -1,16 +1,22 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/models/search_result.dart';
+import 'package:nivio/models/stream_size.dart';
 import 'package:nivio/services/torrent/torrent_models.dart';
 import 'package:nivio/services/torrent/media_torrent_models.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
 import 'package:nivio/widgets/skeleton.dart';
 import 'package:nivio/services/streaming_service.dart';
 import 'package:nivio/widgets/marquee_text.dart';
+import 'package:nivio/widgets/mobile_stream_picker.dart';
+import 'package:nivio/screens/stream_selection_screen.dart';
+import 'package:nivio/services/extensions/stream_selection_settings.dart';
+import 'package:nivio/services/extensions/stream_selection.dart';
 
 class TorrentPickerSheet extends StatefulWidget {
   final SearchResult media;
@@ -23,7 +29,9 @@ class TorrentPickerSheet extends StatefulWidget {
   final bool isFullScreen;
   /// Uses the saved torrent setting when no playback mode overrides it.
   final bool? autoSelect;
+  final bool groupBySource;
   final int? maxFileBytes;
+  final Future<TorrentStreamService> Function(StreamSelectionSettings)? refreshSearch;
 
   const TorrentPickerSheet({
     super.key,
@@ -36,7 +44,9 @@ class TorrentPickerSheet extends StatefulWidget {
     this.onStatusUpdate,
     this.isFullScreen = false,
     this.autoSelect,
+    this.groupBySource = true,
     this.maxFileBytes,
+    this.refreshSearch,
   });
 
   static Future<(TorrentResult, dynamic, {bool automatic})?> show(
@@ -49,12 +59,16 @@ class TorrentPickerSheet extends StatefulWidget {
     required TorrentStreamService torrentStreamService,
     void Function(String status)? onStatusUpdate,
     bool? autoSelect,
+    bool groupBySource = true,
     int? maxFileBytes,
-  }) {
+    List<DeviceOrientation> restoreOrientations = const [],
+    Future<TorrentStreamService> Function(StreamSelectionSettings)? refreshSearch,
+  }) async {
     final isMobile = Platform.isAndroid || Platform.isIOS;
     if (isMobile) {
-      return Navigator.of(context).push<(TorrentResult, dynamic, {bool automatic})>(
-        MaterialPageRoute(
+      return pushMobileStreamPicker(
+        Navigator.of(context),
+        MaterialPageRoute<(TorrentResult, dynamic, {bool automatic})>(
           builder: (context) => Scaffold(
             backgroundColor: const Color(0xFF0F0F0F),
             body: TorrentPickerSheet(
@@ -67,16 +81,20 @@ class TorrentPickerSheet extends StatefulWidget {
               onStatusUpdate: onStatusUpdate,
               isFullScreen: true,
               autoSelect: autoSelect,
+              groupBySource: groupBySource,
               maxFileBytes: maxFileBytes,
+              refreshSearch: refreshSearch,
             ),
           ),
         ),
+        restoreOrientations,
       );
     }
 
-    return showDialog<(TorrentResult, dynamic, {bool automatic})>(
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final route = DialogRoute<(TorrentResult, dynamic, {bool automatic})>(
       context: context,
-      barrierDismissible: true,
+      themes: InheritedTheme.capture(from: context, to: navigator.context),
       barrierColor: Colors.black.withOpacity(0.8), // Darker backdrop for cinematic feel
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
@@ -91,10 +109,15 @@ class TorrentPickerSheet extends StatefulWidget {
           onStatusUpdate: onStatusUpdate,
           isFullScreen: false,
           autoSelect: autoSelect,
+          groupBySource: groupBySource,
           maxFileBytes: maxFileBytes,
+          refreshSearch: refreshSearch,
         ),
       ),
     );
+    final selection = await navigator.push(route);
+    if (selection == null) await route.completed;
+    return selection;
   }
 
   @override
@@ -116,12 +139,16 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
   Timer? _autoPlayTimer;
   int _countdown = 5;
   bool _isCancelled = false;
+  String? _mobileSource;
+  late var _searchService = widget.torrentStreamService;
+  late var _maxFileBytes = widget.maxFileBytes;
+  late var _groupBySource = widget.groupBySource;
 
   bool get _isAnime => StreamingService.isAnimeMedia(widget.media);
   bool get _isMovie => !_isAnime && widget.media.mediaType == 'movie';
 
   TorrentResult? get _autoSelectCandidate {
-    final limit = widget.maxFileBytes;
+    final limit = _maxFileBytes;
     final results = _filteredResults;
     if (limit == null || results == null) return results?.firstOrNull;
     return results
@@ -130,7 +157,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
   }
 
   void _showResults(List<TorrentResult> results) {
-    final limit = widget.maxFileBytes;
+    final limit = _maxFileBytes;
     // A pack's total size does not tell us the size of the episode inside it.
     final visible = limit == null
         ? results
@@ -170,7 +197,6 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
     setState(() {
       _filteredResults = null;
       _error = null;
-      _isCancelled = false;
     });
     
     _autoPlayTimer?.cancel();
@@ -178,7 +204,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
     try {
       List<TorrentResult> results;
       if (_isAnime) {
-        final animeQuery = await widget.torrentStreamService.queryBuilder.build(
+        final animeQuery = await _searchService.queryBuilder.build(
           widget.media,
           _episode,
           season: widget.initialSeason,
@@ -188,7 +214,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         if (!mounted || request != _searchRequest) return;
         _currentQuery = animeQuery;
         
-        results = await widget.torrentStreamService.searchTorrents(
+        results = await _searchService.searchTorrents(
           query: animeQuery,
           onStatus: widget.onStatusUpdate,
         );
@@ -196,8 +222,8 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         final isMovie = _isMovie;
         widget.onStatusUpdate?.call('Resolving IMDb ID…');
         String? imdbId;
-        if (widget.torrentStreamService.tmdbService != null) {
-          imdbId = await widget.torrentStreamService.tmdbService!.getImdbId(
+        if (_searchService.tmdbService != null) {
+          imdbId = await _searchService.tmdbService!.getImdbId(
             tmdbId: widget.media.id,
             isMovie: isMovie,
           );
@@ -222,7 +248,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         );
         _currentQuery = mediaQuery;
 
-        results = await widget.torrentStreamService.searchMediaTorrents(
+        results = await _searchService.searchMediaTorrents(
           query: mediaQuery,
           onStatus: widget.onStatusUpdate,
         );
@@ -317,7 +343,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         );
         _currentQuery = customQuery;
 
-        results = await widget.torrentStreamService.searchTorrents(
+        results = await _searchService.searchTorrents(
           query: customQuery,
           onStatus: widget.onStatusUpdate,
         );
@@ -334,7 +360,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
         );
         _currentQuery = customQuery;
 
-        results = await widget.torrentStreamService.searchMediaTorrents(
+        results = await _searchService.searchMediaTorrents(
           query: customQuery,
           onStatus: widget.onStatusUpdate,
           rank: false,
@@ -368,7 +394,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
       if (_countdown <= 0) {
         timer.cancel();
         final candidate = _autoSelectCandidate;
-        if (candidate != null) {
+        if (candidate != null && ModalRoute.of(context)?.isCurrent == true) {
           _playResult(candidate, automatic: true);
         }
       }
@@ -382,6 +408,18 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
       });
       _autoPlayTimer?.cancel();
     }
+  }
+
+  Future<void> _openPlaybackSettings() async {
+    _cancelAutoPlay();
+    final updated = await editPickerPlaybackSettings(context, asSheet: widget.isFullScreen);
+    if (!mounted || updated == null) return;
+    final refreshed = await widget.refreshSearch?.call(updated);
+    if (!mounted) return;
+    _searchService = refreshed ?? _searchService;
+    _maxFileBytes = updated.maxFileBytes;
+    _groupBySource = updated.groupBySource;
+    await _loadTorrents();
   }
 
   void _playResult(TorrentResult result, {bool automatic = false}) {
@@ -436,6 +474,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.isFullScreen) return _buildMobilePicker();
     final isFullScreen = widget.isFullScreen;
     final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
     final isCompactLandscape = isFullScreen && isLandscape;
@@ -445,186 +484,258 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
     final title = widget.media.title ?? widget.media.name ?? 'Select Torrent';
     final backdropPath = widget.media.backdropPath ?? widget.media.posterPath;
     
-    return MouseRegion(
-      onHover: (_) => _cancelAutoPlay(),
-      child: Listener(
-        onPointerHover: (_) => _cancelAutoPlay(),
-        onPointerDown: (_) => _cancelAutoPlay(),
-        child: Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFF0F0F0F),
-            borderRadius: isFullScreen ? BorderRadius.zero : BorderRadius.circular(12),
-            border: isFullScreen ? null : Border.all(color: Colors.white.withOpacity(0.05)),
-            boxShadow: isFullScreen ? null : [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.8),
-                blurRadius: 30,
-                offset: const Offset(0, 10),
+    return StreamPickerInteraction(
+      onInteraction: _cancelAutoPlay,
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F0F0F),
+          borderRadius: isFullScreen ? BorderRadius.zero : BorderRadius.circular(12),
+          border: isFullScreen ? null : Border.all(color: Colors.white.withOpacity(0.05)),
+          boxShadow: isFullScreen ? null : [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.8),
+              blurRadius: 30,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        constraints: isFullScreen
+            ? const BoxConstraints.expand()
+            : BoxConstraints(
+                maxWidth: 800,
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
               ),
-            ],
-          ),
-          constraints: isFullScreen
-              ? const BoxConstraints.expand()
-              : BoxConstraints(
-                  maxWidth: 800,
-                  maxHeight: MediaQuery.of(context).size.height * 0.85,
-                ),
-          child: ClipRRect(
-            borderRadius: isFullScreen ? BorderRadius.zero : BorderRadius.circular(12),
-            child: Stack(
-              children: [
-                if (backdropPath != null)
-                  Positioned(
-                    top: 0, left: 0, right: 0, 
-                    height: isCompactLandscape ? 180 : 320,
-                    child: ShaderMask(
-                      shaderCallback: (rect) {
-                        return const LinearGradient(
+        child: ClipRRect(
+          borderRadius: isFullScreen ? BorderRadius.zero : BorderRadius.circular(12),
+          child: Stack(
+            children: [
+              if (backdropPath != null)
+                Positioned(
+                  top: 0, left: 0, right: 0,
+                  height: isCompactLandscape ? 180 : 320,
+                  child: ShaderMask(
+                    shaderCallback: (rect) {
+                      return const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.black, Colors.transparent],
+                        stops: [0.4, 0.9],
+                      ).createShader(rect);
+                    },
+                    blendMode: BlendMode.dstIn,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        image: DecorationImage(
+                          image: artworkImageProvider(
+                            backdropPath,
+                            width: isFullScreen
+                                ? MediaQuery.sizeOf(context).width
+                                : MediaQuery.sizeOf(context).width.clamp(0, 800),
+                            height: MediaQuery.sizeOf(context).height *
+                                (isFullScreen ? 1 : 0.85),
+                            pixelRatio: MediaQuery.devicePixelRatioOf(context),
+                            kind: widget.media.backdropPath != null
+                                ? ArtworkKind.backdrop
+                                : ArtworkKind.poster,
+                          ),
+                          fit: BoxFit.cover,
+                          alignment: Alignment.topCenter,
+                        ),
+                      ),
+                      foregroundDecoration: BoxDecoration(
+                        gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [Colors.black, Colors.transparent],
-                          stops: [0.4, 0.9],
-                        ).createShader(rect);
-                      },
-                      blendMode: BlendMode.dstIn,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          image: DecorationImage(
-                            image: artworkImageProvider(
-                              backdropPath,
-                              width: isFullScreen
-                                  ? MediaQuery.sizeOf(context).width
-                                  : MediaQuery.sizeOf(context).width.clamp(0, 800),
-                              height: MediaQuery.sizeOf(context).height *
-                                  (isFullScreen ? 1 : 0.85),
-                              pixelRatio: MediaQuery.devicePixelRatioOf(context),
-                              kind: widget.media.backdropPath != null
-                                  ? ArtworkKind.backdrop
-                                  : ArtworkKind.poster,
-                            ),
-                            fit: BoxFit.cover,
-                            alignment: Alignment.topCenter,
-                          ),
-                        ),
-                        foregroundDecoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              const Color(0xFF0F0F0F).withOpacity(0.4),
-                              const Color(0xFF0F0F0F).withOpacity(0.7),
-                            ],
-                          ),
+                          colors: [
+                            const Color(0xFF0F0F0F).withOpacity(0.4),
+                            const Color(0xFF0F0F0F).withOpacity(0.7),
+                          ],
                         ),
                       ),
                     ),
                   ),
-                
-                SafeArea(
-                  top: isFullScreen,
-                  bottom: isFullScreen,
-                  left: isFullScreen,
-                  right: isFullScreen,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Header
-                      Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          isFullScreen ? 8.0 : 24.0, 
-                          isFullScreen ? (isCompactLandscape ? 4.0 : 8.0) : 20.0, 
-                          16.0, 
-                          spacing,
-                        ),
-                        child: Row(
-                          children: [
-                            if (isFullScreen) ...[
-                              IconButton(
-                                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                                onPressed: () {
-                                  _cancelAutoPlay();
-                                  Navigator.of(context).pop();
-                                },
-                                splashRadius: 20,
-                              ),
-                              const SizedBox(width: 4),
-                            ],
-                            Expanded(
-                              child: MarqueeText(
-                                text: title,
-                                style: TextStyle(
-                                  fontSize: isFullScreen ? 19 : 22,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
-                                blankSpace: 40.0,
-                                velocity: 30.0,
-                              ),
-                            ),
-                            if (!isFullScreen)
-                              IconButton(
-                                icon: const Icon(Icons.close, color: Colors.white70),
-                                onPressed: () {
-                                  _cancelAutoPlay();
-                                  Navigator.of(context).pop();
-                                },
-                                hoverColor: Colors.white.withOpacity(0.1),
-                                splashRadius: 20,
-                              ),
-                          ],
-                        ),
-                      ),
-                      
-                      // Controls (Search, Episode, Resolution)
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (isCompactLandscape)
-                              Row(
-                                children: [
-                                  Expanded(child: _buildSearchTextField(spacing)),
-                                  if (!_isMovie) ...[
-                                    const SizedBox(width: 12),
-                                    _buildEpisodeSelector(),
-                                  ],
-                                  const SizedBox(width: 12),
-                                  _buildResolutionSelector(),
-                                ],
-                              )
-                            else ...[
-                              _buildSearchTextField(spacing),
-                              SizedBox(height: spacing),
-                              Row(
-                                children: [
-                                  if (!_isMovie) ...[
-                                    _buildEpisodeSelector(),
-                                    const SizedBox(width: 24),
-                                  ],
-                                  _buildResolutionSelector(),
-                                ],
-                              ),
-                            ],
-                            SizedBox(height: spacing),
-                            _buildAutoSelectButton(spacing),
-                          ],
-                        ),
-                      ),
-                      
-                      SizedBox(height: spacing),
-                      const Divider(height: 1, thickness: 1, color: Color(0xFF2A2A2A)),
-                      
-                      // Results List
-                      Expanded(
-                        child: _buildContent(),
-                      ),
-                    ],
-                  ),
                 ),
-              ],
-            ),
+
+              SafeArea(
+                top: isFullScreen,
+                bottom: isFullScreen,
+                left: isFullScreen,
+                right: isFullScreen,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Header
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        isFullScreen ? 8.0 : 24.0,
+                        isFullScreen ? (isCompactLandscape ? 4.0 : 8.0) : 20.0,
+                        16.0,
+                        spacing,
+                      ),
+                      child: Row(
+                        children: [
+                          if (isFullScreen) ...[
+                            IconButton(
+                              icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                              onPressed: () {
+                                _cancelAutoPlay();
+                                Navigator.of(context).pop();
+                              },
+                              splashRadius: 20,
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                          Expanded(
+                            child: MarqueeText(
+                              text: title,
+                              style: TextStyle(
+                                fontSize: isFullScreen ? 19 : 22,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                              blankSpace: 40.0,
+                              velocity: 30.0,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Stream settings',
+                            onPressed: _openPlaybackSettings,
+                            icon: const Icon(Icons.settings_outlined),
+                          ),
+                          if (!isFullScreen)
+                            IconButton(
+                              icon: const Icon(Icons.close, color: Colors.white70),
+                              onPressed: () {
+                                _cancelAutoPlay();
+                                Navigator.of(context).pop();
+                              },
+                              hoverColor: Colors.white.withOpacity(0.1),
+                              splashRadius: 20,
+                            ),
+                        ],
+                      ),
+                    ),
+
+                    // Controls (Search, Episode, Resolution)
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (isCompactLandscape)
+                            Row(
+                              children: [
+                                Expanded(child: _buildSearchTextField(spacing)),
+                                if (!_isMovie) ...[
+                                  const SizedBox(width: 12),
+                                  _buildEpisodeSelector(),
+                                ],
+                                const SizedBox(width: 12),
+                                _buildResolutionSelector(),
+                              ],
+                            )
+                          else ...[
+                            _buildSearchTextField(spacing),
+                            SizedBox(height: spacing),
+                            Row(
+                              children: [
+                                if (!_isMovie) ...[
+                                  _buildEpisodeSelector(),
+                                  const SizedBox(width: 24),
+                                ],
+                                _buildResolutionSelector(),
+                              ],
+                            ),
+                          ],
+                          SizedBox(height: spacing),
+                          _buildAutoSelectButton(spacing),
+                        ],
+                      ),
+                    ),
+
+                    SizedBox(height: spacing),
+                    const Divider(height: 1, thickness: 1, color: Color(0xFF2A2A2A)),
+
+                    // Results List
+                    Expanded(
+                      child: _buildContent(),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobilePicker() {
+    final results = _filteredResults ?? const <TorrentResult>[];
+    final sources = {for (final item in results) item.source: item.source};
+    final source = sources.containsKey(_mobileSource) ? _mobileSource : null;
+    final visible = results.where((item) => source == null || item.source == source);
+    final isAnimeMovie = widget.media.animeFormat == 'MOVIE';
+    final hasEpisode = !_isMovie && !isAnimeMovie;
+    final best = _autoSelectCandidate ?? results.firstOrNull;
+    final error = _error;
+    return StreamPickerInteraction(
+      onInteraction: _cancelAutoPlay,
+      child: MobileStreamPicker(
+        media: widget.media,
+        season: hasEpisode ? widget.initialSeason : null,
+        episode: hasEpisode ? _episode : null,
+        sources: sources,
+        source: source,
+        onSourceChanged: (value) => setState(() => _mobileSource = value),
+        onBack: () => Navigator.of(context).pop(),
+        onRefresh: () => unawaited(_loadTorrents()),
+        onSettings: _openPlaybackSettings,
+        loading: _filteredResults == null && error == null,
+        results: ListView(
+          key: PageStorageKey(source),
+          primary: true,
+          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 18),
+          children: [
+            _buildSearchTextField(8),
+            const SizedBox(height: 8),
+            Wrap(runSpacing: 8, spacing: 12, children: [
+              if (hasEpisode) _buildEpisodeSelector(),
+              _buildResolutionSelector(),
+            ]),
+            const SizedBox(height: 8),
+            _buildAutoSelectButton(8),
+            const SizedBox(height: 8),
+            if (error != null) ...[
+              const Text('Failed to find torrents'),
+              Text(error),
+            ] else if (_filteredResults == null) ...[
+              const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('Finding streams…')),
+            ] else if (results.isEmpty)
+              Text(_hasOversizedResults ? 'No torrents within your maximum file size.' : 'No torrents found.'),
+            ...mobileStreamResultRows(
+              context,
+              results: visible,
+              groupBySource: source == null && _groupBySource,
+              source: (item) => (item.source, item.source),
+              card: (item) => MobileStreamCard(
+                  title: item.title,
+                  details: [
+                    if (item.parsed.resolution case final resolution?) '${resolution}p',
+                    if (StreamSelection.releaseAudioLabel(item.title) case final audio?) audio,
+                    ...StreamSelection.releaseFormats(item.title),
+                    if (item.displaySizeBytes case final bytes?)
+                      StreamSize.format(bytes),
+                    if (item.isBatch) 'Pack',
+                    '${item.seeders} seeders',
+                  ],
+                  source: item.source,
+                  preferred: identical(item, best),
+                  onTap: () => _playResult(item),
+                ),
+            ),
+          ],
         ),
       ),
     );
@@ -896,16 +1007,6 @@ class _HoverTorrentCard extends StatefulWidget {
 class _HoverTorrentCardState extends State<_HoverTorrentCard> {
   bool _isHovered = false;
 
-  String _formatSize(int bytes) {
-    if (bytes <= 0) return 'Size unknown';
-    final kb = bytes / 1024;
-    final mb = kb / 1024;
-    final gb = mb / 1024;
-    if (gb >= 1) return '${gb.toStringAsFixed(2)} GB';
-    if (mb >= 1) return '${mb.toStringAsFixed(1)} MB';
-    return '${kb.toStringAsFixed(1)} KB';
-  }
-
   Widget _buildTag(String text, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1042,12 +1143,19 @@ class _HoverTorrentCardState extends State<_HoverTorrentCard> {
                             _buildTag('${r.parsed.resolution}p', const Color(0xFF60A5FA)),
                             const SizedBox(width: 8),
                           ],
-                          _buildTag(
-                            r.isBatch && r.sizeBytes > 0
-                                ? '${_formatSize(r.sizeBytes)} pack'
-                                : _formatSize(r.sizeBytes),
-                            Colors.grey,
-                          ),
+                          if (StreamSelection.releaseAudioLabel(r.title) case final audio?) ...[
+                            _buildTag(audio, Colors.grey),
+                            const SizedBox(width: 8),
+                          ],
+                          for (final format in StreamSelection.releaseFormats(r.title)) ...[
+                            _buildTag(format, Colors.grey),
+                            const SizedBox(width: 8),
+                          ],
+                          if (r.displaySizeBytes case final bytes?)
+                            _buildTag(
+                              '${StreamSize.format(bytes)}${r.isBatch ? ' pack' : ''}',
+                              Colors.grey,
+                            ),
                         ],
                       ),
                     ),

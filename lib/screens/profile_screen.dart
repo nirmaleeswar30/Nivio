@@ -23,6 +23,7 @@ import 'package:nivio/screens/stream_selection_screen.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
+import 'package:nivio/widgets/settings_page_header.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
 import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:nivio/services/discord_gateway_service.dart';
@@ -57,6 +58,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
   int _selectedCategoryIndex = 0;
+  int? _mobileCategory;
+  static const _appearanceCategory = 10;
   double? _tempUiScale;
   bool _isSyncingAnime = false;
   // Shown under Settings → Downloads.
@@ -66,10 +69,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     'Profile & Activity',
     'Playback',
     'Subtitle Appearance',
-    'Torrents',
     'Downloads',
     'Network',
-    'Content Feed',
+    'Content & Discovery',
     'Episode Alerts',
     'Tracking',
     'App & Updates',
@@ -77,6 +79,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   ];
 
   void _handleBackNavigation() {
+    if (_mobileCategory != null) {
+      setState(() => _mobileCategory = null);
+      return;
+    }
     if (context.canPop()) {
       context.pop();
       return;
@@ -162,710 +168,155 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   
   Widget _buildProfileWithSettings(BuildContext context, User user) {
-    final isDesktop = MediaQuery.sizeOf(context).width > 800;
+    final isDesktop = AppPlatform.isTv ||
+        (AppPlatform.isDesktopOS && MediaQuery.sizeOf(context).width > 800);
     if (isDesktop) {
       return _buildDesktopLayout(context, user);
     }
     return _buildMobileLayout(context, user);
   }
 
-Widget _buildMobileLayout(BuildContext context, User user) {
-    final watchlist = ref.watch(watchlistProvider);
-    final historyAsync = ref.watch(watchHistoryProvider);
-    final languagePrefs = ref.watch(languagePreferencesProvider);
-    final autoPlayNextEpisode = ref.watch(autoPlayNextEpisodeProvider);
-    final pipOnLostVisibility = ref.watch(pipOnLostVisibilityProvider);
-    final pauseOnLostVisibility = ref.watch(pauseOnLostVisibilityProvider);
-    final seekDuration = ref.watch(seekDurationProvider);
-    final autoSkipIntroOutro = ref.watch(autoSkipIntroOutroProvider);
-    final autoSkipFiller = ref.watch(autoSkipFillerProvider);
-    final videoQuality = ref.watch(videoQualityProvider);
-    final preferredAudio = ref.watch(preferredAudioLanguageProvider);
-    final preferredSubtitle = ref.watch(preferredSubtitleLanguageProvider);
-    final episodeCheckEnabled = ref.watch(episodeCheckEnabledProvider);
-    final videoDebanding = ref.watch(videoDebandingProvider);
-    final subtitleFontSize = ref.watch(subtitleFontSizeProvider);
-    final subtitleBackground = ref.watch(subtitleBackgroundProvider);
-    final subtitleOutline = ref.watch(subtitleOutlineProvider);
-    final subtitleFontFamily = ref.watch(subtitleFontFamilyProvider);
-    final customFontName = ref.watch(customSubtitleFontNameProvider);
-
-    final appThemeKey = ref.watch(appThemeProvider);
-    final uiScale = ref.watch(uiScaleProvider);
-
-    return Scaffold(
-      backgroundColor: NivioTheme.backgroundColorOf(context),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: NivioTheme.backgroundGradientOf(context),
+  Widget _buildMobileLayout(BuildContext context, User user) {
+    final category = _mobileCategory;
+    final theme = Theme.of(context);
+    return PopScope(
+      canPop: category == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && category != null) _handleBackNavigation();
+      },
+      child: Scaffold(
+        appBar: SettingsPageHeader(
+          category == null
+              ? 'Settings'
+              : category == _appearanceCategory ? 'Appearance' : _categories[category],
+          onBack: _handleBackNavigation,
         ),
-        child: SafeArea(
-          child: AppCustomScrollView(
-            physics: const BouncingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-            cacheExtent: 600,
-            slivers: [
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: Column(
+        body: SafeArea(
+          top: false,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Offstage(
+                offstage: category != null,
+                child: TickerMode(
+                  enabled: category == null,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
                     children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: IconButton(
-                          tooltip: 'Back',
-                          onPressed: _handleBackNavigation,
-                          icon: const PhosphorIcon(
-                            PhosphorIconsRegular.caretLeft,
-                            color: NivioTheme.netflixWhite,
-                            size: 22,
-                          ),
-                        ),
-                      ),
-
                       _buildProfileHeader(user),
+                      _buildSearchField(),
+                      const SizedBox(height: 14),
+                      if (_query.isNotEmpty)
+                        _buildSearchResultsCard(
+                          user: user,
+                          languagePrefs: ref.watch(languagePreferencesProvider),
+                          videoQuality: ref.watch(videoQualityProvider),
+                          preferredAudio: ref.watch(preferredAudioLanguageProvider),
+                          preferredSubtitle: ref.watch(
+                            preferredSubtitleLanguageProvider,
+                          ),
+                          episodeCheckEnabled: ref.watch(episodeCheckEnabledProvider),
+                          videoDebanding: ref.watch(videoDebandingProvider),
+                          appThemeKey: ref.watch(appThemeProvider),
+                          uiScale: ref.watch(uiScaleProvider),
+                        )
+                      else ...[
+                        _mobileSettingsGroup(theme, 'You', const [
+                          (Icons.person_outline_rounded, 'Profile & activity', 0),
+                          (Icons.manage_accounts_outlined, 'Data & account', 9),
+                        ]),
+                        _mobileSettingsGroup(theme, 'Look', const [
+                          (Icons.palette_outlined, 'Appearance', _appearanceCategory),
+                        ]),
+                        _mobileSettingsGroup(theme, 'Watch', const [
+                          (Icons.dashboard_outlined, 'Content & Discovery', 5),
+                          (Icons.play_circle_outline, 'Playback', 1),
+                          (Icons.subtitles_outlined, 'Subtitle appearance', 2),
+                          (Icons.download_outlined, 'Downloads', 3),
+                        ]),
+                        _mobileSettingsGroup(theme, 'Services', const [
+                          (Icons.hub_outlined, 'Tracking', 7),
+                          (Icons.language_rounded, 'Network', 4),
+                        ]),
+                        _mobileSettingsGroup(theme, 'System', const [
+                          (Icons.notifications_none, 'Episode alerts', 6),
+                          (Icons.info_outline, 'App & updates', 8),
+                        ]),
+                      ],
                     ],
                   ),
                 ),
               ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                  child: _buildSearchField(),
+              if (category != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: _buildCategoryContent(user, category, mobile: true),
                 ),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: historyAsync.when(
-                    loading: () => _buildStatsPlaceholder(),
-                    error: (error, stackTrace) => _buildStatsPlaceholder(),
-                    data: (history) => _buildStatsRow(
-                      watchlistCount: watchlist.length,
-                      historyCount: history.length,
-                      completedCount: history
-                          .where((entry) => entry.isCompleted)
-                          .length,
-                    ),
-                  ),
-                ),
-              ),
-              if (_query.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                    child: _buildSearchResultsCard(
-                      user: user,
-                      languagePrefs: languagePrefs,
-                      videoQuality: videoQuality,
-                      preferredAudio: preferredAudio,
-                      preferredSubtitle: preferredSubtitle,
-                      episodeCheckEnabled: episodeCheckEnabled,
-                      videoDebanding: videoDebanding,
-                      appThemeKey: appThemeKey,
-                      uiScale: uiScale,
-                    ),
-                  ),
-                ),
-              if (_matches('activity history continue'))
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
-                    child: _buildSectionCard(
-                      title: 'Recent Activity',
-                      initiallyExpanded: true,
-                      child: _buildRecentActivity(historyAsync),
-                    ),
-                  ),
-                ),
-              if (_matches('watchlist my list saved') && watchlist.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                    child: _buildSectionCard(
-                      title: 'Watchlist',
-                      child: _buildWatchlistPreview(watchlist),
-                    ),
-                  ),
-                ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                  child: _buildSectionCard(
-                    title: 'Playback',
-                    child: Column(
-                      children: [
-                        if (_matches('stream selection autoplay regex quality resolution source priority direct torrents extensions'))
-                          _streamSelectionTile(),
-                        if (_matches('auto play next episode automatically'))
-                          _buildSwitchTile(
-                            icon: Icons.skip_next_rounded,
-                            title: 'Auto Play Next Episode',
-                            subtitle: 'Automatically start the next episode when current finishes',
-                            value: autoPlayNextEpisode,
-                            onChanged: (value) {
-                              ref.read(autoPlayNextEpisodeProvider.notifier).setEnabled(value);
-                            },
-                          ),
-                        if (_matches('picture in picture pip lost visibility background'))
-                          _buildSwitchTile(
-                            icon: Icons.picture_in_picture_alt_rounded,
-                            title: 'PiP on Lost Visibility',
-                            subtitle: 'Switch to Picture-in-Picture when leaving the app',
-                            value: pipOnLostVisibility,
-                            onChanged: (value) {
-                              ref.read(pipOnLostVisibilityProvider.notifier).setEnabled(value);
-                            },
-                          ),
-                        if (_matches('pause on lost visibility background focus'))
-                          _buildSwitchTile(
-                            icon: Icons.pause_circle_outline_rounded,
-                            title: 'Pause on Lost Visibility',
-                            subtitle: 'Pause playback when app loses focus or goes to background',
-                            value: pauseOnLostVisibility,
-                            onChanged: (value) {
-                              ref.read(pauseOnLostVisibilityProvider.notifier).setEnabled(value);
-                            },
-                          ),
-                        if (_showAmbientSetting &&
-                            _matches(_ambientSearchTerms))
-                          ..._buildAmbientModeTiles(),
-                        if (_matches('seek duration skip jump forward rewind step'))
-                          _buildActionTile(
-                            icon: Icons.fast_forward_rounded,
-                            title: 'Seek Duration',
-                            subtitle: '${seekDuration}s',
-                            onTap: _showSeekDurationDialog,
-                          ),
-                        if (_matches('auto skip intro outro opening ending theme'))
-                          _buildSwitchTile(
-                            icon: Icons.fast_forward_rounded,
-                            title: 'Auto Skip Intro & Outro',
-                            subtitle: 'Automatically skip opening and ending themes',
-                            value: autoSkipIntroOutro,
-                            onChanged: (value) {
-                              ref.read(autoSkipIntroOutroProvider.notifier).setEnabled(value);
-                            },
-                          ),
-                        if (_matches('auto skip filler anime episode'))
-                          _buildSwitchTile(
-                            icon: Icons.auto_stories_rounded,
-                            title: 'Auto Skip Filler',
-                            subtitle: 'Automatically skip filler episodes during auto-play',
-                            value: autoSkipFiller,
-                            onChanged: (value) {
-                              ref.read(autoSkipFillerProvider.notifier).setEnabled(value);
-                            },
-                          ),
-                        if (_matches('video quality resolution'))
-                          _buildActionTile(
-                            icon: Icons.high_quality_rounded,
-                            title: 'Preferred Video Quality',
-                            subtitle: _qualityLabel(videoQuality),
-                            onTap: _showVideoQualityDialog,
-                          ),
-                        if (_matches('preferred default audio language'))
-                          _buildActionTile(
-                            icon: Icons.audiotrack_rounded,
-                            title: 'Preferred Audio Language',
-                            subtitle: preferredAudio,
-                            onTap: _showAudioLanguageDialog,
-                          ),
-                        if (_matches('preferred default subtitle language'))
-                          _buildActionTile(
-                            icon: Icons.subtitles_rounded,
-                            title: 'Preferred Subtitle Language',
-                            subtitle: preferredSubtitle,
-                            onTap: _showSubtitleLanguageDialog,
-                          ),
-                        if (_matches('video deband filter quality'))
-                          _buildSwitchTile(
-                            icon: Icons.blur_linear_rounded,
-                            title: 'Video Debanding',
-                            subtitle: 'Reduces color banding (uses more battery)',
-                            value: videoDebanding,
-                            onChanged: (value) {
-                              ref.read(videoDebandingProvider.notifier).setEnabled(value);
-                            },
-                          ),
-                        if (_showHdrSettings && _matches(_hdrSearchTerms))
-                          ..._buildHdrSettingTiles(),
-                        if (AppPlatform.supportsDolbyPassthrough &&
-                            _matches(_dolbyPassthroughSearchTerms))
-                          _buildDolbyPassthroughTile(),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                  child: _buildSectionCard(
-                    title: 'Subtitle Appearance',
-                    child: Column(
-                      children: [
-                        if (_matches('subtitle font family style typeface'))
-                          _buildActionTile(
-                            icon: Icons.font_download_rounded,
-                            title: 'Subtitle Font',
-                            subtitle: subtitleFontFamily == 'Custom' && customFontName != null
-                                ? 'Custom ($customFontName)'
-                                : subtitleFontFamily,
-                            onTap: _showSubtitleFontDialog,
-                          ),
-                        if (_matches('subtitle size font scale'))
-                          _buildActionTile(
-                            icon: Icons.format_size_rounded,
-                            title: 'Subtitle Font Size',
-                            subtitle: subtitleFontSizeLabel(subtitleFontSize),
-                            onTap: _showSubtitleFontSizeDialog,
-                          ),
-                        if (_matches('subtitle background transparency opacity'))
-                          _buildActionTile(
-                            icon: Icons.picture_in_picture_alt_rounded,
-                            title: 'Subtitle Background',
-                            subtitle: subtitleBackground,
-                            onTap: _showSubtitleBackgroundDialog,
-                          ),
-                        if (_matches('subtitle style text outline shadow'))
-                          _buildActionTile(
-                            icon: Icons.text_fields_rounded,
-                            title: 'Subtitle Text Style',
-                            subtitle: subtitleOutline,
-                            onTap: _showSubtitleOutlineDialog,
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                  child: _buildSectionCard(
-                    title: 'Torrents',
-                    child: Column(
-                      children: [
-                        if (_matches('enable torrents p2p streaming'))
-                          _buildSwitchTile(
-                            icon: Icons.cloud_download_rounded,
-                            title: 'Enable Torrent Streaming',
-                            subtitle: 'Allows high quality P2P playback for anime, movies & shows (Nivio Torrents)',
-                            value: ref.watch(enableTorrentsProvider),
-                            onChanged: (value) {
-                              ref.read(enableTorrentsProvider.notifier).setEnabled(value);
-                            },
-                          ),
-                        if (_matches('nyaa anime torrent source'))
-                          _buildSwitchTile(
-                            icon: Icons.movie_filter_rounded,
-                            title: 'Nyaa (Anime)',
-                            subtitle: 'P2P anime releases from Nyaa',
-                            value: ref.watch(torrentNyaaEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
-                            onChanged: (val) {
-                              ref.read(torrentNyaaEnabledProvider.notifier).setEnabled(val);
-                            },
-                          ),
-                        if (_matches('torrentio movies shows torrent source'))
-                          _buildSwitchTile(
-                            icon: Icons.movie_outlined,
-                            title: 'Torrentio (Movies & Shows)',
-                            subtitle: 'Scrapes YTS, EZTV, 1337x, ThePirateBay, etc.',
-                            value: ref.watch(torrentTorrentioEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
-                            onChanged: (val) {
-                              ref.read(torrentTorrentioEnabledProvider.notifier).setEnabled(val);
-                            },
-                          ),
-                        if (_matches('piratebay pirate bay text search torrent source'))
-                          _buildSwitchTile(
-                            icon: Icons.sailing_rounded,
-                            title: 'PirateBay (Movies & Shows)',
-                            subtitle: 'Free-text search; powers manual searches',
-                            value: ref.watch(torrentPirateBayEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
-                            onChanged: (val) {
-                              ref.read(torrentPirateBayEnabledProvider.notifier).setEnabled(val);
-                            },
-                          ),
-                        if (_matches('torrent auto select file index automatic'))
-                          _buildSwitchTile(
-                            icon: Icons.auto_mode_rounded,
-                            title: 'Auto-Select Episode File',
-                            subtitle: 'Automatically select correct file inside batch torrents',
-                            value: ref.watch(torrentAutoSelectProvider), enabled: ref.watch(enableTorrentsProvider),
-                            onChanged: (val) {
-                              ref.read(torrentAutoSelectProvider.notifier).setEnabled(val);
-                            },
-                          ),
-                        if (_matches('torrent persist files keep disk remove'))
-                          _buildSwitchTile(
-                            icon: Icons.save_rounded,
-                            title: 'Persist Torrent Files',
-                            subtitle: 'Keep files on disk after stopping playback',
-                            value: ref.watch(torrentPersistFilesProvider), enabled: ref.watch(enableTorrentsProvider),
-                            onChanged: (val) {
-                              ref.read(torrentPersistFilesProvider.notifier).setEnabled(val);
-                            },
-                          ),
-                        _buildTorrentIndexingNote(),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                  child: _buildSectionCard(
-                    title: 'Downloads',
-                    child: Column(
-                      children: [
-                        if (_matches('preferred download audio language'))
-                          _buildActionTile(
-                            icon: Icons.audio_file_rounded,
-                            title: 'Preferred Download Audio',
-                            subtitle: ref.watch(preferredDownloadAudioLanguageProvider),
-                            onTap: _showDownloadAudioLanguageDialog,
-                          ),
-                        if (_matches('preferred download subtitle language'))
-                          _buildActionTile(
-                            icon: Icons.subtitles_rounded,
-                            title: 'Preferred Download Subtitle',
-                            subtitle: ref.watch(preferredDownloadSubtitleLanguageProvider),
-                            onTap: _showDownloadSubtitleLanguageDialog,
-                          ),
-                        if (_matches('download concurrency parallel connections'))
-                          _buildActionTile(
-                            icon: Icons.speed_rounded,
-                            title: 'Parallel Download Connections',
-                            subtitle: '${ref.watch(downloadConcurrencyProvider)}',
-                            onTap: _showDownloadConcurrencyDialog,
-                          ),
-                        _buildDownloadLocationNote(),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                  child: _buildSectionCard(
-                    title: 'Network',
-                    child: Column(
-                      children: [
-                        if (_matches('use dns over https doh isp blocks domains bypass network'))
-                          _buildSwitchTile(
-                            icon: Icons.vpn_lock_rounded,
-                            title: 'Use DNS over HTTPS',
-                            subtitle:
-                                'This enables DNS over HTTPS, useful if your ISP blocks certain domains.',
-                            value: ref.watch(useDnsOverHttpsProvider),
-                            onChanged: (value) {
-                              ref
-                                  .read(useDnsOverHttpsProvider.notifier)
-                                  .setEnabled(value);
-                            },
-                          ),
-                        if (_matches('dns over https doh url server query provider cloudflare network'))
-                          _buildActionTile(
-                            icon: Icons.dns_rounded,
-                            title: 'DNS over HTTPS URL',
-                            subtitle: ref.watch(dnsOverHttpsUrlProvider),
-                            onTap: _showDnsUrlDialog,
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                  child: _buildSectionCard(
-                    title: 'Content Feed',
-                    child: Column(
-                      children: [
-                        if (_matches('customize home layout order arrange shelves'))
-                          _buildActionTile(
-                            icon: Icons.dashboard_customize_rounded,
-                            title: 'Customize Home Layout',
-                            subtitle: 'Rearrange the order of shelves on the home screen',
-                            onTap: () => _showHomeLayoutDialog(context),
-                          ),
-                        if (_matches('preferred anime source server provider'))
-                          _buildActionTile(
-                            icon: Icons.source_rounded,
-                            title: 'Preferred Anime Source',
-                            subtitle: ref.watch(preferredAnimeSourceProvider),
-                            onTap: _showPreferredAnimeSourceDialog,
-                          ),
-
-                        if (_matches('anime language audio sub dub subbed dubbed')) ...[
-                          _buildActionTile(
-                            icon: Icons.record_voice_over_rounded,
-                            title: 'Preferred Anime Audio',
-                            subtitle: languagePrefs.animePreferredAudio == 'sub' ? 'Subbed' : 'Dubbed',
-                            onTap: _showAnimeAudioDialog,
-                          ),
-                          _buildSwitchTile(
-                            icon: Icons.animation_rounded,
-                            title: 'Anime',
-                            subtitle: 'Show anime rows on home',
-                            value: languagePrefs.showAnime,
-                            onChanged: (value) {
-                              ref
-                                  .read(languagePreferencesProvider.notifier)
-                                  .toggleAnime(value);
-                            },
-                          ),
-                        ],
-                        if (_matches('tamil language'))
-                          _buildSwitchTile(
-                            icon: Icons.movie_filter_rounded,
-                            title: 'Tamil',
-                            subtitle: 'Show Tamil rows on home',
-                            value: languagePrefs.showTamil,
-                            onChanged: (value) {
-                              ref
-                                  .read(languagePreferencesProvider.notifier)
-                                  .toggleTamil(value);
-                            },
-                          ),
-                        if (_matches('telugu language'))
-                          _buildSwitchTile(
-                            icon: Icons.movie_creation_outlined,
-                            title: 'Telugu',
-                            subtitle: 'Show Telugu rows on home',
-                            value: languagePrefs.showTelugu,
-                            onChanged: (value) {
-                              ref
-                                  .read(languagePreferencesProvider.notifier)
-                                  .toggleTelugu(value);
-                            },
-                          ),
-                        if (_matches('hindi language'))
-                          _buildSwitchTile(
-                            icon: Icons.theaters_rounded,
-                            title: 'Hindi',
-                            subtitle: 'Show Hindi rows on home',
-                            value: languagePrefs.showHindi,
-                            onChanged: (value) {
-                              ref
-                                  .read(languagePreferencesProvider.notifier)
-                                  .toggleHindi(value);
-                            },
-                          ),
-                        if (_matches('korean language kdrama'))
-                          _buildSwitchTile(
-                            icon: Icons.live_tv_rounded,
-                            title: 'Korean',
-                            subtitle: 'Show Korean rows on home',
-                            value: languagePrefs.showKorean,
-                            onChanged: (value) {
-                              ref
-                                  .read(languagePreferencesProvider.notifier)
-                                  .toggleKorean(value);
-                            },
-                          ),
-                        if (_matches('malayalam language'))
-                          _buildSwitchTile(
-                            icon: Icons.movie_outlined,
-                            title: 'Malayalam',
-                            subtitle: 'Show Malayalam rows on home',
-                            value: languagePrefs.showMalayalam,
-                            onChanged: (value) {
-                              ref
-                                  .read(languagePreferencesProvider.notifier)
-                                  .toggleMalayalam(value);
-                            },
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                  child: _buildSectionCard(
-                    title: 'Episode Alerts',
-                    child: Column(
-                      children: [
-                        if (_matches('alerts notifications'))
-                          _buildSwitchTile(
-                            icon: Icons.notifications_active_outlined,
-                            title: 'New Episode Alerts',
-                            subtitle: episodeCheckEnabled
-                                ? 'Enabled'
-                                : 'Disabled',
-                            value: episodeCheckEnabled,
-                            onChanged: (value) {
-                              ref
-                                  .read(episodeCheckEnabledProvider.notifier)
-                                  .setEnabled(value);
-                            },
-                          ),
-
-                        if (_matches('new episodes inbox'))
-                          _buildActionTile(
-                            icon: Icons.notifications_none_rounded,
-                            title: 'Open New Episodes',
-                            subtitle: 'View recently detected episodes',
-                            onTap: () => context.go('/library'),
-                          ),
-                        if (_matches('check now refresh'))
-                          _buildActionTile(
-                            icon: Icons.sync_rounded,
-                            title: 'Check Now',
-                            subtitle: 'Manually check for newly aired episodes',
-                            onTap: _checkNow,
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              if (_matches('anime tracking anilist mal myanimelist simkl movies tv shows sync'))
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                    child: _buildSectionCard(
-                      title: 'Tracking',
-                      child: _buildAnimeTrackingContent(),
-                    ),
-                  ),
-                ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                  child: _buildSectionCard(
-                    title: 'App & Updates',
-                    child: Column(
-                      children: [
-                        if (_matches('app theme color scheme dark blackout monokai catppuccin dracula amber lavender system'))
-                          _buildActionTile(
-                            icon: Icons.palette_outlined,
-                            title: 'App Theme',
-                            subtitle: NivioTheme.getTheme(appThemeKey).label,
-                            onTap: _showThemeDialog,
-                          ),
-                        if (_matches('ui scale zoom display interface size'))
-                          _buildUiScaleTile(uiScale),
-                        if (_showLiquidGlassSetting && _matches(_liquidGlassSearchTerms))
-                          _buildLiquidGlassNavTile(),
-                        if ((Platform.isWindows || Platform.isLinux || Platform.isMacOS) &&
-                            _matches('discord rich presence rpc activity status'))
-                          _buildDiscordDesktopTile(),
-                        if ((Platform.isAndroid || Platform.isIOS) &&
-                            _matches('discord rich presence rpc activity status'))
-                          _buildDiscordMobileTile(),
-                        if (_matches('update app version release github'))
-                          FutureBuilder<String>(
-                            future: _getAppVersionLabel(),
-                            builder: (context, snapshot) {
-                              return _buildActionTile(
-                                icon: Icons.info_outline_rounded,
-                                title: 'App Version',
-                                subtitle: snapshot.data ?? 'Loading...',
-                                onTap: _showAppVersionDialog,
-                              );
-                            },
-                          ),
-                        if (_matches('update github release app install apk'))
-                          FutureBuilder<GitHubReleaseUpdateResult>(
-                            future: GitHubReleaseUpdateService.checkForUpdate(),
-                            builder: (context, snapshot) {
-                              final result = snapshot.data;
-                              final subtitle = result == null
-                                  ? 'Checking GitHub releases...'
-                                  : result.hasUpdate
-                                  ? 'Latest ${result.latestVersion} available'
-                                  : result.message;
-                              return _buildActionTile(
-                                icon: Icons.download_for_offline_outlined,
-                                title: 'Check GitHub Release',
-                                subtitle: subtitle,
-                                onTap: _checkForGitHubRelease,
-                              );
-                            },
-                          ),
-                        if (_matches('changelog whats new release notes version features'))
-                          FutureBuilder<String>(
-                            future: _getAppVersionLabel(),
-                            builder: (context, snapshot) {
-                              return _buildActionTile(
-                                icon: Icons.new_releases_outlined,
-                                title: "What's New",
-                                subtitle: 'See changes in ${snapshot.data ?? 'this version'}',
-                                onTap: () => _showChangelog(context, ref),
-                              );
-                            },
-                          ),
-                        if (_matches('sponsor donate support fund'))
-                          _buildActionTile(
-                            icon: Icons.favorite_rounded,
-                            title: 'Sponsor Nivio',
-                            subtitle: 'Support the development on GitHub',
-                            titleColor: Colors.pinkAccent,
-                            onTap: () {
-                              final sponsorUrl = dotenv.env['GITHUB_SPONSOR_URL'] ?? 'https://github.com/sponsors/nirmaleeswar30';
-                              launchUrl(
-                                Uri.parse(sponsorUrl),
-                                mode: LaunchMode.externalApplication,
-                              );
-                            },
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
-                            SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                  child: _buildSectionCard(
-                    title: 'Data & Account',
-                    child: Column(
-                      children: [
-                        if (_matches('clear history data'))
-                          _buildActionTile(
-                            icon: Icons.delete_sweep_outlined,
-                            title: 'Clear Watch History',
-                            subtitle: 'Remove all watch progress and activity',
-                            onTap: _showClearHistoryDialog,
-                          ),
-                        if (_matches('clear cache data storage'))
-                          _buildActionTile(
-                            icon: Icons.cleaning_services_outlined,
-                            title: 'Clear Cache',
-                            subtitle: 'Clear cached API and image metadata',
-                            onTap: _showClearCacheDialog,
-                          ),
-                        if (_matches('sign out logout'))
-                          _buildActionTile(
-                            icon: Icons.logout_rounded,
-                            title: user.isAnonymous
-                                ? 'Exit Guest Mode'
-                                : 'Sign Out',
-                            subtitle: user.email ?? 'Current session',
-                            titleColor: NivioTheme.accentColorOf(context),
-                            onTap: _showSignOutDialog,
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SliverToBoxAdapter(child: SizedBox(height: 28)),
             ],
           ),
         ),
       ),
     );
   }
+
+  Widget _mobileSettingsGroup(
+    ThemeData theme,
+    String title,
+    List<(IconData, String, int)> rows,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 7),
+            child: Text(title, style: theme.textTheme.labelLarge?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            )),
+          ),
+          Material(
+            color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(16),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                for (final (index, row) in rows.indexed) ...[
+                  if (index > 0) Divider(
+                    height: 1,
+                    thickness: 1,
+                    indent: 52,
+                    color: theme.dividerColor,
+                  ),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    minLeadingWidth: 24,
+                    leading: Icon(row.$1, size: 22, color: theme.colorScheme.onSurfaceVariant),
+                    title: Text(row.$2, style: theme.textTheme.titleMedium),
+                    trailing: Icon(Icons.chevron_right_rounded, size: 19,
+                      color: theme.colorScheme.onSurfaceVariant),
+                    onTap: () {
+                      FocusScope.of(context).unfocus();
+                      setState(() => _mobileCategory = row.$3);
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dynamicColorsTile() => _buildSwitchTile(
+    icon: Icons.color_lens_outlined,
+    title: 'Dynamic colors',
+    subtitle: 'Use colors from artwork. Turn off for AMOLED Black.',
+    value: ref.watch(dynamicArtworkColorsProvider),
+    onChanged: ref.read(dynamicArtworkColorsProvider.notifier).setEnabled,
+  );
 
   Widget _buildProfileHeader(User user) {
     final avatarUrl = user.photoURL;
@@ -1273,67 +724,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
         ),
       );
     }
-    if (_matches('preferred anime source server provider')) {
-      results.add(
-        _buildActionTile(
-          icon: Icons.source_rounded,
-          title: 'Preferred Anime Source',
-          subtitle: ref.watch(preferredAnimeSourceProvider),
-          onTap: _showPreferredAnimeSourceDialog,
-        ),
-      );
-    }
-    if (_matches('enable torrents p2p streaming')) {
-      results.add(
-        _buildSwitchTile(
-          icon: Icons.cloud_download_rounded,
-          title: 'Enable Torrent Streaming',
-          subtitle: 'Allows high quality P2P playback for anime, movies & shows (Nivio Torrents)',
-          value: ref.watch(enableTorrentsProvider),
-          onChanged: (value) {
-            ref.read(enableTorrentsProvider.notifier).setEnabled(value);
-          },
-        ),
-      );
-    }
-    if (_matches('nyaa anime torrent source')) {
-      results.add(
-        _buildSwitchTile(
-          icon: Icons.movie_filter_rounded,
-          title: 'Nyaa (Anime)',
-          subtitle: 'P2P anime releases from Nyaa',
-          value: ref.watch(torrentNyaaEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
-          onChanged: (val) {
-            ref.read(torrentNyaaEnabledProvider.notifier).setEnabled(val);
-          },
-        ),
-      );
-    }
-    if (_matches('torrentio movies shows torrent source')) {
-      results.add(
-        _buildSwitchTile(
-          icon: Icons.movie_outlined,
-          title: 'Torrentio (Movies & Shows)',
-          subtitle: 'Scrapes YTS, EZTV, 1337x, ThePirateBay, etc.',
-          value: ref.watch(torrentTorrentioEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
-          onChanged: (val) {
-            ref.read(torrentTorrentioEnabledProvider.notifier).setEnabled(val);
-          },
-        ),
-      );
-    }
-    if (_matches('piratebay pirate bay text search torrent source')) {
-      results.add(
-        _buildSwitchTile(
-          icon: Icons.sailing_rounded,
-          title: 'PirateBay (Movies & Shows)',
-          subtitle: 'Free-text search; powers manual searches',
-          value: ref.watch(torrentPirateBayEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
-          onChanged: (val) {
-            ref.read(torrentPirateBayEnabledProvider.notifier).setEnabled(val);
-          },
-        ),
-      );
+    if (_matches('torrent sources p2p enable torrent streaming nyaa torrentio piratebay files')) {
+      results.add(const TorrentSourceSettingsLink());
     }
     if (_matches('anime language audio sub dub subbed dubbed')) {
       results.add(
@@ -1536,6 +928,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     if (_matches('anime tracking anilist mal myanimelist simkl movies tv shows sync watchlist')) {
       results.add(_buildAnimeTrackingContent());
     }
+    if (_matches('dynamic colors artwork amoled black')) results.add(_dynamicColorsTile());
+
     if (_matches('update app version release github')) {
       results.add(
         FutureBuilder<String>(
@@ -1624,7 +1018,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
 
   Widget _streamSelectionTile() => _buildActionTile(
     icon: Icons.filter_list,
-    title: 'Stream selection',
+    title: 'Stream Selection',
     subtitle: 'Autoplay, quality presets, and source priority',
     onTap: () => showStreamPickerSettings(context),
   );
@@ -2063,41 +1457,6 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     );
   }
 
-  Widget _buildTorrentIndexingNote() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.08),
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.info_outline_rounded,
-            size: 18,
-            color: Colors.white.withValues(alpha: 0.6),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              "Note: Torrent indexing doesn't work best with old releases as of now.",
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.7),
-                fontSize: 12,
-                height: 1.35,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildDownloadLocationNote() {
     return FutureBuilder<String>(
       future: _downloadLocation ??= DownloadService.downloadDirectoryPath(),
@@ -2322,55 +1681,6 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           minChildSize: 0.5,
           expand: false,
           builder: (_, scrollController) => _HomeLayoutBottomSheet(scrollController: scrollController),
-        );
-      },
-    );
-  }
-
-  Future<void> _showPreferredAnimeSourceDialog() async {
-    final currentSource = ref.read(preferredAnimeSourceProvider);
-    final sources = ['Miruro', 'Animetsu', 'Animex'];
-    
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              const ListTile(
-                title: Text(
-                  'Preferred Anime Source',
-                  style: TextStyle(
-                    color: NivioTheme.netflixWhite,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              ...sources.map((source) {
-                final isSelected = source == currentSource;
-                return ListTile(
-                  leading: Icon(
-                    isSelected
-                        ? Icons.check_circle_rounded
-                        : Icons.radio_button_unchecked_rounded,
-                    color: isSelected
-                        ? NivioTheme.accentColorOf(context)
-                        : NivioTheme.netflixGrey,
-                  ),
-                  title: Text(
-                    source,
-                    style: TextStyle(color: NivioTheme.netflixWhite),
-                  ),
-                  onTap: () {
-                    ref.read(preferredAnimeSourceProvider.notifier).setPreference(source);
-                    Navigator.pop(sheetContext);
-                  },
-                );
-              }),
-            ],
-          ),
         );
       },
     );
@@ -2623,8 +1933,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
 
 
   Future<void> _showThemeDialog() async {
-    final isDesktop = (!Platform.isAndroid && !Platform.isIOS && MediaQuery.sizeOf(context).width > 600) ||
-        MediaQuery.sizeOf(context).width > 800;
+    final isDesktop = AppPlatform.useDesktopLayout;
 
     if (isDesktop) {
       await _showThemeDesktopDialog();
@@ -3083,12 +2392,12 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     );
   }
 
-  Widget _buildUiScaleTile(double currentUiScale) {
+  Widget _buildUiScaleTile(double currentUiScale, {bool mobile = false}) {
     final effectiveScale = _tempUiScale ?? currentUiScale;
     final percent = (effectiveScale * 100).round();
     final accentColor = NivioTheme.accentColorOf(context);
     final isDefault = (percent == 100);
-    final isDesktop = (!Platform.isAndroid && !Platform.isIOS && MediaQuery.sizeOf(context).width > 600) ||
+    final isDesktop = !mobile && AppPlatform.useDesktopLayout &&
         MediaQuery.sizeOf(context).width > 800;
 
     // Mobile layout: slider capsule placed directly below the description for maximum width & ease of touch
@@ -4540,7 +3849,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
                     child: child,
                   );
                 },
-                child: _buildDesktopCategoryContent(user, _selectedCategoryIndex),
+                child: _buildCategoryContent(user, _selectedCategoryIndex),
               ),
             ),
           ]
@@ -4549,7 +3858,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     );
   }
 
-  Widget _buildDesktopCategoryContent(User user, int index) {
+  Widget _buildCategoryContent(User user, int index, {bool mobile = false}) {
     // We duplicate the variables here because we didn't extract them.
     final watchlist = ref.watch(watchlistProvider);
     final historyAsync = ref.watch(watchHistoryProvider);
@@ -4572,21 +3881,8 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     final customFontName = ref.watch(customSubtitleFontNameProvider);
     final appThemeKey = ref.watch(appThemeProvider);
     final uiScale = ref.watch(uiScaleProvider);
-    final discordRpcEnabled = ref.watch(discordRpcEnabledProvider);
 
-    return AppSingleChildScrollView(
-      key: ValueKey(index),
-      child: Material(
-        color: Colors.white.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(16),
-        clipBehavior: Clip.antiAlias,
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withOpacity(0.05)),
-          ),
-          child: _buildCategorySettingsList(
+    final content = _buildCategorySettingsList(
           index,
           user: user,
           watchlist: watchlist,
@@ -4610,9 +3906,19 @@ Widget _buildMobileLayout(BuildContext context, User user) {
           customFontName: customFontName,
           appThemeKey: appThemeKey,
           uiScale: uiScale,
-          discordRpcEnabled: discordRpcEnabled,
+      mobile: mobile,
+    );
+    return AppSingleChildScrollView(
+      key: ValueKey(index),
+      padding: EdgeInsets.only(bottom: mobile ? 20 : 0),
+      child: Material(
+        color: Colors.white.withValues(alpha: mobile ? 0.05 : 0.03),
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: EdgeInsets.all(mobile ? 4 : 24),
+          child: content,
         ),
-      ),
       ),
     );
   }
@@ -4641,7 +3947,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     required String? customFontName,
     required String appThemeKey,
     required double uiScale,
-    required bool discordRpcEnabled,
+    required bool mobile,
   }) {
     switch (index) {
       case 0: // Profile & Activity
@@ -4675,6 +3981,12 @@ Widget _buildMobileLayout(BuildContext context, User user) {
         return Column(
           children: [
             _streamSelectionTile(),
+            _buildActionTile(
+              icon: Icons.record_voice_over_rounded,
+              title: 'Preferred Anime Audio',
+              subtitle: languagePrefs.animePreferredAudio == 'sub' ? 'Subbed' : 'Dubbed',
+              onTap: _showAnimeAudioDialog,
+            ),
             _buildSwitchTile(
               icon: Icons.skip_next_rounded,
               title: 'Auto Play Next Episode',
@@ -4791,67 +4103,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
           ],
         );
-      case 3: // Torrents
-        return Column(
-          children: [
-            _buildSwitchTile(
-              icon: Icons.cloud_download_rounded,
-              title: 'Enable Torrent Streaming',
-              subtitle: 'Allows high quality P2P playback for anime, movies & shows (Nivio Torrents)',
-              value: ref.watch(enableTorrentsProvider),
-              onChanged: (value) {
-                ref.read(enableTorrentsProvider.notifier).setEnabled(value);
-              },
-            ),
-            _buildSwitchTile(
-              icon: Icons.movie_filter_rounded,
-              title: 'Nyaa (Anime)',
-              subtitle: 'P2P anime releases from Nyaa',
-              value: ref.watch(torrentNyaaEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
-              onChanged: (val) {
-                ref.read(torrentNyaaEnabledProvider.notifier).setEnabled(val);
-              },
-            ),
-            _buildSwitchTile(
-              icon: Icons.movie_outlined,
-              title: 'Torrentio (Movies & Shows)',
-              subtitle: 'Scrapes YTS, EZTV, 1337x, ThePirateBay, etc.',
-              value: ref.watch(torrentTorrentioEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
-              onChanged: (val) {
-                ref.read(torrentTorrentioEnabledProvider.notifier).setEnabled(val);
-              },
-            ),
-            _buildSwitchTile(
-              icon: Icons.sailing_rounded,
-              title: 'PirateBay (Movies & Shows)',
-              subtitle: 'Free-text search; powers manual searches',
-              value: ref.watch(torrentPirateBayEnabledProvider), enabled: ref.watch(enableTorrentsProvider),
-              onChanged: (val) {
-                ref.read(torrentPirateBayEnabledProvider.notifier).setEnabled(val);
-              },
-            ),
-            _buildSwitchTile(
-              icon: Icons.auto_mode_rounded,
-              title: 'Auto-Select Episode File',
-              subtitle: 'Automatically select correct file inside batch torrents',
-              value: ref.watch(torrentAutoSelectProvider), enabled: ref.watch(enableTorrentsProvider),
-              onChanged: (val) {
-                ref.read(torrentAutoSelectProvider.notifier).setEnabled(val);
-              },
-            ),
-            _buildSwitchTile(
-              icon: Icons.save_rounded,
-              title: 'Persist Torrent Files',
-              subtitle: 'Keep files on disk after stopping playback',
-              value: ref.watch(torrentPersistFilesProvider), enabled: ref.watch(enableTorrentsProvider),
-              onChanged: (val) {
-                ref.read(torrentPersistFilesProvider.notifier).setEnabled(val);
-              },
-            ),
-            _buildTorrentIndexingNote(),
-          ],
-        );
-      case 4: // Downloads
+      case 3: // Downloads
         return Column(
           children: [
             _buildActionTile(
@@ -4875,7 +4127,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             _buildDownloadLocationNote(),
           ],
         );
-      case 5: // Network
+      case 4: // Network
         return Column(
           children: [
             _buildSwitchTile(
@@ -4896,27 +4148,16 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
           ],
         );
-      case 6: // Content Feed
+      case 5: // Content & Discovery
         return Column(
           children: [
+            const StreamSourceSettings(inPanel: false),
+            const SizedBox(height: 12),
             _buildActionTile(
               icon: Icons.dashboard_customize_rounded,
               title: 'Customize Home Layout',
               subtitle: 'Rearrange the order of shelves on the home screen',
               onTap: () => _showHomeLayoutDialog(context),
-            ),
-            _buildActionTile(
-              icon: Icons.source_rounded,
-              title: 'Preferred Anime Source',
-              subtitle: ref.watch(preferredAnimeSourceProvider),
-              onTap: _showPreferredAnimeSourceDialog,
-            ),
-
-            _buildActionTile(
-              icon: Icons.record_voice_over_rounded,
-              title: 'Preferred Anime Audio',
-              subtitle: languagePrefs.animePreferredAudio == 'sub' ? 'Subbed' : 'Dubbed',
-              onTap: _showAnimeAudioDialog,
             ),
             _buildSwitchTile(
               icon: Icons.animation_rounded,
@@ -4962,7 +4203,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
           ],
         );
-      case 7: // Episode Alerts
+      case 6: // Episode Alerts
         return Column(
           children: [
             _buildSwitchTile(
@@ -4986,22 +4227,41 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
           ],
         );
-      case 8: // Anime Tracking
+      case 7: // Anime Tracking
         return _buildAnimeTrackingContent();
-      case 9: // App & Updates
+      case _appearanceCategory:
         return Column(
           children: [
+            _dynamicColorsTile(),
             _buildActionTile(
               icon: Icons.palette_outlined,
               title: 'App Theme',
               subtitle: NivioTheme.getTheme(appThemeKey).label,
               onTap: _showThemeDialog,
             ),
-            _buildUiScaleTile(uiScale),
+            _buildUiScaleTile(uiScale, mobile: true),
             if (_showLiquidGlassSetting) _buildLiquidGlassNavTile(),
-            if (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
-              _buildDiscordDesktopTile(),
-            if (Platform.isAndroid || Platform.isIOS) _buildDiscordMobileTile(),
+          ],
+        );
+      case 8: // App & Updates
+        return Column(
+          children: [
+            if (!mobile) ...[
+              _dynamicColorsTile(),
+              _buildActionTile(
+                icon: Icons.palette_outlined,
+                title: 'App Theme',
+                subtitle: NivioTheme.getTheme(appThemeKey).label,
+                onTap: _showThemeDialog,
+              ),
+              _buildUiScaleTile(uiScale),
+            ],
+            _buildActionTile(
+              icon: Icons.play_circle_outline,
+              title: 'Preview onboarding',
+              subtitle: 'Open the setup screens for testing.',
+              onTap: () => context.push('/onboarding?preview=1&next=/profile'),
+            ),
             FutureBuilder<String>(
               future: _getAppVersionLabel(),
               builder: (context, snapshot) {
@@ -5053,7 +4313,7 @@ Widget _buildMobileLayout(BuildContext context, User user) {
             ),
           ],
         );
-      case 10: // Data & Account
+      case 9: // Data & Account
         return Column(
           children: [
             _buildActionTile(
@@ -5137,6 +4397,9 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
+          _buildDiscordDesktopTile(),
+        if (Platform.isAndroid || Platform.isIOS) _buildDiscordMobileTile(),
         _buildTrackingAccounts(),
         const SizedBox(height: 16),
         const Divider(color: Colors.white12),
@@ -5254,292 +4517,46 @@ Widget _buildMobileLayout(BuildContext context, User user) {
     required String manualButtonLabel,
     Color brandColor = Colors.blueAccent,
   }) {
-    final isConnected = user != null;
-
-    final Widget logoWidget = provider == TrackingProvider.anilist
+    final logo = provider == TrackingProvider.anilist
         ? const AniListLogo(size: 38)
         : const MalLogo(size: 38);
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.04),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isConnected
-              ? brandColor.withOpacity(0.35)
-              : Colors.white.withOpacity(0.08),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              if (isConnected &&
-                  user.avatarUrl != null &&
-                  user.avatarUrl!.isNotEmpty)
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    CircleAvatar(
-                      radius: 19,
-                      backgroundImage:
-                          avatarArtworkImage(context, user.avatarUrl!, 38),
-                      backgroundColor: Colors.white10,
-                    ),
-                    Positioned(
-                      right: -3,
-                      bottom: -3,
-                      child: provider == TrackingProvider.anilist
-                          ? const AniListLogo(size: 16)
-                          : const MalLogo(size: 16),
-                    ),
-                  ],
-                )
-              else
-                logoWidget,
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 3,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (isConnected)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.greenAccent.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              'Connected',
-                              style: TextStyle(
-                                color: Colors.greenAccent,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      isConnected ? '@${user.username}' : subtitle,
-                      style: const TextStyle(
-                        color: Colors.white60,
-                        fontSize: 12,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              if (isConnected)
-                TextButton(
-                  onPressed: onDisconnect,
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.redAccent,
-                  ),
-                  child: const Text('Disconnect'),
-                )
-              else
-                ElevatedButton(
-                  onPressed: onConnect,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: brandColor,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: const Text('Connect'),
-                ),
-            ],
-          ),
-          if (!isConnected) ...[
-            const SizedBox(height: 6),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: onManualEntry,
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  foregroundColor: Colors.white54,
-                ),
-                child: Text(
-                  manualButtonLabel,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    decoration: TextDecoration.underline,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
+    return _TrackingAccountCard(
+      key: ValueKey(provider),
+      title: title,
+      description: subtitle,
+      username: user?.username,
+      avatarUrl: user?.avatarUrl,
+      connected: user != null,
+      brand: brandColor,
+      logo: logo,
+      manualLabel: manualButtonLabel,
+      onConnect: onConnect,
+      onManualEntry: onManualEntry,
+      onDisconnect: onDisconnect,
     );
   }
 
-  /// Simkl connect card — covers movies, TV *and* anime (unlike AniList/MAL).
   Widget _buildSimklAccountTile() {
-    const brandColor = Color(0xFF0AA1DD);
     final user = ref.watch(simklAuthProvider);
-    final isConnected = user != null;
-
-    Widget logo() => ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image.asset(
-            'assets/images/simkl_logo.png',
-            width: 38,
-            height: 38,
-            fit: BoxFit.cover,
-            filterQuality: FilterQuality.medium,
-          ),
-        );
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.04),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isConnected
-              ? brandColor.withOpacity(0.35)
-              : Colors.white.withOpacity(0.08),
-        ),
+    return _TrackingAccountCard(
+      key: const ValueKey('simkl'),
+      title: 'Simkl',
+      description: 'Sync movies, TV and anime with Simkl',
+      username: user?.username,
+      avatarUrl: user?.avatarUrl,
+      connected: user != null,
+      brand: const Color(0xFF0AA1DD),
+      logo: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.asset('assets/images/simkl_logo.png', width: 38, height: 38),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              if (isConnected &&
-                  user.avatarUrl != null &&
-                  user.avatarUrl!.isNotEmpty)
-                CircleAvatar(
-                  radius: 19,
-                  backgroundImage: avatarArtworkImage(context, user.avatarUrl!, 38),
-                  backgroundColor: Colors.white10,
-                )
-              else
-                logo(),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 3,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        const Text(
-                          'Simkl',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (isConnected)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.greenAccent.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              'Connected',
-                              style: TextStyle(
-                                color: Colors.greenAccent,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      isConnected
-                          ? '@${user.username}'
-                          : 'Sync movies, TV & anime status to Simkl',
-                      style: const TextStyle(color: Colors.white60, fontSize: 12),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              if (isConnected)
-                TextButton(
-                  onPressed: () => ref.read(simklAuthProvider.notifier).logout(),
-                  style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-                  child: const Text('Disconnect'),
-                )
-              else
-                ElevatedButton(
-                  onPressed: () async {
-                    final launched =
-                        await ref.read(simklAuthProvider.notifier).launchAuth();
-                    if (!launched && mounted) _showSimklManualCodeDialog();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: brandColor,
-                    foregroundColor: Colors.white,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: const Text('Connect'),
-                ),
-            ],
-          ),
-          if (!isConnected) ...[
-            const SizedBox(height: 6),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: _showSimklManualCodeDialog,
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  foregroundColor: Colors.white54,
-                ),
-                child: const Text(
-                  'Enter Simkl Code / URL Manually',
-                  style: TextStyle(
-                    fontSize: 12,
-                    decoration: TextDecoration.underline,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
+      manualLabel: 'Enter Simkl code or URL',
+      onConnect: () async {
+        final launched = await ref.read(simklAuthProvider.notifier).launchAuth();
+        if (!launched && mounted) _showSimklManualCodeDialog();
+      },
+      onManualEntry: _showSimklManualCodeDialog,
+      onDisconnect: () => ref.read(simklAuthProvider.notifier).logout(),
     );
   }
 
@@ -5852,6 +4869,104 @@ Widget _buildMobileLayout(BuildContext context, User user) {
 }
 
 
+class _TrackingAccountCard extends StatefulWidget {
+  const _TrackingAccountCard({
+    super.key,
+    required this.title,
+    required this.description,
+    required this.username,
+    required this.avatarUrl,
+    required this.connected,
+    required this.brand,
+    required this.logo,
+    required this.manualLabel,
+    required this.onConnect,
+    required this.onManualEntry,
+    required this.onDisconnect,
+  });
+
+  final String title;
+  final String description;
+  final String? username;
+  final String? avatarUrl;
+  final bool connected;
+  final Color brand;
+  final Widget logo;
+  final String manualLabel;
+  final VoidCallback onConnect;
+  final VoidCallback onManualEntry;
+  final VoidCallback onDisconnect;
+
+  @override
+  State<_TrackingAccountCard> createState() => _TrackingAccountCardState();
+}
+
+class _TrackingAccountCardState extends State<_TrackingAccountCard> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero : const Duration(milliseconds: 280);
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Ink(
+        decoration: BoxDecoration(gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color.alphaBlend(widget.brand.withValues(alpha: .24), colors.surface), colors.surface],
+        )),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Semantics(
+              expanded: _expanded,
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                leading: widget.avatarUrl?.isNotEmpty == true
+                    ? CircleAvatar(backgroundImage: avatarArtworkImage(context, widget.avatarUrl!, 40))
+                    : widget.logo,
+                title: Text(widget.title, style: theme.textTheme.titleMedium),
+                subtitle: Text(widget.connected ? '@${widget.username ?? widget.title}' : 'Not connected',
+                  style: TextStyle(color: colors.onSurfaceVariant)),
+                trailing: AnimatedRotation(
+                  turns: _expanded ? .5 : 0, duration: duration, curve: Curves.easeInOutCubic,
+                  child: const Icon(Icons.keyboard_arrow_down_rounded),
+                ),
+                onTap: () => setState(() => _expanded = !_expanded),
+              ),
+            ),
+            AnimatedSize(
+              alignment: Alignment.topCenter,
+              duration: duration,
+              curve: Curves.easeInOutCubic,
+              child: _expanded ? Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 13),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Divider(height: 14),
+                    Text(widget.description, style: theme.textTheme.bodyMedium),
+                    const SizedBox(height: 8),
+                    if (widget.connected)
+                      OutlinedButton(onPressed: widget.onDisconnect, child: const Text('Disconnect'))
+                    else ...[
+                      FilledButton(onPressed: widget.onConnect, child: const Text('Connect')),
+                      TextButton(onPressed: widget.onManualEntry, child: Text(widget.manualLabel)),
+                    ],
+                  ],
+                ),
+              ) : const SizedBox(width: double.infinity),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _BlinkingDot extends StatefulWidget {
   final Color color;
   const _BlinkingDot({required this.color});
@@ -6130,6 +5245,17 @@ class _SettingActionTileState extends State<_SettingActionTile> {
 
   @override
   Widget build(BuildContext context) {
+    if (!AppPlatform.useDesktopLayout) {
+      final theme = Theme.of(context);
+      return ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+        leading: Icon(widget.icon, size: 22, color: theme.colorScheme.onSurfaceVariant),
+        title: Text(widget.title, style: _mobileSettingTitle(theme, widget.titleColor)),
+        subtitle: Text(widget.subtitle, style: _mobileSettingCaption(theme)),
+        trailing: Icon(Icons.chevron_right_rounded, size: 19, color: theme.colorScheme.onSurfaceVariant),
+        onTap: widget.onTap,
+      );
+    }
     final accentColor = NivioTheme.accentColorOf(context);
 
     return MouseRegion(
@@ -6236,6 +5362,17 @@ class _SettingSwitchTileState extends State<_SettingSwitchTile> {
 
   @override
   Widget build(BuildContext context) {
+    if (!AppPlatform.useDesktopLayout) {
+      final theme = Theme.of(context);
+      return SwitchListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+        secondary: Icon(widget.icon, size: 22, color: theme.colorScheme.onSurfaceVariant),
+        title: Text(widget.title, style: _mobileSettingTitle(theme)),
+        subtitle: Text(widget.subtitle, style: _mobileSettingCaption(theme)),
+        value: widget.value,
+        onChanged: widget.enabled ? widget.onChanged : null,
+      );
+    }
     final accentColor = Theme.of(context).colorScheme.primary;
     final enabled = widget.enabled;
 
@@ -6304,6 +5441,18 @@ class _SettingSwitchTileState extends State<_SettingSwitchTile> {
     );
   }
 }
+
+TextStyle _mobileSettingTitle(ThemeData theme, [Color? color]) => TextStyle(
+  color: color ?? theme.colorScheme.onSurface,
+  fontSize: 15,
+  fontWeight: FontWeight.w600,
+);
+
+TextStyle _mobileSettingCaption(ThemeData theme) => TextStyle(
+  color: theme.colorScheme.onSurfaceVariant,
+  fontSize: 12,
+  height: 1.4,
+);
 
 class _DesktopThemeCard extends StatefulWidget {
   final NivioAppTheme theme;

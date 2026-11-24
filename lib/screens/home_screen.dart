@@ -30,6 +30,8 @@ import 'package:nivio/widgets/latest_releases_shelf.dart';
 import 'package:nivio/widgets/skeleton.dart';
 import 'package:nivio/widgets/continue_watching_row.dart';
 import 'package:nivio/widgets/tab_artwork.dart';
+import 'package:nivio/widgets/hero_artwork_stretch.dart';
+import 'package:nivio/providers/settings_providers.dart' show dynamicArtworkColorsProvider;
 import 'package:nivio/providers/player_active_provider.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
@@ -389,7 +391,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 duration: const Duration(milliseconds: 800),
                 curve: Curves.easeInOut,
                 decoration: BoxDecoration(
-                  color: Color.lerp(const Color(0xFF0D0F14), _currentAmbientColor, 0.15),
+                  color: _artworkBackground(context),
                 ),
               ),
             ),
@@ -397,6 +399,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           Positioned.fill(
             child: AppCustomScrollView(
               controller: _scrollController,
+              physics: isDesktop ? null : const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
               // TV keeps the next shelf in reach of D-pad focus.
               cacheExtent: AppPlatform.isTv ? 420 : 250,
               scrollSpeed: 2.0,
@@ -808,6 +811,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Color _artworkBackground(BuildContext context) {
+    final base = NivioTheme.backgroundColorOf(context);
+    return ref.watch(dynamicArtworkColorsProvider)
+        ? Color.lerp(base, _currentAmbientColor, 0.15)!
+        : base;
+  }
+
   Widget _buildHeroBannerCarousel(BuildContext context, List<Map<String, dynamic>> items) {
     if (items.isEmpty) return const SizedBox(height: 500);
     final isDesktop = AppPlatform.useDesktopLayout;
@@ -818,7 +828,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         .toSet();
     final itemCount = items.length + 1;
 
-    if (retainArtwork && !_ambientColors.containsKey(0)) {
+    final dynamicColors = ref.watch(dynamicArtworkColorsProvider);
+    if (dynamicColors && retainArtwork && !_ambientColors.containsKey(0)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _extractColorForIndex(items, 0);
       });
@@ -881,13 +892,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onFocusChange: (hasFocus) => _heroHasFocus = AppPlatform.isTv && hasFocus,
         child: PageView.builder(
         controller: _pageController,
+        clipBehavior: isDesktop ? Clip.hardEdge : Clip.none,
         itemCount: itemCount,
         physics: isDesktop
             ? const NeverScrollableScrollPhysics()
             : const PageScrollPhysics(),
         onPageChanged: (index) {
           final actualIndex = index % items.length;
-          if (retainArtwork) _extractColorForIndex(items, actualIndex);
+          if (dynamicColors && retainArtwork) _extractColorForIndex(items, actualIndex);
 
           if (index == items.length) {
             setState(() {
@@ -956,8 +968,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               : false;
 
 
-          final activeBgColor = Color.lerp(const Color(0xFF0D0F14), _currentAmbientColor, 0.15)!;
-          final slideColor = _ambientColors[_currentBannerIndex] ?? NivioTheme.accentColorOf(context);
+          final activeBgColor = _artworkBackground(context);
+          final slideColor = (dynamicColors ? _ambientColors[_currentBannerIndex] : null) ?? NivioTheme.accentColorOf(context);
 
           final mobileMeta = <String>[
             if (genres.isNotEmpty) genres.take(3).join(' / '),
@@ -965,13 +977,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             if (year.isNotEmpty) year,
           ];
 
-          // TV: off-screen hero slides stay built in the PageView; keep them out
-          // of D-pad focus so arrows never land on (and scroll to) them.
-          return ExcludeFocus(
-            excluding: AppPlatform.isTv && index != _currentBannerPage,
-            child: Stack(
-            children: [
-              Container(
+          final art = Container(
                 decoration: BoxDecoration(
                   image: backdropPath != null && retainArtwork
                       ? DecorationImage(
@@ -991,6 +997,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ? const Color(0xFF2F2F2F)
                       : null,
                 ),
+              );
+          // TV: off-screen hero slides stay built in the PageView; keep them out
+          // of D-pad focus so arrows never land on (and scroll to) them.
+          return ExcludeFocus(
+            excluding: AppPlatform.isTv && index != _currentBannerPage,
+            child: Stack(
+            children: [
+              if (isDesktop) art else HeroArtworkStretch(
+                controller: _scrollController,
+                height: bannerHeight,
+                child: art,
               ),
               // Vignette overlay
               if (isDesktop && retainArtwork)
@@ -1235,51 +1252,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               runSpacing: 4,
                               children: _buildMetaChips(mobileMeta),
                             ),
-                          const SizedBox(height: 14),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _AnimatedHoverScale(
-                                child: ElevatedButton.icon(
-                                  onPressed: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
-                                  icon: PhosphorIcon(
-                                    PhosphorIconsFill.play,
-                                    color: slideColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
-                                    size: 16,
-                                  ),
-                                  label: Text(
-                                    'Watch Now',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                      color: slideColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
-                                    ),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: slideColor,
-                                    elevation: 0,
-                                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              _smallSquareButton(
-                                icon: PhosphorIcon(
-                                  isInWatchlist
-                                      ? PhosphorIconsFill.checkCircle
-                                      : PhosphorIconsRegular.plus,
-                                  color: isInWatchlist
-                                      ? slideColor
-                                      : Colors.white,
-                                  size: 18,
-                                ),
-                                onTap: () => _toggleFeaturedWatchlist(content),
-                              ),
-                            ],
-                          ),
                         ],
                       ),
               ),
@@ -1501,20 +1473,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     }
     return widgets;
-  }
-
-  Widget _smallSquareButton({required Widget icon, required VoidCallback onTap}) {
-    return _AnimatedHoverScale(
-      child: Material(
-        color: Colors.white12,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(10),
-          child: SizedBox(width: 38, height: 38, child: Center(child: icon)),
-        ),
-      ),
-    );
   }
 
   Future<void> _toggleFeaturedWatchlist(Map<String, dynamic> content) async {

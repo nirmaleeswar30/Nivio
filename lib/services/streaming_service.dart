@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:nivio/widgets/torrent_picker_sheet.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
@@ -13,7 +15,13 @@ import 'package:nivio/services/scrapers/vidrock/vidrock_scraper.dart';
 import 'package:nivio/services/tmdb_service.dart';
 import 'package:nivio/services/scrapers/miruro/miruro_scraper.dart';
 import 'package:nivio/services/scrapers/animex/animex_scraper.dart';
+import 'package:nivio/services/extensions/cnc_direct_sources.dart';
+import 'package:nivio/services/extensions/extension_resolver.dart';
+import 'package:nivio/services/extensions/nuvio_direct_sources.dart';
+import 'package:nivio/services/extensions/stream_selection.dart';
 import 'package:nivio/services/extensions/stream_selection_settings.dart';
+import 'package:nivio/services/extensions/extension_repository.dart';
+import 'package:nivio/services/extensions/extension_torrent_search.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
 import 'package:nivio/services/torrent/torrent_models.dart';
 import 'package:nivio/services/torrent/media_torrent_models.dart';
@@ -61,15 +69,22 @@ class StreamingService {
 
   static const List<String> _standardProviders = [];
 
-  Iterable<String> get streamSelectionBuiltIns => [
-    for (var i = 0; i < totalProvidersFor(isAnime: false); i++)
-      if (getProviderName(i, isAnime: false) != 'Nivio Torrents' &&
-          isDirectStream(i, isAnime: false))
-        getProviderName(i, isAnime: false),
-    'Miruro',
-    'Animetsu',
-    'Animex',
-  ];
+  Iterable<String> streamSelectionBuiltIns({required bool isAnime}) =>
+      isAnime
+      ? [
+          'Miruro',
+          'Animetsu',
+          'Animex',
+          ...CncDirectSource.forCategory(
+            isAnime: true,
+          ).map((source) => source.name),
+        ]
+      : [
+          for (var i = 0; i < totalProvidersFor(isAnime: false); i++)
+            if (getProviderName(i, isAnime: false) != 'Nivio Torrents' &&
+                isDirectStream(i, isAnime: false))
+              getProviderName(i, isAnime: false),
+        ];
 
   List<String> _dynamicAnimexServers = ['Animex (Auto)'];
   List<String> _dynamicMiruroServers = ['Miruro (Auto)'];
@@ -141,45 +156,53 @@ class StreamingService {
     }
     final ordered = _animeProviders;
     appDebugLog(
-      '🔧 [FLOW] prepareProviders END — pref=${ref.read(preferredAnimeSourceProvider)} '
+      '🔧 [FLOW] prepareProviders END — '
       'total providers: ${ordered.length} → '
       '${[for (var i = 0; i < ordered.length; i++) '$i:${ordered[i]}'].join(', ')}',
     );
   }
 
-  // Dynamic getter for anime providers based on user preference
   List<String> get _animeProviders {
-    final pref = ref.read(preferredAnimeSourceProvider);
-    
-    final miruroServers = _dynamicMiruroServers; 
-    final animexServers = _dynamicAnimexServers;
-    final animetsuServers = [
-      'Animetsu (Auto)',
-      'Animetsu (Bee)',
-      'Animetsu (Koto)',
-      'Animetsu (Wave)',
-      'Animetsu (GG)',
-      'Animetsu (Mega)',
+    final sources = <String, List<String>>{
+      'builtin:Miruro': _dynamicMiruroServers,
+      'builtin:Animetsu': const [
+        'Animetsu (Auto)',
+        'Animetsu (Bee)',
+        'Animetsu (Koto)',
+        'Animetsu (Wave)',
+        'Animetsu (GG)',
+        'Animetsu (Mega)',
+      ],
+      'builtin:Animex': _dynamicAnimexServers,
+      for (final source in CncDirectSource.forCategory(isAnime: true))
+        'builtin:${source.name}': [source.name],
+    };
+    final settings = ref.read(streamSelectionSettingsProvider).valueOrNull;
+    final order = {...?settings?.animeSourceOrder, ...sources.keys};
+    return [
+      if (isTorrentEnabled(isAnime: true)) 'Nivio Torrents',
+      for (final id in order) ...?sources[id],
     ];
-
-    // P2P torrent streaming is offered first for anime — it
-    // yields the highest-quality releases when peers are available.
-    final torrent = isTorrentEnabled(isAnime: true) ? ['Nivio Torrents'] : <String>[];
-
-    // Animetsu before Animex in fallback: Animex's CDNs start noticeably slower.
-    if (pref == 'Miruro') {
-      return [...torrent, ...miruroServers, ...animetsuServers, ...animexServers];
-    } else if (pref == 'Animex') {
-      return [...torrent, ...animexServers, ...animetsuServers, ...miruroServers];
-    } else { // Animetsu
-      return [...torrent, ...animetsuServers, ...miruroServers, ...animexServers];
-    }
   }
 
   List<String> get _allProviders {
     final torrent = isTorrentEnabled(isAnime: false) ? ['Nivio Torrents'] : <String>[];
-    return [...torrent, ..._premiumProviders, ..._standardProviders];
+    return [
+      ...torrent,
+      ..._premiumProviders,
+      ..._standardProviders,
+      for (final source in CncDirectSource.forCategory(isAnime: false))
+        if (!_premiumProviders.contains(source.name)) source.name,
+      ...NuvioDirectSources.names,
+    ];
   }
+
+  static ExtensionProvider? extensionBackedSource(
+    String name, {
+    required bool isAnime,
+  }) =>
+      CncDirectSource.forName(name, isAnime: isAnime)?.provider ??
+      (isAnime ? null : NuvioDirectSources.forName(name));
 
   /// Shows the torrent picker, starts the chosen release, and remembers its
   /// release group as the binge preference for the series. Returns null if the
@@ -195,6 +218,8 @@ class StreamingService {
     TorrentStreamService? pickerSearch, {
     bool? autoSelect,
     bool Function()? onManualSwitch,
+    VoidCallback? onPickerDismissed,
+    List<DeviceOrientation> restoreOrientations = const [],
   }) async {
     final settings = await ref.read(streamSelectionSettingsProvider.future);
     if (!context.mounted) return null;
@@ -209,9 +234,21 @@ class StreamingService {
       torrentStreamService: pickerSearch ?? torrentStreamService,
       onStatusUpdate: onStatusUpdate,
       autoSelect: onManualSwitch == null ? autoSelect : false,
+      groupBySource: settings.groupBySource,
       maxFileBytes: maxFileBytes,
+      restoreOrientations: restoreOrientations,
+      refreshSearch: pickerSearch == null ? null : (settings) => ExtensionTorrentSearch.forPicker(
+        builtIn: torrentStreamService,
+        media: media,
+        repository: ref.read(extensionRepositoryProvider),
+        settings: settings,
+      ),
     );
-    if (selection == null || !context.mounted || onManualSwitch?.call() == false) {
+    if (selection == null) {
+      onPickerDismissed?.call();
+      return null;
+    }
+    if (!context.mounted || onManualSwitch?.call() == false) {
       return null;
     }
     final ep = selection.$2 is AnimeQuery
@@ -223,7 +260,7 @@ class StreamingService {
       ep,
       onStatusUpdate,
       media: media,
-      maxFileBytes: maxFileBytes,
+      maxFileBytes: (ref.read(streamSelectionSettingsProvider).valueOrNull ?? settings).maxFileBytes,
     );
     if (handle != null && !selection.automatic) {
       await torrentStreamService.rememberReleaseGroup(
@@ -247,6 +284,8 @@ class StreamingService {
     TorrentStreamService? pickerSearch,
     bool? autoSelect,
     bool Function()? onManualSwitch,
+    VoidCallback? onPickerDismissed,
+    List<DeviceOrientation> restoreOrientations = const [],
   }) async {
     final resMatch =
         preferredQuality == null ? null : RegExp(r'\d{3,4}').firstMatch(preferredQuality);
@@ -290,6 +329,8 @@ class StreamingService {
         handle = await _pickTorrentInteractively(
           media, episode, season, absoluteEpisode, resolution, onStatusUpdate, context, pickerSearch,
           autoSelect: autoSelect,
+          onPickerDismissed: onPickerDismissed,
+          restoreOrientations: restoreOrientations,
         );
       }
       if (handle != null) {
@@ -318,8 +359,10 @@ class StreamingService {
         media, episode, season, absoluteEpisode, resolution, onStatusUpdate, context, pickerSearch,
         autoSelect: autoSelect,
         onManualSwitch: onManualSwitch,
+        onPickerDismissed: onPickerDismissed,
+        restoreOrientations: restoreOrientations,
       );
-      if (handle == null) return null; // user cancelled
+      if (handle == null) return null;
     } else {
       // Silent / background mode
       handle = await torrentStreamService.resolveStream(
@@ -381,6 +424,56 @@ class StreamingService {
           onStatusUpdate: onStatusUpdate,
           context: context,
           binge: binge,
+        );
+      }
+
+      final directProvider = extensionBackedSource(
+        providerName,
+        isAnime: isAnime,
+      );
+      if (directProvider != null) {
+        final resolver = ExtensionResolver(ref.read(extensionRepositoryProvider));
+        final choices = await resolver.resolve(
+          directProvider,
+          resolver.lookup(media, season, episode),
+          wantTorrent: false,
+        );
+        final selection = StreamSelection(
+          await ref.read(streamSelectionSettingsProvider.future),
+          audio: preferredAudio ?? 'Original',
+          animeAudio: subDubPreference,
+          isAnime: isAnime,
+        );
+        final ranked = await selection.ranked(
+          choices.where((choice) => choice.isDirect),
+        );
+        final requestedQuality = preferredQuality?.toLowerCase();
+        final best =
+            ranked
+                .where((choice) => choice.quality.toLowerCase() == requestedQuality)
+                .firstOrNull ??
+            ranked.firstOrNull;
+        final result = best?.direct;
+        if (result == null) return null;
+        final seen = {result.url};
+        final alternatives = [
+          for (final choice in ranked)
+            if (choice.direct case final stream?)
+              if (mapEquals(stream.headers, result.headers) &&
+                  seen.add(stream.url))
+                StreamSource(
+                  url: stream.url,
+                  quality: stream.quality,
+                  isM3U8: stream.isM3U8,
+                  isDub: choice.audioType == 'Dub',
+                ),
+        ];
+        return result.copyWith(
+          sources: alternatives,
+          availableQualities: {
+            result.quality,
+            ...alternatives.map((stream) => stream.quality),
+          }.toList(),
         );
       }
 
@@ -656,6 +749,7 @@ class StreamingService {
 
   bool isDirectStream(int providerIndex, {required bool isAnime}) {
     final providerName = getProviderName(providerIndex, isAnime: isAnime);
+    if (extensionBackedSource(providerName, isAnime: isAnime) != null) return true;
     if (providerName == 'Nivio Torrents') return true; // localhost HLS-like stream
     if (['Nivio', 'StreamFlix', 'MovieBox', 'CastleTV', 'VidRock'].contains(providerName)) return true;
     if (providerName.startsWith('Animetsu') || providerName.startsWith('Miruro') || providerName.startsWith('Animex')) return true;
@@ -664,6 +758,7 @@ class StreamingService {
 
   bool isDownloadable(int providerIndex, {required bool isAnime}) {
     final providerName = getProviderName(providerIndex, isAnime: isAnime);
+    if (extensionBackedSource(providerName, isAnime: isAnime) != null) return true;
     // These providers yield raw direct streams which our custom downloader can parse and concatenate
     if (['Nivio', 'StreamFlix', 'MovieBox', 'CastleTV', 'VidRock'].contains(providerName)) return true;
     if (providerName.startsWith('Animetsu') || providerName.startsWith('Miruro') || providerName.startsWith('Animex')) return true;

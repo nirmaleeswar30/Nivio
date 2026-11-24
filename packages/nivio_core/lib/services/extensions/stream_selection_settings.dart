@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'nuvio_direct_sources.dart';
+
 enum StreamSelectionMode {
   manual('Manual'),
   first('Fastest First'),
-  match('Match Preferences');
+  match('Autoplay');
 
   const StreamSelectionMode(this.label);
   final String label;
@@ -167,21 +169,25 @@ class StreamSelectionSettings {
     this.mode = StreamSelectionMode.manual,
     this.preset = StreamPreset.balanced,
     this.sourceOrder = const [],
+    this.animeSourceOrder = const [],
     this.presetOptions = const {},
     this.regex = '',
     this.timeoutSeconds = 8,
     this.reuseBingeGroup = true,
     this.matchAudio = true,
+    this.groupBySource = true,
   });
 
   final StreamSelectionMode mode;
   final StreamPreset preset;
   final List<String> sourceOrder;
+  final List<String> animeSourceOrder;
   final Map<StreamPreset, StreamPresetOptions> presetOptions;
   final String regex;
   final int timeoutSeconds;
   final bool reuseBingeGroup;
   final bool matchAudio;
+  final bool groupBySource;
 
   List<int> get resolutions =>
       presetOptions[preset]?.resolutions ?? preset.resolutions;
@@ -207,6 +213,7 @@ class StreamSelectionSettings {
     StreamSelectionMode? mode,
     StreamPreset? preset,
     List<String>? sourceOrder,
+    List<String>? animeSourceOrder,
     List<int>? customResolutions,
     Set<StreamExclusion>? customExclusions,
     Set<StreamFeature>? customFeatures,
@@ -215,6 +222,7 @@ class StreamSelectionSettings {
     int? timeoutSeconds,
     bool? reuseBingeGroup,
     bool? matchAudio,
+    bool? groupBySource,
   }) {
     final activePreset = preset ?? this.preset;
     final options = presetOptions[activePreset];
@@ -222,6 +230,7 @@ class StreamSelectionSettings {
       mode: mode ?? this.mode,
       preset: activePreset,
       sourceOrder: sourceOrder ?? this.sourceOrder,
+      animeSourceOrder: animeSourceOrder ?? this.animeSourceOrder,
       presetOptions: {
         ...presetOptions,
         if (customResolutions != null ||
@@ -239,20 +248,33 @@ class StreamSelectionSettings {
       timeoutSeconds: timeoutSeconds ?? this.timeoutSeconds,
       reuseBingeGroup: reuseBingeGroup ?? this.reuseBingeGroup,
       matchAudio: matchAudio ?? this.matchAudio,
+      groupBySource: groupBySource ?? this.groupBySource,
     );
   }
 
-  int sourceRank(String id) {
-    final index = sourceOrder.indexOf(id);
-    return index < 0 ? sourceOrder.length : index;
+  List<String> sourceOrderFor({required bool isAnime}) =>
+      isAnime ? animeSourceOrder : sourceOrder;
+
+  int sourceRank(String id, {bool isAnime = false}) {
+    final order = sourceOrderFor(isAnime: isAnime);
+    final index = order.indexOf(id);
+    return index < 0 ? order.length : index;
   }
 
   static const _key = 'stream_selection_preferences';
   static const _version = 2;
 
   static StreamSelectionSettings read(SharedPreferences prefs) {
+    final legacyAnimeSource = prefs.get('preferred_anime_source');
+    final legacyAnimeOrder = [
+      if (const {'Miruro', 'Animetsu', 'Animex'}.contains(legacyAnimeSource))
+        'builtin:$legacyAnimeSource',
+    ];
+    final defaults = legacyAnimeOrder.isEmpty
+        ? const StreamSelectionSettings()
+        : StreamSelectionSettings(animeSourceOrder: legacyAnimeOrder);
     final raw = prefs.getString(_key);
-    if (raw == null) return const StreamSelectionSettings();
+    if (raw == null) return defaults;
     try {
       final data = jsonDecode(raw) as Map<String, dynamic>;
       T readEnum<T extends Enum>(List<T> values, String key, T fallback) =>
@@ -266,6 +288,13 @@ class StreamSelectionSettings {
       final savedOptions =
           data['presetOptions'] as Map<String, dynamic>? ?? const {};
       final savedVersion = data['version'] as int? ?? 1;
+      final savedOrder =
+          (data['sourceOrder'] as List?)
+              ?.whereType<String>()
+              .map((id) => NuvioDirectSources.replacementId(id) ?? id)
+              .toSet()
+              .toList() ??
+          const <String>[];
       return StreamSelectionSettings(
         mode: readEnum(
           StreamSelectionMode.values,
@@ -273,12 +302,13 @@ class StreamSelectionSettings {
           StreamSelectionMode.manual,
         ),
         preset: preset,
-        sourceOrder:
-            (data['sourceOrder'] as List?)
+        sourceOrder: savedOrder,
+        animeSourceOrder:
+            (data['animeSourceOrder'] as List?)
                 ?.whereType<String>()
                 .toSet()
                 .toList() ??
-            const [],
+            (savedOrder.isEmpty ? legacyAnimeOrder : savedOrder),
         presetOptions: {
           for (final preset in StreamPreset.values)
             if (savedOptions[preset.name]
@@ -293,11 +323,12 @@ class StreamSelectionSettings {
         timeoutSeconds: (data['timeoutSeconds'] as int? ?? 8).clamp(1, 30),
         reuseBingeGroup: data['reuseBingeGroup'] as bool? ?? true,
         matchAudio: data['matchAudio'] as bool? ?? true,
+        groupBySource: data['groupBySource'] as bool? ?? true,
       );
     } on FormatException {
-      return const StreamSelectionSettings();
+      return defaults;
     } on TypeError {
-      return const StreamSelectionSettings();
+      return defaults;
     }
   }
 
@@ -308,6 +339,7 @@ class StreamSelectionSettings {
       'mode': mode.name,
       'preset': preset.name,
       'sourceOrder': sourceOrder,
+      'animeSourceOrder': animeSourceOrder,
       'presetOptions': {
         for (final entry in presetOptions.entries)
           entry.key.name: entry.value.toJson(),
@@ -316,6 +348,7 @@ class StreamSelectionSettings {
       'timeoutSeconds': timeoutSeconds,
       'reuseBingeGroup': reuseBingeGroup,
       'matchAudio': matchAudio,
+      'groupBySource': groupBySource,
     }),
   );
 }

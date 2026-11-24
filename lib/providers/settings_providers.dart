@@ -80,6 +80,31 @@ Color appAccentColorFromKey(String key) {
 }
 
 // App Theme Provider (Classic, Blackout, Monokai, Catppuccin, Dracula, Amber, Lavender)
+final dynamicArtworkColorsProvider =
+    StateNotifierProvider<DynamicArtworkColorsNotifier, bool>((ref) {
+      return DynamicArtworkColorsNotifier();
+    });
+
+class DynamicArtworkColorsNotifier extends StateNotifier<bool> {
+  static const _key = 'dynamic_artwork_colors_enabled';
+
+  DynamicArtworkColorsNotifier()
+    : super(_startupPrefs?.getBool(_key) ?? true) {
+    if (_startupPrefs == null) _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) state = prefs.getBool(_key) ?? true;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, value);
+  }
+}
+
 final appThemeProvider =
     StateNotifierProvider<AppThemeNotifier, String>((ref) {
   return AppThemeNotifier();
@@ -568,28 +593,6 @@ class AnimeSubDubNotifier extends StateNotifier<String> {
   }
 }
 
-
-// Anime Source Preference Provider
-final preferredAnimeSourceProvider = StateNotifierProvider<PreferredAnimeSourceNotifier, String>((ref) {
-  return PreferredAnimeSourceNotifier();
-});
-
-class PreferredAnimeSourceNotifier extends StateNotifier<String> {
-  PreferredAnimeSourceNotifier() : super('Miruro') {
-    _loadPreference();
-  }
-
-  Future<void> _loadPreference() async {
-    final prefs = await SharedPreferences.getInstance();
-    state = prefs.getString('preferred_anime_source') ?? 'Miruro';
-  }
-
-  Future<void> setPreference(String preference) async {
-    state = preference;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('preferred_anime_source', preference);
-  }
-}
 
 // Enable Torrents Provider
 final enableTorrentsProvider =

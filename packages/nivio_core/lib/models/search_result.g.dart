@@ -21,6 +21,7 @@ _$SearchResultImpl _$$SearchResultImplFromJson(Map<String, dynamic> json) =>
       overview: json['overview'] as String?,
       voteAverage: (json['vote_average'] as num?)?.toDouble(),
       malId: (json['mal_id'] as num?)?.toInt(),
+      animeFormat: json['anime_format'] as String?,
     );
 
 Map<String, dynamic> _$$SearchResultImplToJson(_$SearchResultImpl instance) =>
@@ -38,6 +39,7 @@ Map<String, dynamic> _$$SearchResultImplToJson(_$SearchResultImpl instance) =>
       'overview': instance.overview,
       'vote_average': instance.voteAverage,
       'mal_id': instance.malId,
+      'anime_format': instance.animeFormat,
     };
 
 _$SearchResultsImpl _$$SearchResultsImplFromJson(Map<String, dynamic> json) =>

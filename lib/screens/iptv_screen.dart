@@ -307,7 +307,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                           label: const Text('Add New Playlist'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: NivioTheme.accentColorOf(context),
-                            foregroundColor: Colors.white,
+                            foregroundColor: Theme.of(context).colorScheme.onPrimary,
                             minimumSize: const Size(double.infinity, 50),
                           ),
                         ),
@@ -489,7 +489,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
           label: Text(_xtreamMode ? 'Log in' : 'Load Playlist'),
           style: FilledButton.styleFrom(
             backgroundColor: NivioTheme.accentColorOf(context),
-            foregroundColor: Colors.white,
+            foregroundColor: Theme.of(context).colorScheme.onPrimary,
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
@@ -1116,7 +1116,7 @@ class _ChannelCardState extends State<_ChannelCard> {
                       ),
                       child: Icon(
                         PhosphorIconsRegular.play,
-                        color: _isHovered ? Colors.white : accent,
+                        color: _isHovered ? Theme.of(context).colorScheme.onPrimary : accent,
                         size: 16,
                       ),
                     ),

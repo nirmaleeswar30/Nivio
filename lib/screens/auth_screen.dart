@@ -190,7 +190,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         vertical: 16,
                       ),
                       backgroundColor: NivioTheme.accentColorOf(context),
-                      foregroundColor: Colors.white,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
                     ),
                     icon: Icon(Icons.play_arrow, size: 24),
                     label: const Text(

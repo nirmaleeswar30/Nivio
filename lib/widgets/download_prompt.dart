@@ -515,7 +515,7 @@ class DownloadPrompt {
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: NivioTheme.accentColorOf(ctx),
-                            foregroundColor: Colors.white,
+                            foregroundColor: Theme.of(ctx).colorScheme.onPrimary,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),

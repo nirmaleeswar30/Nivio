@@ -625,6 +625,9 @@ final appRouter = GoRouter(
       return isOnboardingRoute ? null
           : Uri(path: '/onboarding', queryParameters: {'next': destination}).toString();
     }
+    if (isOnboardingRoute && state.uri.queryParameters['preview'] == '1') {
+      return null;
+    }
     if (isAuthRoute || isOnboardingRoute) return destination;
     return null;
   },
@@ -650,6 +653,7 @@ final appRouter = GoRouter(
           key: ValueKey(userId),
           userId: userId,
           destination: onboardingDestination(state.uri.queryParameters['next']),
+          preview: state.uri.queryParameters['preview'] == '1',
         );
       },
     ),
@@ -909,7 +913,11 @@ class _NivioAppState extends ConsumerState<NivioApp> {
       showPerformanceOverlay: false,
       scrollBehavior: DesktopScrollBehavior(),
       title: 'Nivio',
-      theme: NivioTheme.buildTheme(themeKey),
+      theme: NivioTheme.buildTheme(
+        themeKey,
+        fontFamily: AppPlatform.useDesktopLayout ? 'Satoshi' : 'Inter',
+        dynamicColors: ref.watch(dynamicArtworkColorsProvider),
+      ),
       routerConfig: appRouter,
       builder: (context, child) {
         final Widget gate = _GitHubReleasePromptGate(

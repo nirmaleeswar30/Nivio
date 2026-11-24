@@ -19,6 +19,7 @@ class SearchResult with _$SearchResult {
     String? overview,
     @JsonKey(name: 'vote_average') double? voteAverage,
     @JsonKey(name: 'mal_id') int? malId,
+    @JsonKey(name: 'anime_format') String? animeFormat,
   }) = _SearchResult;
 
   factory SearchResult.fromJson(Map<String, dynamic> json) =>

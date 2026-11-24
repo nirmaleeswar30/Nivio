@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
+import 'package:nivio/models/stream_size.dart';
 import 'package:nivio/screens/extensions_screen.dart';
 import 'package:nivio/screens/onboarding_screen.dart';
 import 'package:nivio/screens/stream_selection_screen.dart';
@@ -16,7 +17,11 @@ import 'package:nivio/services/extensions/extension_resolver.dart';
 import 'package:nivio/services/extensions/stream_discovery.dart';
 import 'package:nivio/services/extensions/stream_selection.dart';
 import 'package:nivio/services/extensions/stream_selection_settings.dart';
+import 'package:nivio/services/m3u8_parser.dart';
+import 'package:nivio/services/mp4_metadata.dart';
 import 'package:nivio/services/streaming_service.dart';
+import 'package:nivio/widgets/mobile_stream_picker.dart' show MobileStreamCard;
+import 'package:nivio/widgets/stream_picker_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 StreamChoice _choice(
@@ -51,7 +56,447 @@ class _UnusedStreamingService implements StreamingService {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _Mp4StreamingService extends _UnusedStreamingService {
+  @override
+  int totalProvidersFor({required bool isAnime}) => 1;
+
+  @override
+  String getProviderName(int index, {required bool isAnime}) => 'Example';
+
+  @override
+  bool isDirectStream(int providerIndex, {required bool isAnime}) => true;
+
+  @override
+  Future<StreamResult?> fetchStreamUrl({
+    required SearchResult media,
+    int season = 1,
+    int episode = 1,
+    int? absoluteEpisode,
+    String? preferredQuality,
+    int providerIndex = 0,
+    bool autoSkipIntro = true,
+    String subDubPreference = 'sub',
+    String? preferredAudio,
+    void Function(String)? onStatusUpdate,
+    BuildContext? context,
+    bool binge = false,
+  }) async => StreamResult(
+    url: 'https://example.com/movie.mp4',
+    provider: 'Example',
+    quality: '1080p',
+    selectedAudio: 'English',
+  );
+}
+
 void main() {
+  test(
+    'size badges use explicit bytes or an unambiguous release-name size',
+    () {
+      const gib = 1024 * 1024 * 1024;
+      expect(
+        StreamSize.format(StreamSize.fromTitle('Movie REMUX\n43.09 GB')!),
+        '43.09 GB',
+      );
+      expect(StreamSize.fromTitle('Film 1080p 2.5 GiB'), (2.5 * gib).round());
+      expect(StreamSize.fromTitle('Film.2.5GB_WEB-DL'), (2.5 * gib).round());
+      expect(StreamSize.fromTitle('Film (2 GB / 4 GB)'), isNull);
+      expect(StreamSize.fromTitle('Film 1080p 16 GBps'), isNull);
+      expect(
+        _choice(
+          'sized',
+          'Movie 43.09 GB',
+          '1080p',
+          bytes: gib,
+        ).displaySizeBytes,
+        gib,
+      );
+    },
+  );
+
+  test(
+    'anime source priority migrates and saves separately from movies',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'stream_selection_preferences':
+            '{"version":2,"sourceOrder":["first","second"]}',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final original = StreamSelectionSettings.read(prefs);
+      expect(original.sourceRank('first', isAnime: true), 0);
+      await original
+          .copyWith(animeSourceOrder: ['second', 'first'])
+          .save(prefs);
+      final settings = StreamSelectionSettings.read(prefs);
+      expect(settings.sourceRank('first'), 0);
+      expect(settings.sourceRank('first', isAnime: true), 1);
+      expect(settings.sourceRank('second', isAnime: true), 0);
+    },
+  );
+
+  test('the legacy anime source is used until a priority is saved', () async {
+    SharedPreferences.setMockInitialValues({
+      'preferred_anime_source': 'Animex',
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final settings = StreamSelectionSettings.read(prefs);
+    expect(settings.animeSourceOrder, ['builtin:Animex']);
+
+    await settings
+        .copyWith(animeSourceOrder: ['builtin:Miruro', 'builtin:Animex'])
+        .save(prefs);
+    expect(StreamSelectionSettings.read(prefs).animeSourceOrder, [
+      'builtin:Miruro',
+      'builtin:Animex',
+    ]);
+  });
+
+  test('anime picker ranks Japanese audio alongside Sub', () async {
+    final discovery = StreamDiscovery(
+      media: const SearchResult(id: 1, mediaType: 'anime'),
+      season: 1,
+      episode: 2,
+      streaming: _UnusedStreamingService(),
+      repository: ExtensionRepository(),
+      subDub: 'sub',
+      preferredQuality: '1080p',
+      selection: const StreamSelectionSettings(
+        mode: StreamSelectionMode.match,
+        animeSourceOrder: ['builtin:Miruro', 'builtin:AniKoto'],
+      ),
+    );
+    addTearDown(discovery.dispose);
+    final aniKoto = _choice(
+      'anikoto-720',
+      'MegaPlay SUB 720p',
+      '720p',
+      provider: 'builtin:AniKoto',
+    );
+    final miruroSub = _choice(
+      'miruro-sub-unknown',
+      'Miruro (kickassanime)',
+      'Cat',
+      provider: 'builtin:Miruro (kickassanime)',
+      audio: 'Sub',
+    );
+    final miruroJapanese = _choice(
+      'miruro-japanese-1080',
+      'Miruro (kickassanime)',
+      'Vid',
+      provider: 'builtin:Miruro (kickassanime)',
+      audio: 'japanese',
+    ).withMetadata(videoHeights: [1080, 720, 360]);
+    final choices = [aniKoto, miruroSub, miruroJapanese];
+    final expected = [miruroJapanese, aniKoto, miruroSub];
+
+    expect(discovery.orderForPicker(choices, resolution: 1080), expected);
+    expect(await discovery.policy.ranked(choices), expected);
+  });
+
+  testWidgets('the picker only inspects audio when the user taps the button', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.binding.setSurfaceSize(const Size(390, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final tracks = Completer<List<String>>();
+    String? inspectedUrl;
+    final discovery = StreamDiscovery(
+      media: const SearchResult(id: 1, mediaType: 'movie'),
+      season: 1,
+      episode: 1,
+      streaming: _Mp4StreamingService(),
+      repository: ExtensionRepository(),
+      subDub: 'sub',
+      preferredQuality: null,
+      inspectAudioTracks: (stream, _) {
+        inspectedUrl = stream.url;
+        return tracks.future;
+      },
+    );
+    final search = discovery.search();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DirectStreamPickerSheet(
+            discovery: discovery,
+            isFullScreen: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await search;
+    expect(inspectedUrl, isNull);
+    expect(find.text('English'), findsOneWidget);
+    expect(find.text('Checking audio…'), findsNothing);
+
+    await tester.tap(find.text('Check audio tracks'));
+    await tester.pump();
+    expect(inspectedUrl, 'https://example.com/movie.mp4');
+    expect(find.text('Checking audio…'), findsOneWidget);
+    expect(find.byType(DirectStreamPickerSheet), findsOneWidget);
+    tracks.complete(['hin', 'und']);
+    await tester.pumpAndSettle();
+    expect(find.text('Hindi / Track 2 · Language unknown'), findsOneWidget);
+    expect(find.text('Check audio tracks'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    discovery.dispose();
+  });
+
+  test('release-name audio hints stay separate from titles and subtitles', () {
+    expect(
+      StreamSelection.releaseAudioLanguages(
+        'English Vinglish 2026 1080p WEB-DL [HIN + Tamil] [English Subs]',
+      ),
+      {'hi', 'ta'},
+    );
+    expect(
+      StreamSelection.releaseAudioLabel(
+        'Example.2160p.BluRay.REMUX.Hindi.English.x265',
+      ),
+      'Hindi / English',
+    );
+    expect(
+      StreamSelection.releaseAudioLabel('Example 1080p BluRay [English DTS]'),
+      'English',
+    );
+    expect(
+      StreamSelection.releaseAudioLabel('Example 1080p BluRay [DTS]'),
+      isNull,
+    );
+    expect(
+      StreamSelection.releaseAudioLabel('English Vinglish 1080p WEBRip'),
+      isNull,
+    );
+    expect(
+      StreamSelection.releaseAudioLabel('The English Patient 1080p WEB-DL'),
+      isNull,
+    );
+    expect(
+      StreamSelection.releaseAudioLabel('Mirror - English subtitles 1080p'),
+      isNull,
+    );
+    expect(
+      StreamSelection.releaseAudioLabel('Mirror - English | Tamil'),
+      'English / Tamil',
+    );
+    expect(
+      StreamSelection.releaseAudioLabel('Example 1080p WEBRip [Dual Audio]'),
+      'Dual audio',
+    );
+    expect(StreamSelection.releaseFormats('Example_2160p_BluRay_Remux'), [
+      'Remux',
+      'BluRay',
+    ]);
+  });
+
+  test(
+    'CastleTV audio labels before the resolution count for picker ranking',
+    () {
+      final builtIn = _choice(
+        'castle720',
+        'CastleTV',
+        '720p',
+        provider: 'builtin:CastleTV',
+        audio: 'English',
+      );
+      final extension = _choice(
+        'castle1080',
+        'Castle TV - English, Hindi, Tamil, Telugu 1080p',
+        '1080p',
+        provider: 'repo#CastleTvProvider',
+      );
+      final discovery = StreamDiscovery(
+        media: const SearchResult(id: 1368337, mediaType: 'movie'),
+        season: 1,
+        episode: 1,
+        streaming: _UnusedStreamingService(),
+        repository: ExtensionRepository(),
+        subDub: 'sub',
+        preferredQuality: '1080p',
+        preferredAudio: StreamSelection.pickerAudioPreference(
+          'Original',
+          savedTrack: 'English · DTS-HD Master Audio',
+        ),
+        selection: const StreamSelectionSettings(
+          sourceOrder: ['builtin:CastleTV', 'repo#CastleTvProvider'],
+        ),
+      );
+      addTearDown(discovery.dispose);
+      expect(discovery.orderForPicker([builtIn, extension], resolution: 1080), [
+        extension,
+        builtIn,
+      ]);
+      expect(
+        extension.pickerAudioLabel,
+        'English / Hindi / Tamil / Telugu',
+      );
+    },
+  );
+
+  test(
+    'autoplay gives name and track language matches equal priority',
+    () async {
+      final nameMatch = _choice(
+        'named',
+        'Example 1080p WEB-DL [Hindi]',
+        '1080p',
+        audio: 'English',
+      );
+      final verifiedHindi = _choice(
+        'verified',
+        'Example',
+        '720p',
+      ).withMetadata(audioTracks: ['hin']);
+      final contradicted = _choice(
+        'other',
+        'Example 1080p WEBRip [Hindi]',
+        '1080p',
+      ).withMetadata(audioTracks: ['eng']);
+      final policy = StreamSelection(
+        const StreamSelectionSettings(mode: StreamSelectionMode.match),
+        audio: 'Hindi',
+        animeAudio: 'sub',
+        isAnime: false,
+      );
+      expect(await policy.ranked([nameMatch, contradicted, verifiedHindi]), [
+        nameMatch,
+        verifiedHindi,
+      ]);
+      expect(nameMatch.pickerAudioLabel, 'Hindi');
+      expect(contradicted.pickerAudioLabel, 'English');
+      expect(policy.meetsAutoplayAudioPreference(nameMatch), isTrue);
+      expect(_choice('4k', 'Example.4K.REMUX', 'Unknown').knownResolutions, [
+        2160,
+      ]);
+    },
+  );
+
+  test(
+    'verified multilingual tracks override the provider audio label',
+    () async {
+      final reportedEnglish = _choice(
+        'english',
+        'Film',
+        '1080p',
+        audio: 'English',
+      );
+      final withHindi = reportedEnglish.withMetadata(
+        audioTracks: ['eng', 'hin'],
+      );
+      final advertisedHindi = _choice('adv', 'Film', '1080p', audio: 'Hindi');
+      final confirmedEnglish = _choice(
+        'verified',
+        'Film',
+        '1080p',
+        audio: 'Hindi',
+      ).withMetadata(audioTracks: ['eng']);
+      final policy = StreamSelection(
+        const StreamSelectionSettings(mode: StreamSelectionMode.match),
+        audio: 'Hindi',
+        animeAudio: 'sub',
+        isAnime: false,
+      );
+
+      expect(reportedEnglish.pickerAudioLabel, 'English');
+      expect(withHindi.pickerAudioLabel, 'English / Hindi');
+      expect(policy.meetsAutoplayAudioPreference(withHindi), isTrue);
+      expect(policy.eligible(reportedEnglish), isTrue);
+      expect(policy.eligible(confirmedEnglish), isFalse);
+      expect(
+        await policy.ranked([advertisedHindi, withHindi, confirmedEnglish]),
+        [advertisedHindi, withHindi],
+      );
+    },
+  );
+
+  test('HLS uses the rendition language and falls back to its name', () {
+    expect(
+      M3u8Parser.audioLanguages('''
+#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,NAME="English, stereo",GROUP-ID="audio",LANGUAGE="en"
+#EXT-X-MEDIA:TYPE=AUDIO,NAME="Hindi",GROUP-ID="audio",LANGUAGE="und"
+#EXT-X-MEDIA:TYPE=SUBTITLES,NAME="Tamil",GROUP-ID="subs",LANGUAGE="ta"
+'''),
+      ['en', 'Hindi'],
+    );
+  });
+
+  test(
+    'MP4 reads audio and video metadata even when sample tables are large',
+    () {
+      List<int> box(String type, List<int> payload, {int? size}) {
+        final length = ByteData(4)..setUint32(0, size ?? payload.length + 8);
+        return [...length.buffer.asUint8List(), ...type.codeUnits, ...payload];
+      }
+
+      List<int> track(String handler, String language, {int version = 0}) {
+        final offset = version == 0 ? 20 : 32;
+        final value = language.codeUnits.fold(
+          0,
+          (bits, code) => bits * 32 + code - 96,
+        );
+        final header = ByteData(offset + 2)
+          ..setUint8(0, version)
+          ..setUint16(offset, value);
+        return box(
+          'trak',
+          box('mdia', [
+            ...box('mdhd', header.buffer.asUint8List()),
+            ...box('hdlr', [...List.filled(8, 0), ...handler.codeUnits]),
+          ]),
+        );
+      }
+
+      final prefix = Uint8List.fromList([
+        ...box('ftyp', 'isom'.codeUnits),
+        ...box('mdat', [], size: 1000000),
+      ]);
+      expect(Mp4Metadata.moviePosition(prefix), (
+        offset: 1000012,
+        complete: false,
+      ));
+      final dimensions = ByteData(28)
+        ..setUint16(24, 1920)
+        ..setUint16(26, 1080);
+      final description = box('stsd', [
+        ...[0, 0, 0, 0, 0, 0, 0, 1],
+        ...box('avc1', dimensions.buffer.asUint8List()),
+      ]);
+      final video = box(
+        'trak',
+        box('mdia', [
+          ...box('hdlr', [...List.filled(8, 0), ...'vide'.codeUnits]),
+          ...box('minf', box('stbl', description)),
+          ...box('free', [], size: 4096),
+          ...List.filled(4096 - 8, 0),
+        ]),
+      );
+      final movie = Uint8List.fromList(
+        box('moov', [
+          ...video,
+          ...track('soun', 'eng'),
+          ...track('soun', 'hin', version: 1),
+        ]),
+      );
+      expect(Mp4Metadata.moviePosition(movie), (offset: 0, complete: true));
+      expect(Mp4Metadata.audioLanguages(movie, 0), ['eng', 'hin']);
+      expect(Mp4Metadata.videoHeights(movie, 0), [1080]);
+      expect(
+        Mp4Metadata.videoHeights(Uint8List.sublistView(movie, 0, 128), 0),
+        [1080],
+      );
+      expect(
+        Mp4Metadata.videoHeights(Uint8List.sublistView(movie, 0, 20), 0),
+        isEmpty,
+      );
+      expect(
+        Mp4Metadata.audioLanguages(Uint8List.sublistView(movie, 0, 20), 0),
+        isEmpty,
+      );
+    },
+  );
+
   test(
     'direct picker ranks preferred audio and subtitles ahead of resolution',
     () {
@@ -98,6 +543,93 @@ void main() {
     },
   );
 
+  testWidgets(
+    'the direct picker ranks 1080p Tamil from the title ahead of verified 720p Tamil',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      const settings = StreamSelectionSettings(
+        preset: StreamPreset.balanced,
+        sourceOrder: ['builtin:CastleTV', 'repo#4khdhub'],
+      );
+      final castle = _choice(
+        'castle',
+        'CastleTV',
+        '720p',
+        provider: 'builtin:CastleTV',
+        audio: 'Tamil',
+      );
+      final hub = _choice(
+        'hub',
+        'The Odyssey 1080p BluRay REMUX [Hindi-Tamil-Telugu DDP 5.1 + English DTS]',
+        '1080p',
+        provider: 'repo#4khdhub',
+      );
+      final english = castle.withMetadata(audioTracks: ['eng']);
+      final named720 = _choice(
+        'named720',
+        'The Odyssey 720p WEBRip [Tamil]',
+        '720p',
+      );
+      final discovery = StreamDiscovery(
+        media: const SearchResult(id: 1368337, mediaType: 'movie'),
+        season: 1,
+        episode: 1,
+        streaming: _UnusedStreamingService(),
+        repository: ExtensionRepository(),
+        subDub: 'sub',
+        preferredQuality: '1080p',
+        preferredAudio: StreamSelection.pickerAudioPreference(
+          'Tamil',
+          savedTrack: 'English · DDP5.1',
+        ),
+        selection: settings,
+      );
+      addTearDown(discovery.dispose);
+
+      expect(hub.pickerAudioLabel, 'Hindi / Tamil / Telugu / English');
+      expect(
+        discovery.orderForPicker([
+          castle,
+          hub,
+          named720,
+          english,
+        ], resolution: 1080),
+        [hub, castle, named720, english],
+      );
+      expect(discovery.orderForPicker([castle, hub], resolution: 720), [
+        castle,
+        hub,
+      ]);
+      expect(
+        StreamSelection.pickerAudioPreference(
+          'Original',
+          savedTrack: 'English',
+        ),
+        'English',
+      );
+
+      discovery.choices.addAll([castle, hub]);
+      discovery.stop();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DirectStreamPickerSheet(
+              discovery: discovery,
+              isFullScreen: true,
+            ),
+          ),
+        ),
+      );
+      final cards = tester.widgetList<MobileStreamCard>(
+        find.byType(MobileStreamCard),
+      );
+      expect(cards.map((card) => card.title), [hub.title, castle.title]);
+      expect(cards.first.preferred, isTrue);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   test(
     'Max Quality falls back across resolutions while keeping the audio and size limits',
     () async {
@@ -134,7 +666,7 @@ void main() {
           '4K',
           audio: 'French',
           bytes: 2000000000,
-        ),
+        ).withMetadata(audioTracks: ['fra']),
         _choice(
           'cam',
           'Film HDCAM',
@@ -148,6 +680,34 @@ void main() {
       expect(await selection.ranked(choices), [acceptable]);
     },
   );
+
+  test('the direct picker reorders providers as better resolutions arrive', () {
+    final movieBox = _choice('moviebox', 'Movie', '480p', provider: 'moviebox');
+    final vidRock = _choice('vidrock', 'Movie', 'Nova', provider: 'vidrock');
+    final nivio = _choice('nivio', 'Movie', '1080p');
+    final discovery = StreamDiscovery(
+      media: const SearchResult(id: 1, mediaType: 'movie'),
+      season: 1,
+      episode: 1,
+      streaming: _UnusedStreamingService(),
+      repository: ExtensionRepository(),
+      subDub: 'sub',
+      preferredQuality: '1080p',
+      selection: const StreamSelectionSettings(
+        sourceOrder: ['moviebox', 'vidrock', 'builtin:Nivio'],
+      ),
+    )..choices.addAll([movieBox, vidRock]);
+    addTearDown(discovery.dispose);
+    List<StreamChoice> ranked() =>
+        discovery.orderForPicker(discovery.choices, resolution: 1080);
+
+    expect(ranked(), [movieBox, vidRock]);
+    final inspected = vidRock.withMetadata(videoHeights: [720]);
+    discovery.choices[1] = inspected;
+    expect(ranked(), [inspected, movieBox]);
+    discovery.choices.add(nivio);
+    expect(ranked(), [nivio, inspected, movieBox]);
+  });
 
   test(
     'preset, source order, and binge group produce distinct ranks',

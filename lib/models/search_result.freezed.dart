@@ -41,6 +41,8 @@ mixin _$SearchResult {
   double? get voteAverage => throw _privateConstructorUsedError;
   @JsonKey(name: 'mal_id')
   int? get malId => throw _privateConstructorUsedError;
+  @JsonKey(name: 'anime_format')
+  String? get animeFormat => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
@@ -67,7 +69,8 @@ abstract class $SearchResultCopyWith<$Res> {
       @JsonKey(name: 'backdrop_path') String? backdropPath,
       String? overview,
       @JsonKey(name: 'vote_average') double? voteAverage,
-      @JsonKey(name: 'mal_id') int? malId});
+      @JsonKey(name: 'mal_id') int? malId,
+      @JsonKey(name: 'anime_format') String? animeFormat});
 }
 
 /// @nodoc
@@ -96,6 +99,7 @@ class _$SearchResultCopyWithImpl<$Res, $Val extends SearchResult>
     Object? overview = freezed,
     Object? voteAverage = freezed,
     Object? malId = freezed,
+    Object? animeFormat = freezed,
   }) {
     return _then(_value.copyWith(
       adult: null == adult
@@ -150,6 +154,10 @@ class _$SearchResultCopyWithImpl<$Res, $Val extends SearchResult>
           ? _value.malId
           : malId // ignore: cast_nullable_to_non_nullable
               as int?,
+      animeFormat: freezed == animeFormat
+          ? _value.animeFormat
+          : animeFormat // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -175,7 +183,8 @@ abstract class _$$SearchResultImplCopyWith<$Res>
       @JsonKey(name: 'backdrop_path') String? backdropPath,
       String? overview,
       @JsonKey(name: 'vote_average') double? voteAverage,
-      @JsonKey(name: 'mal_id') int? malId});
+      @JsonKey(name: 'mal_id') int? malId,
+      @JsonKey(name: 'anime_format') String? animeFormat});
 }
 
 /// @nodoc
@@ -202,6 +211,7 @@ class __$$SearchResultImplCopyWithImpl<$Res>
     Object? overview = freezed,
     Object? voteAverage = freezed,
     Object? malId = freezed,
+    Object? animeFormat = freezed,
   }) {
     return _then(_$SearchResultImpl(
       adult: null == adult
@@ -256,6 +266,10 @@ class __$$SearchResultImplCopyWithImpl<$Res>
           ? _value.malId
           : malId // ignore: cast_nullable_to_non_nullable
               as int?,
+      animeFormat: freezed == animeFormat
+          ? _value.animeFormat
+          : animeFormat // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -276,7 +290,8 @@ class _$SearchResultImpl implements _SearchResult {
       @JsonKey(name: 'backdrop_path') this.backdropPath,
       this.overview,
       @JsonKey(name: 'vote_average') this.voteAverage,
-      @JsonKey(name: 'mal_id') this.malId});
+      @JsonKey(name: 'mal_id') this.malId,
+      @JsonKey(name: 'anime_format') this.animeFormat});
 
   factory _$SearchResultImpl.fromJson(Map<String, dynamic> json) =>
       _$$SearchResultImplFromJson(json);
@@ -316,10 +331,13 @@ class _$SearchResultImpl implements _SearchResult {
   @override
   @JsonKey(name: 'mal_id')
   final int? malId;
+  @override
+  @JsonKey(name: 'anime_format')
+  final String? animeFormat;
 
   @override
   String toString() {
-    return 'SearchResult(adult: $adult, id: $id, name: $name, title: $title, originalLanguage: $originalLanguage, mediaType: $mediaType, releaseDate: $releaseDate, firstAirDate: $firstAirDate, posterPath: $posterPath, backdropPath: $backdropPath, overview: $overview, voteAverage: $voteAverage, malId: $malId)';
+    return 'SearchResult(adult: $adult, id: $id, name: $name, title: $title, originalLanguage: $originalLanguage, mediaType: $mediaType, releaseDate: $releaseDate, firstAirDate: $firstAirDate, posterPath: $posterPath, backdropPath: $backdropPath, overview: $overview, voteAverage: $voteAverage, malId: $malId, animeFormat: $animeFormat)';
   }
 
   @override
@@ -347,7 +365,9 @@ class _$SearchResultImpl implements _SearchResult {
                 other.overview == overview) &&
             (identical(other.voteAverage, voteAverage) ||
                 other.voteAverage == voteAverage) &&
-            (identical(other.malId, malId) || other.malId == malId));
+            (identical(other.malId, malId) || other.malId == malId) &&
+            (identical(other.animeFormat, animeFormat) ||
+                other.animeFormat == animeFormat));
   }
 
   @JsonKey(ignore: true)
@@ -366,7 +386,8 @@ class _$SearchResultImpl implements _SearchResult {
       backdropPath,
       overview,
       voteAverage,
-      malId);
+      malId,
+      animeFormat);
 
   @JsonKey(ignore: true)
   @override
@@ -396,7 +417,8 @@ abstract class _SearchResult implements SearchResult {
       @JsonKey(name: 'backdrop_path') final String? backdropPath,
       final String? overview,
       @JsonKey(name: 'vote_average') final double? voteAverage,
-      @JsonKey(name: 'mal_id') final int? malId}) = _$SearchResultImpl;
+      @JsonKey(name: 'mal_id') final int? malId,
+      @JsonKey(name: 'anime_format') final String? animeFormat}) = _$SearchResultImpl;
 
   factory _SearchResult.fromJson(Map<String, dynamic> json) =
       _$SearchResultImpl.fromJson;
@@ -435,6 +457,9 @@ abstract class _SearchResult implements SearchResult {
   @override
   @JsonKey(name: 'mal_id')
   int? get malId;
+  @override
+  @JsonKey(name: 'anime_format')
+  String? get animeFormat;
   @override
   @JsonKey(ignore: true)
   _$$SearchResultImplCopyWith<_$SearchResultImpl> get copyWith =>

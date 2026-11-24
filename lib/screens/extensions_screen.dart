@@ -5,6 +5,7 @@ import 'package:nivio/core/theme.dart';
 import 'package:nivio/services/extensions/extension_repository.dart';
 import 'package:nivio/services/extensions/extension_resolver.dart';
 import 'package:nivio/widgets/stream_surfaces.dart';
+import 'package:nivio/widgets/settings_page_header.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -43,6 +44,9 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen> {
     try {
       final repos = await _service.list();
       if (!mounted) return;
+      ref
+          .read(extensionResolverProvider)
+          .checkEnabledAnimeProviders(repos.expand((repo) => repo.providers));
       setState(() {
         _repos = repos;
         _loadFailed = false;
@@ -152,11 +156,11 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('Extensions'),
-      titleTextStyle: Theme.of(
-        context,
-      ).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800),
+    appBar: SettingsPageHeader(
+      'Extensions',
+      titleTextStyle: Theme.of(context).textTheme.displaySmall?.copyWith(
+        fontWeight: FontWeight.w800,
+      ),
     ),
     body: DecoratedBox(
       decoration: BoxDecoration(

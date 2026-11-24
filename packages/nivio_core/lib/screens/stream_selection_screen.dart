@@ -4,131 +4,83 @@ import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
+import 'package:nivio/services/extensions/cnc_direct_sources.dart';
+import 'package:nivio/services/extensions/nuvio_direct_sources.dart';
 import 'package:nivio/services/extensions/extension_repository.dart';
 import 'package:nivio/services/extensions/extension_resolver.dart';
 import 'package:nivio/services/extensions/stream_selection.dart';
 import 'package:nivio/services/extensions/stream_selection_settings.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/widgets/stream_surfaces.dart';
+import 'package:nivio/widgets/settings_page_header.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'extensions_screen.dart';
 
-Future<void> showStreamPickerSettings(BuildContext context) =>
-    Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => const StreamPickerSettingsScreen()),
-    );
-
-class StreamPickerSettingsScreen extends StatefulWidget {
-  const StreamPickerSettingsScreen({super.key});
-
-  @override
-  State<StreamPickerSettingsScreen> createState() =>
-      _StreamPickerSettingsScreenState();
-}
-
-class _StreamPickerSettingsScreenState
-    extends State<StreamPickerSettingsScreen> {
-  var _sources = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = NivioTheme.themeColorsOf(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Stream selection'),
-        titleTextStyle: Theme.of(
-          context,
-        ).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800),
-        backgroundColor: palette.background,
-        leading: IconButton(
-          tooltip: 'Back',
-          icon: const Icon(PhosphorIconsRegular.caretLeft),
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
-      ),
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: NivioTheme.backgroundGradientOf(context),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1120),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final wide = constraints.maxWidth >= 820;
-                  return Padding(
-                    padding: EdgeInsets.symmetric(horizontal: wide ? 26 : 14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (!wide)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            child: Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: [
-                                StreamSegment(
-                                  label: 'Playback',
-                                  selected: !_sources,
-                                  onTap: () => setState(() => _sources = false),
-                                ),
-                                StreamSegment(
-                                  label: 'Sources',
-                                  selected: _sources,
-                                  onTap: () => setState(() => _sources = true),
-                                ),
-                              ],
-                            ),
-                          ),
-                        Expanded(
-                          child: ListView(
-                            key: PageStorageKey(
-                              wide ? 'stream-wide' : 'stream-$_sources',
-                            ),
-                            padding: const EdgeInsets.only(top: 8, bottom: 24),
-                            children: [
-                              if (wide)
-                                const Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      flex: 5,
-                                      child: StreamPlaybackSettings(),
-                                    ),
-                                    SizedBox(width: 18),
-                                    Expanded(
-                                      flex: 3,
-                                      child: StreamSourceSettings(),
-                                    ),
-                                  ],
-                                )
-                              else if (_sources)
-                                const StreamSourceSettings()
-                              else
-                                const StreamPlaybackSettings(),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
+Future<void> showStreamPickerSettings(
+  BuildContext context, {
+  bool asSheet = false,
+}) {
+  if (asSheet) {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      clipBehavior: Clip.antiAlias,
+      builder: (_) => const FractionallySizedBox(
+        heightFactor: .92,
+        child: StreamPickerSettingsScreen(),
       ),
     );
   }
+  return Navigator.of(context).push<void>(
+    MaterialPageRoute(builder: (_) => const StreamPickerSettingsScreen()),
+  );
+}
+
+Future<StreamSelectionSettings?> editPickerPlaybackSettings(
+  BuildContext context, {
+  required bool asSheet,
+}) async {
+  final scope = ProviderScope.containerOf(context, listen: false);
+  final before = await scope.read(streamSelectionSettingsProvider.future);
+  if (!context.mounted) return null;
+  await showStreamPickerSettings(context, asSheet: asSheet);
+  if (!context.mounted) return null;
+  final after = scope.read(streamSelectionSettingsProvider).valueOrNull;
+  return before == after ? null : after;
+}
+
+class StreamPickerSettingsScreen extends StatelessWidget {
+  const StreamPickerSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: SettingsPageHeader(
+      'Stream Selection',
+      titleTextStyle: Theme.of(
+        context,
+      ).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800),
+    ),
+    body: SafeArea(
+      top: false,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
+            children: const [StreamPlaybackSettings()],
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class StreamSourceSettings extends ConsumerStatefulWidget {
-  const StreamSourceSettings({super.key, this.showHeading = true});
+  const StreamSourceSettings({super.key, this.inPanel = true});
 
-  final bool showHeading;
+  final bool inPanel;
 
   @override
   ConsumerState<StreamSourceSettings> createState() =>
@@ -145,62 +97,205 @@ class _StreamSourceSettingsState extends ConsumerState<StreamSourceSettings> {
     await Navigator.of(
       context,
     ).push<void>(MaterialPageRoute(builder: (_) => const ExtensionsScreen()));
-    if (mounted) setState(() => _repositories = _loadRepositories());
+    if (!mounted) return;
+    setState(() {
+      _repositories = _loadRepositories();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final torrentsEnabled = ref.watch(enableTorrentsProvider);
-    return StreamPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (widget.showHeading)
-            const _SectionHeading('SOURCES', PhosphorIconsRegular.stack),
-          FutureBuilder<List<ExtensionRepo>>(
-            future: _repositories,
-            builder: (context, snapshot) {
-              final count = snapshot.data
-                  ?.expand((repo) => repo.providers)
-                  .where((provider) => provider.enabled)
-                  .length;
-              return ListTile(
-                leading: const StreamGlyph(PhosphorIconsRegular.puzzlePiece),
-                visualDensity: VisualDensity.compact,
-                title: const Text('Extensions'),
-                subtitle: Text(
-                  count == null || count == 0
-                      ? 'Add a plugin repository'
-                      : '$count enabled',
+    final rows = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!widget.inPanel)
+          const _SectionHeading('SOURCES', PhosphorIconsRegular.stack),
+        FutureBuilder<List<ExtensionRepo>>(
+          future: _repositories,
+          builder: (context, snapshot) {
+            final count = snapshot.data
+                ?.expand((repo) => repo.providers)
+                .where((provider) => provider.enabled)
+                .length;
+            return ListTile(
+              leading: const StreamGlyph(PhosphorIconsRegular.puzzlePiece),
+              visualDensity: VisualDensity.compact,
+              title: const Text('Extensions'),
+              subtitle: Text(
+                count == null || count == 0
+                    ? 'Add a plugin repository'
+                    : '$count enabled',
+              ),
+              trailing: const Icon(PhosphorIconsRegular.caretRight, size: 16),
+              onTap: _openExtensions,
+            );
+          },
+        ),
+        ListTile(
+          leading: const StreamGlyph(PhosphorIconsRegular.arrowsDownUp),
+          visualDensity: VisualDensity.compact,
+          title: const Text('Source priority'),
+          subtitle: const Text('Reorder movie and TV sources.'),
+          trailing: const Icon(PhosphorIconsRegular.caretRight, size: 16),
+          onTap: () => Navigator.of(context).push<void>(
+            MaterialPageRoute(builder: (_) => const _SourcePriorityScreen()),
+          ),
+        ),
+        ListTile(
+          leading: const StreamGlyph(PhosphorIconsRegular.arrowsDownUp),
+          visualDensity: VisualDensity.compact,
+          title: const Text('Anime source priority'),
+          subtitle: const Text('Reorder anime built-ins and extensions.'),
+          trailing: const Icon(PhosphorIconsRegular.caretRight, size: 16),
+          onTap: () => Navigator.of(context).push<void>(
+            MaterialPageRoute(
+              builder: (_) => const _SourcePriorityScreen(isAnime: true),
+            ),
+          ),
+        ),
+        const TorrentSourceSettingsLink(),
+      ],
+    );
+    return widget.inPanel ? StreamPanel(child: rows) : rows;
+  }
+}
+
+class TorrentSourceSettingsLink extends StatelessWidget {
+  const TorrentSourceSettingsLink({super.key});
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    leading: const StreamGlyph(PhosphorIconsRegular.downloadSimple),
+    visualDensity: VisualDensity.compact,
+    title: const Text('Torrent sources'),
+    subtitle: const Text('Torrent playback, indexers, and file options'),
+    trailing: const Icon(PhosphorIconsRegular.caretRight, size: 16),
+    onTap: () => Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const _TorrentSourceSettingsScreen()),
+    ),
+  );
+}
+
+class _TorrentSourceSettingsScreen extends ConsumerWidget {
+  const _TorrentSourceSettingsScreen();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final enabled = ref.watch(enableTorrentsProvider);
+    return Scaffold(
+      appBar: const SettingsPageHeader('Torrent sources'),
+      body: SafeArea(
+        top: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 680),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
+              children: [
+                StreamPanel(
+                  child: SwitchListTile(
+                    title: const Text('Torrent playback'),
+                    subtitle: Text(
+                      enabled
+                          ? 'Play opens the torrent picker.'
+                          : 'Play opens the direct stream picker.',
+                    ),
+                    value: enabled,
+                    onChanged: ref
+                        .read(enableTorrentsProvider.notifier)
+                        .setEnabled,
+                  ),
                 ),
-                trailing: const Icon(PhosphorIconsRegular.caretRight, size: 16),
-                onTap: _openExtensions,
-              );
-            },
-          ),
-          ListTile(
-            leading: const StreamGlyph(PhosphorIconsRegular.arrowsDownUp),
-            visualDensity: VisualDensity.compact,
-            title: const Text('Source priority'),
-            subtitle: const Text('Reorder built-ins and extensions.'),
-            trailing: const Icon(PhosphorIconsRegular.caretRight, size: 16),
-            onTap: () => Navigator.of(context).push<void>(
-              MaterialPageRoute(builder: (_) => const _SourcePriorityScreen()),
+                const SizedBox(height: 12),
+                StreamPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const _SectionHeading(
+                        'INDEXERS',
+                        PhosphorIconsRegular.magnifyingGlass,
+                      ),
+                      SwitchListTile(
+                        title: const Text('Nyaa (Anime)'),
+                        subtitle: const Text('Search anime torrents.'),
+                        value: ref.watch(torrentNyaaEnabledProvider),
+                        onChanged: enabled
+                            ? ref
+                                  .read(torrentNyaaEnabledProvider.notifier)
+                                  .setEnabled
+                            : null,
+                      ),
+                      SwitchListTile(
+                        title: const Text('Torrentio (Movies & Shows)'),
+                        subtitle: const Text(
+                          'Search indexed movie and TV releases.',
+                        ),
+                        value: ref.watch(torrentTorrentioEnabledProvider),
+                        onChanged: enabled
+                            ? ref
+                                  .read(
+                                    torrentTorrentioEnabledProvider.notifier,
+                                  )
+                                  .setEnabled
+                            : null,
+                      ),
+                      SwitchListTile(
+                        title: const Text('PirateBay (Movies & Shows)'),
+                        subtitle: const Text(
+                          'Search by title, including manual searches.',
+                        ),
+                        value: ref.watch(torrentPirateBayEnabledProvider),
+                        onChanged: enabled
+                            ? ref
+                                  .read(
+                                    torrentPirateBayEnabledProvider.notifier,
+                                  )
+                                  .setEnabled
+                            : null,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                StreamPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const _SectionHeading(
+                        'FILES',
+                        PhosphorIconsRegular.folder,
+                      ),
+                      SwitchListTile(
+                        title: const Text('Auto-select episode file'),
+                        subtitle: const Text(
+                          'Choose the episode file from a torrent pack.',
+                        ),
+                        value: ref.watch(torrentAutoSelectProvider),
+                        onChanged: enabled
+                            ? ref
+                                  .read(torrentAutoSelectProvider.notifier)
+                                  .setEnabled
+                            : null,
+                      ),
+                      SwitchListTile(
+                        title: const Text('Persist torrent files'),
+                        subtitle: const Text(
+                          'Keep files on disk after playback stops.',
+                        ),
+                        value: ref.watch(torrentPersistFilesProvider),
+                        onChanged: enabled
+                            ? ref
+                                  .read(torrentPersistFilesProvider.notifier)
+                                  .setEnabled
+                            : null,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          SwitchListTile(
-            secondary: const StreamGlyph(PhosphorIconsRegular.downloadSimple),
-            visualDensity: VisualDensity.compact,
-            title: const Text('Enable torrents'),
-            subtitle: Text(
-              torrentsEnabled
-                  ? 'Play opens the torrent picker.'
-                  : 'Play opens the direct stream picker.',
-            ),
-            value: torrentsEnabled,
-            onChanged: ref.read(enableTorrentsProvider.notifier).setEnabled,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -230,7 +325,9 @@ class _SectionHeading extends StatelessWidget {
 }
 
 class _SourcePriorityScreen extends ConsumerStatefulWidget {
-  const _SourcePriorityScreen();
+  const _SourcePriorityScreen({this.isAnime = false});
+
+  final bool isAnime;
 
   @override
   ConsumerState<_SourcePriorityScreen> createState() =>
@@ -245,8 +342,8 @@ class _SourcePriorityScreenState extends ConsumerState<_SourcePriorityScreen> {
     final settings = ref.watch(streamSelectionSettingsProvider).valueOrNull;
     final streaming = ref.watch(streamingServiceProvider);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Source priority'),
+      appBar: SettingsPageHeader(
+        widget.isAnime ? 'Anime source priority' : 'Source priority',
         titleTextStyle: AppPlatform.useDesktopLayout
             ? null
             : Theme.of(context).textTheme.titleLarge,
@@ -259,35 +356,49 @@ class _SourcePriorityScreenState extends ConsumerState<_SourcePriorityScreen> {
           if (!snapshot.hasData || settings == null)
             return const Center(child: CircularProgressIndicator());
           final available = <String, (String, String)>{
-            for (final name in streaming.streamSelectionBuiltIns)
+            for (final name in streaming.streamSelectionBuiltIns(
+              isAnime: widget.isAnime,
+            ))
               streamSelectionSourceId('builtin:$name'): (
                 name,
                 'Built-in source',
               ),
             for (final repo in snapshot.data!)
               for (final provider in repo.providers)
-                if (provider.enabled && ExtensionResolver.supports(repo.format))
+                if (provider.enabled &&
+                    ExtensionResolver.supports(repo.format) &&
+                    !CncDirectSource.replacesPackage(provider) &&
+                    (widget.isAnime ||
+                        NuvioDirectSources.replacementId(provider.id) ==
+                            null) &&
+                    (widget.isAnime
+                        ? provider.supports('anime')
+                        : provider.supports('movie') ||
+                              provider.supports('tv')))
                   provider.id: (provider.name, repo.name),
           };
           final order = {
-            ...settings.sourceOrder.where(available.containsKey),
+            ...settings
+                .sourceOrderFor(isAnime: widget.isAnime)
+                .where(available.containsKey),
             ...available.keys,
           }.toList();
           void move(int from, int to) {
             final next = [...order];
             next.insert(to, next.removeAt(from));
-            ref
-                .read(streamSelectionSettingsProvider.notifier)
-                .change(
-                  (current) => current.copyWith(
-                    sourceOrder: [
-                      ...next,
-                      ...current.sourceOrder.where(
-                        (id) => !available.containsKey(id),
-                      ),
-                    ],
-                  ),
-                );
+            ref.read(streamSelectionSettingsProvider.notifier).change((
+              current,
+            ) {
+              final saved = [
+                ...next,
+                ...current
+                    .sourceOrderFor(isAnime: widget.isAnime)
+                    .where((id) => !available.containsKey(id)),
+              ];
+              return widget.isAnime
+                  ? current.copyWith(animeSourceOrder: saved)
+                  : current.copyWith(sourceOrder: saved);
+            });
           }
 
           return SafeArea(
@@ -306,7 +417,7 @@ class _SourcePriorityScreenState extends ConsumerState<_SourcePriorityScreen> {
                           PhosphorIconsRegular.arrowsDownUp,
                         ),
                         Text(
-                          'Higher sources appear first in the direct picker and break ties in Match Preferences.',
+                          'Source priority breaks ties in the direct picker and Autoplay.',
                         ),
                       ],
                     ),
@@ -386,6 +497,13 @@ class StreamPlaybackSettings extends ConsumerWidget {
                     active: mode == current.mode,
                     onTap: () => change((value) => value.copyWith(mode: mode)),
                   ),
+                SwitchListTile(
+                  title: const Text('Group results by source'),
+                  subtitle: const Text('Show provider sections in All.'),
+                  value: current.groupBySource,
+                  onChanged: (enabled) =>
+                      change((value) => value.copyWith(groupBySource: enabled)),
+                ),
                 const SizedBox(height: 6),
               ],
             ),
@@ -430,7 +548,7 @@ class StreamPlaybackSettings extends ConsumerWidget {
                       Text(
                         current.mode == StreamSelectionMode.match
                             ? current.preset.description
-                            : '${current.preset.description} Used by Match Preferences.',
+                            : '${current.preset.description} Used by Autoplay.',
                         style: TextStyle(
                           color: NivioTheme.themeColorsOf(
                             context,
@@ -556,7 +674,7 @@ class StreamPlaybackSettings extends ConsumerWidget {
                 SwitchListTile(
                   title: const Text('Reuse binge group'),
                   subtitle: const Text(
-                    'Prefer the previous episode’s source and release in Match Preferences.',
+                    'Prefer the previous episode’s source and release in Autoplay.',
                   ),
                   value: current.reuseBingeGroup,
                   onChanged: (enabled) => change(
@@ -583,7 +701,7 @@ class StreamPlaybackSettings extends ConsumerWidget {
                       title: const Text('Custom Regex Override'),
                       subtitle: Text(
                         current.regex.isEmpty
-                            ? 'In Match Preferences, match the source name, release label, quality, or reported audio.'
+                            ? 'In Autoplay, match the source name, release label, quality, or reported audio.'
                             : current.regex,
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
@@ -635,7 +753,7 @@ class _PlaybackModeRow extends StatelessWidget {
       ),
       StreamSelectionMode.match => (
         PhosphorIconsRegular.sliders,
-        'Match your quality, audio, and source preferences.',
+        'Find the best match and play it after a five-second countdown.',
       ),
     };
     const radius = BorderRadius.all(Radius.circular(11));

@@ -2,14 +2,18 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:nivio/models/stream_result.dart';
+import 'package:nivio/models/stream_size.dart';
 import 'package:nivio/screens/stream_selection_screen.dart';
 import 'package:nivio/services/extensions/extension_resolver.dart';
 import 'package:nivio/services/extensions/stream_discovery.dart';
 import 'package:nivio/services/extensions/stream_selection.dart';
+import 'package:nivio/services/extensions/stream_selection_settings.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/widgets/marquee_text.dart';
+import 'package:nivio/widgets/mobile_stream_picker.dart';
 import 'package:nivio/widgets/skeleton.dart';
 
 class StreamPickerOutcome {
@@ -18,6 +22,7 @@ class StreamPickerOutcome {
     this.result,
     this.refresh = false,
     this.automatic = false,
+    this.dismissed = false,
     this.preferredResolution,
   });
 
@@ -25,6 +30,7 @@ class StreamPickerOutcome {
   final StreamResult? result;
   final bool refresh;
   final bool automatic;
+  final bool dismissed;
   final int? preferredResolution;
 }
 
@@ -44,6 +50,7 @@ class DirectStreamPickerSheet extends StatefulWidget {
     BuildContext context,
     StreamDiscovery discovery, {
     Future<StreamPickerOutcome?> Function()? selectAutomatically,
+    List<DeviceOrientation> restoreOrientations = const [],
   }) async {
     final isMobile = Platform.isAndroid || Platform.isIOS;
     final navigator = Navigator.of(context, rootNavigator: !isMobile);
@@ -77,8 +84,11 @@ class DirectStreamPickerSheet extends StatefulWidget {
               ),
             ),
           );
+    if (route is MaterialPageRoute<StreamPickerOutcome>) {
+      return pushMobileStreamPicker(navigator, route, restoreOrientations);
+    }
     final outcome = await navigator.push(route);
-    if (outcome?.refresh == true) await route.completed;
+    if (outcome == null || outcome.refresh) await route.completed;
     return outcome;
   }
 
@@ -88,13 +98,15 @@ class DirectStreamPickerSheet extends StatefulWidget {
 }
 
 class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
-  final _searchController = TextEditingController();
   late int? _resolution = _discovery.selection.resolutions.firstOrNull;
   var _changedResolution = false;
   var _autoCancelled = false;
   var _selecting = false;
   var _closed = false;
+  Timer? _autoPlayTimer;
+  int? _countdown;
   String? _hoveredChoice;
+  String? _mobileSource;
 
   StreamDiscovery get _discovery => widget.discovery;
 
@@ -108,12 +120,6 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
     }
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
   Future<void> _autoSelect() async {
     if (_autoCancelled) return;
     setState(() => _selecting = true);
@@ -123,29 +129,60 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
     } catch (_) {
       // Leave the picker open if autoplay fails.
     }
-    if (!mounted || _closed || ModalRoute.of(context)?.isCurrent != true)
-      return;
+    if (!mounted || _closed || _autoCancelled) return;
     setState(() => _selecting = false);
-    if (!_autoCancelled && outcome != null) _finish(outcome);
+    final selected = outcome;
+    if (selected == null || ModalRoute.of(context)?.isCurrent != true) return;
+    if (_discovery.selection.mode != StreamSelectionMode.match) {
+      _finish(selected);
+      return;
+    }
+    setState(() => _countdown = 5);
+    _autoPlayTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      final remaining = 5 - timer.tick;
+      if (remaining > 0) {
+        setState(() => _countdown = remaining);
+        return;
+      }
+      timer.cancel();
+      setState(() => _countdown = null);
+      if (ModalRoute.of(context)?.isCurrent == true &&
+          !_discovery.unavailable.contains(selected.choice?.id)) {
+        _finish(selected);
+      }
+    });
   }
 
   void _cancelAutoPlay() {
-    if (!_selecting || _autoCancelled) return;
+    if (widget.selectAutomatically == null || _autoCancelled) return;
+    _autoPlayTimer?.cancel();
     setState(() {
       _autoCancelled = true;
       _selecting = false;
+      _countdown = null;
     });
+  }
+
+  @override
+  void dispose() {
+    _autoPlayTimer?.cancel();
+    _discovery.cancelAudioCheck();
+    super.dispose();
   }
 
   void _finish([StreamPickerOutcome? outcome]) {
     if (_closed) return;
     _closed = true;
     _autoCancelled = true;
+    _autoPlayTimer?.cancel();
+    _discovery.cancelAudioCheck();
     Navigator.of(context).pop(outcome);
   }
 
   void _play(StreamChoice choice) {
-    if (!_discovery.unavailable.contains(choice.id) && choice.isDirect) {
+    if (!_discovery.unavailable.contains(choice.id) &&
+        choice.isDirect &&
+        _discovery.policy.fitsFileSizeLimit(choice, allowUnknown: true)) {
       _finish(
         StreamPickerOutcome(
           choice: choice,
@@ -158,36 +195,38 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
 
   Future<void> _openSettings() async {
     _cancelAutoPlay();
-    await showStreamPickerSettings(context);
-    if (mounted) _finish(const StreamPickerOutcome(refresh: true));
-  }
-
-  void _filterChanged(String _) {
-    _cancelAutoPlay();
-    setState(() {});
+    final updated = await editPickerPlaybackSettings(
+      context,
+      asSheet: widget.isFullScreen,
+    );
+    if (mounted && updated != null)
+      _finish(const StreamPickerOutcome(refresh: true));
   }
 
   List<StreamChoice> _visibleChoices() {
-    final text = _searchController.text.trim().toLowerCase();
     final requested = _resolution;
     final visible = _discovery.choices.where((choice) {
       if (!choice.isDirect) return false;
       final heights = choice.knownResolutions;
-      if (_changedResolution &&
-          requested != null &&
-          heights.isNotEmpty &&
-          !heights.contains(requested))
-        return false;
-      return text.isEmpty ||
-          '${choice.title} ${choice.provider} ${choice.origin}'
-              .toLowerCase()
-              .contains(text);
+      return !_changedResolution ||
+          requested == null ||
+          heights.isEmpty ||
+          heights.contains(requested);
     }).toList();
     return _discovery.orderForPicker(visible, resolution: requested);
   }
 
+  StreamChoice? _preferredChoice(Iterable<StreamChoice> choices) => choices
+      .where(
+        (choice) =>
+            !_discovery.unavailable.contains(choice.id) &&
+            _discovery.policy.fitsFileSizeLimit(choice),
+      )
+      .firstOrNull;
+
   @override
   Widget build(BuildContext context) {
+    if (widget.isFullScreen) return _buildMobilePicker();
     final isFullScreen = widget.isFullScreen;
     final isLandscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
@@ -200,8 +239,8 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
     final backdropPath =
         _discovery.media.backdropPath ?? _discovery.media.posterPath;
 
-    return Listener(
-      onPointerDown: (_) => _cancelAutoPlay(),
+    return StreamPickerInteraction(
+      onInteraction: _cancelAutoPlay,
       child: Container(
         decoration: BoxDecoration(
           color: const Color(0xFF0F0F0F),
@@ -357,12 +396,7 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
                       padding: EdgeInsets.symmetric(
                         horizontal: horizontalPadding,
                       ),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) => _buildControls(
-                          spacing,
-                          isCompactLandscape && constraints.maxWidth >= 520,
-                        ),
-                      ),
+                      child: _buildControls(spacing),
                     ),
                     SizedBox(height: spacing),
                     const Divider(
@@ -383,47 +417,115 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
     );
   }
 
-  Widget _buildControls(double spacing, bool compact) {
-    final search = TextField(
-      controller: _searchController,
-      style: const TextStyle(color: Colors.white, fontSize: 14),
-      onChanged: _filterChanged,
-      textInputAction: TextInputAction.search,
-      decoration: InputDecoration(
-        hintText: 'Search direct streams...',
-        hintStyle: TextStyle(
-          color: Colors.white.withValues(alpha: .3),
-          fontSize: 14,
-        ),
-        prefixIcon: Icon(
-          Icons.search,
-          color: Colors.white.withValues(alpha: .5),
-          size: 20,
-        ),
-        suffixIcon: IconButton(
-          tooltip: 'Search',
-          icon: const Icon(
-            Icons.arrow_forward_rounded,
-            color: Color(0xFF38BDF8),
-            size: 20,
-          ),
-          onPressed: () => FocusScope.of(context).unfocus(),
-        ),
-        filled: true,
-        fillColor: const Color(0xFF1A1A1A),
-        contentPadding: EdgeInsets.symmetric(vertical: spacing),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide.none,
-        ),
+  Widget _buildMobilePicker() {
+    return StreamPickerInteraction(
+      onInteraction: _cancelAutoPlay,
+      child: ListenableBuilder(
+        listenable: _discovery,
+        builder: (context, _) {
+          final media = _discovery.media;
+          final movie =
+              media.mediaType == 'movie' || media.animeFormat == 'MOVIE';
+          final sources = {
+            for (final choice in _discovery.choices.where(
+              (choice) =>
+                  choice.isDirect &&
+                  _discovery.policy.fitsFileSizeLimit(
+                    choice,
+                    allowUnknown: true,
+                  ),
+            ))
+              choice.providerId: choice.provider,
+          };
+          final source = sources.containsKey(_mobileSource)
+              ? _mobileSource
+              : null;
+          final ordered = _visibleChoices();
+          final visible = ordered
+              .where((choice) => source == null || choice.providerId == source)
+              .toList();
+          final best = _preferredChoice(ordered);
+          final notice =
+              _discovery.fileSizeEmptyMessage ?? _discovery.extensionSearchNotice;
+          return MobileStreamPicker(
+            media: media,
+            season: movie ? null : _discovery.season,
+            episode: movie ? null : _discovery.episode,
+            sources: sources,
+            source: source,
+            onSourceChanged: (value) => setState(() => _mobileSource = value),
+            onBack: _finish,
+            onRefresh: () => unawaited(_discovery.search()),
+            onSettings: _openSettings,
+            loading: _discovery.searching || _selecting,
+            results: ListView(
+              key: PageStorageKey(source),
+              primary: true,
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 18),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _buildControls(8, showEpisode: false),
+                ),
+                if ((_selecting || _discovery.searching) && visible.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Text('Finding streams…'),
+                  ),
+                if (!_discovery.searching &&
+                    (notice != null || visible.isEmpty))
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Text(notice ?? 'No direct streams found.'),
+                  ),
+                ...mobileStreamResultRows(
+                  context,
+                  results: visible,
+                  groupBySource:
+                      source == null && _discovery.selection.groupBySource,
+                  source: (choice) => (choice.providerId, choice.provider),
+                  card: (choice) => MobileStreamCard(
+                    title: choice.title,
+                    details: [
+                      _qualityLabel(choice),
+                      if (choice.displaySizeBytes case final bytes?)
+                        StreamSize.format(bytes),
+                      if (_hasServerLabel(choice)) choice.quality.trim(),
+                      if (choice.pickerAudioLabel case final String audio)
+                        audio,
+                      ...StreamSelection.releaseFormats(choice.title),
+                      if (_discovery.policy.hasPreferredSubtitles(choice))
+                        'Matching subtitles',
+                      if (choice.bingeGroup == _discovery.previous?.bingeGroup)
+                        'Previous source',
+                    ],
+                    source: choice.provider,
+                    preferred: identical(choice, best),
+                    status: _discovery.failureMessage(choice),
+                    footer: _buildAudioCheck(choice),
+                    onTap: _discovery.unavailable.contains(choice.id)
+                        ? null
+                        : () => _play(choice),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
+  }
+
+  Widget _buildControls(double spacing, {bool showEpisode = true}) {
     final filters = Wrap(
       spacing: 16,
       runSpacing: 6,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        if (_discovery.media.mediaType != 'movie')
+        if (showEpisode && _discovery.media.mediaType != 'movie')
           Text(
             'Episode ${_discovery.episode}',
             style: const TextStyle(
@@ -438,27 +540,13 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (compact)
-          Row(
-            children: [
-              Expanded(child: search),
-              const SizedBox(width: 12),
-              Flexible(child: filters),
-            ],
-          )
-        else ...[
-          search,
-          SizedBox(height: spacing),
-          filters,
-        ],
+        filters,
         SizedBox(height: spacing),
         ListenableBuilder(
           listenable: _discovery,
           builder: (context, _) {
             final visible = _visibleChoices();
-            final first = visible
-                .where((choice) => !_discovery.unavailable.contains(choice.id))
-                .firstOrNull;
+            final first = _preferredChoice(visible);
             if (first == null) return const SizedBox.shrink();
             final resolution = _resolution;
             final showingFallback =
@@ -495,7 +583,11 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
                     elevation: 0,
                   ),
                   child: Text(
-                    _selecting ? 'Selecting stream…' : 'Auto Select Stream',
+                    _selecting
+                        ? 'Selecting stream…'
+                        : _countdown != null
+                        ? 'Auto Select Stream (in $_countdown)'
+                        : 'Auto Select Stream',
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
@@ -573,22 +665,21 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
     listenable: _discovery,
     builder: (context, _) {
       final results = _visibleChoices();
-      final extensionNotice = _searchController.text.trim().isEmpty
-          ? _discovery.extensionSearchNotice
-          : null;
+      final extensionNotice = _discovery.extensionSearchNotice;
       if (results.isEmpty && _discovery.searching) return _buildLoading();
       if (results.isEmpty) {
         return Center(
           child: Text(
-            extensionNotice ??
-                (_searchController.text.trim().isEmpty &&
-                        _discovery.failures.isNotEmpty
+            _discovery.fileSizeEmptyMessage ??
+                extensionNotice ??
+                (_discovery.failures.isNotEmpty
                     ? 'Couldn’t reach some direct sources.'
                     : 'No direct streams found.'),
             style: const TextStyle(color: Colors.white70, fontSize: 16),
           ),
         );
       }
+      final best = _preferredChoice(results);
       return ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 8),
         itemCount: results.length + (extensionNotice == null ? 0 : 1),
@@ -603,32 +694,39 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
             );
           }
           final resultIndex = extensionNotice == null ? index : index - 1;
-          return _buildRow(results[resultIndex], resultIndex == 0);
+          final choice = results[resultIndex];
+          return _buildRow(choice, identical(choice, best));
         },
       );
     },
   );
 
-  Widget _buildRow(StreamChoice choice, bool best) {
-    final disabled = _discovery.unavailable.contains(choice.id);
-    final previous = choice.bingeGroup == _discovery.previous?.bingeGroup;
-    final isMobile = Platform.isAndroid || Platform.isIOS;
+  String _qualityLabel(StreamChoice choice) {
     final heights = choice.knownResolutions;
-    final qualityLabel = heights.isEmpty
+    return heights.isEmpty
         ? (choice.direct!.isM3U8
               ? 'Auto · resolution unknown'
               : 'Resolution unknown')
         : heights.map((height) => '${height}p').join(' / ');
+  }
+
+  bool _hasServerLabel(StreamChoice choice) {
     final serverLabel = choice.quality.trim();
-    final showServer =
-        ![
+    return ![
           '',
           'auto',
           'unknown',
           'unknown quality',
         ].contains(serverLabel.toLowerCase()) &&
         choice.reportedResolution == null &&
-        serverLabel != qualityLabel;
+        serverLabel != _qualityLabel(choice);
+  }
+
+  Widget _buildRow(StreamChoice choice, bool best) {
+    final failure = _discovery.failureMessage(choice);
+    final disabled = failure != null;
+    final previous = choice.bingeGroup == _discovery.previous?.bingeGroup;
+    final isMobile = Platform.isAndroid || Platform.isIOS;
     return MouseRegion(
       cursor: disabled ? MouseCursor.defer : SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hoveredChoice = choice.id),
@@ -689,18 +787,24 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
                       const Color(0xFFC084FC),
                     ),
                     const SizedBox(width: 8),
-                    _tag(qualityLabel, const Color(0xFF60A5FA)),
-                    if (showServer) ...[
+                    _tag(_qualityLabel(choice), const Color(0xFF60A5FA)),
+                    if (choice.displaySizeBytes case final bytes?) ...[
                       const SizedBox(width: 8),
-                      _tag(serverLabel, Colors.grey),
+                      _tag(StreamSize.format(bytes), Colors.grey),
+                    ],
+                    if (_hasServerLabel(choice)) ...[
+                      const SizedBox(width: 8),
+                      _tag(choice.quality.trim(), Colors.grey),
                     ],
                     const SizedBox(width: 8),
                     _tag(choice.origin, Colors.grey),
-                    if (choice.audioType ?? choice.audio
-                        case final String audio) ...[
+                    if (choice.pickerAudioLabel case final String audio) ...[
                       const SizedBox(width: 8),
                       _tag(audio, Colors.grey),
                     ],
+                    for (final format in StreamSelection.releaseFormats(
+                      choice.title,
+                    )) ...[const SizedBox(width: 8), _tag(format, Colors.grey)],
                     if (_discovery.policy.hasPreferredSubtitles(choice)) ...[
                       const SizedBox(width: 8),
                       _tag('Matching subtitles', const Color(0xFF4ADE80)),
@@ -708,16 +812,46 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
                   ],
                 ),
               ),
-              if (disabled) ...[
+              if (failure != null) ...[
                 const SizedBox(height: 8),
-                const Text(
-                  'Couldn’t open this stream. Choose another result.',
-                  style: TextStyle(color: Colors.redAccent, fontSize: 12),
+                Text(
+                  failure,
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
                 ),
               ],
+              if (_buildAudioCheck(choice) case final Widget action) action,
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget? _buildAudioCheck(StreamChoice choice) {
+    if (_discovery.checkingAudio(choice)) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 4),
+        child: Text('Checking audio…', style: TextStyle(fontSize: 12)),
+      );
+    }
+    if (!_discovery.canCheckAudio(choice)) return null;
+    return TextButton(
+      onPressed: _discovery.audioCheckInProgress
+          ? null
+          : () {
+              _cancelAutoPlay();
+              unawaited(_discovery.checkAudioTracks(choice));
+            },
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        minimumSize: const Size(0, 36),
+        alignment: Alignment.centerLeft,
+        textStyle: const TextStyle(fontSize: 12),
+      ),
+      child: Text(
+        _discovery.audioCheckFailed(choice)
+            ? 'Audio tracks unavailable · Retry'
+            : 'Check audio tracks',
       ),
     );
   }

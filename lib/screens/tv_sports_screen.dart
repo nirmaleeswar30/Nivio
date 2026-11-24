@@ -148,6 +148,11 @@ class _TabItemState extends State<_TabItem> {
 
   @override
   Widget build(BuildContext context) {
+    final selectedForeground =
+        ThemeData.estimateBrightnessForColor(widget.accentColor) ==
+            Brightness.light
+        ? Colors.black
+        : Colors.white;
     return DpadFocusable(
       onActivate: widget.onTap,
       child: MouseRegion(
@@ -183,7 +188,7 @@ class _TabItemState extends State<_TabItem> {
                 widget.icon,
                 size: 16,
                 color: widget.selected
-                    ? Colors.white
+                    ? selectedForeground
                     : (_hovered ? Colors.white : Colors.white60),
               ),
               const SizedBox(width: 7),
@@ -191,7 +196,7 @@ class _TabItemState extends State<_TabItem> {
                 widget.label,
                 style: TextStyle(
                   color: widget.selected
-                      ? Colors.white
+                      ? selectedForeground
                       : (_hovered ? Colors.white : Colors.white60),
                   fontWeight: widget.selected ? FontWeight.w700 : FontWeight.w500,
                   fontSize: 13,
@@ -830,13 +835,13 @@ class _SportsMatchCardState extends State<_SportsMatchCard> {
                             Icon(
                               PhosphorIconsFill.play,
                               size: 11,
-                              color: _isHovered ? Colors.white : accent,
+                              color: _isHovered ? Theme.of(context).colorScheme.onPrimary : accent,
                             ),
                             const SizedBox(width: 5),
                             Text(
                               isLive ? 'Watch Live' : 'Watch',
                               style: TextStyle(
-                                color: _isHovered ? Colors.white : accent,
+                                color: _isHovered ? Theme.of(context).colorScheme.onPrimary : accent,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
                               ),

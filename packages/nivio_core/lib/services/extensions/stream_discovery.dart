@@ -5,12 +5,16 @@ import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/services/streaming_service.dart';
 
+import 'cnc_direct_sources.dart';
 import 'extension_repository.dart';
 import 'extension_resolver.dart';
+import 'nuvio_direct_sources.dart';
 import 'stream_selection.dart';
 import 'stream_selection_settings.dart';
 
 class StreamDiscovery extends ChangeNotifier {
+  static const _maxProgressiveQualityProbes = 6;
+
   StreamDiscovery({
     required this.media,
     required this.season,
@@ -23,6 +27,7 @@ class StreamDiscovery extends ChangeNotifier {
     this.preferredSubtitle = 'Auto',
     this.previous,
     this.inspectVideoHeights,
+    this.inspectAudioTracks,
     this.selection = const StreamSelectionSettings(),
   });
 
@@ -37,11 +42,20 @@ class StreamDiscovery extends ChangeNotifier {
   final String preferredSubtitle;
   final StreamChoice? previous;
   final Future<List<int>> Function(StreamResult)? inspectVideoHeights;
+  final Future<List<String>> Function(StreamResult, Future<void>)?
+  inspectAudioTracks;
   final StreamSelectionSettings selection;
 
   final choices = <StreamChoice>[];
   final failures = <String>{};
   final unavailable = <String>{};
+  final _rateLimited = <String>{};
+  final _metadataLanes = List<Future<void>>.filled(3, Future<void>.value());
+  var _nextMetadataLane = 0;
+  final _checkedAudio = <String>{};
+  final _failedAudioChecks = <String>{};
+  String? _checkingAudio;
+  Completer<void>? _audioCancellation;
   bool searching = true;
   bool _closed = false;
   int _generation = 0;
@@ -67,18 +81,99 @@ class StreamDiscovery extends ChangeNotifier {
   List<StreamChoice> get availableChoices =>
       choices.where((choice) => !unavailable.contains(choice.id)).toList();
 
+  String? get fileSizeEmptyMessage =>
+      choices.isNotEmpty &&
+          choices.every(
+            (choice) => !policy.fitsFileSizeLimit(choice, allowUnknown: true),
+          )
+      ? 'No direct streams within your maximum file size.'
+      : null;
+
+  bool checkingAudio(StreamChoice choice) => _checkingAudio == choice.id;
+  bool get audioCheckInProgress => _audioCancellation != null;
+  bool audioCheckFailed(StreamChoice choice) =>
+      _failedAudioChecks.contains(choice.id);
+
+  bool canCheckAudio(StreamChoice choice) {
+    final uri = Uri.tryParse(choice.direct?.url ?? '');
+    return inspectAudioTracks != null &&
+        uri != null &&
+        uri.host.isNotEmpty &&
+        (uri.scheme == 'http' || uri.scheme == 'https') &&
+        !unavailable.contains(choice.id) &&
+        !_checkedAudio.contains(choice.id);
+  }
+
+  Future<void> checkAudioTracks(StreamChoice choice) async {
+    final inspect = inspectAudioTracks;
+    if (_closed ||
+        inspect == null ||
+        audioCheckInProgress ||
+        !canCheckAudio(choice) ||
+        !choices.contains(choice)) {
+      return;
+    }
+    final generation = _generation;
+    final cancellation = _audioCancellation = Completer<void>();
+    _checkingAudio = choice.id;
+    _failedAudioChecks.remove(choice.id);
+    notifyListeners();
+    try {
+      final tracks = await inspect(choice.direct!, cancellation.future);
+      if (!_current(generation) || cancellation.isCompleted) return;
+      final position = choices.indexWhere(
+        (current) => current.id == choice.id && current.direct == choice.direct,
+      );
+      if (position < 0) return;
+      if (tracks.isEmpty) {
+        _failedAudioChecks.add(choice.id);
+      } else {
+        choices[position] = choices[position].withMetadata(audioTracks: tracks);
+        _checkedAudio.add(choice.id);
+      }
+    } catch (_) {
+      if (_current(generation) && !cancellation.isCompleted) {
+        _failedAudioChecks.add(choice.id);
+      }
+    } finally {
+      _checkingAudio = null;
+      cancelAudioCheck();
+      _audioCancellation = null;
+      if (!_closed) notifyListeners();
+    }
+  }
+
+  void cancelAudioCheck() {
+    final cancellation = _audioCancellation;
+    if (cancellation != null && !cancellation.isCompleted) {
+      cancellation.complete();
+    }
+  }
+
   List<StreamChoice> orderForPicker(
     List<StreamChoice> visible, {
     int? resolution,
   }) {
-    final ordered = visible.indexed.toList();
+    final ordered = visible
+        .where((choice) => policy.fitsFileSizeLimit(choice, allowUnknown: true))
+        .indexed
+        .toList();
+    final priority = [
+      if (resolution != null) resolution,
+      ...selection.resolutions.where((height) => height != resolution),
+    ];
+    final qualityRanks = resolution == null
+        ? null
+        : {
+            for (final (_, choice) in ordered)
+              choice: policy.resolutionRank(choice, priority: priority),
+          };
     ordered.sort((a, b) {
       final byLanguage = policy.compareLanguagePreferences(a.$2, b.$2);
       if (byLanguage != 0) return byLanguage;
-      if (resolution != null) {
-        final aMatches = a.$2.knownResolutions.contains(resolution);
-        final bMatches = b.$2.knownResolutions.contains(resolution);
-        if (aMatches != bMatches) return aMatches ? -1 : 1;
+      if (qualityRanks != null) {
+        final byQuality = qualityRanks[a.$2]!.compareTo(qualityRanks[b.$2]!);
+        if (byQuality != 0) return byQuality;
       }
       final bySource = policy.compareSources(a.$2, b.$2);
       if (bySource != 0) return bySource;
@@ -122,7 +217,7 @@ class StreamDiscovery extends ChangeNotifier {
         if (active >= 5) break;
         if (!choice.isDirect ||
             !policy.eligible(choice) ||
-            !policy.confirmedAudio(choice) ||
+            !policy.meetsAutoplayAudioPreference(choice) ||
             !checked.add(choice.id))
           continue;
         active++;
@@ -161,17 +256,66 @@ class StreamDiscovery extends ChangeNotifier {
   }
 
   Future<void> search() async {
+    if (_closed) return;
+    cancelAudioCheck();
     final generation = ++_generation;
     searching = true;
     _extensionProviderCount = 0;
     choices.clear();
     failures.clear();
     unavailable.clear();
+    _rateLimited.clear();
+    _checkedAudio.clear();
+    _failedAudioChecks.clear();
     notifyListeners();
+    var progressiveProbes = 0;
+    void addResults(List<StreamChoice> results) {
+      if (!_current(generation)) return;
+      final direct = results.where((choice) => choice.isDirect).toList();
+      choices.addAll(direct);
+      final inspect = inspectVideoHeights;
+      if (inspect != null) {
+        for (final choice in direct) {
+          if (choice.knownResolutions.isNotEmpty) continue;
+          final stream = choice.direct!;
+          if (!stream.isM3U8) {
+            final path = Uri.tryParse(stream.url)?.path.toLowerCase();
+            if (path?.endsWith('.mp4') != true ||
+                progressiveProbes >= _maxProgressiveQualityProbes) {
+              continue;
+            }
+            progressiveProbes++;
+          }
+          final lane = _nextMetadataLane++ % _metadataLanes.length;
+          _metadataLanes[lane] = _metadataLanes[lane].then((_) async {
+            if (!_current(generation)) return;
+            try {
+              final heights = await inspect(stream);
+              if (!_current(generation) || heights.isEmpty) return;
+              final position = choices.indexWhere(
+                (current) =>
+                    current.id == choice.id && current.direct == choice.direct,
+              );
+              if (position < 0) return;
+              choices[position] = choices[position].withMetadata(
+                videoHeights: heights,
+              );
+              notifyListeners();
+            } catch (_) {
+              // The stream remains selectable with its original quality label.
+            }
+          });
+        }
+      }
+      notifyListeners();
+    }
+
     await Future.wait([
-      _searchBuiltIn(generation),
-      _searchExtensions(generation),
+      _searchBuiltIn(generation, addResults),
+      _searchExtensions(generation, addResults),
     ]);
+    if (!_current(generation)) return;
+    await Future.wait(_metadataLanes);
     if (_current(generation)) {
       searching = false;
       notifyListeners();
@@ -179,24 +323,29 @@ class StreamDiscovery extends ChangeNotifier {
   }
 
   void stop() {
+    cancelAudioCheck();
     _generation++;
     searching = false;
     if (!_closed) notifyListeners();
   }
 
-  void markFailed(StreamChoice choice) {
+  void markFailed(StreamChoice choice, {bool rateLimited = false}) {
     if (_closed) return;
-    unavailable.add(choice.id);
-    notifyListeners();
+    final added = unavailable.add(choice.id);
+    final limited = rateLimited && _rateLimited.add(choice.id);
+    if (added || limited) notifyListeners();
+  }
+
+  String? failureMessage(StreamChoice choice) {
+    if (_rateLimited.contains(choice.id)) {
+      return 'Server is rate limiting this stream (HTTP 429). Try another stream or refresh later.';
+    }
+    return unavailable.contains(choice.id)
+        ? 'Couldn’t open this stream. Choose another result.'
+        : null;
   }
 
   bool _current(int generation) => !_closed && generation == _generation;
-
-  void _add(int generation, List<StreamChoice> results) {
-    if (!_current(generation)) return;
-    choices.addAll(results.where((choice) => choice.isDirect));
-    notifyListeners();
-  }
 
   void _failed(int generation, String name) {
     if (!_current(generation)) return;
@@ -204,7 +353,10 @@ class StreamDiscovery extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _searchBuiltIn(int generation) async {
+  Future<void> _searchBuiltIn(
+    int generation,
+    void Function(List<StreamChoice>) addResults,
+  ) async {
     if (isAnime) {
       try {
         await streaming
@@ -220,29 +372,30 @@ class StreamDiscovery extends ChangeNotifier {
       }
     }
     if (!_current(generation)) return;
-    final providers =
-        [
-              for (
-                var i = 0;
-                i < streaming.totalProvidersFor(isAnime: isAnime);
-                i++
-              )
-                if (streaming.getProviderName(i, isAnime: isAnime) !=
-                        'Nivio Torrents' &&
-                    streaming.isDirectStream(i, isAnime: isAnime))
-                  i,
-            ]
-            .map(
-              (index) =>
-                  (index, streaming.getProviderName(index, isAnime: isAnime)),
-            )
-            .toList();
+    final providers = [
+      for (var i = 0; i < streaming.totalProvidersFor(isAnime: isAnime); i++)
+        if (streaming.getProviderName(i, isAnime: isAnime) case final name
+            when name != 'Nivio Torrents' &&
+                streaming.isDirectStream(i, isAnime: isAnime) &&
+                StreamingService.extensionBackedSource(
+                      name,
+                      isAnime: isAnime,
+                    ) ==
+                    null)
+          (i, name),
+    ];
     if (selection.mode != StreamSelectionMode.first) {
       providers.sort((a, b) {
         final rank = selection
-            .sourceRank(streamSelectionSourceId('builtin:${a.$2}'))
+            .sourceRank(
+              streamSelectionSourceId('builtin:${a.$2}'),
+              isAnime: isAnime,
+            )
             .compareTo(
-              selection.sourceRank(streamSelectionSourceId('builtin:${b.$2}')),
+              selection.sourceRank(
+                streamSelectionSourceId('builtin:${b.$2}'),
+                isAnime: isAnime,
+              ),
             );
         return rank != 0 ? rank : a.$1.compareTo(b.$1);
       });
@@ -294,72 +447,72 @@ class StreamDiscovery extends ChangeNotifier {
               direct: selected[i],
             ),
         ];
-        _add(generation, results);
-        final inspect = inspectVideoHeights;
-        if (inspect != null) {
-          final unlabelled = results
-              .where(
-                (choice) =>
-                    choice.direct!.isM3U8 && choice.knownResolutions.isEmpty,
-              )
-              .toList();
-          await _concurrently(unlabelled, 2, generation, (choice) async {
-            try {
-              final heights = await inspect(choice.direct!);
-              if (!_current(generation) || heights.isEmpty) return;
-              final position = choices.indexOf(choice);
-              if (position < 0) return;
-              choices[position] = choice.withVideoHeights(heights);
-              notifyListeners();
-            } catch (_) {
-              // A manifest without readable metadata can still be played.
-            }
-          });
-        }
+        addResults(results);
       } catch (_) {
         _failed(generation, name);
       }
     });
   }
 
-  Future<void> _searchExtensions(int generation) async {
+  Future<void> _searchExtensions(
+    int generation,
+    void Function(List<StreamChoice>) addResults,
+  ) async {
+    final providers = [
+      for (final source in CncDirectSource.forCategory(isAnime: isAnime))
+        source.provider,
+      if (!isAnime)
+        for (var i = 0; i < streaming.totalProvidersFor(isAnime: false); i++)
+          if (NuvioDirectSources.forName(
+                streaming.getProviderName(i, isAnime: false),
+              )
+              case final provider?)
+            provider,
+    ];
     try {
       final repositories = await repository.list();
-      final providers = repositories
+      final installed = repositories
           .expand((repo) => repo.providers)
           .where(
             (provider) =>
                 provider.enabled &&
                 ExtensionResolver.supports(provider.repository.format) &&
-                provider.supports(media.mediaType),
+                provider.supports(media.mediaType) &&
+                !CncDirectSource.replacesPackage(provider) &&
+                (isAnime ||
+                    NuvioDirectSources.replacementId(provider.id) == null),
           )
           .toList();
+      providers.addAll(installed);
+      if (!_current(generation)) return;
+      _extensionProviderCount = installed.length;
+    } catch (_) {
+      _failed(generation, 'Extensions');
+    }
+    try {
       if (providers.isEmpty || !_current(generation)) return;
-      _extensionProviderCount = providers.length;
       if (selection.mode != StreamSelectionMode.first) {
         final ranked = providers.indexed.toList()
           ..sort((a, b) {
             final rank = selection
-                .sourceRank(a.$2.id)
-                .compareTo(selection.sourceRank(b.$2.id));
+                .sourceRank(a.$2.sourceId, isAnime: isAnime)
+                .compareTo(
+                  selection.sourceRank(b.$2.sourceId, isAnime: isAnime),
+                );
             return rank != 0 ? rank : a.$1.compareTo(b.$1);
           });
         providers.setAll(0, ranked.map((entry) => entry.$2));
       }
-      final target = await extensionMedia(media, season, episode);
       final resolver = ExtensionResolver(repository);
-      await _concurrently(providers, 4, generation, (provider) async {
-        try {
-          _add(
-            generation,
-            await resolver
-                .resolve(provider, target, media)
-                .timeout(const Duration(seconds: 38)),
-          );
-        } catch (_) {
-          _failed(generation, provider.name);
-        }
-      });
+      final lookup = resolver.lookup(media, season, episode);
+      await resolver.resolveAll(
+        providers,
+        lookup,
+        wantTorrent: false,
+        isCurrent: () => _current(generation),
+        onResult: (_, results) => addResults(results),
+        onError: (provider) => _failed(generation, provider.name),
+      );
     } catch (_) {
       _failed(generation, 'Extensions');
     }
@@ -383,6 +536,7 @@ class StreamDiscovery extends ChangeNotifier {
 
   @override
   void dispose() {
+    cancelAudioCheck();
     _closed = true;
     _generation++;
     super.dispose();

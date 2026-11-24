@@ -14,6 +14,8 @@ import 'package:nivio/widgets/youtube_webview_player.dart';
 import 'package:nivio/services/webview_environment_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
+import 'package:nivio/widgets/artwork_icon_button.dart';
+import 'package:nivio/widgets/hero_artwork_stretch.dart';
 import 'package:nivio/widgets/skeleton.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/screen_wake_lock.dart';
@@ -222,7 +224,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           if (tmdbInfo != null) {
             mediaDetails = mediaDetails.copyWith(
               backdropPath: tmdbInfo['backdrop_path'] ?? mediaDetails.backdropPath,
-              posterPath: tmdbInfo['poster_path'] ?? mediaDetails.posterPath,
+              posterPath: mediaDetails.posterPath ?? tmdbInfo['poster_path'],
             );
           }
         } catch (_) {}
@@ -480,8 +482,19 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     final isTv = media.mediaType == 'tv' || media.mediaType == 'anime';
     final seriesInfoAsync = isTv ? ref.watch(seriesInfoProvider(media.id)) : null;
     final seriesInfo = seriesInfoAsync?.valueOrNull;
-    final colorsAsync = ref.watch(dynamicColorsProvider(posterUrl));
-    final colors = colorsAsync.valueOrNull ?? DynamicColors.fallback;
+    final dynamicColors = ref.watch(dynamicArtworkColorsProvider);
+    final palette = NivioTheme.themeColorsOf(context);
+    final themeColors = DynamicColors(
+      dominant: palette.primary,
+      darkMuted: palette.background,
+      darkVibrant: palette.surface,
+      lightVibrant: palette.primary,
+      lightMuted: palette.surfaceContainer,
+      onSurface: palette.textPrimary,
+    );
+    final colors = dynamicColors
+        ? ref.watch(dynamicColorsProvider(posterUrl)).valueOrNull ?? themeColors
+        : themeColors;
     final accentColor = colors.lightVibrant;
 
     final allHistory = ref.watch(watchHistoryProvider).valueOrNull ?? [];
@@ -514,6 +527,17 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         : 'Unknown';
     final mediaName = media.title ?? media.name ?? 'Unknown';
 
+    final artwork = backdropUrl.isEmpty
+        ? ColoredBox(color: colors.darkMuted)
+        : ArtworkImage(
+            imageUrl: backdropUrl,
+            kind: useBackdrop ? ArtworkKind.backdrop : ArtworkKind.poster,
+            fit: BoxFit.cover,
+            fadeInDuration: Duration.zero,
+            fadeOutDuration: Duration.zero,
+            errorWidget: (_, __, ___) => ColoredBox(color: colors.darkMuted),
+          );
+
     return _withBackGuard(
       Scaffold(
         backgroundColor: colors.darkMuted,
@@ -521,6 +545,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           children: [
             AppCustomScrollView(
           controller: _scrollController,
+          physics: isDesktop ? null : const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
           cacheExtent: 250,
           scrollSpeed: 2.0,
           silkyScrollDuration: const Duration(milliseconds: 500),
@@ -534,23 +559,17 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      if (backdropUrl.isNotEmpty)
-                        ArtworkImage(
-                          imageUrl: backdropUrl,
-                          kind: useBackdrop ? ArtworkKind.backdrop : ArtworkKind.poster,
-                          fit: BoxFit.cover,
-                          fadeInDuration: Duration.zero,
-                          fadeOutDuration: Duration.zero,
-                          errorWidget: (_, __, ___) => Container(color: colors.darkMuted),
-                        )
-                      else
-                        Container(color: colors.darkMuted),
+                      if (isDesktop) artwork else HeroArtworkStretch(
+                        controller: _scrollController,
+                        height: heroHeight,
+                        child: artwork,
+                      ),
                       // Bottom fade to darkMuted (matching HomeScreen banner)
                       Positioned(
                         left: 0,
                         right: 0,
                         bottom: 0,
-                        height: heroHeight * 0.50,
+                        height: heroHeight * (isDesktop ? 0.50 : 0.34),
                         child: DecoratedBox(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
@@ -558,7 +577,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                               end: Alignment.bottomCenter,
                               colors: [
                                 Colors.transparent,
-                                colors.darkMuted.withOpacity(0.8),
+                                colors.darkMuted.withValues(alpha: isDesktop ? 0.8 : 0.52),
                                 colors.darkMuted,
                               ],
                               stops: const [0.0, 0.7, 1.0],
@@ -575,7 +594,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                           mainAxisAlignment:
                               MainAxisAlignment.spaceBetween,
                           children: [
-                            _glassIconButton(
+                            ArtworkIconButton(
                               icon: const PhosphorIcon(
                                 PhosphorIconsRegular.caretLeft,
                                 color: NivioTheme.netflixWhite,
@@ -586,7 +605,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                             if (!isDesktop)
                               Row(
                                 children: [
-                                  _glassIconButton(
+                                  ArtworkIconButton(
                                     icon: const PhosphorIcon(
                                       PhosphorIconsRegular.users,
                                       color: NivioTheme.netflixWhite,
@@ -1191,14 +1210,6 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         ),
       ),
     );
-  }
-
-  Widget _glassIconButton({
-    required Widget icon,
-    required VoidCallback onTap,
-    double size = 44,
-  }) {
-    return _HoverGlassButton(icon: icon, onTap: onTap, size: size);
   }
 
   Widget _glassTag(String label) {
@@ -2805,7 +2816,7 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: NivioTheme.accentColorOf(context),
-                  foregroundColor: Colors.white,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 ),
                 icon: const Icon(Icons.open_in_new_rounded),
@@ -3098,52 +3109,6 @@ class _HoverSlideIconButtonState extends State<_HoverSlideIconButton> {
             color: _isHovered ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
           ),
           child: widget.icon,
-        ),
-      ),
-    ),
-    );
-  }
-}
-
-class _HoverGlassButton extends StatefulWidget {
-  final Widget icon;
-  final VoidCallback onTap;
-  final double size;
-
-  const _HoverGlassButton({required this.icon, required this.onTap, this.size = 44});
-
-  @override
-  State<_HoverGlassButton> createState() => _HoverGlassButtonState();
-}
-
-class _HoverGlassButtonState extends State<_HoverGlassButton> {
-  bool _isHovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return DpadFocusable(
-      borderRadius: BorderRadius.circular(999),
-      onActivate: widget.onTap,
-      child: MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-          width: widget.size,
-          height: widget.size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: _isHovered ? const Color(0x4DFFFFFF) : const Color(0x26FFFFFF),
-            border: Border.all(
-              color: _isHovered ? const Color(0x66FFFFFF) : const Color(0x33FFFFFF), 
-              width: 1
-            ),
-          ),
-          child: Center(child: widget.icon),
         ),
       ),
     ),

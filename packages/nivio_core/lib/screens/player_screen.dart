@@ -5,9 +5,12 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:media_kit_video/src/video_controller/android_video_controller/android_video_controller.dart';
 import 'package:simple_pip_mode/actions/pip_actions_layout.dart';
 import 'package:nivio/services/ios_video_output.dart';
+import 'package:nivio/services/mp4_metadata.dart';
+import 'package:nivio/services/stream_audio_inspector.dart';
 import 'package:nivio/widgets/ios_video_surface.dart';
 import 'package:nivio/services/window_fullscreen.dart';
 import 'dart:io';
+import 'dart:typed_data' show BytesBuilder, Uint8List;
 import 'package:nivio/core/screen_wake_lock.dart';
 import 'package:simple_pip_mode/simple_pip.dart';
 import 'dart:ui';
@@ -123,7 +126,25 @@ typedef _StreamProbe = ({
   int? status,
   List<_HlsVariant>? variants,
   List<int> videoHeights,
+  List<String> audioTracks,
 });
+
+class _StreamProbeFailure implements Exception {
+  const _StreamProbeFailure(this.status);
+
+  final int? status;
+  bool get rateLimited => status == HttpStatus.tooManyRequests;
+
+  @override
+  String toString() {
+    if (rateLimited) {
+      return 'Server is rate limiting this stream (HTTP 429). Try another stream or refresh later.';
+    }
+    return status == null
+        ? 'Couldn’t reach the stream.'
+        : 'The stream server returned HTTP $status.';
+  }
+}
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen>
     with WidgetsBindingObserver, TickerProviderStateMixin {
@@ -174,6 +195,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final playing = isPlaying ?? _player.state.playing;
       unawaited(SimplePip().setIsPlaying(playing).catchError((_) => false));
     } catch (_) {}
+  }
+
+  Future<void> _setAutoPipEnabled(bool enabled) async {
+    try {
+      if (Platform.isAndroid) {
+        await SimplePip().setAutoPipMode(
+          aspectRatio: const (16, 9),
+          autoEnter: enabled,
+        );
+      } else if (Platform.isIOS) {
+        await IosVideoOutput.instance.setAutoPip(_player, enabled);
+      }
+    } catch (error) {
+      appDebugLog('Could not update automatic PiP: $error');
+    }
+  }
+
+  Future<void> _syncAutoPipAvailability() {
+    if (!mounted || _isDisposing || _isDeactivated) {
+      return Future<void>.value();
+    }
+    return _setAutoPipEnabled(
+      !_isLoading &&
+          _error == null &&
+          !_streamPickerOpen &&
+          !_serverOverlayOpen &&
+          ref.read(pipOnLostVisibilityProvider),
+    );
   }
 
   void _guardVideoControllerWid(VideoController controller) {
@@ -229,6 +278,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   int _autoStreamAttempts = 0;
   Stopwatch? _streamSelectionClock;
   _StreamProbe? _firstReachableProbe;
+  final _metadataProbes = Expando<({DateTime checkedAt, _StreamProbe probe})>();
   bool _streamPickerOpen = false;
   bool _serverOverlayOpen = false;
 
@@ -636,9 +686,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
 
     if (Platform.isAndroid) {
-      const MethodChannel('com.nivio/gesture_exclusion').invokeMethod('setCanEnterPip', {'value': true});
-      try {
-        () async {
+      unawaited(() async {
+        try {
           const MethodChannel('puntito.simple_pip_mode').setMethodCallHandler((call) async {
             if (call.method == 'onPipEntered') {
               setState(() => _isPipMode = true);
@@ -669,16 +718,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               }
             }
           });
-          final autoPip = ref.read(pipOnLostVisibilityProvider);
           await SimplePip().setPipActionsLayout(PipActionsLayout.mediaWithSeek10);
-          await SimplePip().setAutoPipMode(aspectRatio: const (16, 9), autoEnter: autoPip);
-          _syncPipPlayingState();
-        }();
-      } catch (_) {}
-    }
-    if (Platform.isIOS) {
-      // Picture-in-picture when leaving Nivio, like Android's auto PiP.
-      unawaited(IosVideoOutput.instance.setAutoPip(_player, ref.read(pipOnLostVisibilityProvider)));
+          if (mounted && !_isDisposing) _syncPipPlayingState();
+        } catch (_) {}
+      }());
     }
     _currentEpisode = widget.episode;
     _currentProviderIndex = math.max(0, widget.providerIndex ?? 0);
@@ -692,14 +735,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       setState(() {
         _isLoading = false;
       });
+      unawaited(_syncAutoPipAvailability());
     }
     _initializeWatchParty();
-    if (Platform.isAndroid || Platform.isIOS) {
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    if (!_usesStreamPicker ||
+        (miniPlayerState.isActive && miniPlayerState.player != null)) {
+      _enterPlaybackLayout();
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -1096,6 +1137,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   // ├────────────────────────────────────────────────────────────────────────────────────────── Player initialization ──────────────────────────────────────────────────────────────────────────────────────────
+  List<DeviceOrientation> _playerOrientations = const [];
+  bool _enteredPlaybackLayout = false;
+
+  void _enterPlaybackLayout() {
+    if (_enteredPlaybackLayout || !(Platform.isAndroid || Platform.isIOS)) {
+      return;
+    }
+    _enteredPlaybackLayout = true;
+    unawaited(
+      _setPlayerOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]),
+    );
+    unawaited(
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky),
+    );
+  }
+
+  Future<void> _setPlayerOrientations(List<DeviceOrientation> orientations) {
+    _playerOrientations = orientations;
+    return SystemChrome.setPreferredOrientations(orientations);
+  }
+
   Future<StreamPickerOutcome?> _chooseStream(
     SearchResult media,
     String? preferredQuality,
@@ -1106,6 +1171,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _streamPickerOpen = true;
     final repository = ref.read(extensionRepositoryProvider);
     try {
+      await _syncAutoPipAvailability();
       while (mounted && !_isDeactivated) {
         final settings = await ref.read(streamSelectionSettingsProvider.future);
         if (!mounted || _isDeactivated) return null;
@@ -1122,18 +1188,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         final search = _discoverDirectStreams(
           media, preferredQuality, subDub, settings, repository,
         );
-        if (allowAuto && settings.mode == StreamSelectionMode.match) {
-          return await _autoSelectStream(search, settings) ??
-              const StreamPickerOutcome(automatic: true);
-        }
         final outcome = await DirectStreamPickerSheet.show(
           context,
           search,
-          selectAutomatically: allowAuto && settings.mode == StreamSelectionMode.first
+          restoreOrientations: _playerOrientations,
+          selectAutomatically: allowAuto && settings.mode != StreamSelectionMode.manual
               ? () => _autoSelectStream(search, settings)
               : null,
         );
-        if (outcome?.refresh != true || !mounted) return outcome;
+        if (!mounted || _isDeactivated) return null;
+        if (outcome == null) return const StreamPickerOutcome(dismissed: true);
+        if (!outcome.refresh) return outcome;
         allowAuto = false;
         // The picker has detached. Re-query with the updated settings and repositories.
         _streamDiscovery?.dispose();
@@ -1142,6 +1207,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       return null;
     } finally {
       _streamPickerOpen = false;
+      unawaited(_syncAutoPipAvailability());
     }
   }
 
@@ -1163,13 +1229,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       settings: settings,
     );
     if (!mounted || _isDeactivated || episode != _currentEpisode) return null;
-    final autoSelect = media.mediaType == 'movie' || media.mediaType == 'tv'
-        ? switch (settings.mode) {
-            StreamSelectionMode.manual => false,
-            StreamSelectionMode.match => allowAuto,
-            StreamSelectionMode.first => null,
-          }
-        : null;
+    final autoSelect = switch (settings.mode) {
+      StreamSelectionMode.manual => false,
+      StreamSelectionMode.match => allowAuto,
+      StreamSelectionMode.first => null,
+    };
+    var dismissed = false;
     final result = await streaming.fetchTorrentStream(
       media: media,
       season: widget.season,
@@ -1178,15 +1243,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       context: context,
       binge: binge,
       pickerSearch: pickerSearch,
+      restoreOrientations: _playerOrientations,
       autoSelect: autoSelect,
       onManualSwitch: onManualSwitch,
+      onPickerDismissed: () => dismissed = true,
       onStatusUpdate: (status) {
         if (mounted && !_isDeactivated && episode == _currentEpisode && _isLoading) {
           setState(() => _loadingMessage = status);
         }
       },
     );
-    return result == null ? null : StreamPickerOutcome(result: result);
+    return StreamPickerOutcome(result: result, dismissed: dismissed);
   }
 
   StreamDiscovery _discoverDirectStreams(
@@ -1199,8 +1266,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final presetHeight = settings.resolutions.firstOrNull;
     final directQuality =
         preferredQuality ?? (presetHeight == null ? null : '${presetHeight}p');
-    final String audioLanguage = _currentHistory?.preferredAudioTrack ??
-        ref.read(preferredAudioLanguageProvider);
+    final audioLanguage = StreamSelection.pickerAudioPreference(
+      ref.read(preferredAudioLanguageProvider),
+      savedTrack: _currentHistory?.preferredAudioTrack,
+    );
     final String subtitleLanguage = _currentHistory?.preferredSubtitleTrack ??
         ref.read(preferredSubtitleLanguageProvider);
     final current = _streamDiscovery;
@@ -1233,8 +1302,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             isM3U8: stream.isM3U8,
           ),
           _buildPlaybackHeaders(stream.headers),
+          readVideoHeights: true,
         );
-        return probe?.videoHeights ?? const [];
+        if (probe == null || !probe.ok) return const [];
+        _metadataProbes[stream] = (checkedAt: DateTime.now(), probe: probe);
+        return probe.videoHeights;
+      },
+      inspectAudioTracks: (stream, cancelled) async {
+        final headers = _buildPlaybackHeaders(stream.headers);
+        final isMp4 = Uri.tryParse(stream.url)?.path.toLowerCase().endsWith('.mp4') == true;
+        if (stream.isM3U8 || isMp4) {
+          var cancelledBeforeProbe = false;
+          final probe = await Future.any([
+            _probeStreamCandidate(
+              StreamSource(url: stream.url, quality: stream.quality, isM3U8: stream.isM3U8),
+              headers,
+              readAudioTracks: true,
+            ),
+            cancelled.then<_StreamProbe?>((_) {
+              cancelledBeforeProbe = true;
+              return null;
+            }),
+          ]);
+          if (cancelledBeforeProbe || probe?.status == HttpStatus.tooManyRequests) {
+            return const [];
+          }
+          final tracks = probe?.audioTracks ?? const <String>[];
+          if (tracks.any((track) => !StreamSelection.isUnspecifiedAudioLanguage(track))) {
+            return tracks;
+          }
+        }
+        return inspectStreamAudioTracks(stream.url, headers, cancelled);
       },
       selection: settings,
     );
@@ -1281,7 +1379,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             StreamSource(url: direct.url, quality: direct.quality, isM3U8: direct.isM3U8),
             _buildPlaybackHeaders(direct.headers),
           );
-          if (result == null || !result.ok) return false;
+          if (result == null || !result.ok) {
+            if (result?.status == HttpStatus.tooManyRequests) {
+              search.markFailed(choice, rateLimited: true);
+            }
+            return false;
+          }
           probes[choice.id] = result;
           return true;
         });
@@ -1336,6 +1439,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _error = null;
       _loadingMessage = null;
     });
+    unawaited(_syncAutoPipAvailability());
 
     try {
       await _loadSubtitleDelay();
@@ -1630,16 +1734,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           media, preferredQuality, subDubPref, allowAuto: allowAuto,
         );
         if (!mounted || _isDeactivated) return;
-        if (selected?.result == null) {
+        if (selected == null) return;
+        if (selected.dismissed) {
+          if (ModalRoute.of(context)?.isCurrent == true) _forceExitPlayer();
+          return;
+        }
+        if (selected.result == null) {
           setState(() {
             _isLoading = false;
-            _error = selected?.automatic == true
+            _error = selected.automatic
                 ? 'No playable streams matched your preferences.'
-                : 'Choose a stream to start playback.';
+                : 'Couldn’t start the selected stream.';
           });
           return;
         }
-        manualChoice = selected!.choice;
+        manualChoice = selected.choice;
         choseAutomatically = selected.automatic;
         pickedDirectResolution = selected.preferredResolution;
         result = selected.result;
@@ -1814,7 +1923,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
         // Fire all candidate verifications simultaneously to prevent 10-15s sequential timeout delays!
         appDebugLog('⏳ [FLOW] Starting parallel stream verification for ${candidates.length} candidates from ${result.provider}');
-        final verified = choseAutomatically ? _firstReachableProbe : null;
+        final inspection = _metadataProbes[result];
+        final recentProbe = inspection != null &&
+                DateTime.now().difference(inspection.checkedAt) <
+                    const Duration(seconds: 10)
+            ? inspection.probe
+            : null;
+        final verified =
+            (choseAutomatically ? _firstReachableProbe : null) ?? recentProbe;
         final checkFutures = [
           for (final (index, candidate) in candidates.indexed)
             if (index == 0 && verified != null)
@@ -1868,7 +1984,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             _initializePlayer(isRetry: true);
             return;
           } else {
-            throw Exception('Stream link is dead${lastStatus != null ? ' (HTTP $lastStatus)' : ''}');
+            throw _StreamProbeFailure(lastStatus);
           }
         }
 
@@ -1883,6 +1999,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         }
       }
       
+      _enterPlaybackLayout();
       _trackInitialPlay();
 
       if (media != null) {
@@ -1897,6 +2014,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _isLoading = false;
           _retryCount = 0;
         });
+        unawaited(_syncAutoPipAvailability());
         _updateWatchPartyHostSyncTimer();
         _startProgressTracking();
         _maybeAutoEnterFullscreenOnce();
@@ -2139,6 +2257,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _isLoading = false;
         _retryCount = 0;
       });
+      unawaited(_syncAutoPipAvailability());
 
       _startProgressTracking();
       if (manualChoice != null) unawaited(_rememberStreamChoice(media, manualChoice));
@@ -2161,12 +2280,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _isLoading = false;
           _retryCount = 0;
         });
+        unawaited(_syncAutoPipAvailability());
         _startProgressTracking();
         return;
       }
       if (!mounted) return;
       if (manualChoice != null) {
-        _streamDiscovery?.markFailed(manualChoice);
+        _streamDiscovery?.markFailed(
+          manualChoice,
+          rateLimited: e is _StreamProbeFailure && e.rateLimited,
+        );
         _streamResult = null;
         unawaited(_initializePlayer(allowAuto: choseAutomatically));
         return;
@@ -3239,7 +3362,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // Nothing needed. PlayerScreen handles its own immersive fullscreen mode.
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        SystemChrome.setPreferredOrientations([
+        _setPlayerOrientations([
           DeviceOrientation.landscapeLeft,
           DeviceOrientation.landscapeRight,
         ]);
@@ -4117,20 +4240,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _applyDisplaySettings();
   }
 
-  /// Verification request for one stream candidate: a ranged GET that reads
-  /// at most 64 KB. When the response is an HLS master playlist, its variants
-  /// are returned too. Playing one variant directly saves real time: mpv's
+  /// Verification reads the first 64 KiB. Track inspection can follow MP4
+  /// metadata to a second bounded range. An HLS master also returns variants.
+  /// Playing one variant directly saves real time: mpv's
   /// HLS demuxer (ffmpeg) downloads every variant playlist one after another
   /// before the first frame, and slow CDNs take 1-6 s per playlist (VidRock's
   /// three-variant masters cost 10-15 s that way).
   Future<_StreamProbe?> _probeStreamCandidate(
     StreamSource cand,
-    Map<String, String> headers,
-  ) async {
+    Map<String, String> headers, {
+    bool readAudioTracks = false,
+    bool readVideoHeights = false,
+  }) async {
     final client = http.Client();
+    final readMp4Tracks = !cand.isM3U8 && (readAudioTracks || readVideoHeights);
     try {
-      appDebugLog('🔍 [FLOW] Verifying candidate: ${cand.quality} (${cand.url})');
-      final request = http.Request('GET', Uri.parse(cand.url));
+      final uri = Uri.parse(cand.url);
+      appDebugLog('🔍 [FLOW] Verifying candidate: ${cand.quality} (${uri.host})');
+      final request = http.Request('GET', uri);
       request.headers.addAll(headers);
       request.headers['Range'] = 'bytes=0-65535'; // range request avoids buffering the whole video
       final response = await client.send(request).timeout(const Duration(milliseconds: 2500));
@@ -4139,28 +4266,57 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         appDebugLog('⚠️ Source "${cand.quality}" returned $status');
         return (
           ok: false, status: status, variants: null, videoHeights: const <int>[],
+          audioTracks: const <String>[],
         );
       }
       appDebugLog('✅ Stream pre-verification passed (${cand.quality}) with status: $status');
 
       List<_HlsVariant>? variants;
       List<int> videoHeights = const [];
+      List<String> audioTracks = const [];
       try {
         final bytes = <int>[];
         await for (final chunk in response.stream.timeout(const Duration(seconds: 1))) {
-          bytes.addAll(chunk);
+          bytes.addAll(chunk.take(65536 - bytes.length));
           if (bytes.length >= 65536) break;
-          // Only playlists are worth reading; stop as soon as it's clearly not one.
-          if (bytes.length >= 16 && !_looksLikeM3u(bytes)) break;
+          // A reachability check only needs the first bytes of a progressive file.
+          if (!readMp4Tracks && bytes.length >= 16 && !_looksLikeM3u(bytes)) break;
         }
         if (bytes.length < 65536 && _looksLikeM3u(bytes)) {
           final manifest = utf8.decode(bytes, allowMalformed: true);
           videoHeights = M3u8Parser.videoHeights(manifest);
+          if (readAudioTracks) audioTracks = M3u8Parser.audioLanguages(manifest);
           variants = _masterVariants(manifest, cand.url);
+        } else if (readMp4Tracks) {
+          final movie = await _readMp4Movie(
+            client,
+            uri,
+            headers,
+            response,
+            Uint8List.fromList(bytes),
+            requireComplete: readAudioTracks,
+          );
+          if (movie != null) {
+            if (readAudioTracks) {
+              audioTracks = Mp4Metadata.audioLanguages(movie.data, movie.offset);
+            }
+            if (readVideoHeights) {
+              videoHeights = Mp4Metadata.videoHeights(movie.data, movie.offset);
+            }
+          }
         }
+      } on _StreamProbeFailure catch (failure) {
+        return (
+          ok: false,
+          status: failure.status,
+          variants: null,
+          videoHeights: const <int>[],
+          audioTracks: const <String>[],
+        );
       } catch (_) {}
       return (
         ok: true, status: status, variants: variants, videoHeights: videoHeights,
+        audioTracks: audioTracks,
       );
     } catch (e) {
       appDebugLog('⚠️ Source "${cand.quality}" error: $e');
@@ -4168,6 +4324,58 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } finally {
       client.close(); // Abort so a video file isn't downloaded
     }
+  }
+
+  Future<({Uint8List data, int offset})?> _readMp4Movie(
+    http.Client client,
+    Uri uri,
+    Map<String, String> headers,
+    http.StreamedResponse prefix,
+    Uint8List bytes, {
+    required bool requireComplete,
+  }) async {
+    final movie = Mp4Metadata.moviePosition(bytes);
+    if (movie == null) return null;
+    if (movie.complete ||
+        (!requireComplete &&
+            Mp4Metadata.videoHeights(bytes, movie.offset).isNotEmpty)) {
+      return (data: bytes, offset: movie.offset);
+    }
+    final contentRange = RegExp(r'^bytes 0-\d+/(\d+)$')
+        .firstMatch(prefix.headers['content-range'] ?? '');
+    final total = int.tryParse(contentRange?.group(1) ?? '');
+    if (prefix.statusCode != HttpStatus.partialContent ||
+        total == null ||
+        movie.offset >= total) {
+      return null;
+    }
+    // Follow the next atom offset, skipping the media payload. Read only a
+    // bounded window of metadata on servers that support byte ranges.
+    final limit = (requireComplete ? 512 : 128) * 1024;
+    final end = math.min(total, movie.offset + limit) - 1;
+    final request = http.Request('GET', uri)..headers.addAll(headers);
+    request.headers['Range'] = 'bytes=${movie.offset}-$end';
+    final response = await client.send(request).timeout(const Duration(seconds: 2));
+    if (response.statusCode == HttpStatus.tooManyRequests) {
+      throw const _StreamProbeFailure(HttpStatus.tooManyRequests);
+    }
+    final actualRange = response.headers['content-range'] ?? '';
+    if (response.statusCode != HttpStatus.partialContent ||
+        !actualRange.startsWith('bytes ${movie.offset}-')) {
+      return null;
+    }
+    final result = BytesBuilder(copy: false);
+    final expectedBytes = end - movie.offset + 1;
+    await for (final chunk in response.stream.timeout(const Duration(seconds: 1))) {
+      final remaining = expectedBytes - result.length;
+      result.add(chunk.length > remaining ? chunk.sublist(0, remaining) : chunk);
+      if (result.length == expectedBytes) break;
+    }
+    final data = result.takeBytes();
+    final position = Mp4Metadata.moviePosition(data);
+    return position != null && (position.complete || !requireComplete)
+        ? (data: data, offset: position.offset)
+        : null;
   }
 
   static bool _looksLikeM3u(List<int> bytes) {
@@ -5118,13 +5326,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _seekPreview?.dispose();
     _seekPreview = null;
 
+    if (Platform.isAndroid || (Platform.isIOS && !_transferredToMiniPlayer)) {
+      unawaited(_setAutoPipEnabled(false));
+    }
     if (Platform.isAndroid) {
       try {
         appDebugLog('🔴 [DISPOSE] Step 3: Android PIP cleanup...');
-        const MethodChannel('com.nivio/gesture_exclusion').invokeMethod('setCanEnterPip', {'value': false});
         const MethodChannel('com.nivio/gesture_exclusion').setMethodCallHandler(null);
         const MethodChannel('puntito.simple_pip_mode').setMethodCallHandler(null);
-        SimplePip().setAutoPipMode(aspectRatio: const (16, 9), autoEnter: false);
         appDebugLog('🔴 [DISPOSE] Step 3: ✅ done');
       } catch (e, st) {
         appDebugLog('🔴 [DISPOSE] Step 3: ❌ FAILED — $e\n$st');
@@ -5227,7 +5436,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     try {
       appDebugLog('🔴 [DISPOSE] Step 13: SystemChrome orientations + UI mode...');
-      SystemChrome.setPreferredOrientations([
+      _setPlayerOrientations([
         DeviceOrientation.portraitUp,
       ]);
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -5271,7 +5480,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     if (!_isDirectStream && _isInFullscreen) {
       appDebugLog('🟡 [BACK_NAV] Step 2: exit embed fullscreen (not direct stream)...');
-      SystemChrome.setPreferredOrientations([
+      _setPlayerOrientations([
         DeviceOrientation.portraitUp,
         DeviceOrientation.portraitDown,
       ]);
@@ -5333,7 +5542,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     if (!isDesktop) {
       appDebugLog('🟡 [BACK_NAV] Step 4: mobile orientation reset...');
-      SystemChrome.setPreferredOrientations([
+      _setPlayerOrientations([
         DeviceOrientation.portraitUp,
         DeviceOrientation.portraitDown,
       ]);
@@ -5363,7 +5572,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     appDebugLog('🟠 [FORCE_EXIT] CALLED — mounted=$mounted');
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
     if (!isDesktop) {
-      SystemChrome.setPreferredOrientations([
+      _setPlayerOrientations([
         DeviceOrientation.portraitUp,
         DeviceOrientation.portraitDown,
       ]);
@@ -5465,18 +5674,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   // ——————————————————————————————————————————————————————————————————————————————————————————
-  void _showServerOverlayPanel() {
+  Future<void> _showServerOverlayPanel() async {
     final media = ref.read(selectedMediaProvider) ?? _cachedMedia;
     if (_usesStreamPicker && media != null) {
-      unawaited(_switchManualStream(media));
+      await _switchManualStream(media);
       return;
     }
-    unawaited(_showServerOverlay<void>(
-      (_) => ListView(
-        padding: EdgeInsets.zero,
-        children: _buildProviderListTiles(media),
-      ),
-    ));
+    if (_serverOverlayOpen) return;
+    _serverOverlayOpen = true;
+    try {
+      await _syncAutoPipAvailability();
+      if (!mounted || _isDeactivated) return;
+      await _showServerOverlay<void>(
+        (_) => ListView(
+          padding: EdgeInsets.zero,
+          children: _buildProviderListTiles(media),
+        ),
+      );
+    } finally {
+      _serverOverlayOpen = false;
+      unawaited(_syncAutoPipAvailability());
+    }
   }
 
   Future<T?> _showServerOverlay<T>(WidgetBuilder content) {
@@ -5561,6 +5779,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _serverOverlayOpen = true;
     var switching = false;
     try {
+      await _syncAutoPipAvailability();
+      if (!isCurrentStream()) return;
       final settings = await ref.read(streamSelectionSettingsProvider.future);
       if (!isCurrentStream() || _isLoading) return;
       final quality = ref.read(videoQualityProvider);
@@ -5655,6 +5875,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         });
       }
       _serverOverlayOpen = false;
+      unawaited(_syncAutoPipAvailability());
     }
   }
 
@@ -5675,7 +5896,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           child: search.searching
               ? const CircularProgressIndicator()
               : Text(
-                  extensionNotice ?? 'No direct streams found.',
+                  search.fileSizeEmptyMessage ??
+                      extensionNotice ??
+                      'No direct streams found.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white70),
                 ),
@@ -5703,6 +5926,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     choice.quality,
                   if (choice.knownResolutions.isNotEmpty)
                     choice.knownResolutions.map((height) => '${height}p').join(' / '),
+                  if (choice.pickerAudioLabel case final String audio) audio,
                 ].join(' · '),
                 icon: Icons.bolt_rounded,
                 isCurrent: choice.direct?.url == currentStream.url &&
@@ -7509,7 +7733,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _forceExitPlayer();
         });
       } else {
-        SystemChrome.setPreferredOrientations([
+        _setPlayerOrientations([
           DeviceOrientation.portraitUp,
           DeviceOrientation.portraitDown,
         ]);
@@ -7648,13 +7872,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                           _isInFullscreen = !_isInFullscreen;
                         });
                         if (_isInFullscreen) {
-                          SystemChrome.setPreferredOrientations([
+                          _setPlayerOrientations([
                             DeviceOrientation.landscapeLeft,
                             DeviceOrientation.landscapeRight,
                           ]);
                           SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
                         } else {
-                          SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+                          _setPlayerOrientations(DeviceOrientation.values);
                           SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
                         }
                       },
@@ -8009,7 +8233,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 label: Text(_usesStreamPicker ? 'CHOOSE STREAM' : 'RETRY'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: NivioTheme.accentColorOf(context),
-                  foregroundColor: Colors.white,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 32,
                     vertical: 16,
@@ -9583,7 +9807,7 @@ class _AnimeTrackingPromptOverlayState extends State<_AnimeTrackingPromptOverlay
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: accent,
-                          foregroundColor: Colors.white,
+                          foregroundColor: Theme.of(context).colorScheme.onPrimary,
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           minimumSize: Size.zero,
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,

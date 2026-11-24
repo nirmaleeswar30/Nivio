@@ -9,13 +9,18 @@ import 'package:html/dom.dart';
 import 'package:html/parser.dart' as html;
 import 'package:nivio/core/constants.dart';
 
+import 'extension_anime_mapping.dart';
 import 'extension_repository.dart';
 
 Future<List<Map<String, dynamic>>> runNuvioScript(
   String code,
   List<Object?> arguments,
-  Map<String, dynamic> settings,
-) => Isolate.run(() => _execute(code, arguments, settings));
+  Map<String, dynamic> settings, {
+  Duration timeout = const Duration(seconds: 24),
+  NuvioAnimeMapping? animeMapping,
+}) => Isolate.run(
+  () => _execute(code, arguments, settings, timeout, animeMapping),
+);
 
 final _publicTmdbPath = RegExp(
   r'^/3/(?:movie/\d+(?:/external_ids)?|tv/\d+(?:/external_ids|/season/\d+(?:/episode/\d+)?)?|find/tt\d+)$',
@@ -50,6 +55,8 @@ Future<List<Map<String, dynamic>>> _execute(
   String code,
   List<Object?> arguments,
   Map<String, dynamic> settings,
+  Duration timeout,
+  NuvioAnimeMapping? animeMapping,
 ) async {
   final client = extensionHttpClient();
   var requests = 0;
@@ -67,6 +74,20 @@ Future<List<Map<String, dynamic>>> _execute(
         handler: (request) async {
           if (++requests > 60)
             throw StateError('Provider request limit reached.');
+          final mapped = animeMapping == null
+              ? null
+              : nuvioAnimeMappingResponse(
+                  request.method,
+                  request.url,
+                  animeMapping,
+                );
+          if (mapped != null) {
+            return JsFetchResponse(
+              status: 200,
+              headers: const [MapEntry('content-type', 'application/json')],
+              body: Stream.value(utf8.encode(jsonEncode(mapped))),
+            );
+          }
           final metadata = nuvioTmdbMetadataUrl(request.method, request.url);
           final outgoing = await client.openUrl(
             request.method,
@@ -78,11 +99,17 @@ Future<List<Map<String, dynamic>>> _execute(
               in metadata == null
                   ? request.headers
                   : const <MapEntry<String, String>>[]) {
-            if (!const {
+            final name = header.key.toLowerCase();
+            if (name == HttpHeaders.acceptEncodingHeader) {
+              // dart:io can decode gzip, but not Brotli or deflate.
+              if (header.value.trim().toLowerCase() == 'identity') {
+                outgoing.headers.set(name, 'identity');
+              }
+            } else if (!const {
               'host',
               'content-length',
               'connection',
-            }.contains(header.key.toLowerCase())) {
+            }.contains(name)) {
               outgoing.headers.add(header.key, header.value);
             }
           }
@@ -217,9 +244,7 @@ Future<List<Map<String, dynamic>>> _execute(
       const Duration(milliseconds: 16),
       (_) => runtime.executePendingJob(),
     );
-    final response =
-        jsonDecode(await completed.future.timeout(const Duration(seconds: 24)))
-            as Map;
+    final response = jsonDecode(await completed.future.timeout(timeout)) as Map;
     if (response['error'] case final String error) throw FormatException(error);
     return (response['streams'] as List? ?? [])
         .whereType<Map<String, dynamic>>()
@@ -233,6 +258,9 @@ Future<List<Map<String, dynamic>>> _execute(
 
 const _compatibility = r'''
 globalThis.global = globalThis;
+// Build the native Request after the provider's current call stack unwinds.
+const hostFetch = globalThis.fetch;
+globalThis.fetch = (...args) => Promise.resolve().then(() => hostFetch(...args));
 const callDom = (...args) => sendMessage('nivioDom', JSON.stringify(args));
 function selection(ids) {
   const first = ids[0];

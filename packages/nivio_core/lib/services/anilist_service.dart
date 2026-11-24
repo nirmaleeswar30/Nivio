@@ -197,6 +197,7 @@ class AniListService {
     return SearchResult(
       id: media['id'],
       malId: media['idMal'],
+      animeFormat: media['format'],
       title: media['title']?['english'] ?? media['title']?['romaji'] ?? 'Unknown',
       name: media['title']?['english'] ?? media['title']?['romaji'] ?? 'Unknown',
       posterPath: forDetails ? extraLarge ?? large : large ?? extraLarge,
@@ -514,6 +515,7 @@ class AniListService {
         Media(id: \$id) {
           id
           idMal
+          format
           title { romaji english }
           description
           coverImage { extraLarge large }

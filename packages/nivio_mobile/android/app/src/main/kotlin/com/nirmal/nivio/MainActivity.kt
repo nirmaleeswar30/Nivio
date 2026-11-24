@@ -2,6 +2,8 @@ package com.nirmal.nivio
 
 import android.app.UiModeManager
 import android.content.Context
+import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.media.AudioAttributes
@@ -18,12 +20,24 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.graphics.Rect
 import android.view.WindowManager
-import cl.puntito.simple_pip_mode.PipCallbackHelperActivityWrapper
+import android.widget.FrameLayout
+import androidx.appcompat.app.AppCompatActivity
+import cl.puntito.simple_pip_mode.PipCallbackHelper
+import io.flutter.embedding.android.FlutterEngineConfigurator
+import io.flutter.embedding.android.FlutterFragment
+import io.flutter.embedding.android.RenderMode
+import io.flutter.embedding.android.TransparencyMode
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.embedding.engine.FlutterShellArgs
+import io.flutter.embedding.engine.plugins.util.GeneratedPluginRegister
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : PipCallbackHelperActivityWrapper() {
+class MainActivity : AppCompatActivity(), FlutterEngineConfigurator {
+    private val flutterFragment: FlutterFragment?
+        get() = supportFragmentManager.findFragmentByTag("flutter") as? FlutterFragment
+    private val pipCallback = PipCallbackHelper()
+    private var pipCallbackReady = false
     private var cloudstreamExtensions: CloudstreamExtensions? = null
     private val CHANNEL = "com.nivio/gesture_exclusion"
     private val MEDIA_SESSION_CHANNEL = "com.nivio/media_session"
@@ -47,8 +61,79 @@ class MainActivity : PipCallbackHelperActivityWrapper() {
     private var lastMetadataKey: String? = null
     private var canEnterPip = false
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        setTheme(R.style.NormalTheme)
+        super.onCreate(savedInstanceState)
+        setContentView(FrameLayout(this).apply { id = R.id.nivio_flutter_host })
+        if (flutterFragment == null) {
+            val fragment = FlutterFragment.withNewEngine()
+                .apply {
+                    intent.getStringExtra("route")?.let { initialRoute(it) }
+                    intent.getStringArrayListExtra("dart_entrypoint_args")?.let { dartEntrypointArgs(it) }
+                    if (intent.action == Intent.ACTION_RUN &&
+                        applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+                    ) {
+                        intent.dataString?.let { appBundlePath(it) }
+                    }
+                }
+                .flutterShellArgs(FlutterShellArgs.fromIntent(intent))
+                .handleDeeplinking(false)
+                .renderMode(RenderMode.surface)
+                .transparencyMode(TransparencyMode.opaque)
+                .shouldDelayFirstAndroidViewDraw(true)
+                .shouldAutomaticallyHandleOnBackPressed(true)
+                .build<FlutterFragment>()
+            supportFragmentManager.beginTransaction()
+                .add(R.id.nivio_flutter_host, fragment, "flutter")
+                .commit()
+        }
+    }
+
+    override fun onPostResume() {
+        super.onPostResume()
+        flutterFragment?.onPostResume()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        flutterFragment?.onNewIntent(intent)
+    }
+
+    @Deprecated("Needed by Flutter plugins using the activity result callback")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        flutterFragment?.onActivityResult(requestCode, resultCode, data)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        flutterFragment?.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        flutterFragment?.onUserLeaveHint()
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        flutterFragment?.onTrimMemory(level)
+    }
+
+    override fun onPictureInPictureModeChanged(active: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(active, newConfig)
+        if (pipCallbackReady) pipCallback.onPictureInPictureModeChanged(active)
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
+        GeneratedPluginRegister.registerGeneratedPlugins(flutterEngine)
+        pipCallback.configureFlutterEngine(flutterEngine)
+        pipCallbackReady = true
         cloudstreamExtensions = CloudstreamExtensions(this, flutterEngine.dartExecutor.binaryMessenger)
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         methodChannel?.setMethodCallHandler { call, result ->
@@ -259,12 +344,12 @@ class MainActivity : PipCallbackHelperActivityWrapper() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        pipCallbackReady = false
         cloudstreamExtensions?.close()
         cloudstreamExtensions = null
         stopDolbyRouteUpdates()
         dolbyRouteChannel?.setStreamHandler(null)
         dolbyRouteChannel = null
-        super.cleanUpFlutterEngine(flutterEngine)
     }
 
     private fun isTelevision(): Boolean {

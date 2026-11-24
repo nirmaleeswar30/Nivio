@@ -33,6 +33,29 @@ class M3u8Parser {
     return heights.toList()..sort((a, b) => b.compareTo(a));
   }
 
+  static List<String> audioLanguages(String manifest) {
+    final languages = <String>[];
+    final attribute = RegExp(r'(?:^|,)\s*([A-Z-]+)=("([^"]*)"|[^,]*)');
+    for (final rawLine in manifest.split('\n')) {
+      final line = rawLine.trim();
+      const tag = '#EXT-X-MEDIA:';
+      if (!line.startsWith(tag)) continue;
+      final values = {
+        for (final match in attribute.allMatches(line.substring(tag.length)))
+          match.group(1)!: (match.group(3) ?? match.group(2)!).trim(),
+      };
+      if (values['TYPE'] == 'AUDIO') {
+        final language = values['LANGUAGE'];
+        languages.add(
+          language == null || language.isEmpty || language.toLowerCase() == 'und'
+              ? values['NAME'] ?? 'und'
+              : language,
+        );
+      }
+    }
+    return languages;
+  }
+
   static Future<List<M3u8VideoResolution>> parseVideoResolutions(
       String url, Map<String, String>? headers) async {
     try {

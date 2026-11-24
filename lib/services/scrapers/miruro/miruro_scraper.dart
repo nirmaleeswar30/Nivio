@@ -292,6 +292,12 @@ class MiruroScraperService {
         }
       }
       targetTrack ??= tracks.first as Map<String, dynamic>;
+      final trackName = (targetTrack['track'] as String? ?? '').toLowerCase();
+      final selectedAudio = switch (trackName) {
+        'dub' => 'English (Dub)',
+        'sub' || 'ssub' => 'Japanese (Sub)',
+        _ => '',
+      };
 
       final providers = (targetTrack['providers'] as List?) ?? [];
       if (providers.isEmpty) return null;
@@ -374,7 +380,7 @@ class MiruroScraperService {
           sources.add(StreamSource(
             url: proxiedUrl,
             quality: qualityLabel,
-            isDub: isDub,
+            isDub: trackName == 'dub',
           ));
         }
       }
@@ -436,7 +442,7 @@ class MiruroScraperService {
         isM3U8: isHls,
         sources: sources,
         availableAudios: availableAudios,
-        selectedAudio: preferredAudio,
+        selectedAudio: selectedAudio,
         // Seek-bar previews: anikoto, kickassanime and icarus provide a
         // `thumbnails.vtt`; its CDN checks the same Referer as the stream.
         thumbnailsVtt: _thumbnailsVtt(selectedProv['thumbnails']),

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/services/torrent/media_ranking.dart';
 import 'package:nivio/services/torrent/media_torrent_models.dart';
@@ -17,7 +15,6 @@ class ExtensionTorrentSearch extends TorrentStreamService {
     required this.media,
     required this.providers,
     required this.repository,
-    required this.timeout,
     required this.preferredFormats,
   }) : super(
          queryBuilder: builtIn.queryBuilder,
@@ -28,7 +25,6 @@ class ExtensionTorrentSearch extends TorrentStreamService {
   final SearchResult media;
   final List<ExtensionProvider> providers;
   final ExtensionRepository repository;
-  final Duration timeout;
   final List<RegExp> preferredFormats;
   final Map<(int, int), Future<List<TorrentResult>>> _results = {};
 
@@ -61,8 +57,10 @@ class ExtensionTorrentSearch extends TorrentStreamService {
     final indexed = providers.indexed.toList()
       ..sort((a, b) {
         final rank = settings
-            .sourceRank(a.$2.id)
-            .compareTo(settings.sourceRank(b.$2.id));
+            .sourceRank(a.$2.id, isAnime: media.mediaType == 'anime')
+            .compareTo(
+              settings.sourceRank(b.$2.id, isAnime: media.mediaType == 'anime'),
+            );
         return rank == 0 ? a.$1.compareTo(b.$1) : rank;
       });
     return ExtensionTorrentSearch._(
@@ -70,7 +68,6 @@ class ExtensionTorrentSearch extends TorrentStreamService {
       media: media,
       providers: indexed.map((entry) => entry.$2).toList(),
       repository: repository,
-      timeout: Duration(seconds: settings.timeoutSeconds),
       preferredFormats: formats,
     );
   }
@@ -137,39 +134,20 @@ class ExtensionTorrentSearch extends TorrentStreamService {
   }
 
   Future<List<TorrentResult>> _fetch(int season, int episode) async {
-    final clock = Stopwatch()..start();
-    final ExtensionMedia target;
-    try {
-      target = await extensionMedia(media, season, episode).timeout(timeout);
-    } on TimeoutException {
-      return [];
-    }
     final resolver = ExtensionResolver(repository);
-    var next = 0;
-    final results = List<List<TorrentResult>>.generate(
-      providers.length,
-      (_) => [],
+    final lookup = resolver.lookup(media, season, episode);
+    final results = <String, List<TorrentResult>>{};
+    await resolver.resolveAll(
+      providers,
+      lookup,
+      wantTorrent: true,
+      onResult: (provider, choices) {
+        results[provider.id] = choices
+            .map((choice) => choice.torrent)
+            .nonNulls
+            .toList();
+      },
     );
-    Future<void> fetch() async {
-      while (next < providers.length) {
-        final remaining = timeout - clock.elapsed;
-        if (remaining <= Duration.zero) return;
-        final index = next++;
-        try {
-          final streams = await resolver
-              .resolve(providers[index], target, media)
-              .timeout(remaining);
-          results[index] = streams
-              .map((choice) => choice.torrent)
-              .nonNulls
-              .toList();
-        } catch (_) {
-          // Keep results from the built-in and other extension sources.
-        }
-      }
-    }
-
-    await Future.wait(List.generate(4, (_) => fetch()));
-    return results.expand((items) => items).toList();
+    return [for (final provider in providers) ...?results[provider.id]];
   }
 }

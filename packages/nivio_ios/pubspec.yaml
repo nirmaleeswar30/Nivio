@@ -44,6 +44,7 @@ flutter:
     enable-swift-package-manager: false
 
   assets:
+    - assets/fonts/inter/OFL.txt
     - assets/images/
     - assets/nivio-preload.mpeg
     - shorebird.yaml
@@ -51,6 +52,9 @@ flutter:
     - .env
 
   fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/inter/Inter-Variable.ttf
     - family: Satoshi
       fonts:
         - asset: assets/fonts/satoshi/Satoshi-Light.otf

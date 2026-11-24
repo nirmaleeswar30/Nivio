@@ -38,10 +38,12 @@ class OnboardingScreen extends ConsumerStatefulWidget {
     super.key,
     required this.userId,
     required this.destination,
+    this.preview = false,
   });
 
   final String userId;
   final String destination;
+  final bool preview;
 
   @override
   ConsumerState<OnboardingScreen> createState() => _OnboardingScreenState();
@@ -97,6 +99,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
 
   Future<void> _finish() async {
     if (_finishing) return;
+    if (widget.preview) {
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go(widget.destination);
+      }
+      return;
+    }
     setState(() => _finishing = true);
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -338,7 +348,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
         ),
         const SizedBox(height: 20),
         switch (step) {
-          0 => const StreamSourceSettings(showHeading: false),
+          0 => const StreamSourceSettings(),
           1 => const StreamPlaybackSettings(),
           2 => const ProfileScreen(connectionsOnly: true),
           _ => const _WatchPartyIntro(),

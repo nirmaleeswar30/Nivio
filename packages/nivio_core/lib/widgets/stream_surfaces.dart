@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:nivio/core/theme.dart';
-import 'package:nivio/widgets/dpad_focusable.dart';
 
 class StreamPanel extends StatelessWidget {
   const StreamPanel({super.key, required this.child, this.padding});
@@ -83,54 +82,4 @@ class StreamSectionLabel extends StatelessWidget {
       letterSpacing: 1.2,
     ),
   );
-}
-
-class StreamSegment extends StatelessWidget {
-  const StreamSegment({
-    super.key,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.autofocus = false,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-  final bool autofocus;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = NivioTheme.themeColorsOf(context);
-    const radius = BorderRadius.all(Radius.circular(9));
-    return Semantics(
-      button: true,
-      selected: selected,
-      enabled: onTap != null,
-      child: Material(
-        color: selected
-            ? palette.primary.withValues(alpha: .16)
-            : palette.textPrimary.withValues(alpha: .045),
-        borderRadius: radius,
-        child: FocusableInkWell(
-          onTap: onTap,
-          autofocus: autofocus,
-          borderRadius: radius,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: onTap == null
-                    ? palette.textSecondary.withValues(alpha: .55)
-                    : palette.textPrimary,
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }

@@ -7,25 +7,68 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:nivio/providers/service_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'extension_anime_mapping.dart';
 
 enum ExtensionFormat { javascript, cloudstream }
 
-final extensionRepositoryProvider = Provider((ref) => ExtensionRepository());
+enum ExtensionAnimeId { aniList, tmdb }
+
+final extensionRepositoryProvider = Provider(
+  (ref) => ExtensionRepository(
+    animeMappings: ExtensionAnimeMappings(
+      cache: ref.watch(cacheServiceProvider),
+      tmdb: ref.watch(tmdbServiceProvider),
+    ),
+  ),
+);
 
 class ExtensionProvider {
-  const ExtensionProvider(this.repository, this.entry);
+  const ExtensionProvider(
+    this.repository,
+    this.entry, {
+    this.builtIn = false,
+    this.nativeProviderName,
+  });
 
   final ExtensionRepo repository;
   final Map<String, dynamic> entry;
+  final bool builtIn;
+  final String? nativeProviderName;
 
   String get id => '${repository.url}#${entry['id'] ?? entry['internalName']}';
+  String get sourceId => builtIn ? 'builtin:$name' : id;
   String get name => entry['name'] as String;
   String get description => entry['description']?.toString() ?? '';
   String get version => entry['version']?.toString() ?? '';
-  bool get enabled => repository.enabledIds.contains(id);
+  bool get enabled => builtIn || repository.enabledIds.contains(id);
   String get filename => (entry['filename'] ?? entry['url']) as String;
-  String? get contentHash => entry['fileHash'] as String?;
+  String? get contentHash {
+    final value = entry['fileHash'];
+    return value is String ? value : null;
+  }
+
+  String get packageKey => sha256
+      .convert(
+        utf8.encode(
+          [
+            id,
+            version,
+            filename,
+            if (contentHash != null) contentHash!,
+          ].join('\n'),
+        ),
+      )
+      .toString();
+
+  Set<String> get nuvioTypes {
+    final types = entry['supportedTypes'];
+    return types is List
+        ? types.map((type) => '$type'.toLowerCase()).toSet()
+        : {'movie', 'tv'};
+  }
 
   bool supports(String type) {
     if (repository.format == ExtensionFormat.cloudstream) {
@@ -43,26 +86,32 @@ class ExtensionProvider {
         'others',
       };
       return types.any(
-        type == 'movie' ? movieTypes.contains : showTypes.contains,
+        type == 'movie'
+            ? movieTypes.contains
+            : (value) =>
+                  showTypes.contains(value) ||
+                  (type == 'anime' && value == 'animemovie'),
       );
     }
     final platform = Platform.operatingSystem;
-    final platforms = (entry['supportedPlatforms'] as List? ?? []).map(
-      (p) => '$p'.toLowerCase(),
-    );
-    final excluded = (entry['disabledPlatforms'] as List? ?? []).map(
-      (p) => '$p'.toLowerCase(),
-    );
+    final platforms = switch (entry['supportedPlatforms']) {
+      final List values => values.map((p) => '$p'.toLowerCase()),
+      _ => const <String>[],
+    };
+    final excluded = switch (entry['disabledPlatforms']) {
+      final List values => values.map((p) => '$p'.toLowerCase()),
+      _ => const <String>[],
+    };
     if (excluded.contains(platform) ||
         (platforms.isNotEmpty && !platforms.contains(platform))) {
       return false;
     }
-    final types = (entry['supportedTypes'] as List? ?? ['movie', 'tv']).map(
-      (t) => '$t'.toLowerCase(),
-    );
+    final types = nuvioTypes;
     const tvTypes = {'tv', 'series', 'show', 'other'};
     if (type == 'anime')
-      return types.contains('anime') || types.any(tvTypes.contains);
+      return types.contains('anime') ||
+          types.contains('movie') ||
+          types.any(tvTypes.contains);
     return type == 'tv' ? types.any(tvTypes.contains) : types.contains(type);
   }
 }
@@ -103,8 +152,47 @@ class ExtensionRepo {
 }
 
 class ExtensionRepository {
+  ExtensionRepository({ExtensionAnimeMappings? animeMappings})
+    : animeMappings = animeMappings ?? ExtensionAnimeMappings();
+
+  final ExtensionAnimeMappings animeMappings;
   static const _repoKey = 'stream_extension_repositories';
   static const _limit = 8 * 1024 * 1024;
+  final _packages = <String, Future<File>>{};
+
+  String _animeRouteKey(
+    ExtensionProvider provider,
+    bool movie,
+    ExtensionAnimeId idType,
+  ) =>
+      'extension_anime_route_${provider.packageKey}_${movie ? 'movie' : 'series'}_${idType.name}';
+
+  Future<({String? aniList, String? tmdb})> animeRoutes(
+    ExtensionProvider provider, {
+    required bool movie,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    return (
+      aniList: prefs.getString(
+        _animeRouteKey(provider, movie, ExtensionAnimeId.aniList),
+      ),
+      tmdb: prefs.getString(
+        _animeRouteKey(provider, movie, ExtensionAnimeId.tmdb),
+      ),
+    );
+  }
+
+  Future<void> rememberAnimeRoute(
+    ExtensionProvider provider,
+    ExtensionAnimeId idType,
+    String requestType, {
+    required bool movie,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = _animeRouteKey(provider, movie, idType);
+    if (prefs.getString(key) != requestType)
+      await prefs.setString(key, requestType);
+  }
 
   Future<List<ExtensionRepo>> list() async {
     final prefs = await SharedPreferences.getInstance();
@@ -280,16 +368,25 @@ class ExtensionRepository {
 
   Future<File> _packageFile(ExtensionProvider provider) async {
     final directory = await getApplicationSupportDirectory();
-    final key = sha256.convert(
-      utf8.encode('${provider.id}\n${provider.version}\n${provider.filename}'),
-    );
     final extension = provider.repository.format == ExtensionFormat.javascript
         ? 'js'
         : 'cs3';
-    return File('${directory.path}/extensions/$key.$extension');
+    return File(
+      '${directory.path}/extensions/${provider.packageKey}.$extension',
+    );
   }
 
-  Future<File> package(ExtensionProvider provider) async {
+  Future<File> package(ExtensionProvider provider) {
+    final key = provider.packageKey;
+    return _packages.putIfAbsent(
+      key,
+      () => _install(provider).whenComplete(() {
+        _packages.remove(key);
+      }),
+    );
+  }
+
+  Future<File> _install(ExtensionProvider provider) async {
     final file = await _packageFile(provider);
     if (await file.exists()) return file;
     final bytes = await _download(
