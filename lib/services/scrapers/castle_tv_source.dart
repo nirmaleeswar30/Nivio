@@ -110,41 +110,43 @@ class CastleTvSource {
     final individual = audio.where(
       (track) => track['existIndividualVideo'] == true,
     );
+    final shared = audio.where(
+      (track) => track['existIndividualVideo'] != true,
+    );
     final sharedAudio = <String>{
-      for (final track in audio)
+      for (final track in shared)
         if (_text(track['languageName'] ?? track['abbreviate'])
             case final lang?)
           lang,
     };
-    final tracks = individual.isNotEmpty
-        ? individual.toList()
-        : [
-            audio.where((row) => row['isDefault'] == true).firstOrNull ??
-                audio.firstOrNull,
-          ];
+    final tracks = [
+      ...individual,
+      if (shared.isNotEmpty || audio.isEmpty)
+        shared.where((row) => row['isDefault'] == true).firstOrNull ??
+            shared.firstOrNull,
+    ];
     final advertised = _rows(item['videos']);
-    final resolutions = {
-      for (final quality in advertised)
-        if (quality['premiumProPermission'] != true)
-          if (_int(quality['resolution']) case final id?)
-            id: _quality(quality['resolutionDescription']),
-      if (advertised.isEmpty)
-        _int(item['playResolution']) ?? 2: 'Unknown quality',
+    final sizes = <String, int>{
+      for (final option in advertised)
+        if (option['premiumProPermission'] != true)
+          if (_knownHeight
+                  .stringMatch(option['resolutionDescription']?.toString() ?? '')
+                  ?.toLowerCase()
+              case final label?)
+            if (_int(option['size']) case final bytes?) label: bytes,
     };
     final results = await Future.wait([
       for (final track in tracks)
-        for (final option in resolutions.entries)
-          _resolveTrack(
-            key,
-            movieId,
-            episodeId,
-            track,
-            languages: individual.isNotEmpty
-                ? _text(track?['languageName'] ?? track?['abbreviate'])
-                : (sharedAudio.isEmpty ? null : sharedAudio.join(' / ')),
-            quality: option.value,
-            resolution: option.key,
-          ),
+        _resolveTrack(
+          key,
+          movieId,
+          episodeId,
+          track,
+          languages: track?['existIndividualVideo'] == true
+              ? _text(track?['languageName'] ?? track?['abbreviate'])
+              : (sharedAudio.isEmpty ? null : sharedAudio.join(' / ')),
+          sizes: sizes,
+        ),
     ]);
     final seen = <(String?, String?, String?)>{};
     return [
@@ -165,8 +167,7 @@ class CastleTvSource {
     int episode,
     Map<String, dynamic>? track, {
     required String? languages,
-    required String quality,
-    required int resolution,
+    required Map<String, int> sizes,
   }) async {
     final languageId = _int(track?['languageId']);
     Map<String, dynamic> video;
@@ -189,7 +190,9 @@ class CastleTvSource {
           'movieId': '$movie',
           'episodeId': '$episode',
           'isNewUser': 'true',
-          'resolution': '$resolution',
+          // CastleTV only ever signs the 720p playlist; higher renditions are
+          // premium here but reachable unsigned (see _mirrorCandidates).
+          'resolution': '2',
           'packageName': _appName,
         },
       );
@@ -199,6 +202,11 @@ class CastleTvSource {
     } on FormatException {
       return [];
     } on ArgumentError {
+      return [];
+    }
+    if (video['permissionDenied'] == true ||
+        video['inBlacklist'] == true ||
+        video['isPreview'] == true) {
       return [];
     }
     final subtitles = [
@@ -213,26 +221,118 @@ class CastleTvSource {
                 _text(caption['title'] ?? caption['abbreviate']) ?? 'Unknown',
           },
     ];
-    return [
+    final signed = [
       for (final entry in [video, ..._rows(video['videos'])])
         if (entry['premiumProPermission'] != true)
           if (_playableUrl(
-                entry['videoUrl'] ?? entry['url'] ?? entry['playUrl'],
+                entry['videoUrl'] ??
+                    entry['url'] ??
+                    entry['playUrl'] ??
+                    entry['file'] ??
+                    entry['link'],
               )
               case final url?)
-            {
-              'url': url,
-              'title':
-                  'Castle TV${languages == null ? '' : ' - $languages'} ${_quality(entry['resolutionDescription'], fallback: quality)}',
-              'quality': _quality(
-                entry['resolutionDescription'],
-                fallback: quality,
-              ),
-              if (languages != null) 'language': languages,
-              'headers': _mediaHeaders,
-              'subtitles': subtitles,
-            },
+            url,
     ];
+    if (signed.isEmpty) return [];
+
+    // CastleTV signs only the 720p link (served from the "img1" host), but the
+    // same CDN exposes every rendition unsigned on the sibling "img" host.
+    // Rebuild those URLs and keep the ones the CDN actually serves, so 1080p
+    // becomes available without a premium account.
+    final candidates = <String, String>{};
+    for (final url in signed) {
+      for (final candidate in _mirrorCandidates(url)) {
+        candidates.putIfAbsent(candidate.$1, () => candidate.$2);
+      }
+    }
+    final probed = await Future.wait([
+      for (final entry in candidates.entries)
+        _probe(entry.key).then((ok) => ok ? entry : null),
+    ]);
+    final available = [
+      for (final entry in probed)
+        if (entry != null) entry,
+    ];
+    final chosen = available.isNotEmpty
+        ? available
+        : [MapEntry(signed.first, '720p')];
+    return [
+      for (final entry in chosen)
+        _stream(
+          entry.key,
+          languages,
+          entry.value,
+          sizes[entry.value],
+          subtitles,
+        ),
+    ];
+  }
+
+  /// Confirms a CDN rendition exists by fetching the head of the playlist.
+  Future<bool> _probe(String url) async {
+    try {
+      final response = await _client.get<String>(
+        url,
+        options: Options(
+          responseType: ResponseType.plain,
+          headers: {..._mediaHeaders, 'Range': 'bytes=0-80'},
+          validateStatus: (status) => status == 200 || status == 206,
+          receiveTimeout: const Duration(seconds: 6),
+        ),
+      );
+      return response.data?.contains('#EXTM3U') ?? false;
+    } on DioException {
+      return false;
+    }
+  }
+
+  /// Unsigned sibling renditions (height label paired with URL) derived from a
+  /// signed CastleTV playlist URL.
+  static Iterable<(String, String)> _mirrorCandidates(String signed) sync* {
+    final uri = Uri.tryParse(signed);
+    if (uri == null || uri.pathSegments.isEmpty) return;
+    final host = uri.host.replaceFirst(RegExp(r'^img1\.'), 'img.');
+    final segments = [...uri.pathSegments]..removeLast();
+    if (segments.isEmpty) return;
+    final base = Uri(scheme: uri.scheme, host: host, pathSegments: segments)
+        .toString();
+    final tiered = RegExp(r'^(.*/(?:hls|hls_mps)/[^/]+)/\d+$').firstMatch(base);
+    if (tiered != null) {
+      final root = tiered.group(1)!;
+      for (final height in const ['1080', '720', '480']) {
+        yield ('$root/$height/index.m3u8', '${height}p');
+      }
+      return;
+    }
+    final named = RegExp(r'^(.*/)([A-Za-z]+)_(\d+)(ts)?$').firstMatch(base);
+    if (named != null) {
+      final prefix = '${named.group(1)}${named.group(2)}';
+      yield ('${prefix}_1080/index.m3u8', '1080p');
+      yield ('${prefix}_1080ts/index.m3u8', '1080p');
+      yield ('${prefix}_720ts/index.m3u8', '720p');
+      yield ('${prefix}_480ts/index.m3u8', '480p');
+      return;
+    }
+    yield ('$base/index.m3u8', _quality(segments.last));
+  }
+
+  static Map<String, dynamic> _stream(
+    String url,
+    String? languages,
+    String quality,
+    int? size,
+    List<Map<String, String>> subtitles,
+  ) {
+    return {
+      'url': url,
+      'title': 'Castle TV${languages == null ? '' : ' - $languages'} $quality',
+      'quality': quality,
+      if (languages != null) 'language': languages,
+      'sizeBytes': size,
+      'headers': _mediaHeaders,
+      'subtitles': subtitles,
+    };
   }
 
   Future<Uint8List?> _fetchResponseKey() async {
@@ -303,9 +403,13 @@ class CastleTvSource {
   static String _quality(
     Object? value, {
     String fallback = 'Unknown quality',
-  }) =>
-      _knownHeight.stringMatch(value?.toString() ?? '')?.toLowerCase() ??
-      fallback;
+  }) {
+    final text = value?.toString() ?? '';
+    final labelled = _knownHeight.stringMatch(text)?.toLowerCase();
+    if (labelled != null) return labelled;
+    final bare = RegExp(r'\d{3,4}').stringMatch(text);
+    return bare == null ? fallback : '${bare}p';
+  }
 
   static String? _playableUrl(Object? raw) {
     final link = _text(raw);

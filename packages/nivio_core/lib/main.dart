@@ -37,8 +37,10 @@ import 'package:nivio/services/desktop_self_updater.dart';
 import 'package:nivio/services/shorebird_update_service.dart';
 import 'package:nivio/services/webview_environment_service.dart';
 import 'package:nivio/providers/service_providers.dart';
+import 'package:nivio/providers/home_providers.dart' show HomeShelf;
 import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/screens/home_screen.dart';
+import 'package:nivio/screens/home_shelf_screen.dart';
 import 'package:nivio/screens/search_screen.dart';
 import 'package:nivio/screens/media_detail_screen.dart';
 import 'package:nivio/screens/similar_content_screen.dart';
@@ -669,6 +671,22 @@ final appRouter = GoRouter(
       ),
     ),
     GoRoute(path: '/all-providers', builder: (context, state) => const AllProvidersScreen()),
+    GoRoute(
+      path: '/home/shelf/:id',
+      redirect: (context, state) =>
+          HomeShelf.fromId(state.pathParameters['id']) == null ? '/home' : null,
+      builder: (context, state) {
+        final shelf = HomeShelf.fromId(state.pathParameters['id'])!;
+        return TabArtworkScope(
+          child: HomeShelfScreen(key: ValueKey(shelf), shelf: shelf),
+        );
+      },
+    ),
+    GoRoute(
+      path: '/continue-watching',
+      builder: (context, state) =>
+          const TabArtworkScope(child: ContinueWatchingScreen()),
+    ),
     GoRoute(path: '/', redirect: (context, state) => '/home'),
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) =>

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/services/loopback_server.dart';
@@ -14,6 +15,18 @@ class HlsProxyService {
   HttpServer? _server;
   http.Client? _cronetClient;
   bool _resumeHooked = false;
+  final _redirects = <String, Uri Function()>{};
+  final _random = Random.secure();
+
+  /// Issues a fresh upstream URL on each player request, including seeks.
+  String? registerMediaRedirect(Uri Function() destination) {
+    final server = _server;
+    if (server == null) return null;
+    final id = base64Url.encode(List.generate(18, (_) => _random.nextInt(256)));
+    if (_redirects.length >= 256) _redirects.remove(_redirects.keys.first);
+    _redirects[id] = destination;
+    return 'http://127.0.0.1:${server.port}/media-redirect/$id';
+  }
 
   Future<void> start() async {
     if (_server != null) return;
@@ -68,6 +81,7 @@ class HlsProxyService {
     _server = null;
     _cronetClient?.close();
     _cronetClient = null;
+    _redirects.clear();
     appDebugLog('🛑 HlsProxyService stopped');
   }
 
@@ -90,6 +104,24 @@ class HlsProxyService {
   }
 
   Future<void> _handleRequest(HttpRequest request) async {
+    if (request.uri.path.startsWith('/media-redirect/')) {
+      final destination = _redirects[request.uri.pathSegments.last];
+      final response = request.response;
+      if (destination == null) {
+        response.statusCode = HttpStatus.notFound;
+        await response.close();
+      } else if (request.method != 'GET' && request.method != 'HEAD') {
+        response.statusCode = HttpStatus.methodNotAllowed;
+        await response.close();
+      } else {
+        response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
+        await response.redirect(
+          destination(),
+          status: HttpStatus.temporaryRedirect,
+        );
+      }
+      return;
+    }
     appDebugLog('📥 Proxy received request: ${request.uri.toString()}');
 
     if (request.uri.path == '/youtube_trailer') {

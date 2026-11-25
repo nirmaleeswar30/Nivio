@@ -357,8 +357,7 @@ class StreamDiscovery extends ChangeNotifier {
     final providers = [
       for (var i = 0; i < streaming.totalProvidersFor(isAnime: isAnime); i++)
         if (streaming.getProviderName(i, isAnime: isAnime) case final name
-            when name != 'Nivio Torrents' &&
-                streaming.isDirectStream(i, isAnime: isAnime))
+            when name != 'Nivio Torrents')
           (i, name),
     ];
     if (selection.mode != StreamSelectionMode.first) {

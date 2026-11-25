@@ -56,6 +56,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   String _query = '';
   int _selectedCategoryIndex = 0;
   int? _mobileCategory;
@@ -83,6 +84,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       setState(() => _mobileCategory = null);
       return;
     }
+    if (_isSearching) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      _clearSearch();
+      return;
+    }
     if (context.canPop()) {
       context.pop();
       return;
@@ -90,8 +96,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     context.go('/home');
   }
 
+  bool get _isSearching =>
+      _searchController.text.isNotEmpty || _searchFocusNode.hasFocus;
+
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() => _query = '');
+  }
+
   @override
   void dispose() {
+    _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -170,90 +185,98 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Widget _buildProfileWithSettings(BuildContext context, User user) {
     final isDesktop = AppPlatform.isTv ||
         (AppPlatform.isDesktopOS && MediaQuery.sizeOf(context).width > 800);
-    if (isDesktop) {
-      return _buildDesktopLayout(context, user);
-    }
-    return _buildMobileLayout(context, user);
+    return ListenableBuilder(
+      listenable: _searchFocusNode,
+      builder: (context, child) {
+        final hasLocalBackAction = _mobileCategory != null || _isSearching;
+        return PopScope(
+          canPop: !hasLocalBackAction,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && (_mobileCategory != null || _isSearching)) {
+              _handleBackNavigation();
+            }
+          },
+          child: child!,
+        );
+      },
+      child: isDesktop
+          ? _buildDesktopLayout(context, user)
+          : _buildMobileLayout(context, user),
+    );
   }
 
   Widget _buildMobileLayout(BuildContext context, User user) {
     final category = _mobileCategory;
     final theme = Theme.of(context);
-    return PopScope(
-      canPop: category == null,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && category != null) _handleBackNavigation();
-      },
-      child: Scaffold(
-        appBar: SettingsPageHeader(
-          category == null
-              ? 'Settings'
-              : category == _appearanceCategory ? 'Appearance' : _categories[category],
-          onBack: _handleBackNavigation,
-        ),
-        body: SafeArea(
-          top: false,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Offstage(
-                offstage: category != null,
-                child: TickerMode(
-                  enabled: category == null,
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
-                    children: [
-                      _buildProfileHeader(user),
-                      _buildSearchField(),
-                      const SizedBox(height: 14),
-                      if (_query.isNotEmpty)
-                        _buildSearchResultsCard(
-                          user: user,
-                          languagePrefs: ref.watch(languagePreferencesProvider),
-                          videoQuality: ref.watch(videoQualityProvider),
-                          preferredAudio: ref.watch(preferredAudioLanguageProvider),
-                          preferredSubtitle: ref.watch(
-                            preferredSubtitleLanguageProvider,
-                          ),
-                          episodeCheckEnabled: ref.watch(episodeCheckEnabledProvider),
-                          videoDebanding: ref.watch(videoDebandingProvider),
-                          appThemeKey: ref.watch(appThemeProvider),
-                          uiScale: ref.watch(uiScaleProvider),
-                        )
-                      else ...[
-                        _mobileSettingsGroup(theme, 'You', const [
-                          (Icons.person_outline_rounded, 'Profile & activity', 0),
-                          (Icons.manage_accounts_outlined, 'Data & account', 9),
-                        ]),
-                        _mobileSettingsGroup(theme, 'Look', const [
-                          (Icons.palette_outlined, 'Appearance', _appearanceCategory),
-                        ]),
-                        _mobileSettingsGroup(theme, 'Watch', const [
-                          (Icons.dashboard_outlined, 'Content & Discovery', 5),
-                          (Icons.play_circle_outline, 'Playback', 1),
-                          (Icons.subtitles_outlined, 'Subtitle appearance', 2),
-                          (Icons.download_outlined, 'Downloads', 3),
-                        ]),
-                        _mobileSettingsGroup(theme, 'Services', const [
-                          (Icons.hub_outlined, 'Tracking', 7),
-                          (Icons.language_rounded, 'Network', 4),
-                        ]),
-                        _mobileSettingsGroup(theme, 'System', const [
-                          (Icons.notifications_none, 'Episode alerts', 6),
-                          (Icons.info_outline, 'App & updates', 8),
-                        ]),
-                      ],
+    return Scaffold(
+      appBar: SettingsPageHeader(
+        category == null
+            ? 'Settings'
+            : category == _appearanceCategory ? 'Appearance' : _categories[category],
+        onBack: _handleBackNavigation,
+      ),
+      body: SafeArea(
+        top: false,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Offstage(
+              offstage: category != null,
+              child: TickerMode(
+                enabled: category == null,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                  children: [
+                    _buildProfileHeader(user),
+                    _buildSearchField(),
+                    const SizedBox(height: 14),
+                    if (_query.isNotEmpty)
+                      _buildSearchResultsCard(
+                        user: user,
+                        languagePrefs: ref.watch(languagePreferencesProvider),
+                        videoQuality: ref.watch(videoQualityProvider),
+                        preferredAudio: ref.watch(preferredAudioLanguageProvider),
+                        preferredSubtitle: ref.watch(
+                          preferredSubtitleLanguageProvider,
+                        ),
+                        episodeCheckEnabled: ref.watch(episodeCheckEnabledProvider),
+                        videoDebanding: ref.watch(videoDebandingProvider),
+                        appThemeKey: ref.watch(appThemeProvider),
+                        uiScale: ref.watch(uiScaleProvider),
+                      )
+                    else ...[
+                      _mobileSettingsGroup(theme, 'You', const [
+                        (Icons.person_outline_rounded, 'Profile & activity', 0),
+                        (Icons.manage_accounts_outlined, 'Data & account', 9),
+                      ]),
+                      _mobileSettingsGroup(theme, 'Look', const [
+                        (Icons.palette_outlined, 'Appearance', _appearanceCategory),
+                      ]),
+                      _mobileSettingsGroup(theme, 'Watch', const [
+                        (Icons.dashboard_outlined, 'Content & Discovery', 5),
+                        (Icons.play_circle_outline, 'Playback', 1),
+                        (Icons.subtitles_outlined, 'Subtitle appearance', 2),
+                        (Icons.download_outlined, 'Downloads', 3),
+                      ]),
+                      _mobileSettingsGroup(theme, 'Services', const [
+                        (Icons.hub_outlined, 'Tracking', 7),
+                        (Icons.language_rounded, 'Network', 4),
+                      ]),
+                      _mobileSettingsGroup(theme, 'System', const [
+                        (Icons.notifications_none, 'Episode alerts', 6),
+                        (Icons.info_outline, 'App & updates', 8),
+                      ]),
                     ],
-                  ),
+                  ],
                 ),
               ),
-              if (category != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: _buildCategoryContent(user, category, mobile: true),
-                ),
-            ],
-          ),
+            ),
+            if (category != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: _buildCategoryContent(user, category, mobile: true),
+              ),
+          ],
         ),
       ),
     );
@@ -395,44 +418,43 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Widget _buildSearchField() {
-    return TvTextFieldGate(builder: (context, focusNode) => TextField(focusNode: focusNode,
-      controller: _searchController,
-      onChanged: (value) => setState(() => _query = value.trim()),
-      style: TextStyle(color: NivioTheme.netflixWhite, fontSize: 14),
-      decoration: InputDecoration(
-        hintText: 'Search profile settings...',
-        prefixIcon: Icon(
-          Icons.search_rounded,
-          color: Colors.white.withValues(alpha: 0.75),
-        ),
-        suffixIcon: _query.isEmpty
-            ? null
-            : IconButton(
-                onPressed: () {
-                  _searchController.clear();
-                  setState(() => _query = '');
-                },
-                icon: Icon(
-                  Icons.close_rounded,
-                  color: Colors.white.withValues(alpha: 0.75),
+    return TvTextFieldGate(
+      builder: (context, focusNode) => TextField(
+        focusNode: focusNode ?? _searchFocusNode,
+        controller: _searchController,
+        onChanged: (value) => setState(() => _query = value.trim()),
+        style: const TextStyle(color: NivioTheme.netflixWhite, fontSize: 14),
+        decoration: InputDecoration(
+          hintText: 'Search profile settings...',
+          prefixIcon: Icon(
+            Icons.search_rounded,
+            color: Colors.white.withValues(alpha: 0.75),
+          ),
+          suffixIcon: _query.isEmpty
+              ? null
+              : IconButton(
+                  onPressed: _clearSearch,
+                  icon: Icon(
+                    Icons.close_rounded,
+                    color: Colors.white.withValues(alpha: 0.75),
+                  ),
                 ),
-              ),
-        filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.05),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: NivioTheme.accentColorOf(context)),
+          filled: true,
+          fillColor: Colors.white.withValues(alpha: 0.05),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: NivioTheme.accentColorOf(context)),
+          ),
         ),
       ),
-    ),
     );
   }
 

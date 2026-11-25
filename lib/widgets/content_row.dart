@@ -12,6 +12,7 @@ import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/widgets/hover_preview_card.dart';
+import 'package:nivio/widgets/shelf_more_button.dart';
 
 class ContentRow extends StatelessWidget {
   final String title;
@@ -49,43 +50,20 @@ class ContentRow extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 if (onSeeAll != null)
-                  InkWell(
-                    onTap: onSeeAll,
-                    borderRadius: BorderRadius.circular(6),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            seeAllLabel ?? 'See All',
-                            style: TextStyle(
-                              color: NivioTheme.accentColorOf(context),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.arrow_forward_ios_rounded,
-                            size: 11,
-                            color: NivioTheme.accentColorOf(context),
-                          ),
-                        ],
-                      ),
-                    ),
+                  ShelfMoreButton(
+                    onPressed: onSeeAll!,
+                    label: seeAllLabel ?? 'More',
                   ),
               ],
             ),

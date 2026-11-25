@@ -61,9 +61,6 @@ class _Mp4StreamingService extends _UnusedStreamingService {
   String getProviderName(int index, {required bool isAnime}) => 'Example';
 
   @override
-  bool isDirectStream(int providerIndex, {required bool isAnime}) => true;
-
-  @override
   Future<StreamResult?> fetchStreamUrl({
     required SearchResult media,
     int season = 1,

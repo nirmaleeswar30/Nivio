@@ -58,8 +58,9 @@ class StreamChoice {
   static StreamChoice? fromScraper(
     String provider,
     Map<String, dynamic> data,
-    int index,
-  ) {
+    int index, {
+    String Function(Uri)? playbackUrl,
+  }) {
     final raw = data['url'];
     final url = (raw is Map ? raw['url'] : raw)?.toString().trim() ?? '';
     final uri = Uri.tryParse(url);
@@ -90,7 +91,7 @@ class StreamChoice {
           ? (data['bingeGroup'] as String).trim()
           : null,
       direct: StreamResult(
-        url: url,
+        url: playbackUrl?.call(uri) ?? url,
         quality: quality,
         provider: provider,
         subtitles: subtitles,

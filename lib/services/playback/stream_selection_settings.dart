@@ -272,7 +272,12 @@ class StreamSelectionSettings {
   static StreamSelectionSettings read(SharedPreferences prefs) {
     final legacyAnimeSource = prefs.get('preferred_anime_source');
     final legacyAnimeOrder = [
-      if (const {'Miruro', 'Animetsu', 'Animex'}.contains(legacyAnimeSource))
+      if (const {
+        'Miruro',
+        'Animetsu',
+        'Animex',
+        'AniKoto',
+      }.contains(legacyAnimeSource))
         'builtin:$legacyAnimeSource',
     ];
     final defaults = legacyAnimeOrder.isEmpty

@@ -5,6 +5,7 @@ import 'package:nivio/widgets/torrent_picker_sheet.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/core/debug_log.dart';
+import 'package:nivio/services/scrapers/anikoto_source.dart';
 import 'package:nivio/services/scrapers/animetsu/animetsu_scraper.dart';
 import 'package:nivio/services/scrapers/newtv/newtv_scraper.dart';
 
@@ -51,10 +52,6 @@ class StreamingService {
     'MovieBox',
     'CastleTV',
     'VidRock',
-    'VidUp (FAST)',
-    'VidLink',
-    'VidCore (ACTIVE)',
-    'VidPlus',
   ];
 
   static const List<String> _standardProviders = [];
@@ -65,11 +62,11 @@ class StreamingService {
           'Miruro',
           'Animetsu',
           'Animex',
+          'AniKoto',
         ]
       : [
           for (var i = 0; i < totalProvidersFor(isAnime: false); i++)
-            if (getProviderName(i, isAnime: false) != 'Nivio Torrents' &&
-                isDirectStream(i, isAnime: false))
+            if (getProviderName(i, isAnime: false) != 'Nivio Torrents')
               getProviderName(i, isAnime: false),
         ];
 
@@ -161,6 +158,7 @@ class StreamingService {
         'Animetsu (Mega)',
       ],
       'builtin:Animex': _dynamicAnimexServers,
+      'builtin:AniKoto': const ['AniKoto'],
     };
     final settings = ref.read(streamSelectionSettingsProvider).valueOrNull;
     final order = {...?settings?.animeSourceOrder, ...sources.keys};
@@ -477,6 +475,20 @@ class StreamingService {
       }
 
 
+      if (providerName == 'AniKoto') {
+        final scraper = AnikotoSource();
+        final audio = (preferredAudio ?? subDubPreference).toLowerCase();
+        try {
+          return await scraper.resolve(
+            media,
+            episode: episode,
+            dub: audio == 'dub' || audio.startsWith('english'),
+          ).timeout(const Duration(seconds: 18), onTimeout: () => null);
+        } finally {
+          scraper.close();
+        }
+      }
+
       // Handle Animetsu
       if (providerName.startsWith('Animetsu')) {
         String server = 'auto';
@@ -577,67 +589,7 @@ class StreamingService {
         ).timeout(const Duration(seconds: 6), onTimeout: () => null);
       }
 
-      // Handle standard 7reels providers
-      final isTv = media.mediaType.toLowerCase() == 'tv' || 
-                   media.firstAirDate != null || 
-                   (media.name != null && media.name!.isNotEmpty && (media.title == null || media.title!.isEmpty));
-      final id = media.id.toString();
-
-      String url = '';
-
-      switch (providerName) {
-        case 'VidUp (FAST)':
-          url = isTv ? 'https://vidup.to/tv/$id/$season/$episode' : 'https://vidup.to/movie/$id';
-          break;
-        case 'VidCore (ACTIVE)':
-          url = isTv ? 'https://vidcore.net/tv/$id/$season/$episode' : 'https://vidcore.net/movie/$id';
-          break;
-        case 'VidEasy (HD)':
-          url = isTv ? 'https://videasy.net/tv/$id/$season/$episode' : 'https://videasy.net/movie/$id';
-          break;
-        case 'VidPlus':
-          url = isTv ? 'https://player.vidplus.to/embed/tv/$id/$season/$episode' : 'https://player.vidplus.to/embed/movie/$id';
-          break;
-        case 'VidsrcO':
-          url = isTv ? 'https://vidsrco.net/embed/tv?tmdb=$id&season=$season&episode=$episode' : 'https://vidsrco.net/embed/movie?tmdb=$id';
-          break;
-        case 'AdRock':
-          url = isTv ? 'https://vidrock.net/embed/tv/$id/$season/$episode' : 'https://vidrock.net/embed/movie/$id';
-          break;
-        case 'VidNest':
-          url = isTv ? 'https://vidnest.fun/embed/tv/$id/$season/$episode' : 'https://vidnest.fun/embed/movie/$id';
-          break;
-        case 'VidLink':
-          url = isTv ? 'https://vidlink.pro/tv/$id/$season/$episode' : 'https://vidlink.pro/movie/$id';
-          break;
-        case 'Vidify':
-          url = isTv ? 'https://vidify.top/embed/tv/$id/$season/$episode' : 'https://vidify.top/embed/movie/$id';
-          break;
-        case 'Vidzee':
-          url = isTv ? 'https://player.vidzee.net/embed/tv/$id/$season/$episode' : 'https://player.vidzee.net/embed/movie/$id';
-          break;
-        case 'MoviesClub':
-          url = isTv ? 'https://moviesapi.club/tv/$id-$season-$episode' : 'https://moviesapi.club/movie/$id';
-          break;
-        case '2Embed':
-          url = isTv ? 'https://www.2embed.cc/embedtv/$id&s=$season&e=$episode' : 'https://www.2embed.cc/embed/$id';
-          break;
-        case 'MultiEmbed':
-          url = isTv ? 'https://multiembed.mo/embed/tv/$id/$season/$episode' : 'https://multiembed.mo/embed/movie/$id';
-          break;
-        default:
-          return null;
-      }
-
-      appDebugLog('Generated Iframe URL: $url');
-
-      return StreamResult(
-        url: url,
-        quality: 'Auto',
-        provider: providerName,
-        headers: {},
-      );
-
+      return null;
     } catch (e) {
       appDebugLog('Error in fetchStreamUrl: $e');
       return null;
@@ -673,23 +625,14 @@ class StreamingService {
     return 'Unknown';
   }
 
-  bool isDirectStream(int providerIndex, {required bool isAnime}) {
-    final providerName = getProviderName(providerIndex, isAnime: isAnime);
-    if (!isAnime && BuiltInDirectSources.names.contains(providerName)) return true;
-    if (providerName == 'Nivio Torrents') return true; // localhost HLS-like stream
-    if (['Nivio', 'StreamFlix', 'VidRock'].contains(providerName)) return true;
-    if (providerName.startsWith('Animetsu') || providerName.startsWith('Miruro') || providerName.startsWith('Animex')) return true;
-    return false; // All other providers use WebView fallback
-  }
-
   bool isDownloadable(int providerIndex, {required bool isAnime}) {
     final providerName = getProviderName(providerIndex, isAnime: isAnime);
     if (!isAnime && BuiltInDirectSources.names.contains(providerName)) return true;
+    if (providerName == 'AniKoto') return true;
     // These providers yield raw direct streams which our custom downloader can parse and concatenate
     if (['Nivio', 'StreamFlix', 'VidRock'].contains(providerName)) return true;
     if (providerName.startsWith('Animetsu') || providerName.startsWith('Miruro') || providerName.startsWith('Animex')) return true;
-    
-    // Iframe providers cannot be natively downloaded because we don't have the raw stream URL
+    // Torrents go through their own download flow.
     return false;
   }
 }

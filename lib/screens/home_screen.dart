@@ -18,7 +18,6 @@ import 'package:nivio/providers/changelog_provider.dart';
 import 'package:nivio/providers/home_providers.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/providers/home_layout_provider.dart';
-import 'package:nivio/providers/recommendations_provider.dart';
 
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
@@ -27,6 +26,7 @@ import 'package:nivio/services/api_status_service.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
 import 'package:nivio/widgets/content_row.dart';
 import 'package:nivio/widgets/latest_releases_shelf.dart';
+import 'package:nivio/widgets/shelf_more_button.dart';
 import 'package:nivio/widgets/skeleton.dart';
 import 'package:nivio/widgets/continue_watching_row.dart';
 import 'package:nivio/widgets/tab_artwork.dart';
@@ -238,15 +238,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onSeeAll: () => context.push('/latest-releases?category=movie'),
           ));
           break;
-        case 'popular_movies':
-          dynamicSections.add(_buildRowSection('All Time Popular', popularMoviesProvider));
-          break;
-        case 'trending_movies':
-          dynamicSections.add(_buildRowSection('Trending Now', trendingMoviesProvider));
-          break;
-        case 'top_rated_movies':
-          dynamicSections.add(_buildRowSection('Top Rated Movies', topRatedMoviesProvider));
-          break;
         case 'latest_tv_ott':
           dynamicSections.add(_buildLatestShelfSection(
             title: 'Latest TV Releases',
@@ -257,12 +248,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             provider: latestTvOttProvider,
             onSeeAll: () => context.push('/latest-releases?category=tv'),
           ));
-          break;
-        case 'popular_tv':
-          dynamicSections.add(_buildRowSection('Popular TV Shows', popularTVShowsProvider));
-          break;
-        case 'trending_tv':
-          dynamicSections.add(_buildRowSection('Trending TV Shows', trendingTVShowsProvider));
           break;
         case 'latest_anime':
           if (languagePreferences.showAnime) {
@@ -278,27 +263,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ));
           }
           break;
-        case 'popular_anime':
-          if (languagePreferences.showAnime) dynamicSections.add(_buildRowSection('Popular Anime', animeProvider));
-          break;
-        case 'trending_anime':
-          if (languagePreferences.showAnime) dynamicSections.add(_buildRowSection('Trending Anime', trendingAnimeProvider));
-          break;
-        case 'tamil':
-          if (languagePreferences.showTamil) dynamicSections.add(_buildRowSection('Tamil Picks', tamilMoviesProvider));
-          break;
-        case 'telugu':
-          if (languagePreferences.showTelugu) dynamicSections.add(_buildRowSection('Telugu Picks', teluguMoviesProvider));
-          break;
-        case 'hindi':
-          if (languagePreferences.showHindi) dynamicSections.add(_buildRowSection('Hindi Picks', hindiMoviesProvider));
-          break;
-        case 'korean':
-          if (languagePreferences.showKorean) dynamicSections.add(_buildRowSection('Korean Dramas', koreanDramasProvider));
-          break;
-        case 'malayalam':
-          if (languagePreferences.showMalayalam) dynamicSections.add(_buildRowSection('Malayalam Picks', malayalamMoviesProvider));
-          break;
+        default:
+          final shelf = HomeShelf.fromId(sectionId);
+          final enabled = switch (shelf) {
+            HomeShelf.popularAnime || HomeShelf.trendingAnime =>
+              languagePreferences.showAnime,
+            HomeShelf.tamil => languagePreferences.showTamil,
+            HomeShelf.telugu => languagePreferences.showTelugu,
+            HomeShelf.hindi => languagePreferences.showHindi,
+            HomeShelf.korean => languagePreferences.showKorean,
+            HomeShelf.malayalam => languagePreferences.showMalayalam,
+            HomeShelf.recommendations || null => false,
+            _ => true,
+          };
+          if (shelf != null && enabled) {
+            dynamicSections.add(_buildRowSection(shelf));
+          }
       }
     }
 
@@ -423,7 +403,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     _buildWatchlistSection(),
                     _buildProviderSelectionRow(),
                     const SizedBox(height: 40),
-                    _buildRecommendationsSection(),
+                    _buildRowSection(HomeShelf.recommendations),
                     ...dynamicSections,
                     const SizedBox(height: 50),
                   ],
@@ -445,20 +425,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             if (items.isEmpty) return const SizedBox.shrink();
             return Padding(
               padding: EdgeInsets.only(left: isDesktop ? 68 : 16, right: 16),
-              child: const Column(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Continue Watching',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Continue Watching',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      ShelfMoreButton(
+                        onPressed: () => context.push('/continue-watching'),
+                      ),
+                    ],
                   ),
-                  SizedBox(height: 12),
-                  ContinueWatchingRow(),
-                  SizedBox(height: 30),
+                  const ContinueWatchingRow(),
+                  const SizedBox(height: 30),
                 ],
               ),
             );
@@ -507,33 +495,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildRecommendationsSection() {
+  Widget _buildRowSection(HomeShelf shelf) {
     return Consumer(
-      key: const PageStorageKey<String>('home-recommendations'),
-      builder: (context, ref, _) {
-        return ref.watch(homeRecommendationsProvider).when(
-          data: (recs) {
-            if (recs == null || recs.items.isEmpty) return const SizedBox.shrink();
-            final items = recs.items.map((e) => e.toJson()).toList();
-            return ContentRow(title: 'Recommended for You', items: items);
-          },
-          loading: () => const SizedBox.shrink(),
-          error: (_, __) => const SizedBox.shrink(),
-        );
-      },
-    );
-  }
-
-  Widget _buildRowSection(
-    String title,
-    FutureProvider<List<dynamic>> provider,
-  ) {
-    return Consumer(
-      key: PageStorageKey<String>(title),
+      key: PageStorageKey<String>('home-${shelf.id}'),
       builder: (context, ref, child) {
-        return ref.watch(provider).when(
-          data: (items) => ContentRow(title: title, items: items),
-          loading: () => const ContentRowSkeleton(),
+        return ref.watch(homeShelfProvider(shelf)).when(
+          data: (page) => ContentRow(
+            title: shelf.title,
+            items: page.items.take(20).toList(growable: false),
+            onSeeAll: () => context.push('/home/shelf/${shelf.id}'),
+          ),
+          loading: () => shelf == HomeShelf.recommendations
+              ? const SizedBox.shrink()
+              : const ContentRowSkeleton(),
           error: (error, stackTrace) => const SizedBox.shrink(),
         );
       },
@@ -593,18 +567,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                TextButton(
-                  onPressed: () {
-                    context.push('/all-providers');
-                  },
-                  child: const Text(
-                    'View All',
-                    style: TextStyle(
-                      color: Color(0xFF00B4D8),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                ShelfMoreButton(
+                  onPressed: () => context.push('/all-providers'),
                 ),
               ],
             ),

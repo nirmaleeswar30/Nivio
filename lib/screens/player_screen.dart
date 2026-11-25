@@ -58,7 +58,6 @@ import 'package:nivio/services/watch_history_service.dart';
 
 import 'dart:async';
 import 'package:nivio/services/download_service.dart';
-import 'package:nivio/widgets/webview_player.dart';
 import 'package:nivio/services/hls_proxy_service.dart';
 import 'package:nivio/services/m3u8_parser.dart';
 import 'package:nivio/services/aniskip_service.dart';
@@ -294,11 +293,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   final Map<int, StreamResult> _prefetchedStreams = {};
   Map<int, Future<StreamResult?>>? _runningFetchers;
   bool _isPrefetching = false;
-  bool _isDirectStream = false;
+  // False until the first stream is attached to the player; watch-party sync
+  // waits for it.
+  bool _streamAttached = false;
   bool _isManualProviderSwitch = false;
   Future<void>? _prepareProvidersFuture;
   // True when playing a still-downloading item (torrent rqbit stream or a direct
-  // source URL) — always a direct/media_kit stream, never a WebView.
+  // source URL).
   bool _isDownloadStream = false;
   // Binge Mode (torrents only): per-player-session. When on, the next episode
   // auto-advances without the picker, reusing the remembered release group.
@@ -339,7 +340,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String _localAudioLang = 'English';
 
   bool _arePlayerControlsVisible = true;
-  bool _autoFullscreenTriggeredForCurrentLoad = false;
   String? _openTopActionMenuId;
   String _selectedDisplayFitKey = 'bestFit';
   bool _transferredToMiniPlayer = false; // When true, dispose skips player.dispose()
@@ -380,9 +380,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   static const Duration _watchPartyHostPeriodicSyncInterval = Duration(
     seconds: 3,
   );
-
-  Duration _webViewPosition = Duration.zero;
-  Duration _webViewDuration = Duration.zero;
 
   static const int _watchPartyDriftThresholdMs = 1200;
   String? _loadingMessage;
@@ -535,12 +532,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   // Automatic fallback order for the current run: the start provider, then
-  // every other direct provider (those after it, then wrapping round to those
-  // before it), then embed providers. Embeds always "load" in the WebView, so
-  // walking the list in index order meant a failing last direct provider fell
-  // straight to an embed and the direct ones before it were never tried. The
-  // wrap matters too: a saved preferredProviderIndex is a raw index into the
-  // *dynamic* anime server list, so starting at 4 must still reach 0–3.
+  // every other provider (those after it, then wrapping round to those before
+  // it). The wrap matters: a saved preferredProviderIndex is a raw index into
+  // the *dynamic* anime server list, so starting at 4 must still reach 0–3.
   // Nivio Torrents is never chosen automatically (it opens the picker).
   List<int> _providerOrder = const [];
   int _providerOrderPos = 0;
@@ -550,13 +544,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final isAnime = _isAnimeMedia(media);
     final service = ref.read(streamingServiceProvider);
     final total = _maxProviders;
-    final rest = [for (var k = 1; k < total; k++) (start + k) % total]
-        .where((i) => service.getProviderName(i, isAnime: isAnime) != 'Nivio Torrents')
-        .toList();
     _providerOrder = [
       start,
-      ...rest.where((i) => service.isDirectStream(i, isAnime: isAnime)),
-      ...rest.where((i) => !service.isDirectStream(i, isAnime: isAnime)),
+      for (var k = 1; k < total; k++)
+        if (service.getProviderName((start + k) % total, isAnime: isAnime) !=
+            'Nivio Torrents')
+          (start + k) % total,
     ];
     _providerOrderPos = 0;
     appDebugLog('🔁 [FLOW] Provider fallback order: $_providerOrder');
@@ -638,7 +631,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _player = miniPlayerState.player!;
       _videoController = miniPlayerState.videoController!;
       _guardVideoControllerWid(_videoController);
-      _isDirectStream = true;
+      _streamAttached = true;
       final miniNotifier = ref.read(miniPlayerProvider.notifier);
       Future.microtask(() {
         miniNotifier.reclaim();
@@ -728,7 +721,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _initializePlayer(isRetry: false);
     } else {
       // Player is already playing — just mark as loaded and resume progress tracking
-      _isDirectStream = true;
+      _streamAttached = true;
       _startProgressTracking();
       setState(() {
         _isLoading = false;
@@ -1415,7 +1408,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _openStartedAt = null;
     _sawFirstFrame = false;
     _hasAppliedGlobalTracks = false;
-    _autoFullscreenTriggeredForCurrentLoad = false;
     _useNativePlayer = false;
     _nativeUrl = null;
     _nativePosition = Duration.zero;
@@ -1861,20 +1853,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _streamResult = result;
       _currentProvider = result.provider;
       _setSeekPreview(result);
-      // A local downloaded file is always played directly (never via WebView).
-      _isDirectStream = result.provider == 'Nivio Torrents' || manualChoice != null
-          ? true
-          : ((isInitialEpisode && widget.directStreamUrl != null) || _isDownloadStream || (_effectiveLocalPath != null && _effectiveLocalPath!.isNotEmpty))
-          ? true
-          : ref.read(streamingServiceProvider).isDirectStream(
-              _currentProviderIndex,
-              isAnime: _isAnimeMedia(media),
-            );
+      _streamAttached = true;
 
-      // Pre-verify the stream URL if it's a direct stream to instantly fallback without player errors.
+      // Pre-verify the stream URL to instantly fall back without player errors.
       // Providers can expose several sources (e.g. VidRock's Nova/Luna/Orion servers). Verify each
       // in turn and promote the first reachable one BEFORE giving up on the whole provider — a single
-      // dead server should not send us to the next (often embed) provider while good ones remain.
+      // dead server should not send us to the next provider while good ones remain.
       //
       // Torrent streams ("Nivio Torrents") are exempt: the localhost rqbit URL is
       // never "dead", but its stream endpoint blocks until the first pieces are
@@ -1886,7 +1870,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       String? playbackVariantUrl;
       _hlsVariants = const [];
       _hlsVariantUrl = null;
-      if (_isDirectStream && result.url.startsWith('http') && !isTorrentStream) {
+      if (result.url.startsWith('http') && !isTorrentStream) {
         if (mounted) setState(() => _loadingMessage = 'Verifying stream connection...');
 
         // Use the SAME headers (incl. browser User-Agent/Origin) that media_kit will use for
@@ -1990,22 +1974,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       if (media != null) {
         _preloadAvailableAudios(result, media);
-      }
-
-      // Embed providers use WebView
-      if (!_isDirectStream) {
-        if (manualChoice != null) unawaited(_rememberStreamChoice(media, manualChoice));
-        _dismissTooltips('loading → WebView player');
-        setState(() {
-          _isLoading = false;
-          _retryCount = 0;
-        });
-        unawaited(_syncAutoPipAvailability());
-        _updateWatchPartyHostSyncTimer();
-        _startProgressTracking();
-        _maybeAutoEnterFullscreenOnce();
-        appDebugLog('✅ [FLOW] WebView player loaded!');
-        return;
       }
 
       // —————————————————————————————————————————————————————————————————————————————————————————— Check watch history for resume ——————————————————————————————————————————————————————————————————————————————————————————
@@ -2204,7 +2172,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       await _player.setRate(speed);
       
       _applyDisplaySettings(refreshUi: false);
-      _maybeAutoEnterFullscreenOnce();
       if (_bingeMode && _currentProvider == 'Nivio Torrents') {
         await _refreshBingeGroup();
       }
@@ -2933,7 +2900,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _watchPartyService?.isHost == true &&
         (_watchPartyService?.controllerId == null ||
             (_watchPartyService?.controllerId ?? '').trim().isEmpty) &&
-        _isDirectStream;
+        _streamAttached;
     if (!shouldSync) {
       _watchPartyHostSyncTimer?.cancel();
       _watchPartyHostSyncTimer = null;
@@ -2954,7 +2921,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       return;
     }
 
-    if (!_useNativePlayer && _isDirectStream && (_player.state.duration == Duration.zero)) {
+    if (!_useNativePlayer && _player.state.duration == Duration.zero) {
       return;
     }
 
@@ -2966,16 +2933,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       return;
     }
 
-    Duration position;
-    bool isPlaying;
-    
-    if (_isDirectStream) {
-      position = _player.state.position;
-      isPlaying = _player.state.playing;
-    } else {
-      position = _webViewPosition;
-      isPlaying = true;
-    }
+    final position = _player.state.position;
+    final isPlaying = _player.state.playing;
 
     final mediaType = _resolvedWatchPartyMediaType();
 
@@ -3019,7 +2978,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       return;
     }
 
-    if (!_isDirectStream) return;
+    if (!_streamAttached) return;
 
     if (_useNativePlayer) {
       if (_isApplyingWatchPartyState) return;
@@ -3340,28 +3299,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }
 
-  void _maybeAutoEnterFullscreenOnce() {
-    if (_autoFullscreenTriggeredForCurrentLoad) return;
-    _autoFullscreenTriggeredForCurrentLoad = true;
-
-    if (_isDirectStream) {
-      // Nothing needed. PlayerScreen handles its own immersive fullscreen mode.
-    } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _setPlayerOrientations([
-          DeviceOrientation.landscapeLeft,
-          DeviceOrientation.landscapeRight,
-        ]);
-        if (mounted) {
-          setState(() {
-            _isInFullscreen = true;
-          });
-          _syncFullscreenTopBarVisibility();
-        }
-      });
-    }
-  }
-
   void _checkNextEpisode() {
     late Duration position;
     late Duration duration;
@@ -3642,8 +3579,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       totalDuration: dur,
     );
   }
-
-  // —————————————————————————————————————————————————————————————————————————————————————————— WebView event handler ——————————————————————————————————————————————————————————————————————————————————————————
 
   bool _hasNextEpisode() {
     final media = ref.read(selectedMediaProvider);
@@ -4703,9 +4638,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final normalizedCurrent = _normalizeQualityLabel(currentRaw);
     if (normalizedTarget == normalizedCurrent) return;
 
-    final currentPosition = _isDirectStream
-        ? _player.state.position
-        : _webViewPosition;
+    final currentPosition = _player.state.position;
     await _saveProgress();
 
     ref.read(selectedQualityProvider.notifier).state =
@@ -4724,47 +4657,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       );
     }
     
-    if (_isDirectStream) {
-      if (normalizedTarget == 'auto') {
-        _player.setVideoTrack(VideoTrack.auto());
+    if (normalizedTarget == 'auto') {
+      _player.setVideoTrack(VideoTrack.auto());
+      return;
+    }
+    final videoTracks = _player.state.tracks.video;
+    for (final track in videoTracks) {
+      final heightLabel = track.h != null && track.h! > 0 ? '${track.h}p' : '';
+      if (heightLabel.isNotEmpty && _normalizeQualityLabel(heightLabel) == normalizedTarget) {
+        _player.setVideoTrack(track);
         return;
       }
-      final videoTracks = _player.state.tracks.video;
-      for (final track in videoTracks) {
-        final heightLabel = track.h != null && track.h! > 0 ? '${track.h}p' : '';
-        if (heightLabel.isNotEmpty && _normalizeQualityLabel(heightLabel) == normalizedTarget) {
-          _player.setVideoTrack(track);
-          return;
-        }
-      }
-    }
-
-    if (!_isDirectStream && _streamResult != null && _streamResult!.sources.isNotEmpty) {
-      final isDubTarget = _streamResult!.selectedAudio.toLowerCase() == 'dub';
-      
-      StreamSource? bestMatch;
-      if (normalizedTarget == 'auto') {
-        bestMatch = _streamResult!.sources.firstWhere(
-          (s) => s.isDub == isDubTarget,
-          orElse: () => _streamResult!.sources.first,
-        );
-      } else {
-        bestMatch = _streamResult!.sources.firstWhere(
-          (s) => _normalizeQualityLabel(s.quality) == normalizedTarget && s.isDub == isDubTarget,
-          orElse: () => _streamResult!.sources.firstWhere(
-            (s) => _normalizeQualityLabel(s.quality) == normalizedTarget,
-            orElse: () => _streamResult!.sources.first,
-          ),
-        );
-      }
-      
-      setState(() {
-        _streamResult = _streamResult!.copyWith(
-          url: bestMatch!.url,
-          quality: bestMatch.quality,
-        );
-      });
-      return;
     }
 
     _disposePlayer();
@@ -4812,11 +4715,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final current = ref.read(languagePreferencesProvider).animePreferredAudio.toLowerCase();
       if (target == current) return;
 
-      final currentPosition = _isDirectStream
-          ? _player.state.position
-          : _webViewPosition;
+      final currentPosition = _player.state.position;
       await _saveProgress();
-      
+
       await ref.read(languagePreferencesProvider.notifier).setAnimePreferredAudio(target);
       ref.read(selectedQualityProvider.notifier).state = null;
 
@@ -4830,30 +4731,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         );
       }
       
-      if (!_isDirectStream && _streamResult != null && _streamResult!.sources.isNotEmpty) {
-        final isDubTarget = target == 'dub';
-        StreamSource? bestMatch = _streamResult!.sources.firstWhere(
-          (s) => s.isDub == isDubTarget,
-          orElse: () => _streamResult!.sources.first,
-        );
-        
-        setState(() {
-          _streamResult = _streamResult!.copyWith(
-            url: bestMatch.url,
-            quality: bestMatch.quality,
-            selectedAudio: target,
-          );
-        });
-        return;
-      }
-
       _disposePlayer();
       setState(() {
         _isLoading = true;
         _error = null;
         _retryCount = 0;
         _streamResult = null;
-        _webViewPosition = currentPosition; 
         _resumePosition = currentPosition;
       });
 
@@ -4865,11 +4748,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final currentAudio = _streamResult?.selectedAudio ?? '';
     if (audioOption.toLowerCase() == currentAudio.toLowerCase()) return;
 
-    final currentPosition = _isDirectStream
-        ? _player.state.position
-        : _webViewPosition;
+    final currentPosition = _player.state.position;
     await _saveProgress();
-    
+
     _selectedAudioOverride = audioOption;
     ref.read(selectedQualityProvider.notifier).state = null;
     ref.read(watchHistoryServiceProvider).saveTrackPreferences(widget.mediaId, audioTrack: audioOption);
@@ -4894,7 +4775,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!hasPreloaded) {
         _streamResult = null;
       }
-      _webViewPosition = currentPosition; 
       _resumePosition = currentPosition;
     });
 
@@ -4924,19 +4804,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (prefix != null) providerName = prefix.group(2)!;
 
     final isTorrent = fullName == 'Nivio Torrents';
-    final isDirect = service.isDirectStream(index, isAnime: isAnime);
-    final IconData icon;
-    final String kind;
-    if (isTorrent) {
-      icon = Icons.cloud_download_rounded;
-      kind = 'P2P · High quality';
-    } else if (isDirect) {
-      icon = Icons.bolt_rounded;
-      kind = 'Direct';
-    } else {
-      icon = Icons.language_rounded;
-      kind = 'Embed';
-    }
+    final icon = isTorrent ? Icons.cloud_download_rounded : Icons.bolt_rounded;
+    final kind = isTorrent ? 'P2P · High quality' : 'Direct';
 
     return _buildSourceCard(
       title: providerName,
@@ -5046,7 +4915,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       );
 
   /// Server picker contents: Nivio Torrents as a full-width card, then
-  /// sections of cards (anime: one per source; others: direct, then embed).
+  /// sections of cards (anime: one per source; others: a single direct section).
   List<Widget> _buildProviderListTiles(SearchResult? media) {
     final List<Widget> widgets = [];
     final bool isAnime = _isAnimeMedia(media);
@@ -5073,7 +4942,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     ? 'Animex'
                     : name;
       } else {
-        section = service.isDirectStream(i, isAnime: false) ? 'Direct' : 'Embed';
+        section = 'Direct';
       }
       groups.putIfAbsent(section, () => []).add(i);
     }
@@ -5092,44 +4961,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _progressTimer?.cancel();
     _progressTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (_isZombieCallback('progress timer')) return;
-      if (_isDirectStream) {
-        if (_player.state.duration > Duration.zero && _player.state.playing) {
-          _saveProgress();
-        }
-      } else {
-        // For embed players, always save progress periodically.
-        // Even if we can't track precise playback time inside cross-origin iframes,
-        // this ensures the episode/movie is added to the "Continue Watching" list!
+      if (_player.state.duration > Duration.zero && _player.state.playing) {
         _saveProgress();
       }
     });
   }
 
   Future<void> _saveProgress() async {
-    Duration position;
-    Duration duration;
-    
-    if (_isDirectStream) {
-      if (_player.state.duration == Duration.zero) return;
-      position = _player.state.position;
-      duration = _player.state.duration;
-      
-      // Fix for HLS streams: If the player hasn't parsed the full playlist duration yet,
-      // it might report a duration smaller than our current seek position.
-      // This causes progressPercent > 1.0, prematurely marking the movie as "Completed" 
-      // and removing it from Continue Watching. We pad the duration to prevent this.
-      if (duration < position) {
-        debugPrint('⚠️ WARNING: Player reported duration (${duration.inSeconds}s) is smaller than current position (${position.inSeconds}s)! Padding duration to prevent premature completion.');
-        duration = position + const Duration(minutes: 30);
-      }
-    } else {
-      position = _webViewPosition;
-      duration = _webViewDuration;
-      
-      // Fallback for embed players (like cross-origin iframes) where JS can't extract `<video>` duration.
-      if (duration == Duration.zero) {
-        duration = const Duration(minutes: 90); // Dummy duration so JSON encoding doesn't crash
-      }
+    if (_player.state.duration == Duration.zero) return;
+    final position = _player.state.position;
+    var duration = _player.state.duration;
+
+    // Fix for HLS streams: If the player hasn't parsed the full playlist duration yet,
+    // it might report a duration smaller than our current seek position.
+    // This causes progressPercent > 1.0, prematurely marking the movie as "Completed"
+    // and removing it from Continue Watching. We pad the duration to prevent this.
+    if (duration < position) {
+      debugPrint('⚠️ WARNING: Player reported duration (${duration.inSeconds}s) is smaller than current position (${position.inSeconds}s)! Padding duration to prevent premature completion.');
+      duration = position + const Duration(minutes: 30);
     }
 
     // Prevent division by zero crash in JSON encoding when duration is missing
@@ -5272,7 +5121,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ? 'n/a'
         : '${DateTime.now().difference(_deactivatedAt!).inMilliseconds}ms';
     appDebugLog('🧪 [CW_DEBUG] PlayerScreen#$_sid dispose() — $zombieMs after deactivate(), player=${_hash(_player)}');
-    appDebugLog('🔴 [DISPOSE] Step 0: dispose() CALLED — mounted=$mounted, _transferredToMiniPlayer=$_transferredToMiniPlayer, _isDirectStream=$_isDirectStream');
+    appDebugLog('🔴 [DISPOSE] Step 0: dispose() CALLED — mounted=$mounted, _transferredToMiniPlayer=$_transferredToMiniPlayer');
     _isDisposing = true;
 
     // Keep media buttons working while the mini player owns the player.
@@ -5450,7 +5299,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _handleBackNavigation() {
     _dismissTooltips('back navigation');
-    appDebugLog('🟡 [BACK_NAV] Step 0: _handleBackNavigation() CALLED — mounted=$mounted, _isDirectStream=$_isDirectStream, _isInFullscreen=$_isInFullscreen, _useNativePlayer=$_useNativePlayer');
+    appDebugLog('🟡 [BACK_NAV] Step 0: _handleBackNavigation() CALLED — mounted=$mounted, _isInFullscreen=$_isInFullscreen, _useNativePlayer=$_useNativePlayer');
     final isDesktop = !Platform.isAndroid && !Platform.isIOS;
 
     if (isDesktop) {
@@ -5464,19 +5313,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     FocusManager.instance.primaryFocus?.unfocus();
 
-    if (!_isDirectStream && _isInFullscreen) {
-      appDebugLog('🟡 [BACK_NAV] Step 2: exit embed fullscreen (not direct stream)...');
-      _setPlayerOrientations([
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.portraitDown,
-      ]);
-      setState(() {
-        _isInFullscreen = false;
-      });
-      _syncFullscreenTopBarVisibility();
-      appDebugLog('🟡 [BACK_NAV] Step 2: ✅ done — returning early');
-      return;
-    }
 
     // On desktop, enter mini player mode instead of fully closing.
     // CRITICAL FIX: We must detach the Video widget from the PlayerScreen's
@@ -5759,7 +5595,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         identical(_streamResult, currentStream);
     Duration playbackPosition() {
       if (_useNativePlayer) return _nativePosition;
-      return _isDirectStream ? _player.state.position : _webViewPosition;
+      return _player.state.position;
     }
 
     _serverOverlayOpen = true;
@@ -7088,7 +6924,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_isLoading) return _buildLoadingState();
     if (_error != null) return _buildErrorState();
     if (_useNativePlayer && _nativeUrl != null) return _buildDirectStreamLayout(isPortrait);
-    if (_streamResult != null && !_isDirectStream) return _buildDirectStreamLayout(isPortrait);
     if (_isLoading) return _buildLoadingState();
 
     return _buildDirectStreamLayout(isPortrait);
@@ -7158,161 +6993,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
-  
-  Timer? _webViewControlsTimer;
-
-  // ignore: unused_element
-  void _toggleWebViewControls() {
-    setState(() {
-      _isInFullscreen = !_isInFullscreen;
-    });
-    _webViewControlsTimer?.cancel();
-    if (_isInFullscreen) {
-      _webViewControlsTimer = Timer(const Duration(seconds: 4), () {
-        if (mounted) {
-          setState(() {
-            _isInFullscreen = false;
-          });
-        }
-      });
-    }
-  }
-
-  // ─── WebView player (embed fallback) ───────────────────────────────────────
-  Widget _buildWebViewPlayer() {
-    return RepaintBoundary(
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: Listener(
-              onPointerDown: (_) => _toggleWebViewControls(),
-              behavior: HitTestBehavior.translucent,
-              child: WebViewPlayer(
-                key: ValueKey(_streamResult!.url),
-                    streamUrl: _streamResult!.url,
-                    headers: _streamResult!.headers,
-                    title:
-                      ref.read(selectedMediaProvider)?.title ??
-                      ref.read(selectedMediaProvider)?.name ??
-                      'Video',
-                  onPlayerEvent: _handlePlayerEvent,
-                  onEpisodeChanged: (season, episode) {
-                    if (!mounted) return;
-                    if (_currentEpisode != episode) {
-                      setState(() {
-                        _currentEpisode = episode;
-                      });
-                      _trackInitialPlay();
-                    }
-                  },
-                  onError: (errorMessage) {
-                    if (!mounted) return;
-                    appDebugLog(
-                      '❌ [CW_DEBUG] PlayerScreen#$_sid WebView provider[$_currentProviderIndex/$_maxProviders] '
-                      'failed: $errorMessage — native player=${_hash(_player)} '
-                      'playing=${_player.state.playing} (if true, audio you hear is NOT from this WebView)',
-                    );
-                    if (_hasNextProvider) {
-                      setState(() {
-                        _advanceProvider();
-                        _error = 'Provider unavailable, switching to next...';
-                      });
-                      Future.delayed(const Duration(milliseconds: 500), () {
-                        if (mounted) _initializePlayer();
-                      });
-                    } else {
-                      setState(() {
-                        _error = 'All providers failed. Video unavailable.';
-                      });
-                    }
-                  },
-                  onEnterFullscreen: () async {
-                    _setFullscreenTopBarVisibility(true);
-                    await setWindowFullScreen(true);
-                  },
-                  onExitFullscreen: () async {
-                    _setFullscreenTopBarVisibility(false);
-                    await setWindowFullScreen(false);
-                  },
-                  onShowEpisodesRequested: () {
-                    _showEpisodesBottomSheet();
-                  },
-                ),
-              ),
-            ),
-            // Back / exit button (always visible)
-            Positioned(
-              top: 12,
-              left: 12,
-              child: Material(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(8),
-                child: InkWell(
-                  onTap: _handleBackNavigation,
-                  borderRadius: BorderRadius.circular(8),
-                  child: const Padding(
-                    padding: EdgeInsets.all(8),
-                    child: Icon(Icons.arrow_back, color: Colors.white, size: 22),
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 12,
-              right: 12,
-              child: IgnorePointer(
-                ignoring: !_isInFullscreen,
-                child: AnimatedOpacity(
-                  opacity: _isInFullscreen ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 300),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_buildQualityOptions().length > 1) ...[
-                      _buildQualityFloatingButton(),
-                      const SizedBox(width: 8),
-                    ],
-
-                    _buildServerFloatingButton(),
-                    if (ref.read(selectedMediaProvider)?.mediaType == 'tv') ...[
-                      const SizedBox(width: 8),
-                      _buildEpisodesFloatingButton(),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-          ],
-        ),
-    );
-  }
-
-  Widget _buildEpisodesFloatingButton() {
-    return Material(
-      color: Colors.black54,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: () {
-          _setFullscreenTopBarVisibility(false); // Hide if we were in fullscreen
-          _showEpisodesBottomSheet();
-        },
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.list, color: Colors.white, size: 20),
-              SizedBox(width: 6),
-              Text('Episodes', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildServerFloatingButton() {
     return Material(
       color: Colors.black54,
@@ -7338,61 +7018,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
-  Widget _buildQualityFloatingButton() {
-    return Material(
-      color: Colors.black54,
-      borderRadius: BorderRadius.circular(8),
-      child: PopupMenuButton<String>(
-        tooltip: 'Quality',
-        onSelected: _switchQuality,
-        itemBuilder: (context) => _buildQualityMenuItems(),
-        offset: const Offset(0, 40),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.hd, color: Colors.white, size: 20),
-              SizedBox(width: 6),
-              Text('Quality', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-
-  void _handlePlayerEvent(String event, double currentTime, double duration) {
-    if (!mounted) return;
-    
-    if (event == 'timeupdate') {
-      _webViewPosition = Duration(milliseconds: (currentTime * 1000).toInt());
-      _webViewDuration = Duration(milliseconds: (duration * 1000).toInt());
-      
-      // Also broadcast watch party progress if we are the host
-      // Since _broadcastWatchPartyPlayback handles interval throttling, we can call it safely
-      _broadcastWatchPartyPlayback(force: false);
-
-      final media = ref.read(selectedMediaProvider);
-      if (media != null && (media.mediaType == 'tv' || media.mediaType == 'anime')) {
-        if (_hasNextEpisode()) {
-          final remaining = duration - currentTime;
-          if (duration > 0 && remaining <= 15 && !_showNextEpisodeButton) {
-            _showNextEpisodePopup();
-          }
-        }
-      }
-    } else if (event == 'ended') {
-      _markAsCompleted();
-      final media = ref.read(selectedMediaProvider);
-      if (media != null && (media.mediaType == 'tv' || media.mediaType == 'anime') && _hasNextEpisode()) {
-         _playNextEpisode();
-      }
-    }
-  }
-
-
   Widget _buildDirectStreamLayout(bool isPortrait, {bool isPipMode = false}) {
     return Column(
       children: [
@@ -7402,9 +7027,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               children: [
                 _useNativePlayer
                     ? _buildNativePlayer(isPipMode: isPipMode)
-                    : (!_isDirectStream && _streamResult != null)
-                        ? _buildWebViewPlayer()
-                        : _buildVideoPlayer(isPipMode: isPipMode),
+                    : _buildVideoPlayer(isPipMode: isPipMode),
 
                 // Skip Intro button
                 if (_isInIntroSegment && !isPipMode)
@@ -7700,26 +7323,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _exitPlayerFromTopBar() {
-    debugPrint('🟣 [TOPBAR_EXIT] CALLED — _isInFullscreen=$_isInFullscreen, _isDirectStream=$_isDirectStream, mounted=$mounted');
+    debugPrint('🟣 [TOPBAR_EXIT] CALLED — _isInFullscreen=$_isInFullscreen, mounted=$mounted');
     final isFullscreen = _isInFullscreen;
     if (isFullscreen) {
-      if (_isDirectStream) {
-        ;
-        Future.delayed(const Duration(milliseconds: 220), () {
-          if (!mounted) return;
-          _forceExitPlayer();
-        });
-      } else {
-        _setPlayerOrientations([
-          DeviceOrientation.portraitUp,
-          DeviceOrientation.portraitDown,
-        ]);
-        setState(() {
-          _isInFullscreen = false;
-        });
-        _syncFullscreenTopBarVisibility();
+      Future.delayed(const Duration(milliseconds: 220), () {
+        if (!mounted) return;
         _forceExitPlayer();
-      }
+      });
       return;
     }
     _forceExitPlayer();
@@ -7764,10 +7374,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // ignore: unused_element
   Widget _buildPortraitBottomControls() {
-    if (!_isDirectStream) {
-      return const SizedBox.shrink();
-    }
-
     return Container(
       color: const Color(0xCC000000),
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
@@ -8243,11 +7849,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
-  // ── WebView player (embed fallback) ─────────────────────────────
 
   // ── BetterPlayer widget ─────────────────────────────────────────
   Future<void> _preloadAvailableAudios(StreamResult currentResult, SearchResult media) async {
-    if (currentResult.availableAudios.isEmpty || !_isDirectStream) return;
+    if (currentResult.availableAudios.isEmpty) return;
     
     final streamingService = ref.read(streamingServiceProvider);
     currentResult.preloadedSources ??= {};

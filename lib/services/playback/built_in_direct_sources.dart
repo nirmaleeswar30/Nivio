@@ -1,8 +1,11 @@
 import 'package:nivio/models/search_result.dart';
+import 'package:nivio/services/hls_proxy_service.dart';
 import 'package:nivio/services/scrapers/castle_tv_source.dart';
+import 'package:nivio/services/scrapers/cine_tv_source.dart';
 import 'package:nivio/services/scrapers/desiflix/desiflix_scraper.dart';
 import 'package:nivio/services/scrapers/hub_download_sources.dart';
 import 'package:nivio/services/scrapers/movie_box_source.dart';
+import 'package:nivio/services/scrapers/net_mirror_source.dart';
 import 'package:nivio/services/tmdb_service.dart';
 
 import 'stream_choice.dart';
@@ -15,9 +18,14 @@ abstract final class BuiltInDirectSources {
     'moviesdrive': 'MoviesDrive',
     'castletv': 'CastleTV',
     'moviebox': 'MovieBox',
+    'movieboxproviderin': 'MovieBox IN',
+    'cinetvprovider': 'CineTv',
   };
 
-  static Iterable<String> get names => _namesById.values;
+  static final names = List<String>.unmodifiable([
+    ..._namesById.values,
+    ...NetMirrorSource.names,
+  ]);
 
   static Future<List<StreamChoice>> resolve(
     String name,
@@ -30,10 +38,22 @@ abstract final class BuiltInDirectSources {
     final results = await _scrape(name, media, tmdb, season, episode);
     return [
       for (final (index, result) in results.indexed)
-        if (StreamChoice.fromScraper(name, result, index) case final choice?)
+        if (StreamChoice.fromScraper(
+              name,
+              result,
+              index,
+              playbackUrl: name == 'CineTv' ? _cinePlaybackUrl : null,
+            )
+            case final choice?)
           choice,
     ];
   }
+
+  static String _cinePlaybackUrl(Uri uri) =>
+      HlsProxyService.instance.registerMediaRedirect(
+        () => CineTvSource.signPlaybackUrl(uri),
+      ) ??
+      CineTvSource.signPlaybackUrl(uri).toString();
 
   static Future<List<Map<String, dynamic>>> _scrape(
     String name,
@@ -54,7 +74,17 @@ abstract final class BuiltInDirectSources {
           scraper.close();
         }
       case 'MovieBox':
-        final scraper = MovieBoxSource();
+      case 'MovieBox IN':
+        final scraper = MovieBoxSource(india: name == 'MovieBox IN');
+        try {
+          return await scraper
+              .resolve(media, season: season, episode: episode)
+              .timeout(timeout);
+        } finally {
+          scraper.close();
+        }
+      case 'CineTv':
+        final scraper = CineTvSource();
         try {
           return await scraper
               .resolve(media, season: season, episode: episode)
@@ -81,6 +111,15 @@ abstract final class BuiltInDirectSources {
         } finally {
           scraper.dispose();
         }
+      case final provider when NetMirrorSource.names.contains(provider):
+        final scraper = NetMirrorSource();
+        try {
+          return await scraper
+              .resolve(provider, media, season: season, episode: episode)
+              .timeout(timeout);
+        } finally {
+          scraper.close();
+        }
       default:
         return [];
     }
@@ -93,7 +132,9 @@ abstract final class BuiltInDirectSources {
     if (separator < 0) return null;
     final name = _namesById[id.substring(separator + 1).toLowerCase()];
     final url = Uri.tryParse(id.substring(0, separator));
-    if (name == null || url == null || url.host != 'raw.githubusercontent.com') {
+    if (name == null ||
+        url == null ||
+        url.host != 'raw.githubusercontent.com') {
       return null;
     }
     final path = url.path.toLowerCase();
