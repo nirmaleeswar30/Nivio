@@ -46,6 +46,9 @@ class StreamDiscovery extends ChangeNotifier {
   final failures = <String>{};
   final unavailable = <String>{};
   final _rateLimited = <String>{};
+  // Sources still searching, and results whose resolution is being probed.
+  final _pendingSources = <String>{};
+  final _inspecting = <String>{};
   final _metadataLanes = List<Future<void>>.filled(3, Future<void>.value());
   var _nextMetadataLane = 0;
   final _checkedAudio = <String>{};
@@ -170,11 +173,18 @@ class StreamDiscovery extends ChangeNotifier {
     return ordered.map((entry) => entry.$2).toList();
   }
 
-  Future<void> waitForResults(Duration timeout) async {
+  /// Waits until every source has answered, [timeout] passes, or [settled]
+  /// says the result can't change.
+  Future<void> waitForResults(
+    Duration timeout, {
+    bool Function()? settled,
+  }) async {
     if (!searching || _closed || timeout <= Duration.zero) return;
+    if (settled?.call() == true) return;
     final done = Completer<void>();
     void check() {
-      if (!done.isCompleted && !searching) done.complete();
+      if (done.isCompleted) return;
+      if (!searching || settled?.call() == true) done.complete();
     }
 
     addListener(check);
@@ -183,6 +193,33 @@ class StreamDiscovery extends ChangeNotifier {
     } finally {
       removeListener(check);
     }
+  }
+
+  /// True once Autoplay's pick can no longer change: a result already meets
+  /// every preference above source priority (see
+  /// [StreamSelection.settlesAutoplay]), no higher-priority source is still
+  /// searching, and no higher-priority result is still being probed.
+  bool autoplaySettled({String? bingeGroup}) {
+    if (_closed) return false;
+    int rank(String sourceId) =>
+        selection.sourceRank(sourceId, isAnime: isAnime);
+    int? best;
+    for (final choice in availableChoices) {
+      if (_inspecting.contains(choice.id) ||
+          !policy.settlesAutoplay(choice, bingeGroup: bingeGroup)) {
+        continue;
+      }
+      final value = rank(choice.selectionSourceId);
+      if (best == null || value < best) best = value;
+    }
+    final top = best;
+    if (top == null) return false;
+    if (_pendingSources.any((source) => rank(source) < top)) return false;
+    return !availableChoices.any(
+      (choice) =>
+          _inspecting.contains(choice.id) &&
+          rank(choice.selectionSourceId) < top,
+    );
   }
 
   Future<StreamChoice?> firstReachable(
@@ -251,6 +288,8 @@ class StreamDiscovery extends ChangeNotifier {
     failures.clear();
     unavailable.clear();
     _rateLimited.clear();
+    _pendingSources.clear();
+    _inspecting.clear();
     _checkedAudio.clear();
     _failedAudioChecks.clear();
     notifyListeners();
@@ -272,6 +311,7 @@ class StreamDiscovery extends ChangeNotifier {
             progressiveProbes++;
           }
           final lane = _nextMetadataLane++ % _metadataLanes.length;
+          _inspecting.add(choice.id);
           _metadataLanes[lane] = _metadataLanes[lane].then((_) async {
             if (!_current(generation)) return;
             try {
@@ -288,6 +328,10 @@ class StreamDiscovery extends ChangeNotifier {
               notifyListeners();
             } catch (_) {
               // The stream remains selectable with its original quality label.
+            } finally {
+              if (_current(generation) && _inspecting.remove(choice.id)) {
+                notifyListeners();
+              }
             }
           });
         }
@@ -360,6 +404,10 @@ class StreamDiscovery extends ChangeNotifier {
             when name != 'Nivio Torrents')
           (i, name),
     ];
+    _pendingSources.addAll([
+      for (final (_, name) in providers)
+        streamSelectionSourceId('builtin:$name'),
+    ]);
     if (selection.mode != StreamSelectionMode.first) {
       providers.sort((a, b) {
         final rank = selection
@@ -379,66 +427,82 @@ class StreamDiscovery extends ChangeNotifier {
     await _concurrently(providers, 5, generation, (provider) async {
       final (index, name) = provider;
       try {
-        if (!isAnime && BuiltInDirectSources.names.contains(name)) {
-          addResults(
-            await BuiltInDirectSources.resolve(
-              name,
-              media,
-              tmdb: streaming.tmdbService,
-              season: season,
-              episode: episode,
-            ),
-          );
-          return;
+        await _searchSource(generation, index, name, addResults);
+      } finally {
+        if (_current(generation)) {
+          _pendingSources.remove(streamSelectionSourceId('builtin:$name'));
+          notifyListeners();
         }
-        final result = await streaming
-            .fetchStreamUrl(
-              media: media,
-              season: season,
-              episode: episode,
-              providerIndex: index,
-              preferredQuality: preferredQuality,
-              preferredAudio: !isAnime && preferredAudio != 'Original'
-                  ? preferredAudio
-                  : null,
-              subDubPreference: subDub,
-            )
-            .timeout(const Duration(seconds: 24));
-        if (result == null || result.url.isEmpty) return;
-        final urls = <String>{result.url};
-        final selected = [
-          result.copyWith(sources: const []),
-          for (final source in result.sources)
-            if (source.url.isNotEmpty && urls.add(source.url))
-              result.copyWith(
-                url: source.url,
-                quality: source.quality,
-                isM3U8: source.isM3U8,
-                sources: const [],
-                selectedAudio: isAnime
-                    ? (source.isDub ? 'Dub' : 'Sub')
-                    : result.selectedAudio,
-              ),
-        ];
-        final results = [
-          for (var i = 0; i < selected.length; i++)
-            StreamChoice(
-              id: 'builtin:$name:$i',
-              providerId: 'builtin:$name',
-              provider: result.provider,
-              title: result.provider,
-              quality: selected[i].quality,
-              audio: selected[i].selectedAudio.isEmpty
-                  ? null
-                  : selected[i].selectedAudio,
-              direct: selected[i],
-            ),
-        ];
-        addResults(results);
-      } catch (_) {
-        _failed(generation, name);
       }
     });
+  }
+
+  Future<void> _searchSource(
+    int generation,
+    int index,
+    String name,
+    void Function(List<StreamChoice>) addResults,
+  ) async {
+    try {
+      if (!isAnime && BuiltInDirectSources.names.contains(name)) {
+        addResults(
+          await BuiltInDirectSources.resolve(
+            name,
+            media,
+            tmdb: streaming.tmdbService,
+            season: season,
+            episode: episode,
+          ),
+        );
+        return;
+      }
+      final result = await streaming
+          .fetchStreamUrl(
+            media: media,
+            season: season,
+            episode: episode,
+            providerIndex: index,
+            preferredQuality: preferredQuality,
+            preferredAudio: !isAnime && preferredAudio != 'Original'
+                ? preferredAudio
+                : null,
+            subDubPreference: subDub,
+          )
+          .timeout(const Duration(seconds: 24));
+      if (result == null || result.url.isEmpty) return;
+      final urls = <String>{result.url};
+      final selected = [
+        result.copyWith(sources: const []),
+        for (final source in result.sources)
+          if (source.url.isNotEmpty && urls.add(source.url))
+            result.copyWith(
+              url: source.url,
+              quality: source.quality,
+              isM3U8: source.isM3U8,
+              sources: const [],
+              selectedAudio: isAnime
+                  ? (source.isDub ? 'Dub' : 'Sub')
+                  : result.selectedAudio,
+            ),
+      ];
+      final results = [
+        for (var i = 0; i < selected.length; i++)
+          StreamChoice(
+            id: 'builtin:$name:$i',
+            providerId: 'builtin:$name',
+            provider: result.provider,
+            title: result.provider,
+            quality: selected[i].quality,
+            audio: selected[i].selectedAudio.isEmpty
+                ? null
+                : selected[i].selectedAudio,
+            direct: selected[i],
+          ),
+      ];
+      addResults(results);
+    } catch (_) {
+      _failed(generation, name);
+    }
   }
 
   Future<void> _concurrently<T>(

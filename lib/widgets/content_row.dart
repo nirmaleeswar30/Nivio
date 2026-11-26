@@ -455,9 +455,9 @@ class _AnimatedPosterCardState extends ConsumerState<_AnimatedPosterCard> {
                             ).withValues(alpha: 0.95),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.check,
-                            color: Colors.white,
+                            color: Theme.of(context).colorScheme.onPrimary,
                             size: 14,
                           ),
                         ),

@@ -495,52 +495,6 @@ class PreferredAudioLanguageNotifier extends StateNotifier<String> {
   }
 }
 
-// Preferred Download Subtitle Language Provider
-final preferredDownloadSubtitleLanguageProvider =
-    StateNotifierProvider<PreferredDownloadSubtitleLanguageNotifier, String>((ref) {
-      return PreferredDownloadSubtitleLanguageNotifier();
-    });
-
-class PreferredDownloadSubtitleLanguageNotifier extends StateNotifier<String> {
-  PreferredDownloadSubtitleLanguageNotifier() : super('English') {
-    _loadSetting();
-  }
-
-  Future<void> _loadSetting() async {
-    final prefs = await SharedPreferences.getInstance();
-    state = prefs.getString('preferred_download_subtitle_language') ?? 'English';
-  }
-
-  Future<void> setLanguage(String language) async {
-    state = language;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('preferred_download_subtitle_language', language);
-  }
-}
-
-// Preferred Download Audio Language Provider
-final preferredDownloadAudioLanguageProvider =
-    StateNotifierProvider<PreferredDownloadAudioLanguageNotifier, String>((ref) {
-      return PreferredDownloadAudioLanguageNotifier();
-    });
-
-class PreferredDownloadAudioLanguageNotifier extends StateNotifier<String> {
-  PreferredDownloadAudioLanguageNotifier() : super('English') {
-    _loadSetting();
-  }
-
-  Future<void> _loadSetting() async {
-    final prefs = await SharedPreferences.getInstance();
-    state = prefs.getString('preferred_download_audio_language') ?? 'English';
-  }
-
-  Future<void> setLanguage(String language) async {
-    state = language;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('preferred_download_audio_language', language);
-  }
-}
-
 // Animations Enabled Provider
 final animationsEnabledProvider =
     StateNotifierProvider<AnimationsEnabledNotifier, bool>((ref) {
@@ -980,26 +934,31 @@ class TorrentQualityNotifier extends StateNotifier<String> {
   }
 }
 
-// Torrent Auto Select Provider
-final torrentAutoSelectProvider =
-    StateNotifierProvider<TorrentAutoSelectNotifier, bool>((ref) {
-  return TorrentAutoSelectNotifier();
+/// Plays the best-ranked torrent from the loading screen instead of opening
+/// the torrent picker. Separate from the direct-stream playback mode, and off
+/// by default.
+final torrentAutoplayProvider =
+    StateNotifierProvider<TorrentAutoplayNotifier, bool>((ref) {
+  return TorrentAutoplayNotifier();
 });
 
-class TorrentAutoSelectNotifier extends StateNotifier<bool> {
-  TorrentAutoSelectNotifier() : super(true) {
+class TorrentAutoplayNotifier extends StateNotifier<bool> {
+  TorrentAutoplayNotifier() : super(false) {
     _loadPreference();
   }
 
+  static const _key = 'torrent_autoplay';
+
   Future<void> _loadPreference() async {
     final prefs = await SharedPreferences.getInstance();
-    state = prefs.getBool('torrent_auto_select') ?? true;
+    final saved = prefs.getBool(_key);
+    if (saved != null && mounted) state = saved;
   }
 
   Future<void> setEnabled(bool value) async {
     state = value;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('torrent_auto_select', value);
+    await prefs.setBool(_key, value);
   }
 }
 
@@ -1113,6 +1072,51 @@ class AutoPlayNextEpisodeNotifier extends StateNotifier<bool> {
     state = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('auto_play_next_episode', value);
+  }
+}
+
+/// Watch party: participants play the source the host picked (on by
+/// default); when off, they choose their own stream in the picker.
+final watchPartyFollowHostSourceProvider =
+    StateNotifierProvider<WatchPartyFollowHostSourceNotifier, bool>((ref) {
+      return WatchPartyFollowHostSourceNotifier();
+    });
+
+class WatchPartyFollowHostSourceNotifier extends StateNotifier<bool> {
+  static const _key = 'watch_party_follow_host_source';
+
+  WatchPartyFollowHostSourceNotifier()
+    : super(_startupPrefs?.getBool(_key) ?? true) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool(_key) ?? true;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, value);
+  }
+}
+
+final parentalGuideEnabledProvider =
+    StateNotifierProvider<ParentalGuideEnabledNotifier, bool>((ref) {
+      return ParentalGuideEnabledNotifier();
+    });
+
+class ParentalGuideEnabledNotifier extends StateNotifier<bool> {
+  ParentalGuideEnabledNotifier()
+    : super(_startupPrefs?.getBool(_key) ?? true);
+
+  static const _key = 'show_parental_guide';
+
+  Future<void> setEnabled(bool enabled) async {
+    state = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, enabled);
   }
 }
 

@@ -43,6 +43,7 @@ abstract final class BuiltInDirectSources {
               result,
               index,
               playbackUrl: name == 'CineTv' ? _cinePlaybackUrl : null,
+              downloadUrl: name == 'CineTv' ? CineTvSource.downloadUrl : null,
             )
             case final choice?)
           choice,

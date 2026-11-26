@@ -22,6 +22,7 @@ import 'package:nivio/services/torrent/torrent_models.dart';
 import 'package:nivio/services/torrent/media_torrent_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/providers/settings_providers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class StreamingService {
   final TmdbService tmdbService;
@@ -241,6 +242,68 @@ class StreamingService {
     return handle;
   }
 
+  /// Searches like the torrent picker and starts its best-ranked result,
+  /// without showing the picker. Null when nothing fits, the torrent can't
+  /// start, or [interrupted] completes before a result is chosen.
+  Future<TorrentStreamHandle?> _autoplayTorrent(
+    SearchResult media,
+    int episode,
+    int season,
+    int? absoluteEpisode,
+    String resolution,
+    void Function(String)? onStatusUpdate, {
+    Future<void>? interrupted,
+    VoidCallback? onChosen,
+  }) async {
+    var stopped = false;
+    final stop = interrupted?.then((_) => stopped = true);
+    try {
+      final settings = await ref.read(streamSelectionSettingsProvider.future);
+      final saved = (await SharedPreferences.getInstance()).getString(
+        'nivio_torrent_resolution',
+      );
+      if (stopped) return null;
+      onStatusUpdate?.call('Searching torrents…');
+      final searching = searchTorrentsForTitle(
+        service: torrentStreamService,
+        media: media,
+        season: season,
+        episode: episode,
+        absoluteEpisode: absoluteEpisode,
+        resolution: saved ?? resolution,
+        preferredFormats: settings.torrentFormatPreferences,
+        onStatus: (status) {
+          if (!stopped) onStatusUpdate?.call(status);
+        },
+      );
+      final search = stop == null
+          ? await searching
+          : await Future.any<({List<TorrentResult> results, Object query})?>([
+              searching,
+              stop.then((_) => null),
+            ]);
+      if (search == null || stopped) return null;
+      final best = bestTorrentFor(search.results, settings.maxFileBytes);
+      if (best == null) return null;
+      onChosen?.call();
+      final query = search.query;
+      final ep = query is AnimeQuery
+          ? query.episode
+          : (query as MediaTorrentQuery).episode ?? 1;
+      return await torrentStreamService.startTorrent(
+        best,
+        query,
+        ep,
+        onStatusUpdate,
+        media: media,
+        maxFileBytes: settings.maxFileBytes,
+      );
+    } catch (error) {
+      appDebugLog('Torrent autoplay failed, opening the picker: $error');
+      return null;
+    }
+  }
+
   Future<StreamResult?> fetchTorrentStream({
     required SearchResult media,
     required int season,
@@ -251,6 +314,11 @@ class StreamingService {
     BuildContext? context,
     bool binge = false,
     bool? autoSelect,
+    bool autoplay = false,
+    Future<void>? autoplayInterrupted,
+    /// Called once autoplay can no longer be interrupted: a torrent was
+    /// chosen, or the picker is about to open instead.
+    VoidCallback? onAutoplayCommitted,
     bool Function()? onManualSwitch,
     VoidCallback? onPickerDismissed,
     List<DeviceOrientation> restoreOrientations = const [],
@@ -258,6 +326,30 @@ class StreamingService {
     final resMatch =
         preferredQuality == null ? null : RegExp(r'\d{3,4}').firstMatch(preferredQuality);
     final resolution = resMatch?.group(0) ?? '1080';
+
+    // Autoplay tries the best torrent first and falls back to the picker.
+    Future<TorrentStreamHandle?> pick(BuildContext context) async {
+      if (autoplay && onManualSwitch == null) {
+        final TorrentStreamHandle? started;
+        try {
+          started = await _autoplayTorrent(
+            media, episode, season, absoluteEpisode, resolution, onStatusUpdate,
+            interrupted: autoplayInterrupted,
+            onChosen: onAutoplayCommitted,
+          );
+        } finally {
+          onAutoplayCommitted?.call();
+        }
+        if (started != null || !context.mounted) return started;
+      }
+      return _pickTorrentInteractively(
+        media, episode, season, absoluteEpisode, resolution, onStatusUpdate, context,
+        autoSelect: autoSelect,
+        onManualSwitch: onManualSwitch,
+        onPickerDismissed: onPickerDismissed,
+        restoreOrientations: restoreOrientations,
+      );
+    }
 
     TorrentStreamHandle? handle;
     if (binge) {
@@ -293,14 +385,7 @@ class StreamingService {
         );
       }
       final usePicker = handle == null && context != null && context.mounted;
-      if (usePicker) {
-        handle = await _pickTorrentInteractively(
-          media, episode, season, absoluteEpisode, resolution, onStatusUpdate, context,
-          autoSelect: autoSelect,
-          onPickerDismissed: onPickerDismissed,
-          restoreOrientations: restoreOrientations,
-        );
-      }
+      if (usePicker) handle = await pick(context);
       if (handle != null) {
         final title = handle.title.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
         final fileName = handle.fileName.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
@@ -323,13 +408,7 @@ class StreamingService {
         );
       }
     } else if (context != null) {
-      handle = await _pickTorrentInteractively(
-        media, episode, season, absoluteEpisode, resolution, onStatusUpdate, context,
-        autoSelect: autoSelect,
-        onManualSwitch: onManualSwitch,
-        onPickerDismissed: onPickerDismissed,
-        restoreOrientations: restoreOrientations,
-      );
+      handle = await pick(context);
       if (handle == null) return null;
     } else {
       // Silent / background mode
@@ -623,6 +702,40 @@ class StreamingService {
       return list[index];
     }
     return 'Unknown';
+  }
+
+  /// The index of the provider called [name], or null.
+  int? providerIndexOf(String name, {required bool isAnime}) {
+    for (var i = 0; i < totalProvidersFor(isAnime: isAnime); i++) {
+      if (getProviderName(i, isAnime: isAnime) == name) return i;
+    }
+    return null;
+  }
+
+  /// Downloadable providers in source priority order (the order the direct
+  /// picker and Autoplay use), starting with [first] when given.
+  Future<List<int>> downloadProviderOrder({
+    required bool isAnime,
+    int? first,
+  }) async {
+    final settings = await ref.read(streamSelectionSettingsProvider.future);
+    int rank(int index) => settings.sourceRank(
+      streamSelectionSourceId(
+        'builtin:${getProviderName(index, isAnime: isAnime)}',
+      ),
+      isAnime: isAnime,
+    );
+    final order = [
+      for (var i = 0; i < totalProvidersFor(isAnime: isAnime); i++)
+        if (isDownloadable(i, isAnime: isAnime)) i,
+    ];
+    order.sort((a, b) {
+      if (a == first) return -1;
+      if (b == first) return 1;
+      final byRank = rank(a).compareTo(rank(b));
+      return byRank != 0 ? byRank : a.compareTo(b);
+    });
+    return order;
   }
 
   bool isDownloadable(int providerIndex, {required bool isAnime}) {

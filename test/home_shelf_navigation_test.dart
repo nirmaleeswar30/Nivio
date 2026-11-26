@@ -89,7 +89,7 @@ void main() {
     expect(find.text('Open Settings'), findsOneWidget);
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
-  testWidgets('More opens the shelf grid and loads the next distinct titles', (
+  testWidgets('More opens the shelf grid and loads the next distinct titles as it scrolls', (
     tester,
   ) async {
     const shelf = HomeShelf.popularMovies;
@@ -138,14 +138,12 @@ void main() {
     await tester.tap(find.text('More'));
     await tester.pumpAndSettle();
     expect(find.widgetWithText(AppBar, shelf.title), findsOneWidget);
-    expect(find.byType(SearchResultCard), findsOneWidget);
-
-    await tester.tap(find.text('Load more'));
-    await tester.pumpAndSettle();
+    // One title doesn't fill the screen, so the next page loads by itself.
     expect(requests, [1, 2]);
+    expect(find.byType(SearchResultCard), findsNWidgets(2));
     expect(find.text('First movie'), findsOneWidget);
     expect(find.text('Second movie'), findsOneWidget);
-    expect(find.text('Load more'), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
 
     await tester.tap(find.byType(BackButton));
     await tester.pumpAndSettle();

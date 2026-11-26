@@ -15,6 +15,7 @@ class StreamChoice {
     this.bingeGroupHint,
     this.videoHeights = const [],
     this.audioTracks = const [],
+    this.downloadUrl,
   });
 
   final String id;
@@ -28,6 +29,15 @@ class StreamChoice {
   final List<int> videoHeights;
   final List<String> audioTracks;
   final StreamResult direct;
+
+  /// What a download should fetch when it differs from the playback URL
+  /// (which can be a local proxy address that only lives while the app runs).
+  final String? downloadUrl;
+
+  StreamResult get downloadResult {
+    final url = downloadUrl;
+    return url == null ? direct : direct.copyWith(url: url);
+  }
 
   int? get displaySizeBytes => byteSize ?? StreamSize.fromTitle(title);
 
@@ -46,6 +56,7 @@ class StreamChoice {
     bingeGroupHint: bingeGroupHint,
     videoHeights: videoHeights ?? this.videoHeights,
     audioTracks: audioTracks ?? this.audioTracks,
+    downloadUrl: downloadUrl,
   );
   String? get audioType {
     final text = '${audio ?? ''} $title'.toLowerCase();
@@ -60,6 +71,7 @@ class StreamChoice {
     Map<String, dynamic> data,
     int index, {
     String Function(Uri)? playbackUrl,
+    String Function(Uri)? downloadUrl,
   }) {
     final raw = data['url'];
     final url = (raw is Map ? raw['url'] : raw)?.toString().trim() ?? '';
@@ -90,6 +102,7 @@ class StreamChoice {
       bingeGroupHint: data['bingeGroup'] is String
           ? (data['bingeGroup'] as String).trim()
           : null,
+      downloadUrl: downloadUrl?.call(uri),
       direct: StreamResult(
         url: playbackUrl?.call(uri) ?? url,
         quality: quality,

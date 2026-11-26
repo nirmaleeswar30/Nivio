@@ -217,7 +217,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
       context: context,
       // Above the floating nav bar; the tab's own navigator sits under it.
       useRootNavigator: true,
-      backgroundColor: NivioTheme.netflixDarkGrey,
+      backgroundColor: NivioTheme.sheetColorOf(context),
       isScrollControlled: true,
       constraints: BoxConstraints(maxWidth: isDesktop ? 520 : double.infinity),
       shape: const RoundedRectangleBorder(
@@ -817,7 +817,7 @@ class _IptvScreenState extends ConsumerState<IptvScreen> {
                         context: context,
                         // Above the floating nav bar; the tab's own navigator sits under it.
                         useRootNavigator: true,
-                        backgroundColor: NivioTheme.netflixDarkGrey,
+                        backgroundColor: NivioTheme.sheetColorOf(context),
                         constraints: BoxConstraints(maxWidth: isDesktop ? 500 : double.infinity),
                         shape: const RoundedRectangleBorder(
                           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),

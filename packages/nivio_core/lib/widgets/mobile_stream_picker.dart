@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -8,11 +9,11 @@ import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/media_provider.dart';
-import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/providers/dynamic_colors_provider.dart';
 import 'package:nivio/widgets/artwork_icon_button.dart';
 import 'package:nivio/widgets/hero_artwork_stretch.dart';
+import 'package:nivio/widgets/opening_overlay.dart' show titleLogoProvider;
 import 'package:flutter/gestures.dart';
 import 'package:nivio/widgets/tab_artwork.dart' show ArtworkImage;
 
@@ -21,7 +22,9 @@ Future<T?> pushMobileStreamPicker<T>(
   MaterialPageRoute<T> route,
   List<DeviceOrientation> restoreOrientations,
 ) async {
-  final followsDevice = !AppPlatform.isTv;
+  // Phones only: desktops have no orientation, TVs stay landscape.
+  final followsDevice =
+      !AppPlatform.isTv && (Platform.isAndroid || Platform.isIOS);
   if (followsDevice) {
     await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
   }
@@ -36,19 +39,6 @@ Future<T?> pushMobileStreamPicker<T>(
     }
   }
 }
-
-final _streamTitleLogo = FutureProvider.autoDispose
-    .family<String?, SearchResult>((ref, media) async {
-      final tmdb = ref.watch(tmdbServiceProvider);
-      if (media.mediaType != 'anime')
-        return tmdb.getMediaLogo(media.id, media.mediaType);
-      final title = media.title ?? media.name;
-      if (title == null || title.isEmpty) return null;
-      return tmdb.getLogoByTitle(
-        title,
-        year: (media.releaseDate ?? media.firstAirDate)?.split('-').first,
-      );
-    });
 
 class StreamPickerInteraction extends StatelessWidget {
   const StreamPickerInteraction({
@@ -182,7 +172,7 @@ class _MobileStreamPickerState extends State<MobileStreamPicker> {
                   ?.episodes
                   .where((item) => item.episodeNumber == episode)
                   .firstOrNull;
-        final logo = ref.watch(_streamTitleLogo(media)).valueOrNull;
+        final logo = ref.watch(titleLogoProvider(media)).valueOrNull;
         final useDynamicColors = ref.watch(dynamicArtworkColorsProvider);
         final art = _artwork(landscape, details);
         final palette = useDynamicColors && art.$1 != null

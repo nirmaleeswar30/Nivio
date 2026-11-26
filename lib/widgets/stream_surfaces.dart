@@ -1,6 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:nivio/core/theme.dart';
 
+/// Makes [StreamPanel]s below it draw straight on the page background, with
+/// no fill or outline (onboarding lays them over its animated backdrop).
+class FlatStreamPanels extends InheritedWidget {
+  const FlatStreamPanels({super.key, required super.child});
+
+  static bool of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<FlatStreamPanels>() != null;
+
+  @override
+  bool updateShouldNotify(FlatStreamPanels oldWidget) => false;
+}
+
 class StreamPanel extends StatelessWidget {
   const StreamPanel({super.key, required this.child, this.padding});
 
@@ -10,16 +22,21 @@ class StreamPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = NivioTheme.themeColorsOf(context);
+    final flat = FlatStreamPanels.of(context);
     return Material(
-      color: Color.alphaBlend(
-        palette.textPrimary.withValues(alpha: .035),
-        palette.background.withValues(alpha: .84),
-      ),
+      color: flat
+          ? Colors.transparent
+          : Color.alphaBlend(
+              palette.textPrimary.withValues(alpha: .035),
+              palette.background.withValues(alpha: .84),
+            ),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: palette.border.withValues(alpha: palette.border.a * .70),
-        ),
+        side: flat
+            ? BorderSide.none
+            : BorderSide(
+                color: palette.border.withValues(alpha: palette.border.a * .70),
+              ),
       ),
       clipBehavior: Clip.antiAlias,
       child: ListTileTheme.merge(

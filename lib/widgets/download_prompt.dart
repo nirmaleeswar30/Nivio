@@ -9,8 +9,207 @@ import '../providers/service_providers.dart';
 import '../models/search_result.dart';
 import '../core/theme.dart';
 import 'package:nivio/widgets/torrent_picker_sheet.dart';
+import 'dart:async';
+import 'package:nivio/core/app_platform.dart';
+import 'package:nivio/providers/language_preferences_provider.dart';
+import 'package:nivio/services/playback/stream_discovery.dart';
+import 'package:nivio/services/playback/stream_selection.dart';
+import 'package:nivio/services/playback/stream_selection_settings.dart';
+import 'package:nivio/services/torrent/torrent_models.dart';
+import 'package:nivio/widgets/app_toast.dart';
+import 'package:nivio/widgets/stream_picker_sheet.dart';
+
+/// Where a download comes from: a direct stream from the picker (with its
+/// provider, for refetching other audio tracks) or a torrent release.
+typedef DownloadSource = ({
+  StreamResult? direct,
+  int? providerIndex,
+  TorrentResult? torrent,
+});
 
 class DownloadPrompt {
+  /// Downloads one movie or episode. The source is chosen the way Play
+  /// chooses it (same sources, priority order and stream rules), then the
+  /// options sheet asks for quality, audio and subtitles.
+  static Future<void> downloadTitle({
+    required BuildContext context,
+    required WidgetRef ref,
+    required SearchResult media,
+    required String title,
+    required String mediaType,
+    int? season,
+    int? episode,
+    String? posterPath,
+  }) async {
+    final source = await pickSource(
+      context: context,
+      ref: ref,
+      media: media,
+      season: season ?? 1,
+      episode: episode ?? 1,
+    );
+    if (source == null || !context.mounted) return;
+    if (source.torrent case final torrent?) {
+      await _queue(
+        media.id, title, mediaType, season, episode, posterPath,
+        'torrent|||${torrent.link}', null, null, null, null,
+      );
+      if (context.mounted) {
+        showAppToast(context, 'Torrent download queued', icon: Icons.download_rounded);
+      }
+      return;
+    }
+    await showAndQueue(
+      context: context,
+      ref: ref,
+      streamResult: source.direct!,
+      mediaId: media.id,
+      title: title,
+      mediaType: mediaType,
+      season: season,
+      episode: episode,
+      posterPath: posterPath,
+      media: media,
+      providerIndex: source.providerIndex,
+    );
+  }
+
+  /// Opens the picker Play would open: the torrent picker when torrent
+  /// playback is on (after asking, since direct downloads still work), and
+  /// otherwise the direct picker. Returns null if cancelled.
+  static Future<DownloadSource?> pickSource({
+    required BuildContext context,
+    required WidgetRef ref,
+    required SearchResult media,
+    required int season,
+    required int episode,
+  }) async {
+    final streaming = ref.read(streamingServiceProvider);
+    final isAnime = StreamingService.isAnimeMedia(media);
+    if (streaming.isTorrentEnabled(isAnime: isAnime)) {
+      final useTorrent = await _askTorrentOrDirect(context);
+      if (useTorrent == null || !context.mounted) return null;
+      if (useTorrent) {
+        final settings = await ref.read(streamSelectionSettingsProvider.future);
+        if (!context.mounted) return null;
+        final picked = await TorrentPickerSheet.show(
+          context,
+          media: media,
+          initialEpisode: episode,
+          initialSeason: season,
+          initialResolution: ref.read(torrentQualityProvider),
+          torrentStreamService: ref.read(torrentStreamServiceProvider),
+          autoSelect: false,
+          groupBySource: settings.groupBySource,
+          maxFileBytes: settings.maxFileBytes,
+          preferredFormats: settings.torrentFormatPreferences,
+        );
+        return picked == null
+            ? null
+            : (direct: null, providerIndex: null, torrent: picked.$1);
+      }
+    }
+    while (context.mounted) {
+      final settings = await ref.read(streamSelectionSettingsProvider.future);
+      if (!context.mounted) return null;
+      final presetHeight = settings.resolutions.firstOrNull;
+      final discovery = StreamDiscovery(
+        media: media,
+        season: season,
+        episode: episode,
+        streaming: streaming,
+        subDub: ref.read(languagePreferencesProvider).animePreferredAudio,
+        preferredQuality: presetHeight == null ? null : '${presetHeight}p',
+        preferredAudio: StreamSelection.pickerAudioPreference(
+          ref.read(preferredAudioLanguageProvider),
+        ),
+        preferredSubtitle: ref.read(preferredSubtitleLanguageProvider),
+        selection: settings,
+      );
+      unawaited(discovery.search());
+      final StreamPickerOutcome? outcome;
+      try {
+        outcome = await DirectStreamPickerSheet.show(context, discovery);
+      } finally {
+        discovery.dispose();
+      }
+      // Stream settings changed in the picker: search again with them.
+      if (outcome?.refresh == true) continue;
+      final choice = outcome?.choice;
+      if (choice == null) return null;
+      final provider = choice.providerId.startsWith('builtin:')
+          ? choice.providerId.substring('builtin:'.length)
+          : choice.provider;
+      return (
+        direct: choice.downloadResult,
+        providerIndex: streaming.providerIndexOf(provider, isAnime: isAnime),
+        torrent: null,
+      );
+    }
+    return null;
+  }
+
+  static Future<bool?> _askTorrentOrDirect(BuildContext context) {
+    Widget option(
+      BuildContext context,
+      IconData icon,
+      String title,
+      String subtitle,
+      bool value,
+    ) => ListTile(
+      leading: Icon(icon, color: NivioTheme.accentColorOf(context)),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+      subtitle: Text(subtitle),
+      onTap: () => Navigator.pop(context, value),
+    );
+    Widget body(BuildContext context) => Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+          child: Text(
+            'Download from',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+        ),
+        option(
+          context,
+          Icons.cloud_download_rounded,
+          'Torrent',
+          'Pick a release from your torrent indexers.',
+          true,
+        ),
+        option(
+          context,
+          Icons.bolt_rounded,
+          'Direct sources',
+          'Pick a stream from the built-in sources.',
+          false,
+        ),
+        const SizedBox(height: 12),
+      ],
+    );
+    if (AppPlatform.useDesktopLayout) {
+      return showDialog<bool>(
+        context: context,
+        builder: (context) => Dialog(
+          backgroundColor: NivioTheme.sheetColorOf(context),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: body(context),
+          ),
+        ),
+      );
+    }
+    return showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: NivioTheme.sheetColorOf(context),
+      showDragHandle: true,
+      builder: (context) => SafeArea(child: body(context)),
+    );
+  }
+
   static Future<void> showAndQueue({
     required BuildContext context,
     required WidgetRef ref,
@@ -33,71 +232,44 @@ class DownloadPrompt {
       episode: episode,
       providerIndex: providerIndex,
       isAnime: mediaType == 'anime',
-      showTorrentOption: true,
     );
-    if (selection == null) return;
-    
-    if (selection.isTorrent && media != null) {
-      final torrentService = ref.read(torrentStreamServiceProvider);
-      final settingsResolution = ref.read(torrentQualityProvider);
-      
-      final torrentResult = await TorrentPickerSheet.show(
-        context,
-        media: media,
-        initialEpisode: episode ?? 1,
-        initialSeason: season ?? 1,
-        initialAbsoluteEpisode: null,
-        initialResolution: settingsResolution,
-        torrentStreamService: torrentService,
-      );
-
-      if (torrentResult != null) {
-        final torrentUrl = 'torrent|||${torrentResult.$1.link}';
-        await _queue(
-          mediaId, title, mediaType, season, episode, posterPath, 
-          torrentUrl, null, null, null, null
-        );
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Torrent download queued!')));
-        }
-      }
-      return;
-    }
+    if (selection == null || !context.mounted) return;
 
     var urlToDownload = selection.selectedSource?.url ?? selection.updatedResult?.url ?? streamResult.url;
     var finalResult = selection.updatedResult ?? streamResult;
-    var currentProviderIndex = selection.finalProviderIndex ?? providerIndex;
+    final currentProviderIndex = selection.finalProviderIndex ?? providerIndex;
 
-    if (media != null && currentProviderIndex != null && selection.audioLang != null && 
-        selection.audioLang != finalResult.selectedAudio && 
+    if (media != null && currentProviderIndex != null && selection.audioLang != null &&
+        selection.audioLang != finalResult.selectedAudio &&
         finalResult.availableAudios.contains(selection.audioLang)) {
-      if (context.mounted) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: NivioTheme.netflixDarkGrey,
-            content: Row(
-              children: [
-                SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: NivioTheme.accentColorOf(context), strokeWidth: 2)),
-                const SizedBox(width: 16),
-                Expanded(child: Text('Fetching ${selection.audioLang} stream...', style: const TextStyle(color: NivioTheme.netflixWhite))),
-              ],
-            ),
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: NivioTheme.sheetColorOf(ctx),
+          content: Row(
+            children: [
+              SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: NivioTheme.accentColorOf(ctx), strokeWidth: 2)),
+              const SizedBox(width: 16),
+              Expanded(child: Text('Fetching ${selection.audioLang} stream...', style: const TextStyle(color: NivioTheme.netflixWhite))),
+            ],
           ),
-        );
-      }
+        ),
+      );
 
       final streamingService = ref.read(streamingServiceProvider);
-      final newResult = await streamingService.fetchStreamUrl(
-        media: media,
-        season: season ?? 1,
-        episode: episode ?? 1,
-        providerIndex: currentProviderIndex,
-        preferredQuality: selection.selectedSource?.quality,
-        subDubPreference: selection.audioLang!.toLowerCase().contains('dub') ? 'dub' : 'sub',
-        preferredAudio: selection.audioLang,
-      );
+      StreamResult? newResult;
+      try {
+        newResult = await streamingService.fetchStreamUrl(
+          media: media,
+          season: season ?? 1,
+          episode: episode ?? 1,
+          providerIndex: currentProviderIndex,
+          preferredQuality: selection.selectedSource?.quality,
+          subDubPreference: selection.audioLang!.toLowerCase().contains('dub') ? 'dub' : 'sub',
+          preferredAudio: selection.audioLang,
+        );
+      } catch (_) {}
 
       if (context.mounted) {
         Navigator.pop(context); // Dismiss loading
@@ -108,7 +280,7 @@ class DownloadPrompt {
         finalResult = newResult;
       }
     }
-    
+
     String? subtitleUrl;
     if (selection.subtitleLang != null && selection.subtitleLang != 'Off') {
       try {
@@ -124,12 +296,12 @@ class DownloadPrompt {
     }
 
     await _queue(
-      mediaId, title, mediaType, season, episode, posterPath, 
+      mediaId, title, mediaType, season, episode, posterPath,
       urlToDownload, finalResult.headers, selection.audioLang, selection.subtitleLang, subtitleUrl
     );
-    
+
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Download queued!')));
+      showAppToast(context, 'Download queued', icon: Icons.download_rounded);
     }
   }
 
@@ -185,6 +357,8 @@ class DownloadPrompt {
     int? providerIndex,
     bool isAnime = false,
     bool showTorrentOption = false,
+    // The pickers already chose the stream; this offers other providers.
+    bool showServers = false,
   }) async {
     int? currentProviderIndex = providerIndex;
     StreamResult currentResult = streamResult;
@@ -197,11 +371,12 @@ class DownloadPrompt {
     
     // Fetch server list for the dropdown
     List<Map<String, dynamic>> availableServers = [];
-    if (media != null && currentProviderIndex != null) {
+    if (showServers && media != null && currentProviderIndex != null) {
       final streamingService = ref.read(streamingServiceProvider);
-      final max = streamingService.totalProvidersFor(isAnime: isAnimeMedia);
-      for (int i = 0; i < max; i++) {
-        if (streamingService.isDownloadable(i, isAnime: isAnimeMedia)) {
+      for (final i in await streamingService.downloadProviderOrder(
+        isAnime: isAnimeMedia,
+      )) {
+        {
           final name = streamingService.getProviderName(i, isAnime: isAnimeMedia);
           availableServers.add({
              'index': i,
@@ -217,7 +392,7 @@ class DownloadPrompt {
 
     await showModalBottomSheet(
       context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
+      backgroundColor: NivioTheme.sheetColorOf(context),
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) {
@@ -285,7 +460,7 @@ class DownloadPrompt {
                 }
 
                 // Default Audio Selection based on global prefs
-                final prefAudio = ref.read(preferredDownloadAudioLanguageProvider);
+                final prefAudio = ref.read(preferredAudioLanguageProvider);
                 if (currentResult.selectedAudio.isNotEmpty && audios.any((t) => t.language == currentResult.selectedAudio)) {
                   selectedAudio = currentResult.selectedAudio;
                 } else if (prefAudio == 'Original' && audios.isNotEmpty) {
@@ -298,7 +473,7 @@ class DownloadPrompt {
                 }
 
                 // Default Subtitle Selection based on global prefs
-                final prefSubtitle = ref.read(preferredDownloadSubtitleLanguageProvider);
+                final prefSubtitle = ref.read(preferredSubtitleLanguageProvider);
                 if (prefSubtitle == 'Auto' && subs.isNotEmpty) {
                   selectedSubtitle = subs.first.language;
                 } else if (prefSubtitle == 'Off') {
@@ -357,7 +532,7 @@ class DownloadPrompt {
                             child: DropdownButton<int>(
                               value: currentProviderIndex,
                               isExpanded: true,
-                              dropdownColor: NivioTheme.netflixDarkGrey,
+                              dropdownColor: NivioTheme.sheetColorOf(ctx),
                               icon: const Icon(Icons.arrow_drop_down, color: NivioTheme.netflixWhite),
                               items: availableServers.map((s) {
                                 return DropdownMenuItem<int>(
@@ -411,7 +586,7 @@ class DownloadPrompt {
                                 ? DropdownButton<M3u8VideoResolution>(
                                     value: selectedResolution,
                                     isExpanded: true,
-                                    dropdownColor: NivioTheme.netflixDarkGrey,
+                                    dropdownColor: NivioTheme.sheetColorOf(ctx),
                                     icon: const Icon(Icons.arrow_drop_down, color: NivioTheme.netflixWhite),
                                     items: resolvedResolutions.map((res) {
                                       return DropdownMenuItem(
@@ -424,7 +599,7 @@ class DownloadPrompt {
                                 : DropdownButton<StreamSource>(
                                     value: selectedSource,
                                     isExpanded: true,
-                                    dropdownColor: NivioTheme.netflixDarkGrey,
+                                    dropdownColor: NivioTheme.sheetColorOf(ctx),
                                     icon: const Icon(Icons.arrow_drop_down, color: NivioTheme.netflixWhite),
                                     items: currentResult.sources.map((source) {
                                        final hasMixedAudio = currentResult.sources.any((s) => s.isDub) && currentResult.sources.any((s) => !s.isDub);
@@ -455,7 +630,7 @@ class DownloadPrompt {
                             child: DropdownButton<String>(
                               value: selectedAudio,
                               isExpanded: true,
-                              dropdownColor: NivioTheme.netflixDarkGrey,
+                              dropdownColor: NivioTheme.sheetColorOf(ctx),
                               icon: const Icon(Icons.arrow_drop_down, color: NivioTheme.netflixWhite),
                               items: audioTracks.map((t) {
                                 return DropdownMenuItem(
@@ -481,7 +656,7 @@ class DownloadPrompt {
                             child: DropdownButton<String?>(
                               value: selectedSubtitle,
                               isExpanded: true,
-                              dropdownColor: NivioTheme.netflixDarkGrey,
+                              dropdownColor: NivioTheme.sheetColorOf(ctx),
                               icon: const Icon(Icons.arrow_drop_down, color: NivioTheme.netflixWhite),
                               items: [
                                 const DropdownMenuItem(value: null, child: Text('None (Off)', style: TextStyle(color: NivioTheme.netflixWhite))),

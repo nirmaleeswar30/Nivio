@@ -6,6 +6,7 @@ import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/services/playback/stream_selection.dart';
 import 'package:nivio/services/playback/stream_selection_settings.dart';
+import 'package:nivio/services/scrapers/net_mirror_source.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/widgets/stream_surfaces.dart';
 import 'package:nivio/widgets/settings_page_header.dart';
@@ -134,6 +135,7 @@ class _TorrentSourceSettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final enabled = ref.watch(enableTorrentsProvider);
+    final autoplay = ref.watch(torrentAutoplayProvider);
     return Scaffold(
       appBar: const SettingsPageHeader('Torrent sources'),
       body: SafeArea(
@@ -145,17 +147,37 @@ class _TorrentSourceSettingsScreen extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
               children: [
                 StreamPanel(
-                  child: SwitchListTile(
-                    title: const Text('Torrent playback'),
-                    subtitle: Text(
-                      enabled
-                          ? 'Play opens the torrent picker.'
-                          : 'Play opens the direct stream picker.',
-                    ),
-                    value: enabled,
-                    onChanged: ref
-                        .read(enableTorrentsProvider.notifier)
-                        .setEnabled,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SwitchListTile(
+                        title: const Text('Torrent playback'),
+                        subtitle: Text(
+                          !enabled
+                              ? 'Play opens the direct stream picker.'
+                              : autoplay
+                              ? 'Play starts the best torrent.'
+                              : 'Play opens the torrent picker.',
+                        ),
+                        value: enabled,
+                        onChanged: ref
+                            .read(enableTorrentsProvider.notifier)
+                            .setEnabled,
+                      ),
+                      SwitchListTile(
+                        title: const Text('Autoplay torrents'),
+                        subtitle: const Text(
+                          'Skip the picker and play the best-ranked torrent '
+                          'from the loading screen.',
+                        ),
+                        value: autoplay,
+                        onChanged: enabled
+                            ? ref
+                                  .read(torrentAutoplayProvider.notifier)
+                                  .setEnabled
+                            : null,
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -218,18 +240,6 @@ class _TorrentSourceSettingsScreen extends ConsumerWidget {
                         PhosphorIconsRegular.folder,
                       ),
                       SwitchListTile(
-                        title: const Text('Auto-select episode file'),
-                        subtitle: const Text(
-                          'Choose the episode file from a torrent pack.',
-                        ),
-                        value: ref.watch(torrentAutoSelectProvider),
-                        onChanged: enabled
-                            ? ref
-                                  .read(torrentAutoSelectProvider.notifier)
-                                  .setEnabled
-                            : null,
-                      ),
-                      SwitchListTile(
                         title: const Text('Persist torrent files'),
                         subtitle: const Text(
                           'Keep files on disk after playback stops.',
@@ -276,18 +286,34 @@ class _SectionHeading extends StatelessWidget {
   );
 }
 
-class _SourcePriorityScreen extends ConsumerWidget {
+class _SourcePriorityScreen extends ConsumerStatefulWidget {
   const _SourcePriorityScreen({this.isAnime = false});
 
   final bool isAnime;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_SourcePriorityScreen> createState() =>
+      _SourcePriorityScreenState();
+}
+
+class _SourcePriorityScreenState extends ConsumerState<_SourcePriorityScreen> {
+  // Desktop switches between the two lists in place.
+  late var _isAnime = widget.isAnime;
+
+  @override
+  Widget build(BuildContext context) {
     final settings = ref.watch(streamSelectionSettingsProvider).valueOrNull;
     final streaming = ref.watch(streamingServiceProvider);
+    final desktop =
+        AppPlatform.useDesktopLayout && MediaQuery.sizeOf(context).width >= 900;
+    final isAnime = _isAnime;
     return Scaffold(
       appBar: SettingsPageHeader(
-        isAnime ? 'Anime source priority' : 'Source priority',
+        desktop
+            ? 'Source priority'
+            : isAnime
+            ? 'Anime source priority'
+            : 'Source priority',
         titleTextStyle: AppPlatform.useDesktopLayout
             ? null
             : Theme.of(context).textTheme.titleLarge,
@@ -308,9 +334,7 @@ class _SourcePriorityScreen extends ConsumerWidget {
                       .where(available.containsKey),
                   ...available.keys,
                 }.toList();
-                void move(int from, int to) {
-                  final next = [...order];
-                  next.insert(to, next.removeAt(from));
+                void save(List<String> next) {
                   ref.read(streamSelectionSettingsProvider.notifier).change((
                     current,
                   ) {
@@ -324,6 +348,23 @@ class _SourcePriorityScreen extends ConsumerWidget {
                         ? current.copyWith(animeSourceOrder: saved)
                         : current.copyWith(sourceOrder: saved);
                   });
+                }
+
+                void move(int from, int to) {
+                  final next = [...order];
+                  next.insert(to, next.removeAt(from));
+                  save(next);
+                }
+
+                if (desktop) {
+                  return _DesktopSourcePriority(
+                    isAnime: isAnime,
+                    order: order,
+                    names: available,
+                    onAnimeChanged: (value) => setState(() => _isAnime = value),
+                    onMove: move,
+                    onReset: () => save([...available.keys]),
+                  );
                 }
 
                 return SafeArea(
@@ -389,6 +430,310 @@ class _SourcePriorityScreen extends ConsumerWidget {
                 );
               },
             ),
+    );
+  }
+}
+
+/// Desktop: the explanation and list switch on the left, the ranked list on
+/// the right.
+class _DesktopSourcePriority extends StatelessWidget {
+  const _DesktopSourcePriority({
+    required this.isAnime,
+    required this.order,
+    required this.names,
+    required this.onAnimeChanged,
+    required this.onMove,
+    required this.onReset,
+  });
+
+  final bool isAnime;
+  final List<String> order;
+  final Map<String, String> names;
+  final ValueChanged<bool> onAnimeChanged;
+  final void Function(int from, int to) onMove;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = NivioTheme.themeColorsOf(context);
+    final text = Theme.of(context).textTheme;
+    return SafeArea(
+      top: false,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1100),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(32, 8, 32, 0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 300,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SegmentedButton<bool>(
+                        showSelectedIcon: false,
+                        segments: const [
+                          ButtonSegment(
+                            value: false,
+                            label: Text('Movies & TV'),
+                            icon: Icon(PhosphorIconsRegular.filmStrip),
+                          ),
+                          ButtonSegment(
+                            value: true,
+                            label: Text('Anime'),
+                            icon: Icon(PhosphorIconsRegular.sparkle),
+                          ),
+                        ],
+                        selected: {isAnime},
+                        onSelectionChanged: (value) =>
+                            onAnimeChanged(value.first),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Play order',
+                        style: text.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Autoplay tries sources from the top. In the direct '
+                        'picker, streams that match equally well are listed '
+                        'in this order.',
+                        style: TextStyle(
+                          color: palette.textSecondary,
+                          height: 1.45,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Drag a row by its handle, or use the arrows. Changes '
+                        'save right away.',
+                        style: TextStyle(
+                          color: palette.textSecondary,
+                          fontSize: 12.5,
+                          height: 1.45,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      OutlinedButton.icon(
+                        onPressed: onReset,
+                        icon: const Icon(
+                          PhosphorIconsRegular.arrowCounterClockwise,
+                          size: 16,
+                        ),
+                        label: const Text('Reset to default order'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 40),
+                Expanded(
+                  child: ReorderableListView.builder(
+                    padding: const EdgeInsets.only(bottom: 32),
+                    buildDefaultDragHandles: false,
+                    itemCount: order.length,
+                    onReorder: (from, to) =>
+                        onMove(from, from < to ? to - 1 : to),
+                    proxyDecorator: (child, _, animation) => AnimatedBuilder(
+                      animation: animation,
+                      builder: (context, child) => Material(
+                        color: Colors.transparent,
+                        elevation: 12 * animation.value,
+                        shadowColor: Colors.black,
+                        borderRadius: BorderRadius.circular(12),
+                        child: child,
+                      ),
+                      child: child,
+                    ),
+                    itemBuilder: (_, index) => _PriorityRow(
+                      key: ValueKey(order[index]),
+                      index: index,
+                      name: names[order[index]]!,
+                      kind: _kind(names[order[index]]!),
+                      onTop: index > 0 ? () => onMove(index, 0) : null,
+                      onUp: index > 0 ? () => onMove(index, index - 1) : null,
+                      onDown: index + 1 < order.length
+                          ? () => onMove(index, index + 1)
+                          : null,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _kind(String name) {
+    if (isAnime) return 'Anime';
+    if (NetMirrorSource.names.contains(name)) {
+      return name.endsWith('M') ? 'Catalog · mobile' : 'Catalog';
+    }
+    return 'Direct';
+  }
+}
+
+class _PriorityRow extends StatefulWidget {
+  const _PriorityRow({
+    super.key,
+    required this.index,
+    required this.name,
+    required this.kind,
+    this.onTop,
+    this.onUp,
+    this.onDown,
+  });
+
+  final int index;
+  final String name;
+  final String kind;
+  final VoidCallback? onTop;
+  final VoidCallback? onUp;
+  final VoidCallback? onDown;
+
+  @override
+  State<_PriorityRow> createState() => _PriorityRowState();
+}
+
+class _PriorityRowState extends State<_PriorityRow> {
+  var _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = NivioTheme.themeColorsOf(context);
+    final podium = widget.index < 3;
+    final iconColor = palette.textSecondary;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+          decoration: BoxDecoration(
+            color: _hovered
+                ? palette.textPrimary.withValues(alpha: .06)
+                : palette.textPrimary.withValues(alpha: .025),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: podium
+                  ? palette.primary.withValues(alpha: _hovered ? .5 : .28)
+                  : palette.textPrimary.withValues(alpha: _hovered ? .12 : .06),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: podium
+                      ? palette.primary
+                      : palette.textPrimary.withValues(alpha: .08),
+                ),
+                child: Text(
+                  '${widget.index + 1}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    color: podium
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : palette.textSecondary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  widget.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: palette.textPrimary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14.5,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: palette.textPrimary.withValues(alpha: .06),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  widget.kind,
+                  style: TextStyle(
+                    color: palette.textSecondary,
+                    fontSize: 11.5,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              AnimatedOpacity(
+                opacity: _hovered ? 1 : 0,
+                duration: const Duration(milliseconds: 140),
+                child: IgnorePointer(
+                  ignoring: !_hovered,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Move to top',
+                        onPressed: widget.onTop,
+                        icon: Icon(
+                          PhosphorIconsRegular.arrowLineUp,
+                          size: 17,
+                          color: iconColor,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Move up',
+                        onPressed: widget.onUp,
+                        icon: Icon(
+                          PhosphorIconsRegular.caretUp,
+                          size: 17,
+                          color: iconColor,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Move down',
+                        onPressed: widget.onDown,
+                        icon: Icon(
+                          PhosphorIconsRegular.caretDown,
+                          size: 17,
+                          color: iconColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              ReorderableDragStartListener(
+                index: widget.index,
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.grab,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Icon(
+                      PhosphorIconsRegular.dotsSixVertical,
+                      size: 20,
+                      color: iconColor,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -617,7 +962,7 @@ class StreamPlaybackSettings extends ConsumerWidget {
                   min: 1,
                   max: 30,
                   description:
-                      'How long autoplay waits for search results before choosing or opening the picker.',
+                      'The longest Autoplay waits for sources. It starts sooner once your preferred resolution and audio come from the highest-priority source still searching.',
                   onChanged: (seconds) => change(
                     (value) => value.copyWith(timeoutSeconds: seconds),
                   ),
@@ -682,7 +1027,7 @@ class _PlaybackModeRow extends StatelessWidget {
       ),
       StreamSelectionMode.match => (
         PhosphorIconsRegular.sliders,
-        'Find the best match and play it after a five-second countdown.',
+        'Find the best match and play it from the loading screen.',
       ),
     };
     const radius = BorderRadius.all(Radius.circular(11));
@@ -913,7 +1258,10 @@ Future<void> _editResolutions(
           isScrollControlled: true,
           enableDrag: false,
           showDragHandle: true,
-          backgroundColor: NivioTheme.surfaceColorOf(context),
+          backgroundColor: NivioTheme.sheetColorOf(
+            context,
+            fallback: NivioTheme.surfaceColorOf(context),
+          ),
           constraints: const BoxConstraints(maxWidth: 560),
           builder: buildEditor,
         )

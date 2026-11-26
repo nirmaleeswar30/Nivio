@@ -79,6 +79,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     'Data & Account',
   ];
 
+  /// Desktop sidebar order: indexes into [_categories], plus Appearance.
+  static const List<int> _desktopCategoryOrder = [
+    0,
+    _appearanceCategory,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+  ];
+
+  static String _categoryLabel(int index) =>
+      index == _appearanceCategory ? 'Appearance' : _categories[index];
+
   void _handleBackNavigation() {
     if (_mobileCategory != null) {
       setState(() => _mobileCategory = null);
@@ -212,7 +230,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       appBar: SettingsPageHeader(
         category == null
             ? 'Settings'
-            : category == _appearanceCategory ? 'Appearance' : _categories[category],
+            : _categoryLabel(category),
         onBack: _handleBackNavigation,
       ),
       body: SafeArea(
@@ -339,6 +357,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     subtitle: 'Use colors from artwork. Turn off for AMOLED Black.',
     value: ref.watch(dynamicArtworkColorsProvider),
     onChanged: ref.read(dynamicArtworkColorsProvider.notifier).setEnabled,
+  );
+
+  Widget _watchPartyFollowHostTile() => _buildSwitchTile(
+    icon: Icons.groups_rounded,
+    title: "Watch Party: play host's source",
+    subtitle: 'When you join a party, play the stream the host picked. '
+        'Turn off to choose your own.',
+    value: ref.watch(watchPartyFollowHostSourceProvider),
+    onChanged: ref.read(watchPartyFollowHostSourceProvider.notifier).setEnabled,
   );
 
   Widget _buildProfileHeader(User user) {
@@ -521,7 +548,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF1F1F1F),
+          backgroundColor: NivioTheme.sheetColorOf(context, fallback: const Color(0xFF1F1F1F)),
           title: const Text(
             'Preferred Anime Audio',
             style: TextStyle(color: Colors.white, fontSize: 18),
@@ -620,6 +647,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           },
         ),
       );
+    }
+    if (_matches('content warnings parental guide playback')) {
+      results.add(_contentWarningsTile());
     }
     if (_matches('picture in picture pip lost visibility background')) {
       results.add(
@@ -770,25 +800,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
       );
     }
-    if (_matches('preferred download audio language')) {
-      results.add(
-        _buildActionTile(
-          icon: Icons.audio_file_rounded,
-          title: 'Preferred Download Audio',
-          subtitle: ref.watch(preferredDownloadAudioLanguageProvider),
-          onTap: _showDownloadAudioLanguageDialog,
-        ),
-      );
-    }
-    if (_matches('preferred download subtitle language')) {
-      results.add(
-        _buildActionTile(
-          icon: Icons.subtitles_rounded,
-          title: 'Preferred Download Subtitle',
-          subtitle: ref.watch(preferredDownloadSubtitleLanguageProvider),
-          onTap: _showDownloadSubtitleLanguageDialog,
-        ),
-      );
+    if (_matches('watch party host source stream follow participant')) {
+      results.add(_watchPartyFollowHostTile());
     }
     if (_matches('download concurrency parallel connections')) {
       results.add(
@@ -1037,6 +1050,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       child: Column(children: results),
     );
   }
+
+  Widget _contentWarningsTile() => _buildSwitchTile(
+    icon: Icons.info_outline_rounded,
+    title: 'Content Warnings',
+    subtitle: 'Show parental guidance when playback starts',
+    value: ref.watch(parentalGuideEnabledProvider),
+    onChanged: ref.read(parentalGuideEnabledProvider.notifier).setEnabled,
+  );
 
   Widget _streamSelectionTile() => _buildActionTile(
     icon: Icons.filter_list,
@@ -1315,7 +1336,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }) async {
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
+      backgroundColor: NivioTheme.sheetColorOf(context),
       builder: (sheetContext) {
         return SafeArea(
           child: ListView(
@@ -1695,7 +1716,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: NivioTheme.netflixDarkGrey,
+      backgroundColor: NivioTheme.sheetColorOf(context),
       builder: (sheetContext) {
         return DraggableScrollableSheet(
           initialChildSize: 0.8,
@@ -1716,7 +1737,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          backgroundColor: NivioTheme.netflixDarkGrey,
+          backgroundColor: NivioTheme.sheetColorOf(context),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text(
             'Seek Duration',
@@ -1787,7 +1808,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          backgroundColor: NivioTheme.netflixDarkGrey,
+          backgroundColor: NivioTheme.sheetColorOf(context),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text(
             'DNS over HTTPS URL',
@@ -1909,7 +1930,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
+      backgroundColor: NivioTheme.sheetColorOf(context),
       builder: (sheetContext) {
         return SafeArea(
           child: ListView(
@@ -2594,7 +2615,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       barrierDismissible: false,
       builder: (dialogContext) {
         return AlertDialog(
-          backgroundColor: NivioTheme.netflixDarkGrey,
+          backgroundColor: NivioTheme.sheetColorOf(context),
           content: Row(
             children: [
               SizedBox(
@@ -2639,7 +2660,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          backgroundColor: NivioTheme.netflixDarkGrey,
+          backgroundColor: NivioTheme.sheetColorOf(context),
           title: const Text(
             'Clear Watch History?',
             style: TextStyle(color: NivioTheme.netflixWhite),
@@ -2675,7 +2696,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Watch history cleared'),
+        content: Text(
+          'Watch history cleared',
+          style: TextStyle(color: Theme.of(context).colorScheme.onPrimary),
+        ),
         backgroundColor: NivioTheme.accentColorOf(context),
       ),
     );
@@ -2686,7 +2710,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          backgroundColor: NivioTheme.netflixDarkGrey,
+          backgroundColor: NivioTheme.sheetColorOf(context),
           title: const Text(
             'Clear Cache?',
             style: TextStyle(color: NivioTheme.netflixWhite),
@@ -2732,7 +2756,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Cache cleared'),
+        content: Text(
+          'Cache cleared',
+          style: TextStyle(color: Theme.of(context).colorScheme.onPrimary),
+        ),
         backgroundColor: NivioTheme.accentColorOf(context),
       ),
     );
@@ -2743,7 +2770,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          backgroundColor: NivioTheme.netflixDarkGrey,
+          backgroundColor: NivioTheme.sheetColorOf(context),
           title: const Text(
             'Sign Out?',
             style: TextStyle(color: NivioTheme.netflixWhite),
@@ -3018,7 +3045,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       builder: (ctx) {
         dialogContext = ctx;
         return AlertDialog(
-          backgroundColor: NivioTheme.netflixDarkGrey,
+          backgroundColor: NivioTheme.sheetColorOf(context),
           content: Row(
             children: [
               SizedBox(
@@ -3085,7 +3112,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     await showModalBottomSheet(
       context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
+      backgroundColor: NivioTheme.sheetColorOf(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -3151,7 +3178,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     await showModalBottomSheet(
       context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
+      backgroundColor: NivioTheme.sheetColorOf(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -3219,7 +3246,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     await showModalBottomSheet(
       context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
+      backgroundColor: NivioTheme.sheetColorOf(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -3353,7 +3380,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     await showModalBottomSheet(
       context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
+      backgroundColor: NivioTheme.sheetColorOf(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -3419,7 +3446,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     await showModalBottomSheet(
       context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
+      backgroundColor: NivioTheme.sheetColorOf(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -3485,7 +3512,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     await showModalBottomSheet(
       context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
+      backgroundColor: NivioTheme.sheetColorOf(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -3545,145 +3572,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  Future<void> _showDownloadAudioLanguageDialog() async {
-    final current = ref.read(preferredDownloadAudioLanguageProvider);
-    final options = ['Original', 'English', 'Japanese', 'Hindi', 'Tamil', 'Telugu', 'Spanish', 'French', 'Korean', 'German', 'Italian'];
-
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.symmetric(vertical: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              child: Text(
-                'Preferred Download Audio',
-                style: TextStyle(
-                  color: NivioTheme.netflixWhite,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Flexible(
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: options.length,
-                itemBuilder: (context, index) {
-                  final option = options[index];
-                  final isSelected = current == option;
-
-                  return ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-                    title: Text(
-                      option,
-                      style: TextStyle(
-                        color: isSelected
-                            ? NivioTheme.accentColorOf(context)
-                            : NivioTheme.netflixWhite,
-                        fontWeight:
-                            isSelected ? FontWeight.w600 : FontWeight.normal,
-                      ),
-                    ),
-                    trailing: isSelected
-                        ? Icon(Icons.check_circle_rounded,
-                            color: NivioTheme.accentColorOf(context))
-                        : null,
-                    onTap: () {
-                      ref.read(preferredDownloadAudioLanguageProvider.notifier).setLanguage(option);
-                      Navigator.pop(context);
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showDownloadSubtitleLanguageDialog() async {
-    final current = ref.read(preferredDownloadSubtitleLanguageProvider);
-    final options = ['Auto', 'Off', 'English', 'Japanese', 'Hindi', 'Tamil', 'Telugu', 'Spanish', 'French', 'Korean', 'German', 'Italian'];
-
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.symmetric(vertical: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              child: Text(
-                'Preferred Download Subtitle',
-                style: TextStyle(
-                  color: NivioTheme.netflixWhite,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Flexible(
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: options.length,
-                itemBuilder: (context, index) {
-                  final option = options[index];
-                  final isSelected = current == option;
-
-                  return ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-                    title: Text(
-                      option,
-                      style: TextStyle(
-                        color: isSelected
-                            ? NivioTheme.accentColorOf(context)
-                            : NivioTheme.netflixWhite,
-                        fontWeight:
-                            isSelected ? FontWeight.w600 : FontWeight.normal,
-                      ),
-                    ),
-                    trailing: isSelected
-                        ? Icon(Icons.check_circle_rounded,
-                            color: NivioTheme.accentColorOf(context))
-                        : null,
-                    onTap: () {
-                      ref.read(preferredDownloadSubtitleLanguageProvider.notifier).setLanguage(option);
-                      Navigator.pop(context);
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _showDownloadConcurrencyDialog() async {
     final current = ref.read(downloadConcurrencyProvider);
     final options = [2, 4, 6, 8, 12, 16];
 
     await showModalBottomSheet(
       context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
+      backgroundColor: NivioTheme.sheetColorOf(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -3803,11 +3698,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           Expanded(
             child: AppListView.builder(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              itemCount: _categories.length,
-              itemBuilder: (context, index) {
+              itemCount: _desktopCategoryOrder.length,
+              itemBuilder: (context, position) {
+                final index = _desktopCategoryOrder[position];
                 final isSelected = _selectedCategoryIndex == index;
                 return _SidebarCategoryTile(
-                  label: _categories[index],
+                  label: _categoryLabel(index),
                   isSelected: isSelected,
                   onTap: () => setState(() => _selectedCategoryIndex = index),
                 );
@@ -3852,7 +3748,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
           ] else ...[
             Text(
-              _categories[_selectedCategoryIndex],
+              _categoryLabel(_selectedCategoryIndex),
               style: const TextStyle(
                 color: NivioTheme.netflixWhite,
                 fontSize: 28,
@@ -4003,6 +3899,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         return Column(
           children: [
             _streamSelectionTile(),
+            _contentWarningsTile(),
             _buildActionTile(
               icon: Icons.record_voice_over_rounded,
               title: 'Preferred Anime Audio',
@@ -4018,6 +3915,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ref.read(autoPlayNextEpisodeProvider.notifier).setEnabled(val);
               },
             ),
+            _watchPartyFollowHostTile(),
             _buildSwitchTile(
               icon: Icons.picture_in_picture_alt_rounded,
               title: 'PiP on Lost Visibility',
@@ -4128,18 +4026,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       case 3: // Downloads
         return Column(
           children: [
-            _buildActionTile(
-              icon: Icons.audio_file_rounded,
-              title: 'Preferred Download Audio',
-              subtitle: ref.watch(preferredDownloadAudioLanguageProvider),
-              onTap: _showDownloadAudioLanguageDialog,
-            ),
-            _buildActionTile(
-              icon: Icons.subtitles_rounded,
-              title: 'Preferred Download Subtitle',
-              subtitle: ref.watch(preferredDownloadSubtitleLanguageProvider),
-              onTap: _showDownloadSubtitleLanguageDialog,
-            ),
             _buildActionTile(
               icon: Icons.speed_rounded,
               title: 'Parallel Download Connections',
@@ -4261,23 +4147,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               subtitle: NivioTheme.getTheme(appThemeKey).label,
               onTap: _showThemeDialog,
             ),
-            _buildUiScaleTile(uiScale, mobile: true),
+            _buildUiScaleTile(uiScale, mobile: mobile),
             if (_showLiquidGlassSetting) _buildLiquidGlassNavTile(),
           ],
         );
       case 8: // App & Updates
         return Column(
           children: [
-            if (!mobile) ...[
-              _dynamicColorsTile(),
-              _buildActionTile(
-                icon: Icons.palette_outlined,
-                title: 'App Theme',
-                subtitle: NivioTheme.getTheme(appThemeKey).label,
-                onTap: _showThemeDialog,
-              ),
-              _buildUiScaleTile(uiScale),
-            ],
             _buildActionTile(
               icon: Icons.play_circle_outline,
               title: 'Preview onboarding',
@@ -4470,7 +4346,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: NivioTheme.netflixDarkGrey,
+        backgroundColor: NivioTheme.sheetColorOf(context),
         title: const Text(
           'Untracked Anime Behavior',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
@@ -4587,7 +4463,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1F1F1F),
+        backgroundColor: NivioTheme.sheetColorOf(context, fallback: const Color(0xFF1F1F1F)),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Enter Simkl Code or URL',
             style: TextStyle(color: Colors.white)),
@@ -4650,7 +4526,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1F1F1F),
+        backgroundColor: NivioTheme.sheetColorOf(context, fallback: const Color(0xFF1F1F1F)),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Enter AniList Code or URL',
             style: TextStyle(color: Colors.white)),
@@ -4735,7 +4611,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1F1F1F),
+        backgroundColor: NivioTheme.sheetColorOf(context, fallback: const Color(0xFF1F1F1F)),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Enter MyAnimeList Code',
             style: TextStyle(color: Colors.white)),

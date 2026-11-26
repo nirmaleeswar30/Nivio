@@ -2,6 +2,7 @@ import 'package:nivio/widgets/tab_artwork.dart';
 import 'dart:ui';
 import 'package:nivio/core/app_platform.dart';
 import 'package:flutter/material.dart';
+import 'package:nivio/widgets/app_toast.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -76,17 +77,14 @@ class WatchPartyParticipantsSheet extends ConsumerWidget {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            InkWell(
+                            PressBounce(
+                              child: InkWell(
                               onTap: () {
                                 Clipboard.setData(ClipboardData(text: session.sessionCode));
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Session Code Copied!'),
-                                    duration: Duration(seconds: 2),
-                                  ),
-                                );
+                                showAppToast(context, 'Session code copied', icon: Icons.copy_rounded);
                               },
                               child: const Icon(Icons.copy, color: NivioTheme.netflixLightGrey, size: 16),
+                            ),
                             ),
                             const SizedBox(width: 16),
                             InkWell(
@@ -160,7 +158,7 @@ class WatchPartyParticipantsSheet extends ConsumerWidget {
                                         color: NivioTheme.accentColorOf(context),
                                         borderRadius: BorderRadius.circular(4),
                                       ),
-                                      child: const Text('Host', style: TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
+                                      child: Text('Host', style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onPrimary, fontWeight: FontWeight.bold)),
                                     ),
                                   if (hasControl)
                                     Container(
@@ -236,12 +234,7 @@ class WatchPartyParticipantsSheet extends ConsumerWidget {
     if (isDesktop) {
       await Clipboard.setData(ClipboardData(text: shareText));
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Watch Party invite link copied to clipboard!'),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        showAppToast(context, 'Invite link copied to clipboard', icon: Icons.link_rounded);
       }
       return;
     }

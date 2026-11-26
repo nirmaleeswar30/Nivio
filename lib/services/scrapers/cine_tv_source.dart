@@ -227,6 +227,19 @@ class CineTvSource {
     return uri == null || !isPublicWebUrl(uri) ? null : uri.toString();
   }
 
+  static const _downloadPrefix = 'cinetv|||';
+
+  /// A download URL that [freshDownloadUrl] signs again for every request,
+  /// since a signature only lasts a minute.
+  static String downloadUrl(Uri uri) => '$_downloadPrefix$uri';
+
+  /// The URL to request now for [url]; other URLs pass through.
+  static String freshDownloadUrl(String url) {
+    if (!url.startsWith(_downloadPrefix)) return url;
+    final uri = Uri.tryParse(url.substring(_downloadPrefix.length));
+    return uri == null ? url : signPlaybackUrl(uri).toString();
+  }
+
   static Uri signPlaybackUrl(Uri uri) {
     final expires = (DateTime.now().millisecondsSinceEpoch ~/ 1000 + 60)
         .toRadixString(16);

@@ -8,6 +8,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:flutter/material.dart';
 import '../widgets/download_prompt.dart';
+import 'package:nivio/widgets/app_toast.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:nivio/widgets/youtube_webview_player.dart';
@@ -35,7 +36,6 @@ import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/settings_providers.dart';
-import 'package:nivio/widgets/torrent_picker_sheet.dart';
 import 'package:nivio/models/watch_history.dart';
 import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
@@ -117,6 +117,11 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     debugLabel: 'Season picker',
     canRequestFocus: AppPlatform.isTv,
   );
+  // Desktop share copies the link; the button shows a check meanwhile.
+  bool _shareCopied = false;
+  Timer? _shareCopiedTimer;
+  // Set while the download button is finding a stream.
+  bool _preparingDownload = false;
 
   @override
   void initState() {
@@ -135,6 +140,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 
   @override
   void dispose() {
+    _shareCopiedTimer?.cancel();
     _seasonFocus.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -831,10 +837,13 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                       ),
                                       const SizedBox(width: 12),
                                       _plainIconButton(
-                                        icon: const Icon(
-                                          Icons.share_rounded,
-                                          color: NivioTheme.netflixWhite,
-                                          size: 24,
+                                        icon: ConfirmIconSwap(
+                                          done: _shareCopied,
+                                          icon: const Icon(
+                                            Icons.share_rounded,
+                                            color: NivioTheme.netflixWhite,
+                                            size: 24,
+                                          ),
                                         ),
                                         iconColor: NivioTheme.netflixWhite,
                                         onTap: () => _shareMedia(media),
@@ -1099,10 +1108,13 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                               ),
                               const SizedBox(width: 6),
                               _plainIconButton(
-                                icon: const Icon(
-                                  Icons.share_rounded,
-                                  color: NivioTheme.netflixWhite,
-                                  size: 24,
+                                icon: ConfirmIconSwap(
+                                  done: _shareCopied,
+                                  icon: const Icon(
+                                    Icons.share_rounded,
+                                    color: NivioTheme.netflixWhite,
+                                    size: 24,
+                                  ),
                                 ),
                                 iconColor: NivioTheme.netflixWhite,
                                 onTap: () => _shareMedia(media),
@@ -1449,14 +1461,12 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     // No share sheet on desktop OSes; copy the link instead.
     if (AppPlatform.isDesktopOS) {
       Clipboard.setData(ClipboardData(text: shareText));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Share link copied to clipboard!'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
+      showAppToast(context, 'Share link copied to clipboard', icon: Icons.link_rounded);
+      _shareCopiedTimer?.cancel();
+      setState(() => _shareCopied = true);
+      _shareCopiedTimer = Timer(const Duration(milliseconds: 1800), () {
+        if (mounted) setState(() => _shareCopied = false);
+      });
       return;
     }
 
@@ -1468,84 +1478,26 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   }
 
   Future<void> _handleDownload(SearchResult media) async {
-    final streamingService = ref.read(streamingServiceProvider);
-    final isAnime = StreamingService.isAnimeMedia(media);
-
-    if (isAnime) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Preparing servers...')));
-      }
-      final subDubPref = ref
-          .read(languagePreferencesProvider)
-          .animePreferredAudio;
-      await streamingService.prepareProviders(
-        media: media,
-        season: 1,
-        episode: 1,
-        subDubPreference: subDubPref,
-      );
-    }
-
-    final maxProviders = streamingService.totalProvidersFor(isAnime: isAnime);
-
-    if (media.mediaType == 'movie') {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Preparing movie download...')),
-        );
-      }
-
-      StreamResult? result;
-      int? usedProviderIndex;
-
-      for (int providerIndex = 0; providerIndex < maxProviders; providerIndex++) {
-        if (!streamingService.isDownloadable(providerIndex, isAnime: isAnime)) {
-          continue;
-        }
-
-        try {
-          result = await streamingService.fetchStreamUrl(
-            media: media,
-            providerIndex: providerIndex,
-          );
-        } catch (e) {
-          debugPrint(
-            'Movie download probe failed for provider $providerIndex: $e',
-          );
-        }
-
-        if (result != null && result.url.isNotEmpty) {
-          usedProviderIndex = providerIndex;
-          break;
-        }
-      }
-
-      if (result != null && result.url.isNotEmpty) {
-        await DownloadPrompt.showAndQueue(
-          context: context,
-          ref: ref,
-          streamResult: result,
-          mediaId: media.id,
-          title: media.title ?? media.name ?? 'Movie',
-          mediaType: isAnime ? 'anime' : media.mediaType,
-          posterPath: media.posterPath,
-          media: media,
-          providerIndex: usedProviderIndex,
-        );
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to find downloadable stream on any server.'),
-            ),
-          );
-        }
-      }
-    } else {
+    if (_preparingDownload) return;
+    if (media.mediaType != 'movie') {
       // Show dialog for Download All vs Season
       _showDownloadDialog(media);
+      return;
+    }
+    setState(() => _preparingDownload = true);
+    try {
+      await DownloadPrompt.downloadTitle(
+        context: context,
+        ref: ref,
+        media: media,
+        title: media.title ?? media.name ?? 'Movie',
+        mediaType: StreamingService.isAnimeMedia(media)
+            ? 'anime'
+            : media.mediaType,
+        posterPath: media.posterPath,
+      );
+    } finally {
+      if (mounted) setState(() => _preparingDownload = false);
     }
   }
 
@@ -1555,7 +1507,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       configuration: const FadeScaleTransitionConfiguration(),
       builder: (context) {
         return AlertDialog(
-          backgroundColor: NivioTheme.netflixDarkGrey,
+          backgroundColor: NivioTheme.sheetColorOf(context),
           title: const Text(
             'Download Episodes',
             style: TextStyle(color: Colors.white),
@@ -1646,19 +1598,12 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     }
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Probing first episode for language options...'),
-      ),
-    );
-
-    // Probe the first episode to discover available audio/subtitle tracks
-    final seriesInfoAsync = ref.read(seriesInfoProvider(media.id));
-    final seriesInfo = seriesInfoAsync.valueOrNull;
+    final seriesInfo = ref.read(seriesInfoProvider(media.id)).valueOrNull;
     if (seriesInfo == null) return;
 
-    // Find the first valid episode to probe
-    int probeSeason =
+    // The first aired episode stands in for the batch: its source (picked
+    // like Play picks one) and language choices apply to every episode.
+    final probeSeason =
         singleSeason ??
         seriesInfo.seasons
             .firstWhere(
@@ -1673,101 +1618,47 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       (ep) => _isEpisodeAired(ep),
       orElse: () => probeSeasonData.episodes.first,
     );
+    if (!mounted) return;
 
-    final maxProviders = streamingService.totalProvidersFor(isAnime: isAnime);
-    StreamResult? probeResult;
-    int? usedProviderIndex;
+    final source = await DownloadPrompt.pickSource(
+      context: context,
+      ref: ref,
+      media: media,
+      season: probeSeason,
+      episode: probeEpisode.episodeNumber,
+    );
+    if (source == null || !mounted) return;
 
-    for (int providerIndex = 0; providerIndex < maxProviders; providerIndex++) {
-      if (!streamingService.isDownloadable(providerIndex, isAnime: isAnime)) {
-        continue;
-      }
-
-      try {
-        probeResult = await streamingService.fetchStreamUrl(
-          media: media,
-          season: probeSeason,
-          episode: probeEpisode.episodeNumber,
-          providerIndex: providerIndex,
-        );
-      } catch (e) {
-        debugPrint(
-          'Batch probe failed for provider $providerIndex: $e',
-        );
-      }
-
-      if (probeResult != null && probeResult.url.isNotEmpty) {
-        usedProviderIndex = providerIndex;
-        break;
-      }
-    }
-
-    if (probeResult == null || probeResult.url.isEmpty) {
+    if (source.torrent case final torrent?) {
+      // A torrent pick is one item: the whole release it points at.
+      await DownloadService.queueDownload(
+        mediaId: media.id,
+        title: '${media.title ?? media.name ?? 'Series'}|||Season Batch',
+        mediaType: media.mediaType,
+        season: probeSeason,
+        episode: 1, // Store as episode 1 but it's a batch
+        posterPath: media.posterPath,
+        streamUrl: 'torrent|||${torrent.link}',
+      );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Failed to find downloadable stream on any server.',
-            ),
-          ),
-        );
+        showAppToast(context, 'Torrent batch queued', icon: Icons.download_rounded);
       }
       return;
     }
 
-    if (!mounted) return;
-
-    // Show language picker (returns null if user cancels)
+    final usedProviderIndex = source.providerIndex;
     final langChoice = await DownloadPrompt.pickLanguages(
       context: context,
       ref: ref,
-      streamResult: probeResult,
+      streamResult: source.direct!,
       media: media,
-      season: singleSeason ?? 1,
-      episode: 1,
-      providerIndex: usedProviderIndex ?? 0,
+      season: probeSeason,
+      episode: probeEpisode.episodeNumber,
+      providerIndex: usedProviderIndex,
       isAnime: media.mediaType == 'anime',
-      showTorrentOption: true,
     );
 
     if (langChoice == null) return; // User cancelled
-
-    if (langChoice.isTorrent) {
-      final torrentService = ref.read(torrentStreamServiceProvider);
-      final settingsResolution = ref.read(torrentQualityProvider);
-      
-      final torrentResult = await TorrentPickerSheet.show(
-        context,
-        media: media,
-        initialEpisode: 1,
-        initialSeason: singleSeason ?? 1,
-        initialAbsoluteEpisode: null,
-        initialResolution: settingsResolution,
-        torrentStreamService: torrentService,
-      );
-
-      if (torrentResult != null) {
-        final torrentUrl = 'torrent|||${torrentResult.$1.link}';
-        
-        // If it's a batch download, should we just queue one download item for the whole season?
-        // Or queue individual items? The user chose a specific torrent which might be a batch or single episode.
-        // For simplicity right now, if the user picks a torrent here, we just add ONE download item for the season.
-        // It will download the entire torrent. 
-        await DownloadService.queueDownload(
-          mediaId: media.id,
-          title: '${media.title ?? media.name ?? 'Series'}|||Season Batch',
-          mediaType: media.mediaType,
-          season: singleSeason ?? 1,
-          episode: 1, // Store as episode 1 but it's a batch
-          posterPath: media.posterPath,
-          streamUrl: torrentUrl,
-        );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Torrent Batch queued!')));
-        }
-      }
-      return;
-    }
 
     final preferredQuality = langChoice.selectedSource?.quality;
     String? subDubPreference = langChoice.selectedSource != null
@@ -1779,7 +1670,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           : 'sub';
     }
 
-    final finalProviderIndex = langChoice.finalProviderIndex ?? usedProviderIndex ?? 0;
+    final finalProviderIndex = langChoice.finalProviderIndex ??
+        usedProviderIndex ??
+        (await streamingService.downloadProviderOrder(isAnime: isAnime)).first;
 
     // Now queue the actual downloads
     if (singleSeason != null) {
@@ -1934,16 +1827,14 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     String? subDubPreference,
   }) async {
     final isAnime = StreamingService.isAnimeMedia(media);
-    final maxProviders = streamingService.totalProvidersFor(isAnime: isAnime);
 
     StreamResult? result;
-    final orderedIndices = <int>[
-      initialProviderIndex,
-      ...List.generate(maxProviders, (i) => i).where((i) => i != initialProviderIndex),
-    ];
+    // The chosen source first, then the rest in source priority order.
+    final orderedIndices = await streamingService.downloadProviderOrder(
+      isAnime: isAnime,
+      first: initialProviderIndex,
+    );
     for (final providerIndex in orderedIndices) {
-      if (!streamingService.isDownloadable(providerIndex, isAnime: isAnime))
-        continue;
 
       try {
         result = await streamingService.fetchStreamUrl(
@@ -2613,7 +2504,7 @@ class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
     final current = _selectedYoutubeQuality;
     final selected = await showModalBottomSheet<String>(
       context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
+      backgroundColor: NivioTheme.sheetColorOf(context),
       builder: (sheetContext) {
         return SafeArea(
           child: ListView(
@@ -3099,16 +2990,18 @@ class _HoverSlideIconButtonState extends State<_HoverSlideIconButton> {
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutBack,
-          transform: Matrix4.translationValues(0, _isHovered ? -4 : 0, 0),
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: _isHovered ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
+        child: PressBounce(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutBack,
+            transform: Matrix4.translationValues(0, _isHovered ? -4 : 0, 0),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _isHovered ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
+            ),
+            child: widget.icon,
           ),
-          child: widget.icon,
         ),
       ),
     ),

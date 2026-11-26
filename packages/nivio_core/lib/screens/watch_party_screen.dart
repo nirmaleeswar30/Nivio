@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:flutter/material.dart';
+import 'package:nivio/widgets/app_toast.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -113,6 +114,7 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
 
   @override
   void dispose() {
+    _copiedTimer?.cancel();
     _playbackSubscription?.cancel();
     _codeController.dispose();
     super.dispose();
@@ -138,6 +140,18 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
         'partyRole': isHost ? 'host' : 'participant',
       },
     ).toString();
+  }
+
+  _Copied? _copied;
+  Timer? _copiedTimer;
+
+  /// Shows a check on the copy or share button for a moment.
+  void _flashCopied({bool link = false}) {
+    _copiedTimer?.cancel();
+    setState(() => _copied = link ? _Copied.link : _Copied.code);
+    _copiedTimer = Timer(const Duration(milliseconds: 1800), () {
+      if (mounted) setState(() => _copied = null);
+    });
   }
 
   void _showMessage(String message) {
@@ -284,7 +298,9 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
 
   Future<void> _copyCode(String code) async {
     await Clipboard.setData(ClipboardData(text: code.toUpperCase()));
-    _showMessage('Code copied');
+    if (!mounted) return;
+    showAppToast(context, 'Room code copied', icon: Icons.copy_rounded);
+    _flashCopied();
   }
 
   Future<void> _sharePartyLink(String code) async {
@@ -306,7 +322,9 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
     final isDesktop = AppPlatform.isDesktopOS;
     if (isDesktop) {
       await Clipboard.setData(ClipboardData(text: shareText));
-      _showMessage('Invite link copied to clipboard!');
+      if (!mounted) return;
+      showAppToast(context, 'Invite link copied to clipboard', icon: Icons.link_rounded);
+      _flashCopied(link: true);
       return;
     }
 
@@ -419,22 +437,35 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
                   ),
                 ),
               ),
-              IconButton(
-                tooltip: 'Copy Code',
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _copyCode(session.sessionCode),
-                icon: const Icon(Icons.copy, size: 18, color: Colors.white70),
+              PressBounce(
+                child: IconButton(
+                  tooltip: 'Copy Code',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _copyCode(session.sessionCode),
+                  icon: ConfirmIconSwap(
+                    done: _copied == _Copied.code,
+                    size: 18,
+                    icon: const Icon(Icons.copy, size: 18, color: Colors.white70),
+                  ),
+                ),
               ),
               const SizedBox(width: 4),
-              FilledButton.icon(
+              PressBounce(
+                child: FilledButton.icon(
                 onPressed: () => _sharePartyLink(session.sessionCode),
-                icon: const Icon(Icons.share, size: 15),
+                icon: ConfirmIconSwap(
+                  done: _copied == _Copied.link,
+                  size: 15,
+                  color: Colors.white,
+                  icon: const Icon(Icons.share, size: 15),
+                ),
                 label: const Text('Share Link'),
                 style: FilledButton.styleFrom(
                   backgroundColor: NivioTheme.netflixRed,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                 ),
+              ),
               ),
             ],
           ),
@@ -714,3 +745,5 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
     );
   }
 }
+
+enum _Copied { code, link }

@@ -213,9 +213,11 @@ class HubDownloadSources {
             ),
           );
         } else {
-          output.add(
-            _stream(mirror, 'GDFlix', '$label - GDFlix [1080p]', 1080, null),
-          );
+          for (final file in await _gdflixFiles(mirror)) {
+            output.add(
+              _stream(file, 'GDFlix', '$label - GDFlix [1080p]', 1080, null),
+            );
+          }
         }
         if (output.length >= 100) return output.take(100).toList();
       }
@@ -530,9 +532,15 @@ class HubDownloadSources {
               text.contains('pixelserver') ||
               host.contains('hubcloud.cx'))) {
         name = 'HubCloud 10Gbps';
+        // These answer with a redirect chain ending on a page whose `link`
+        // parameter is the file; the button URL itself is an HTML page.
+        link = await _linkParameter(link, referer: page.uri);
       } else if (text.contains('download file') || host.endsWith('.r2.dev')) {
         name = 'Direct R2';
-      } else if (text.contains('zipdisk') || host.endsWith('.workers.dev')) {
+      } else if (text.contains('zipdisk')) {
+        // A ZIP archive of the video: it can't be played or saved as one.
+        continue;
+      } else if (host.endsWith('.workers.dev')) {
         name = 'ZipDisk Server';
       } else if (moviesDrive && text.contains('s3 server')) {
         name = 'HubCloud - S3';
@@ -559,6 +567,36 @@ class HubDownloadSources {
       );
     }
     return output;
+  }
+
+  /// Follows [link]'s redirects to the URL carrying a `link` parameter and
+  /// returns that parameter, or null when there is none.
+  Future<Uri?> _linkParameter(Uri link, {Uri? referer}) async {
+    var current = link;
+    if (!current.queryParameters.containsKey('link')) {
+      final landed = await _get(current, referer: referer, readBody: false);
+      if (landed == null) return null;
+      current = landed.uri;
+    }
+    final target = _url(current, current.queryParameters['link']);
+    return target != null && isPublicWebUrl(target) ? target : null;
+  }
+
+  /// File links on a GDFlix page. Its own buttons only generate links in the
+  /// browser, so a mirror without a plain file link is skipped.
+  Future<List<Uri>> _gdflixFiles(Uri mirror) async {
+    final page = await _get(mirror);
+    if (page == null) return const [];
+    return _anchors(page.uri, html.parse(page.body).querySelectorAll('a[href]'))
+        .where(
+          (uri) =>
+              uri.host.endsWith('.r2.dev') ||
+              (uri.host.contains('pixeldrain') &&
+                  uri.path.startsWith('/api/file/')) ||
+              _video.hasMatch(uri.path),
+        )
+        .toSet()
+        .toList();
   }
 
   Future<Uri?> _buzz(Uri uri) async {

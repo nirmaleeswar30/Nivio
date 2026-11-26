@@ -318,7 +318,7 @@ class _SportsViewState extends ConsumerState<SportsView>
     final isDesktop = AppPlatform.useDesktopLayout;
     showModalBottomSheet(
       context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
+      backgroundColor: NivioTheme.sheetColorOf(context),
       constraints: BoxConstraints(maxWidth: isDesktop ? 500 : double.infinity),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),

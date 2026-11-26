@@ -18,6 +18,96 @@ import 'package:nivio/widgets/mobile_stream_picker.dart';
 import 'package:nivio/screens/stream_selection_screen.dart';
 import 'package:nivio/services/playback/stream_selection.dart';
 
+class TorrentSearchException implements Exception {
+  const TorrentSearchException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// Runs the picker's default search for a title and returns the ranked
+/// results with the query that produced them (needed to start a torrent).
+Future<({List<TorrentResult> results, Object query})> searchTorrentsForTitle({
+  required TorrentStreamService service,
+  required SearchResult media,
+  required int season,
+  required int episode,
+  int? absoluteEpisode,
+  required String resolution,
+  List<RegExp> preferredFormats = const [],
+  void Function(String status)? onStatus,
+}) async {
+  if (StreamingService.isAnimeMedia(media)) {
+    final query = await service.queryBuilder.build(
+      media,
+      episode,
+      season: season,
+      resolution: resolution,
+      absoluteEpisode: absoluteEpisode,
+    );
+    final results = await service.searchTorrents(
+      query: query,
+      onStatus: onStatus,
+    );
+    return (results: results, query: query);
+  }
+
+  final isMovie = media.mediaType == 'movie';
+  onStatus?.call('Resolving IMDb ID…');
+  final imdbId = await service.tmdbService?.getImdbId(
+    tmdbId: media.id,
+    isMovie: isMovie,
+  );
+  if (imdbId == null || imdbId.isEmpty) {
+    throw const TorrentSearchException(
+      'Could not resolve IMDb ID for torrent search.',
+    );
+  }
+  final query = MediaTorrentQuery(
+    imdbId: imdbId,
+    tmdbId: media.id,
+    title: media.title ?? media.name ?? '',
+    isMovie: isMovie,
+    season: isMovie ? null : season,
+    episode: isMovie ? null : episode,
+    resolution: resolution,
+  );
+  var results = await service.searchMediaTorrents(
+    query: query,
+    onStatus: onStatus,
+    rank: preferredFormats.isEmpty,
+  );
+  if (preferredFormats.isNotEmpty) {
+    results = MediaRanking.rank(
+      results,
+      query,
+      preferredFormats: preferredFormats,
+    );
+  }
+  return (results: results, query: query);
+}
+
+/// Results the picker lists under a file size limit. A pack's total size
+/// does not tell us the size of the episode inside it, so packs stay.
+List<TorrentResult> visibleTorrents(
+  List<TorrentResult> results,
+  int? maxFileBytes,
+) => maxFileBytes == null
+    ? results
+    : results
+          .where((result) => result.isBatch || result.sizeBytes <= maxFileBytes)
+          .toList();
+
+/// The result autoplay picks: the top-ranked one that fits the size limit.
+TorrentResult? bestTorrentFor(List<TorrentResult> results, int? maxFileBytes) {
+  final visible = visibleTorrents(results, maxFileBytes);
+  if (maxFileBytes == null) return visible.firstOrNull;
+  return visible
+      .where((result) => result.sizeBytes > 0 && result.sizeBytes <= maxFileBytes)
+      .firstOrNull;
+}
+
 class TorrentPickerSheet extends StatefulWidget {
   final SearchResult media;
   final int initialEpisode;
@@ -27,7 +117,7 @@ class TorrentPickerSheet extends StatefulWidget {
   final TorrentStreamService torrentStreamService;
   final void Function(String status)? onStatusUpdate;
   final bool isFullScreen;
-  /// Uses the saved torrent setting when no playback mode overrides it.
+  /// Counts down and plays the best result; off unless true.
   final bool? autoSelect;
   final bool groupBySource;
   final int? maxFileBytes;
@@ -64,60 +154,32 @@ class TorrentPickerSheet extends StatefulWidget {
     List<DeviceOrientation> restoreOrientations = const [],
     List<RegExp> preferredFormats = const [],
   }) async {
+    // Every platform uses the full-page picker; desktop pushes it on the
+    // root navigator so it covers the shell (and the player).
     final isMobile = Platform.isAndroid || Platform.isIOS;
-    if (isMobile) {
-      return pushMobileStreamPicker(
-        Navigator.of(context),
-        MaterialPageRoute<(TorrentResult, dynamic, {bool automatic})>(
-          builder: (context) => Scaffold(
-            backgroundColor: const Color(0xFF0F0F0F),
-            body: TorrentPickerSheet(
-              media: media,
-              initialEpisode: initialEpisode,
-              initialSeason: initialSeason,
-              initialAbsoluteEpisode: initialAbsoluteEpisode,
-              initialResolution: initialResolution,
-              torrentStreamService: torrentStreamService,
-              onStatusUpdate: onStatusUpdate,
-              isFullScreen: true,
-              autoSelect: autoSelect,
-              groupBySource: groupBySource,
-              maxFileBytes: maxFileBytes,
-              preferredFormats: preferredFormats,
-            ),
+    return pushMobileStreamPicker(
+      Navigator.of(context, rootNavigator: !isMobile),
+      MaterialPageRoute<(TorrentResult, dynamic, {bool automatic})>(
+        builder: (context) => Scaffold(
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          body: TorrentPickerSheet(
+            media: media,
+            initialEpisode: initialEpisode,
+            initialSeason: initialSeason,
+            initialAbsoluteEpisode: initialAbsoluteEpisode,
+            initialResolution: initialResolution,
+            torrentStreamService: torrentStreamService,
+            onStatusUpdate: onStatusUpdate,
+            isFullScreen: true,
+            autoSelect: autoSelect,
+            groupBySource: groupBySource,
+            maxFileBytes: maxFileBytes,
+            preferredFormats: preferredFormats,
           ),
         ),
-        restoreOrientations,
-      );
-    }
-
-    final navigator = Navigator.of(context, rootNavigator: true);
-    final route = DialogRoute<(TorrentResult, dynamic, {bool automatic})>(
-      context: context,
-      themes: InheritedTheme.capture(from: context, to: navigator.context),
-      barrierColor: Colors.black.withOpacity(0.8), // Darker backdrop for cinematic feel
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: TorrentPickerSheet(
-          media: media,
-          initialEpisode: initialEpisode,
-          initialSeason: initialSeason,
-          initialAbsoluteEpisode: initialAbsoluteEpisode,
-          initialResolution: initialResolution,
-          torrentStreamService: torrentStreamService,
-          onStatusUpdate: onStatusUpdate,
-          isFullScreen: false,
-          autoSelect: autoSelect,
-          groupBySource: groupBySource,
-          maxFileBytes: maxFileBytes,
-          preferredFormats: preferredFormats,
-        ),
       ),
+      restoreOrientations,
     );
-    final selection = await navigator.push(route);
-    if (selection == null) await route.completed;
-    return selection;
   }
 
   @override
@@ -149,22 +211,12 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
   bool get _isMovie => !_isAnime && widget.media.mediaType == 'movie';
 
   TorrentResult? get _autoSelectCandidate {
-    final limit = _maxFileBytes;
     final results = _filteredResults;
-    if (limit == null || results == null) return results?.firstOrNull;
-    return results
-        .where((result) => result.sizeBytes > 0 && result.sizeBytes <= limit)
-        .firstOrNull;
+    return results == null ? null : bestTorrentFor(results, _maxFileBytes);
   }
 
   void _showResults(List<TorrentResult> results) {
-    final limit = _maxFileBytes;
-    // A pack's total size does not tell us the size of the episode inside it.
-    final visible = limit == null
-        ? results
-        : results
-            .where((result) => result.isBatch || result.sizeBytes <= limit)
-            .toList();
+    final visible = visibleTorrents(results, _maxFileBytes);
     setState(() {
       _filteredResults = visible;
       _hasOversizedResults = visible.length < results.length;
@@ -203,77 +255,27 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
     _autoPlayTimer?.cancel();
     
     try {
-      List<TorrentResult> results;
-      if (_isAnime) {
-        final animeQuery = await _searchService.queryBuilder.build(
-          widget.media,
-          _episode,
-          season: widget.initialSeason,
-          resolution: _resolution,
-          absoluteEpisode: widget.initialAbsoluteEpisode,
-        );
-        if (!mounted || request != _searchRequest) return;
-        _currentQuery = animeQuery;
-        
-        results = await _searchService.searchTorrents(
-          query: animeQuery,
-          onStatus: widget.onStatusUpdate,
-        );
-      } else {
-        final isMovie = _isMovie;
-        widget.onStatusUpdate?.call('Resolving IMDb ID…');
-        String? imdbId;
-        if (_searchService.tmdbService != null) {
-          imdbId = await _searchService.tmdbService!.getImdbId(
-            tmdbId: widget.media.id,
-            isMovie: isMovie,
-          );
-        }
-        
-        if (!mounted || request != _searchRequest) return;
-        if (imdbId == null || imdbId.isEmpty) {
-          setState(() {
-            _error = 'Could not resolve IMDb ID for torrent search.';
-          });
-          return;
-        }
-
-        final mediaQuery = MediaTorrentQuery(
-          imdbId: imdbId,
-          tmdbId: widget.media.id,
-          title: widget.media.title ?? widget.media.name ?? '',
-          isMovie: isMovie,
-          season: isMovie ? null : widget.initialSeason,
-          episode: isMovie ? null : _episode,
-          resolution: _resolution,
-        );
-        _currentQuery = mediaQuery;
-
-        final formats = _preferredFormats;
-        results = await _searchService.searchMediaTorrents(
-          query: mediaQuery,
-          onStatus: widget.onStatusUpdate,
-          rank: formats.isEmpty,
-        );
-        if (formats.isNotEmpty) {
-          results = MediaRanking.rank(results, mediaQuery, preferredFormats: formats);
-        }
-      }
-      
+      final search = await searchTorrentsForTitle(
+        service: _searchService,
+        media: widget.media,
+        season: widget.initialSeason,
+        episode: _episode,
+        absoluteEpisode: widget.initialAbsoluteEpisode,
+        resolution: _resolution,
+        preferredFormats: _preferredFormats,
+        onStatus: widget.onStatusUpdate,
+      );
       if (!mounted || request != _searchRequest) return;
-      
+      _currentQuery = search.query;
+
       // Preserve the ranking order from the service (TorrentRanking for anime,
       // MediaRanking for movies/shows) — it already accounts for the selected
       // resolution, so re-sorting by seeders here would override that.
 
-      _showResults(results);
+      _showResults(search.results);
       
       if (_autoSelectCandidate != null) {
-        final autoSelect = widget.autoSelect ??
-            (await SharedPreferences.getInstance()).getBool('torrent_auto_select') ??
-            true;
-        if (!mounted || request != _searchRequest) return;
-        if (autoSelect && !_isCancelled) {
+        if (widget.autoSelect == true && !_isCancelled) {
           setState(() {
             _countdown = 5;
             _startAutoPlay();
@@ -418,7 +420,7 @@ class _TorrentPickerSheetState extends State<TorrentPickerSheet> {
 
   Future<void> _openPlaybackSettings() async {
     _cancelAutoPlay();
-    final updated = await editPickerPlaybackSettings(context, asSheet: widget.isFullScreen);
+    final updated = await editPickerPlaybackSettings(context, asSheet: Platform.isAndroid || Platform.isIOS);
     if (!mounted || updated == null) return;
     _preferredFormats = updated.torrentFormatPreferences;
     _maxFileBytes = updated.maxFileBytes;

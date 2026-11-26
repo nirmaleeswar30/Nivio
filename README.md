@@ -165,6 +165,7 @@ Nivio is free and open source. If it makes your day a little better, consider su
 * **Custom Subtitles & Persistence** (Local .srt/.vtt or remote URLs)
 * **Native Desktop, Mobile & TV Apps** (Windows, Linux, Android, Android TV / Google TV, iPhone and iPad)
 * **HDR, Dolby Vision & Tone Mapping** ([platform details](#hdr))
+* **Dolby Atmos Audio** — Enable **Settings → Playback → Dolby audio passthrough** for compatible audio outputs at 1× speed. Supports Dolby Digital Plus Atmos on Android, Android TV, iPhone, and iPad, and Dolby Digital Plus or TrueHD Atmos over compatible HDMI outputs on Windows and Linux.
 * **Live TV & IPTV** (M3U playlists and Xtream Codes, including Xtream movies & series)
 * **Seek-Bar Thumbnail Previews** (for sources that provide sprite sheets)
 * **Discord Rich Presence** (desktop and Android)

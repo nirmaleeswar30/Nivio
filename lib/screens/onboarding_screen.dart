@@ -53,11 +53,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     with SingleTickerProviderStateMixin {
   static const _steps = [
     (
-      'Sources',
-      'Choose your sources',
-      'Set your source priority for movies, shows, and anime.',
-    ),
-    (
       'Playback',
       'Set your playback preferences',
       'Choose how Play works and which qualities Nivio should look for.',
@@ -75,7 +70,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   ];
 
   static const _icons = [
-    PhosphorIconsRegular.stack,
     PhosphorIconsRegular.playCircle,
     PhosphorIconsRegular.link,
     PhosphorIconsRegular.usersThree,
@@ -182,13 +176,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                         children: [
                           Row(
                             children: [
-                              Image.asset(
-                                'assets/images/nivio-wordmark.png',
-                                width: 88,
-                                height: 36,
-                                fit: BoxFit.contain,
-                                semanticLabel: 'Nivio',
-                              ),
+                              if (!wide) _wordmark(),
                               const Spacer(),
                               TextButton(
                                 style: TextButton.styleFrom(
@@ -207,7 +195,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                               children: [
                                 if (wide) ...[
                                   SizedBox(
-                                    width: 220,
+                                    width: 200,
                                     child: _stepRail(palette),
                                   ),
                                   const SizedBox(width: 24),
@@ -225,7 +213,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                                               setState(() => _step = step),
                                           itemCount: _steps.length,
                                           itemBuilder: (context, step) =>
-                                              _stepContent(step, wide, palette),
+                                              FlatStreamPanels(
+                                                child: _stepContent(
+                                                  step,
+                                                  wide,
+                                                  palette,
+                                                ),
+                                              ),
                                         ),
                                       ),
                                       Divider(height: 1, color: palette.border),
@@ -275,14 +269,28 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     ),
   );
 
-  Widget _stepRail(NivioThemeColors palette) => StreamPanel(
-    padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+  Widget _wordmark() => Image.asset(
+    'assets/images/nivio-wordmark.png',
+    width: 88,
+    height: 36,
+    fit: BoxFit.contain,
+    alignment: Alignment.centerLeft,
+    semanticLabel: 'Nivio',
+  );
+
+  /// Wide layouts: the wordmark lines up with the step header on the right
+  /// (same top padding, same height as its glyph), then the step list.
+  Widget _stepRail(NivioThemeColors palette) => Padding(
+    padding: const EdgeInsets.only(top: 24),
     child: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const StreamSectionLabel('SET UP NIVIO'),
-        const SizedBox(height: 12),
+        SizedBox(
+          height: 38,
+          child: Align(alignment: Alignment.centerLeft, child: _wordmark()),
+        ),
+        const SizedBox(height: 28),
         for (var i = 0; i < _steps.length; i++)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 3),
@@ -348,9 +356,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
         ),
         const SizedBox(height: 20),
         switch (step) {
-          0 => const StreamSourceSettings(),
-          1 => const StreamPlaybackSettings(),
-          2 => const ProfileScreen(connectionsOnly: true),
+          0 => const StreamPlaybackSettings(),
+          1 => const ProfileScreen(connectionsOnly: true),
           _ => const _WatchPartyIntro(),
         },
       ],
@@ -454,11 +461,11 @@ class _OnboardingLights extends CustomPainter {
       oldDelegate.palette != palette || oldDelegate.motion != motion;
 }
 
-class _WatchPartyIntro extends StatelessWidget {
+class _WatchPartyIntro extends ConsumerWidget {
   const _WatchPartyIntro();
 
   @override
-  Widget build(BuildContext context) => Column(
+  Widget build(BuildContext context, WidgetRef ref) => Column(
     children: [
       const ListTile(
         leading: Icon(Icons.group_outlined),
@@ -473,6 +480,17 @@ class _WatchPartyIntro extends StatelessWidget {
         subtitle: Text(
           'The host controls playback. Use chat and reactions while you watch.',
         ),
+      ),
+      SwitchListTile(
+        secondary: const Icon(Icons.playlist_play_rounded),
+        title: const Text("Play the host's source"),
+        subtitle: const Text(
+          'When you join, play the stream the host picked. Turn off to choose your own.',
+        ),
+        value: ref.watch(watchPartyFollowHostSourceProvider),
+        onChanged: ref
+            .read(watchPartyFollowHostSourceProvider.notifier)
+            .setEnabled,
       ),
     ],
   );

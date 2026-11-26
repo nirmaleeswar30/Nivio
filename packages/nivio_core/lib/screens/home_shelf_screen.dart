@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -97,42 +99,68 @@ class _HomeShelfScreenState extends ConsumerState<HomeShelfScreen> {
                 }
 
                 final items = [...page.items, ..._additionalItems];
-                return AppCustomScrollView(
-                  slivers: [
-                    SliverPadding(
-                      padding: padding,
-                      sliver: SliverGrid.builder(
-                        gridDelegate:
-                            const SliverGridDelegateWithMaxCrossAxisExtent(
-                              maxCrossAxisExtent: 180,
-                              childAspectRatio: 0.65,
-                              mainAxisSpacing: 14,
-                              crossAxisSpacing: 12,
-                            ),
-                        itemCount: items.length,
-                        itemBuilder: (context, index) =>
-                            SearchResultCard(media: items[index]),
-                      ),
-                    ),
-                    if (page.hasMore && _hasMore)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 24),
-                          child: Center(
-                            child: _isLoadingMore
-                                ? const CircularProgressIndicator()
-                                : OutlinedButton(
-                                    onPressed: () => _loadMore(page.items),
-                                    child: Text(
-                                      _loadMoreFailed
-                                          ? 'Try again'
-                                          : 'Load more',
-                                    ),
-                                  ),
+                final canLoadMore = page.hasMore && _hasMore;
+                // Loads the next page as the grid nears its end, and again
+                // when a page doesn't fill the screen.
+                bool nearEnd(ScrollMetrics metrics) {
+                  if (canLoadMore &&
+                      !_isLoadingMore &&
+                      !_loadMoreFailed &&
+                      metrics.axis == Axis.vertical &&
+                      metrics.extentAfter < 900) {
+                    // Notifications can arrive mid-layout; load after it.
+                    scheduleMicrotask(() {
+                      if (mounted) _loadMore(page.items);
+                    });
+                  }
+                  return false;
+                }
+
+                return NotificationListener<ScrollMetricsNotification>(
+                  onNotification: (notification) =>
+                      nearEnd(notification.metrics),
+                  child: NotificationListener<ScrollUpdateNotification>(
+                    onNotification: (notification) =>
+                        nearEnd(notification.metrics),
+                    child: AppCustomScrollView(
+                      slivers: [
+                        SliverPadding(
+                          padding: padding,
+                          sliver: SliverGrid.builder(
+                            gridDelegate:
+                                const SliverGridDelegateWithMaxCrossAxisExtent(
+                                  maxCrossAxisExtent: 180,
+                                  childAspectRatio: 0.65,
+                                  mainAxisSpacing: 14,
+                                  crossAxisSpacing: 12,
+                                ),
+                            itemCount: items.length,
+                            itemBuilder: (context, index) =>
+                                SearchResultCard(media: items[index]),
                           ),
                         ),
-                      ),
-                  ],
+                        if (canLoadMore)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: 24),
+                              child: Center(
+                                child: _loadMoreFailed
+                                    ? OutlinedButton(
+                                        onPressed: () => _loadMore(page.items),
+                                        child: const Text('Try again'),
+                                      )
+                                    : const SizedBox.square(
+                                        dimension: 28,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 );
               },
             ),

@@ -1,14 +1,18 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
+import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/services/public_web_client.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Shared catalog for the CNC Verse movie and TV sources.
 class NetMirrorSource {
-  NetMirrorSource({Dio? client})
-    : _client =
+  NetMirrorSource({Dio? client, Future<String?> Function()? verifiedCookie})
+    : _verifiedCookie = verifiedCookie ?? _sharedVerifiedCookie,
+      _client =
           client ??
           (Dio(
               BaseOptions(
@@ -59,6 +63,216 @@ class NetMirrorSource {
 
   final Dio _client;
   final bool _ownsClient;
+  final Future<String?> Function() _verifiedCookie;
+
+  // Searches only return results for a client that passed NetMirror's
+  // check, which it proves with a `t_hash_t` cookie. The check takes about
+  // 40 seconds, so one cookie is shared and kept (also across launches) for
+  // as long as the CNC Verse plugin keeps it, and renewed in the background
+  // before it runs out (see [warmUp]).
+  static const _cookieKey = 'netmirror_t_hash_t';
+  static const _cookieLifetime = Duration(hours: 11);
+  // Renew this long before the cookie expires, so a search never waits.
+  static const _refreshAhead = Duration(hours: 1);
+  // After a failed background renewal, try again this much later.
+  static const _retryAfter = Duration(minutes: 10);
+  // The whole check gives up after this long, like the plugin's.
+  static const _verifyBudget = Duration(seconds: 60);
+  static const _verifyUserAgent =
+      'Mozilla/5.0 (Linux; Android 12; RMX2117 Build/SP1A.210812.016; wv) '
+      'AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 '
+      'Chrome/147.0.7727.55 Mobile Safari/537.36 /OS.Gatu v3.0';
+  static final _addhash = RegExp(
+    r'''data-addhash\s*=\s*["']([^"']+)["']''',
+    caseSensitive: false,
+  );
+  static String? _cookie;
+  static DateTime? _cookieTime;
+  static Future<String?>? _verifying;
+  static Timer? _refreshTimer;
+
+  static Duration get _cookieAge => DateTime.now().difference(_cookieTime!);
+
+  static bool get _cookieFresh =>
+      _cookie != null && _cookieAge < _cookieLifetime;
+
+  /// Missing, expired, or inside the renewal window.
+  static bool get _cookieDue =>
+      !_cookieFresh || _cookieAge >= _cookieLifetime - _refreshAhead;
+
+  /// Checks how old the saved cookie is and, when it is missing or close to
+  /// expiring, gets a new one in the background; otherwise schedules that
+  /// renewal. Called when the app opens and returns to the foreground.
+  static Future<void> warmUp() async {
+    await _loadSavedCookie();
+    if (_cookieDue) {
+      unawaited(_renew());
+    } else {
+      _scheduleRenewal();
+    }
+  }
+
+  static Future<String?> _sharedVerifiedCookie() async {
+    await _loadSavedCookie();
+    if (_cookieFresh) {
+      // Still valid: use it now, renew it behind the scenes if it's due.
+      if (_cookieDue) unawaited(_renew());
+      return _cookie;
+    }
+    return _renew();
+  }
+
+  static Future<void> _loadSavedCookie() async {
+    if (_cookie != null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(_cookieKey)?.split('|');
+      if (saved == null || saved.length != 2 || saved[1].isEmpty) return;
+      _cookie = saved[1];
+      _cookieTime = DateTime.fromMillisecondsSinceEpoch(
+        int.tryParse(saved[0]) ?? 0,
+      );
+    } catch (_) {}
+  }
+
+  /// One verification at a time; the current cookie stays in use until a
+  /// new one replaces it.
+  static Future<String?> _renew() {
+    return _verifying ??= () async {
+      String? cookie;
+      try {
+        cookie = await _verify();
+      } finally {
+        _verifying = null;
+      }
+      _scheduleRenewal(failed: cookie == null);
+      return cookie;
+    }();
+  }
+
+  static void _scheduleRenewal({bool failed = false}) {
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+    // Nothing to keep alive; the next search or app open will verify.
+    if (_cookie == null || _cookieTime == null) return;
+    final due = _cookieTime!
+        .add(_cookieLifetime - _refreshAhead)
+        .difference(DateTime.now());
+    final wait = failed ? _retryAfter : (due.isNegative ? Duration.zero : due);
+    _refreshTimer = Timer(wait, () => unawaited(_renew()));
+  }
+
+  /// Forgets a cookie the catalog no longer accepts.
+  static Future<void> _dropCookie() async {
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+    _cookie = null;
+    _cookieTime = null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_cookieKey);
+    } catch (_) {}
+  }
+
+  static Future<String?> _verify() async {
+    final client =
+        Dio(
+            BaseOptions(
+              connectTimeout: const Duration(seconds: 10),
+              receiveTimeout: const Duration(seconds: 15),
+              followRedirects: false,
+              validateStatus: (_) => true,
+            ),
+          )
+          ..httpClientAdapter = IOHttpClientAdapter(
+            createHttpClient: publicWebHttpClient,
+          );
+    final cookies = <String, String>{};
+    Future<Response<String>> request(
+      Uri uri,
+      Map<String, String> headers, {
+      String? body,
+    }) async {
+      final response = await client.requestUri<String>(
+        uri,
+        data: body,
+        options: Options(
+          method: body == null ? 'GET' : 'POST',
+          responseType: ResponseType.plain,
+          headers: {
+            ...headers,
+            if (cookies.isNotEmpty)
+              'Cookie': [
+                for (final entry in cookies.entries)
+                  '${entry.key}=${entry.value}',
+              ].join('; '),
+          },
+        ),
+      );
+      for (final raw in response.headers['set-cookie'] ?? const <String>[]) {
+        final pair = raw.split(';').first;
+        final equals = pair.indexOf('=');
+        if (equals <= 0) continue;
+        final value = pair.substring(equals + 1).trim();
+        final name = pair.substring(0, equals).trim();
+        if (value.isEmpty) {
+          cookies.remove(name);
+        } else {
+          cookies[name] = value;
+        }
+      }
+      return response;
+    }
+
+    final elapsed = Stopwatch()..start();
+    try {
+      const app = {
+        'User-Agent': _verifyUserAgent,
+        'X-Requested-With': 'app.netmirror.netmirrornew',
+      };
+      final home = await request(_catalog.resolve(_referer), app);
+      final addhash = _addhash.firstMatch(home.data ?? '')?.group(1);
+      if (addhash == null) return null;
+      await request(
+        Uri.https('userver.${_catalog.host}', '/', {
+          'hee5': addhash,
+          'a': 'y',
+          't': '${DateTime.now().microsecondsSinceEpoch}',
+        }),
+        app,
+      );
+      // The check completes after a delay (about 40 seconds).
+      while (elapsed.elapsed < _verifyBudget) {
+        await Future<void>.delayed(const Duration(seconds: 5));
+        final response =
+            await request(_catalog.replace(path: '/mobile/verify2.php'), const {
+              'User-Agent': _verifyUserAgent,
+              'X-Requested-With': 'XMLHttpRequest',
+              'Content-Type': 'application/x-www-form-urlencoded',
+            }, body: 'verify=${Uri.encodeQueryComponent(addhash)}');
+        if (!(response.data ?? '').contains('All Done')) continue;
+        final cookie = cookies['t_hash_t'];
+        if (cookie == null) return null;
+        _cookie = cookie;
+        _cookieTime = DateTime.now();
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(
+            _cookieKey,
+            '${_cookieTime!.millisecondsSinceEpoch}|$cookie',
+          );
+        } catch (_) {}
+        return cookie;
+      }
+      appDebugLog('NetMirror: verification did not complete');
+      return null;
+    } catch (e) {
+      appDebugLog('NetMirror: verification failed: $e');
+      return null;
+    } finally {
+      client.close(force: true);
+    }
+  }
 
   void close() {
     if (_ownsClient) _client.close(force: true);
@@ -88,12 +302,14 @@ class NetMirrorSource {
       media.releaseDate ?? media.firstAirDate ?? '',
     );
     final studio = catalog.studio;
+    final verified = await _verifiedCookie();
     final headers = {
       'Accept': 'application/json',
       'User-Agent': _userAgent,
       'Referer': _referer,
       'X-Requested-With': 'app.netmirror.netmirrornew',
       'Cookie':
+          '${verified == null ? '' : 't_hash_t=$verified; '}'
           'ott=${catalog.ott}; hd=on'
           '${studio == null ? '' : '; studio=$studio'}',
     };
@@ -106,6 +322,14 @@ class NetMirrorSource {
     ]) {
       try {
         final search = _map(await _get(path, 'search', headers, {'s': title}));
+        // Without a valid cookie the catalog ignores the query.
+        if (verified != null &&
+            search['status'] == 'n' &&
+            (search['head'] == 'Top Searches' ||
+                '${search['error']}'.contains('Enter Some Words')) &&
+            identical(_verifiedCookie, _sharedVerifiedCookie)) {
+          await _dropCookie();
+        }
         final matches = _rows(search['searchResult']).where((row) {
           final name = _text(row['t']) ?? '';
           final suffix = _titleYear.firstMatch(name);

@@ -1111,12 +1111,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Choose your sources'), findsOneWidget);
-    expect(find.text('Source priority'), findsOneWidget);
-    expect(find.text('Extensions'), findsNothing);
-    expect(find.textContaining('repository'), findsNothing);
-    await tester.drag(find.byType(PageView), const Offset(-300, 0));
-    await tester.pumpAndSettle();
+    // Setup starts at playback; sources are no longer a step.
+    expect(find.text('Choose your sources'), findsNothing);
+    expect(find.text('Source priority'), findsNothing);
     expect(find.text('Set your playback preferences'), findsOneWidget);
     expect(find.text('Fastest Load'), findsNothing);
     final fastestFirst = find.text('Fastest First');
@@ -1128,12 +1125,12 @@ void main() {
     expect(tester.takeException(), isNull);
     final prefs = await SharedPreferences.getInstance();
     expect(StreamSelectionSettings.read(prefs).mode, StreamSelectionMode.first);
+    await tester.drag(find.byType(PageView), const Offset(-300, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('Connect your accounts'), findsOneWidget);
     await tester.drag(find.byType(PageView), const Offset(300, 0));
     await tester.pumpAndSettle();
-    expect(find.text('Choose your sources'), findsOneWidget);
-    await tester.tap(find.text('Skip this step'));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const PageStorageKey(1)), findsOneWidget);
+    expect(find.byKey(const PageStorageKey(0)), findsOneWidget);
     await tester.tap(find.text('Skip this step'));
     await tester.pumpAndSettle();
     expect(find.text('Connect your accounts'), findsOneWidget);

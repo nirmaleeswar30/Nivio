@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:nivio/services/scrapers/net_mirror_source.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
@@ -876,9 +877,24 @@ class NivioApp extends ConsumerStatefulWidget {
 }
 
 class _NivioAppState extends ConsumerState<NivioApp> {
+  // Renews the NetMirror cookie when the app comes back, if it's due.
+  late final _lifecycle = AppLifecycleListener(
+    onResume: () => unawaited(NetMirrorSource.warmUp()),
+  );
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
+    // Get a NetMirror cookie ready (or renew a stale one) in the background,
+    // so catalog searches don't wait for the check.
+    unawaited(NetMirrorSource.warmUp());
+    _lifecycle; // Creating it starts listening.
     // Initialize the background Cloudflare bypass service silently
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -941,7 +957,7 @@ class _NivioAppState extends ConsumerState<NivioApp> {
         final Widget gate = _GitHubReleasePromptGate(
           child: Stack(
             children: [
-              child ?? const SizedBox.shrink(),
+              TitleBarInset(child: child ?? const SizedBox.shrink()),
               const MiniPlayerOverlay(),
               const TitleBarOverlay(),
             ],
@@ -1168,7 +1184,8 @@ class _UiScaleConfirmationOverlay extends ConsumerWidget {
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: accentColor,
-                          foregroundColor: Colors.white,
+                          foregroundColor:
+                              Theme.of(context).colorScheme.onPrimary,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10),

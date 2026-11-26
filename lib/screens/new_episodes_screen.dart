@@ -708,10 +708,10 @@ class _NewEpisodesScreenState extends State<NewEpisodesScreen> {
                           ),
                           child: Text(
                             item.mediaType.toUpperCase(),
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 9,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                              color: Theme.of(context).colorScheme.onPrimary,
                             ),
                           ),
                         ),

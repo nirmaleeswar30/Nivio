@@ -52,44 +52,21 @@ class DirectStreamPickerSheet extends StatefulWidget {
     Future<StreamPickerOutcome?> Function()? selectAutomatically,
     List<DeviceOrientation> restoreOrientations = const [],
   }) async {
+    // Every platform uses the full-page picker; desktop pushes it on the
+    // root navigator so it covers the shell (and the player).
     final isMobile = Platform.isAndroid || Platform.isIOS;
     final navigator = Navigator.of(context, rootNavigator: !isMobile);
-    final route = isMobile
-        ? MaterialPageRoute<StreamPickerOutcome>(
-            builder: (_) => Scaffold(
-              backgroundColor: const Color(0xFF0F0F0F),
-              body: DirectStreamPickerSheet(
-                discovery: discovery,
-                selectAutomatically: selectAutomatically,
-                isFullScreen: true,
-              ),
-            ),
-          )
-        : DialogRoute<StreamPickerOutcome>(
-            context: context,
-            themes: InheritedTheme.capture(
-              from: context,
-              to: navigator.context,
-            ),
-            barrierColor: Colors.black.withValues(alpha: .8),
-            builder: (_) => Dialog(
-              backgroundColor: Colors.transparent,
-              insetPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 24,
-              ),
-              child: DirectStreamPickerSheet(
-                discovery: discovery,
-                selectAutomatically: selectAutomatically,
-              ),
-            ),
-          );
-    if (route is MaterialPageRoute<StreamPickerOutcome>) {
-      return pushMobileStreamPicker(navigator, route, restoreOrientations);
-    }
-    final outcome = await navigator.push(route);
-    if (outcome == null || outcome.refresh) await route.completed;
-    return outcome;
+    final route = MaterialPageRoute<StreamPickerOutcome>(
+      builder: (context) => Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: DirectStreamPickerSheet(
+          discovery: discovery,
+          selectAutomatically: selectAutomatically,
+          isFullScreen: true,
+        ),
+      ),
+    );
+    return pushMobileStreamPicker(navigator, route, restoreOrientations);
   }
 
   @override
@@ -196,7 +173,7 @@ class _DirectStreamPickerSheetState extends State<DirectStreamPickerSheet> {
     _cancelAutoPlay();
     final updated = await editPickerPlaybackSettings(
       context,
-      asSheet: widget.isFullScreen,
+      asSheet: Platform.isAndroid || Platform.isIOS,
     );
     if (mounted && updated != null)
       _finish(const StreamPickerOutcome(refresh: true));

@@ -1,5 +1,7 @@
 import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:nivio/widgets/tab_artwork.dart';
+import 'package:nivio/widgets/opening_overlay.dart';
+import 'package:nivio/widgets/torrent_stats_overlay.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:media_kit_video/src/video_controller/android_video_controller/android_video_controller.dart';
@@ -36,6 +38,7 @@ import 'package:nivio/services/playback/stream_selection.dart';
 import 'package:nivio/services/playback/stream_selection_settings.dart';
 import 'package:nivio/services/hdr_tone_mapping.dart';
 import 'package:nivio/models/search_result.dart';
+import 'package:nivio/screens/player/playback_startup.dart';
 import 'package:nivio/screens/player/widgets/custom_player_controls.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
@@ -45,6 +48,7 @@ import 'dart:convert';
 
 import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/media_provider.dart';
+import 'package:nivio/providers/parental_guide_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/providers/settings_providers.dart';
@@ -65,6 +69,7 @@ import 'package:nivio/services/theintrodb_service.dart';
 import 'package:nivio/services/skip_times_models.dart';
 import 'package:nivio/providers/player_active_provider.dart';
 import 'package:nivio/providers/mini_player_provider.dart';
+import 'package:nivio/widgets/parental_guide_overlay.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
 import 'package:nivio/services/anime_filler_service.dart';
 import 'package:nivio/services/discord_rpc_service.dart';
@@ -214,7 +219,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       return Future<void>.value();
     }
     return _setAutoPipEnabled(
-      !_isLoading &&
+      !_showPlaybackLoading &&
           _error == null &&
           !_streamPickerOpen &&
           !_serverOverlayOpen &&
@@ -265,6 +270,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   final List<StreamSubscription> _subscriptions = [];
   StreamResult? _streamResult;
   bool _isLoading = true;
+  PlaybackStartup? _playbackStartup;
+  int? _previousTorrentId;
+  bool _openingTorrent = false;
+  bool get _showPlaybackLoading =>
+      _isLoading || (_playbackStartup?.waitingForPlayback ?? false);
   String? _error;
   Timer? _progressTimer;
   String _currentProvider = '';
@@ -277,11 +287,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   _StreamProbe? _firstReachableProbe;
   final _metadataProbes = Expando<({DateTime checkedAt, _StreamProbe probe})>();
   bool _streamPickerOpen = false;
+  // Set while Autoplay searches behind the loading screen; completing it
+  // stops Autoplay and opens the picker instead.
+  Completer<void>? _autoplayInterrupt;
+  String _autoplayPickerLabel = 'Choose stream';
   bool _serverOverlayOpen = false;
 
-  bool get _usesStreamPicker => widget.providerIndex == null &&
-      widget.watchPartyCode == null && widget.directStreamUrl == null &&
-      widget.localPath == null && widget.downloadStreamId == null;
+  bool get _usesStreamPicker {
+    if (widget.directStreamUrl != null ||
+        widget.localPath != null ||
+        widget.downloadStreamId != null) {
+      return false;
+    }
+    // Watch party participants play the source the host picked, unless
+    // they turned that off and choose their own.
+    if (widget.watchPartyCode != null &&
+        _resolvedWatchPartyRole != WatchPartyRole.host) {
+      return !ref.read(watchPartyFollowHostSourceProvider);
+    }
+    return widget.providerIndex == null;
+  }
   static const int _maxRetries = 3;
   final FocusNode _focusNode = FocusNode();
   final GlobalKey<CustomPlayerControlsState> _controlsKey = GlobalKey<CustomPlayerControlsState>();
@@ -296,6 +321,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // False until the first stream is attached to the player; watch-party sync
   // waits for it.
   bool _streamAttached = false;
+  bool _reclaimedPlayback = false;
   bool _isManualProviderSwitch = false;
   Future<void>? _prepareProvidersFuture;
   // True when playing a still-downloading item (torrent rqbit stream or a direct
@@ -392,8 +418,56 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // —— [STUCK_DEBUG] watchdog for "server loads but playback never leaves 0:00" ——
   Timer? _stuckWatchdog;
   DateTime? _openStartedAt; // when _player.open() returned for the current load
-  bool _sawFirstFrame = false; // set once position advances past zero
+  bool _sawFirstFrame = false; // set once playback is ready
   bool _stuckReported = false; // one stuck report per load
+
+  Future<void> _openPlaybackMedia(
+    Media media, {
+    PlaybackStartup? startup,
+  }) async {
+    if (startup != null) {
+      setState(() {
+        startup.startOpening();
+        _loadingMessage = null;
+      });
+    }
+    await _player.open(media, play: true);
+    if (startup == null ||
+        !mounted ||
+        _isDeactivated ||
+        !identical(startup, _playbackStartup)) {
+      return;
+    }
+    startup.openReturned();
+    _updatePlaybackStartup();
+  }
+
+  void _updatePlaybackStartup() {
+    final startup = _playbackStartup;
+    if (startup == null || !startup.waitingForPlayback || _error != null) return;
+    final stage = startup.stage;
+    startup.update(_player.state);
+    if (stage == startup.stage) return;
+
+    if (startup.stage == PlaybackStartupStage.started) {
+      _markPlaybackStarted(_player.state.position);
+      unawaited(_syncAutoPipAvailability());
+    }
+    setState(() {});
+  }
+
+  void _markPlaybackStarted(Duration position) {
+    if (_sawFirstFrame) return;
+    _sawFirstFrame = true;
+    _stuckWatchdog?.cancel();
+    final ms = _openStartedAt == null
+        ? '?'
+        : DateTime.now().difference(_openStartedAt!).inMilliseconds;
+    appDebugLog(
+      '▶️ [STUCK_DEBUG] PlayerScreen#$_sid playback ready for "$_currentProvider" '
+      'after ${ms}ms (pos=$position)${_stuckReported ? ' (recovered)' : ''}',
+    );
+  }
 
   /// Called right after a successful direct-stream _player.open(). Arms a timer
   /// that fires if the position is still 0:00 after a grace period, and logs the
@@ -433,10 +507,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // Re-trigger open() so mpv re-connects to the localhost stream endpoint.
       if (_currentProvider == 'Nivio Torrents' && _streamResult != null) {
         appDebugLog('🔄 [STUCK_DEBUG] Torrent stream stuck at 0:00 — reloading player stream...');
-        _player.open(
+        unawaited(_openPlaybackMedia(
           Media(_streamResult!.url, httpHeaders: _streamResult!.headers),
-          play: true,
-        );
+          startup: _playbackStartup,
+        ));
       }
 
       // Re-check once more a few seconds later to distinguish "slow" from "dead".
@@ -451,10 +525,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             return;
           }
           if (_currentProvider == 'Nivio Torrents' && _streamResult != null) {
-            _player.open(
+            unawaited(_openPlaybackMedia(
               Media(_streamResult!.url, httpHeaders: _streamResult!.headers),
-              play: true,
-            );
+              startup: _playbackStartup,
+            ));
+          } else if (_playbackStartup?.stage == PlaybackStartupStage.opening) {
+            setState(() {
+              _error = 'Playback could not start. Try another stream.';
+              _isLoading = false;
+            });
+            unawaited(_player.stop());
           }
         }
       });
@@ -632,6 +712,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _videoController = miniPlayerState.videoController!;
       _guardVideoControllerWid(_videoController);
       _streamAttached = true;
+      _reclaimedPlayback = true;
       final miniNotifier = ref.read(miniPlayerProvider.notifier);
       Future.microtask(() {
         miniNotifier.reclaim();
@@ -855,7 +936,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
       return KeyEventResult.ignored;
     }
-    if (_player.state.duration == Duration.zero) {
+    if (_showPlaybackLoading || _player.state.duration == Duration.zero) {
       return KeyEventResult.ignored;
     }
 
@@ -1177,13 +1258,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         final search = _discoverDirectStreams(
           media, preferredQuality, subDub, settings,
         );
+        if (allowAuto && settings.mode != StreamSelectionMode.manual) {
+          // Autoplay picks behind the loading screen; the picker only opens
+          // if nothing plays or the viewer asks for it.
+          final interrupt = _startAutoplay('Choose stream');
+          StreamPickerOutcome? automatic;
+          try {
+            automatic = await Future.any([
+              _autoSelectStream(search, settings),
+              interrupt.future.then((_) => null),
+            ]);
+          } catch (error) {
+            appDebugLog('Autoplay could not choose a stream: $error');
+          } finally {
+            _endAutoplay(interrupt);
+          }
+          if (!mounted || _isDeactivated) return null;
+          if (automatic != null && !interrupt.isCompleted) return automatic;
+          allowAuto = false;
+        }
         final outcome = await DirectStreamPickerSheet.show(
           context,
           search,
           restoreOrientations: _playerOrientations,
-          selectAutomatically: allowAuto && settings.mode != StreamSelectionMode.manual
-              ? () => _autoSelectStream(search, settings)
-              : null,
         );
         if (!mounted || _isDeactivated) return null;
         if (outcome == null) return const StreamPickerOutcome(dismissed: true);
@@ -1211,30 +1308,62 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final streaming = ref.read(streamingServiceProvider);
     final episode = _currentEpisode;
     if (!mounted || _isDeactivated) return null;
-    final autoSelect = switch (settings.mode) {
-      StreamSelectionMode.manual => false,
-      StreamSelectionMode.match => allowAuto,
-      StreamSelectionMode.first => null,
-    };
     var dismissed = false;
-    final result = await streaming.fetchTorrentStream(
-      media: media,
-      season: widget.season,
-      episode: episode,
-      preferredQuality: preferredQuality,
-      context: context,
-      binge: binge,
-      restoreOrientations: _playerOrientations,
-      autoSelect: autoSelect,
-      onManualSwitch: onManualSwitch,
-      onPickerDismissed: () => dismissed = true,
-      onStatusUpdate: (status) {
-        if (mounted && !_isDeactivated && episode == _currentEpisode && _isLoading) {
-          setState(() => _loadingMessage = status);
-        }
-      },
-    );
-    return StreamPickerOutcome(result: result, dismissed: dismissed);
+    final autoplay = allowAuto && onManualSwitch == null &&
+        ref.read(torrentAutoplayProvider);
+    final interrupt = autoplay ? _startAutoplay('Choose torrent') : null;
+    try {
+      final result = await streaming.fetchTorrentStream(
+        media: media,
+        season: widget.season,
+        episode: episode,
+        preferredQuality: preferredQuality,
+        context: context,
+        binge: binge,
+        restoreOrientations: _playerOrientations,
+        autoSelect: false,
+        autoplay: autoplay,
+        autoplayInterrupted: interrupt?.future,
+        onAutoplayCommitted: () => _endAutoplay(interrupt),
+        onManualSwitch: onManualSwitch,
+        onPickerDismissed: () => dismissed = true,
+        onStatusUpdate: (status) {
+          if (mounted && !_isDeactivated && episode == _currentEpisode && _isLoading) {
+            setState(() => _loadingMessage = status);
+          }
+        },
+      );
+      return StreamPickerOutcome(result: result, dismissed: dismissed);
+    } finally {
+      _endAutoplay(interrupt);
+    }
+  }
+
+  /// Shows the loading screen's picker button while Autoplay searches.
+  Completer<void> _startAutoplay(String pickerLabel) {
+    _enterPlaybackLayout();
+    final interrupt = Completer<void>();
+    setState(() {
+      _autoplayInterrupt = interrupt;
+      _autoplayPickerLabel = pickerLabel;
+    });
+    return interrupt;
+  }
+
+  void _endAutoplay(Completer<void>? interrupt) {
+    if (interrupt == null || !identical(_autoplayInterrupt, interrupt)) return;
+    if (mounted) {
+      setState(() => _autoplayInterrupt = null);
+    } else {
+      _autoplayInterrupt = null;
+    }
+  }
+
+  void _openPickerInsteadOfAutoplay() {
+    final interrupt = _autoplayInterrupt;
+    if (interrupt == null) return;
+    if (!interrupt.isCompleted) interrupt.complete();
+    setState(() => _autoplayInterrupt = null);
   }
 
   StreamDiscovery _discoverDirectStreams(
@@ -1345,7 +1474,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       bingeGroup = prefs.getString(_streamBingeKey(search.media));
     }
     if (!mounted || _isDeactivated) return null;
-    setState(() => _loadingMessage = 'Finding a stream…');
+    setState(() => _loadingMessage = 'Finding the best stream…');
     final budget = Duration(seconds: settings.timeoutSeconds);
     final remaining = budget - (_streamSelectionClock?.elapsed ?? budget);
     StreamChoice? fastChoice;
@@ -1369,7 +1498,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         });
         _firstReachableProbe = probes[fastChoice?.id];
       } else {
-        await search.waitForResults(remaining);
+        // Stop waiting once the pick can't change; see autoplaySettled.
+        await search.waitForResults(
+          remaining,
+          settled: () => search.autoplaySettled(bingeGroup: bingeGroup),
+        );
       }
     }
     if (!mounted || _isDeactivated) return null;
@@ -1412,7 +1545,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _nativeUrl = null;
     _nativePosition = Duration.zero;
     _nativeDuration = Duration.zero;
+    final startup = PlaybackStartup();
     setState(() {
+      _playbackStartup = startup;
+      _openingTorrent = false;
+      _previousTorrentId = _cachedTorrentService?.activeTorrentId;
       _isLoading = true;
       _error = null;
       _loadingMessage = null;
@@ -1728,6 +1865,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         }
         manualChoice = selected.choice;
         choseAutomatically = selected.automatic;
+        // Participants open the provider the host broadcasts, so it has to
+        // be the source picked here.
+        if (_hasWatchPartyContext || _hasActiveWatchPartySession) {
+          final isAnime = _isAnimeMedia(media);
+          final choice = selected.choice;
+          final provider = choice == null
+              ? 'Nivio Torrents'
+              : choice.providerId.startsWith('builtin:')
+              ? choice.providerId.substring('builtin:'.length)
+              : choice.provider;
+          final index = streamingService.providerIndexOf(
+            provider,
+            isAnime: isAnime,
+          );
+          if (index != null) _currentProviderIndex = index;
+        }
         pickedDirectResolution = selected.preferredResolution;
         result = selected.result;
       } else if (_prefetchedStreams.containsKey(_currentEpisode) &&
@@ -1867,6 +2020,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final isTorrentStream = result.provider == 'Nivio Torrents';
       // Set when verification finds an HLS master; mpv then opens one variant
       // directly (see _probeStreamCandidate).
+      if (isTorrentStream) setState(() => _openingTorrent = true);
       String? playbackVariantUrl;
       _hlsVariants = const [];
       _hlsVariantUrl = null;
@@ -1969,6 +2123,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         }
       }
       
+      if (!mounted || _isDeactivated || !identical(startup, _playbackStartup)) {
+        return;
+      }
+      setState(() => _loadingMessage = null);
       _enterPlaybackLayout();
       _trackInitialPlay();
 
@@ -2086,13 +2244,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _hdrSurfaceFailed = false;
       // iOS: mpv must know its display layer before the video output starts.
       await IosVideoOutput.instance.prepare(_player);
-      await _player.open(
+      if (!mounted || _isDeactivated || !identical(startup, _playbackStartup)) {
+        return;
+      }
+      await _openPlaybackMedia(
         Media(
           targetUrl,
           httpHeaders: headers,
           start: openAtResume ? startAt : null,
         ),
-        play: true,
+        startup: startup,
       );
       mediaOpened = true;
       appDebugLog(
@@ -2106,6 +2267,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (!_transferredToMiniPlayer) await _player.stop();
         return;
       }
+      if (!identical(startup, _playbackStartup)) return;
       // Watch for servers that open cleanly but never produce a frame.
       final automaticChoice = choseAutomatically ? manualChoice : null;
       _startStuckWatchdog(onAutomaticFailure: automaticChoice == null ? null : () {
@@ -2205,6 +2367,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
       unawaited(_broadcastWatchPartyPlayback(force: true));
 
+      if (!mounted || _isDeactivated || !identical(startup, _playbackStartup)) {
+        return;
+      }
       _dismissTooltips('loading → direct player');
       setState(() {
         _isLoading = false;
@@ -2218,6 +2383,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _scheduleWatchPartyBootstrapSyncs();
       appDebugLog('🧪 [CW_DEBUG] PlayerScreen#$_sid _initializePlayer SUCCESS on provider[$_currentProviderIndex] $_currentProvider');
     } catch (e, st) {
+      if (!mounted || _isDeactivated || !identical(startup, _playbackStartup)) {
+        return;
+      }
       appDebugLog(
         '❌ [CW_DEBUG] PlayerScreen#$_sid _initializePlayer FAILED on provider[$_currentProviderIndex/$_maxProviders] '
         '"$_currentProvider" — mounted=$mounted deactivated=$_isDeactivated '
@@ -2511,17 +2679,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _player.stream.position.listen((position) {
         if (!mounted) return;
         if (_isZombieCallback('position stream')) return;
-        // First time the stream actually advances past zero: the server works.
-        if (!_sawFirstFrame && position > Duration.zero) {
-          _sawFirstFrame = true;
-          _stuckWatchdog?.cancel();
-          final ms = _openStartedAt == null
-              ? '?'
-              : DateTime.now().difference(_openStartedAt!).inMilliseconds;
-          appDebugLog(
-            '▶️ [STUCK_DEBUG] PlayerScreen#$_sid first frame for "$_currentProvider" '
-            'after ${ms}ms (pos=$position)${_stuckReported ? ' (was flagged stuck — recovered)' : ''}',
-          );
+        _updatePlaybackStartup();
+        if (_playbackStartup == null && position > Duration.zero) {
+          _markPlaybackStarted(position);
         }
         _checkNextEpisode();
         unawaited(_broadcastWatchPartyPlayback(force: false));
@@ -2552,6 +2712,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subscriptions.add(
       _player.stream.videoParams.listen((params) {
         if (!mounted || _isZombieCallback('video params stream')) return;
+        _updatePlaybackStartup();
         final gamma = params.gamma;
         if (gamma == null || gamma.isEmpty) return; // not decoded yet
         if (gamma == _videoGamma && params.primaries == _videoPrimaries) return;
@@ -2582,6 +2743,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _player.stream.playing.listen((playing) {
         if (!mounted) return;
         if (_isZombieCallback('playing stream')) return;
+        _updatePlaybackStartup();
         unawaited(_broadcastWatchPartyPlayback(force: true));
         _updateDiscordActivity(isPlaying: playing, force: true);
         _syncPipPlayingState(playing);
@@ -2609,24 +2771,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           
           _resumePosition = pos > Duration.zero ? pos : null;
           
+          final startup = _playbackStartup;
+          final stream = _streamResult;
+          final showLoading = !isTorrentStream || _showPlaybackLoading;
           Future.microtask(() async {
-            if (mounted) {
-              setState(() {
-                _isLoading = true;
-              });
+            if (mounted && !_isDeactivated && identical(startup, _playbackStartup)) {
+              if (showLoading) setState(() => _isLoading = true);
 
               if (isTorrentStream) {
                 await Future.delayed(const Duration(milliseconds: 1000));
               }
               
-              if (_streamResult != null) {
-                await _player.open(
+              if (!mounted || _isDeactivated ||
+                  !identical(startup, _playbackStartup) ||
+                  !identical(stream, _streamResult)) {
+                return;
+              }
+              if (stream != null) {
+                await _openPlaybackMedia(
                   Media(
                     // The HLS variant that was playing, if one was opened directly.
-                    _hlsVariantUrl ?? _streamResult!.url,
-                    httpHeaders: _streamResult!.headers,
+                    _hlsVariantUrl ?? stream.url,
+                    httpHeaders: stream.headers,
                   ),
-                  play: true,
+                  startup: startup?.waitingForPlayback == true ? startup : null,
                 );
                 if (pos > Duration.zero) {
                   await _player.seek(pos);
@@ -2637,10 +2805,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 _initializePlayer(isRetry: true);
               }
               
-              if (mounted) {
-                setState(() {
-                  _isLoading = false;
-                });
+              if (mounted && showLoading && identical(startup, _playbackStartup)) {
+                setState(() => _isLoading = false);
               }
             }
           });
@@ -2661,6 +2827,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _player.stream.tracks.listen((_) {
         if (!mounted) return;
         if (_isZombieCallback('tracks stream')) return;
+        _updatePlaybackStartup();
         _applyTrackPreferences();
         unawaited(_refreshDolbyVision());
         setState(() {});
@@ -2683,6 +2850,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _player.stream.buffering.listen((buffering) {
         if (!mounted) return;
         if (_isZombieCallback('buffering stream')) return;
+        _updatePlaybackStartup();
         // Only log while we haven't seen playback yet — a server stuck at 0:00
         // usually sits in buffering=true forever, or flips to false with no frame.
         if (!_sawFirstFrame) {
@@ -3088,7 +3256,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           child: ConstrainedBox(
             constraints: BoxConstraints(maxHeight: maxHeight),
             child: ColoredBox(
-              color: const Color(0xFF141414),
+              color: NivioTheme.sheetColorOf(context, fallback: const Color(0xFF141414)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -3731,6 +3899,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _progressTimer?.cancel();
     setState(() {
       _currentEpisode = episodeNumber;
+      _reclaimedPlayback = false;
       _showNextEpisodeButton = false;
       _nextEpisodeDismissed = false;
       _nextEpisodeCountdown = null;
@@ -3984,7 +4153,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       context: context,
       builder: (context) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF1F1F1F),
+          backgroundColor: NivioTheme.sheetColorOf(context, fallback: const Color(0xFF1F1F1F)),
           title: const Text('Load Subtitle from URL', style: TextStyle(color: Colors.white, fontSize: 16)),
           content: TextField(
             controller: textController,
@@ -4066,7 +4235,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         return SafeArea(
           top: false,
           child: ColoredBox(
-            color: const Color(0xFF1F1F1F),
+            color: NivioTheme.sheetColorOf(context, fallback: const Color(0xFF1F1F1F)),
             child: ListView(
               shrinkWrap: true,
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
@@ -5320,7 +5489,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // THEN activate the mini player + navigate. Otherwise, two Video widgets
     // share the same VideoController/native texture simultaneously, causing a
     // native DirectX crash on Windows.
-    if (isDesktop && !_useNativePlayer && _player.state.duration > Duration.zero) {
+    if (isDesktop &&
+        !_showPlaybackLoading &&
+        !_useNativePlayer &&
+        _player.state.duration > Duration.zero) {
       appDebugLog('🟡 [BACK_NAV] Step 3: detaching Video widget before mini player handoff...');
       setState(() {
         _videoDetached = true;
@@ -5457,7 +5629,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final selected = await showMenu<T>(
       context: context,
       position: position,
-      color: const Color(0xFF1F1F1F),
+      color: NivioTheme.sheetColorOf(context, fallback: const Color(0xFF1F1F1F)),
       items: itemBuilder(),
       useRootNavigator: true,
     );
@@ -6921,12 +7093,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Widget _buildPlayerBody(bool isPortrait) {
-    if (_isLoading) return _buildLoadingState();
-    if (_error != null) return _buildErrorState();
-    if (_useNativePlayer && _nativeUrl != null) return _buildDirectStreamLayout(isPortrait);
-    if (_isLoading) return _buildLoadingState();
-
-    return _buildDirectStreamLayout(isPortrait);
+    if (_error != null && !_isLoading) return _buildErrorState();
+    final showLoading = _showPlaybackLoading;
+    final stage = _playbackStartup?.stage;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (!showLoading ||
+            (stage != null && stage != PlaybackStartupStage.building))
+          ExcludeFocus(
+            key: const ValueKey('playback'),
+            excluding: showLoading,
+            child: IgnorePointer(
+              ignoring: showLoading,
+              child: _buildDirectStreamLayout(isPortrait),
+            ),
+          ),
+        Positioned.fill(
+          child: IgnorePointer(
+            ignoring: !showLoading,
+            child: AnimatedSwitcher(
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 300),
+              child: showLoading ? _buildLoadingState() : null,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -6937,18 +7132,92 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // fix pending in flutter#190431. In debug that asserted every frame, which
     // blocked disposal of popped player screens. With visibility off, Tooltip
     // returns its child directly and no OverlayPortal is created.
+    final screenSize = MediaQuery.sizeOf(context);
+    final isPip = _isPipMode ||
+        (Platform.isAndroid && screenSize.width < 500 && screenSize.height < 400);
     return TooltipVisibility(
       visible: false,
-      child: _buildScreen(context),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _buildScreen(context, isPip: isPip),
+          _buildParentalGuide(context, isPip: isPip),
+        ],
+      ),
     );
   }
 
-  Widget _buildScreen(BuildContext context) {
-    final screenSize = MediaQuery.sizeOf(context);
+  Widget _buildParentalGuide(BuildContext context, {required bool isPip}) {
+    if (widget.isLive ||
+        widget.directStreamUrl != null ||
+        widget.mediaId <= 0 ||
+        _reclaimedPlayback ||
+        !ref.watch(parentalGuideEnabledProvider)) {
+      return const SizedBox.shrink();
+    }
+    final selected = ref.watch(selectedMediaProvider);
+    final media = selected?.id == widget.mediaId &&
+            (widget.mediaType == null || selected?.mediaType == widget.mediaType)
+        ? selected
+        : null;
+    final type = widget.mediaType ?? media?.mediaType;
+    if (type == null || !const {'movie', 'tv', 'anime'}.contains(type)) {
+      return const SizedBox.shrink();
+    }
+    final warnings = ref.watch(parentalGuideProvider((
+          id: widget.mediaId,
+          type: type,
+          title: type == 'anime' ? media?.title ?? media?.name : null,
+          year: type == 'anime'
+              ? (media?.releaseDate ?? media?.firstAirDate)?.split('-').first
+              : null,
+          animeFormat: type == 'anime' ? media?.animeFormat : null,
+        )))
+        .valueOrNull;
+    final animate = ref.watch(animationsEnabledProvider) &&
+        !MediaQuery.disableAnimationsOf(context);
+    final (sidePadding, topPadding) = switch (MediaQuery.sizeOf(context).width) {
+      >= 1440 => (28.0, 24.0),
+      >= 1024 => (24.0, 20.0),
+      _ => (20.0, 16.0),
+    };
+    return IgnorePointer(
+      child: SafeArea(
+        bottom: false,
+        child: AnimatedPadding(
+          duration: animate ? const Duration(milliseconds: 180) : Duration.zero,
+          padding: EdgeInsetsDirectional.only(
+            start: sidePadding,
+            end: sidePadding,
+            top: _arePlayerControlsVisible ? 80 : topPadding,
+          ),
+          child: Align(
+            alignment: AlignmentDirectional.topStart,
+            child: StreamBuilder<bool>(
+              stream: _player.stream.playing,
+              initialData: _player.state.playing,
+              builder: (context, playback) => ParentalGuideOverlay(
+                key: ValueKey((
+                  type,
+                  widget.mediaId,
+                  widget.season,
+                  _currentEpisode,
+                )),
+                warnings: warnings ?? const [],
+                playing: playback.data == true,
+                canShow: !isPip && !_showPlaybackLoading && _error == null,
+                animate: animate,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScreen(BuildContext context, {required bool isPip}) {
     final isPortrait =
         MediaQuery.of(context).orientation == Orientation.portrait;
-    final isPip = _isPipMode ||
-        (Platform.isAndroid && screenSize.width < 500 && screenSize.height < 400);
 
     if (isPip) {
       return ScaffoldMessenger(
@@ -7025,7 +7294,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           child: SizedBox.expand(
             child: Stack(
               children: [
-                _useNativePlayer
+                _useNativePlayer && _nativeUrl != null
                     ? _buildNativePlayer(isPipMode: isPipMode)
                     : _buildVideoPlayer(isPipMode: isPipMode),
 
@@ -7445,7 +7714,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       PopupMenuButton<String>(
                         icon: Icon(Icons.aspect_ratio, color: Colors.white),
                         tooltip: 'Display',
-                        color: const Color(0xFF1F1F1F),
+                        color: NivioTheme.sheetColorOf(context, fallback: const Color(0xFF1F1F1F)),
                         onSelected: _switchDisplayMode,
                         itemBuilder: (context) => _buildDisplayMenuItems(),
                       ),
@@ -7615,122 +7884,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // ── Loading state ───────────────────────────────────────────────
   Widget _buildLoadingState() {
-    final media = ref.read(selectedMediaProvider);
-    final posterPath = media?.posterPath;
-    final title = media?.title ?? media?.name ?? '';
-
-    return Container(
-      color: Colors.black,
-      child: Stack(
-        children: [
-          // Background poster with blur effect
-          if (posterPath != null)
-            Positioned.fill(
-              child: Opacity(
-                opacity: 0.15,
-                child: ArtworkImage(
-                  imageUrl: posterPath,
-                  maxDecodeWidth: 342,
-                  fit: BoxFit.cover,
-                  errorWidget: (context, url, error) => const SizedBox.shrink(),
-                ),
-              ),
+    final stage = _playbackStartup?.stage ?? PlaybackStartupStage.building;
+    final message = stage == PlaybackStartupStage.opening ||
+            stage == PlaybackStartupStage.buffering
+        ? stage.message
+        : _loadingMessage ?? stage.message;
+    final torrent = _cachedTorrentService;
+    final showTorrentStats = torrent != null &&
+        torrent.hasActive &&
+        (_openingTorrent || torrent.activeTorrentId != _previousTorrentId);
+    return OpeningOverlay(
+      media: ref.read(selectedMediaProvider),
+      onClose: _handleBackNavigation,
+      action: _autoplayInterrupt == null || showTorrentStats
+          ? null
+          : OpeningAction(
+              label: _autoplayPickerLabel,
+              onPressed: _openPickerInsteadOfAutoplay,
             ),
-          // Back button
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 16,
-            left: 16,
-            child: _PlayerHoverScale(
-              child: IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
-                onPressed: _handleBackNavigation,
-              ),
-            ),
-          ),
-          // Content
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Animated Netflix-style loading ring
-                SizedBox(width: 56, height: 56, child: _NivioLoadingSpinner()),
-                const SizedBox(height: 24),
-                if (title.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 40),
-                    child: Text(
-                      title,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                if ((media?.mediaType == 'tv' || media?.mediaType == 'anime'))
-                  Text(
-                    'S${widget.season} E$_currentEpisode',
-                    style: TextStyle(color: Colors.white54, fontSize: 13),
-                  ),
-                const SizedBox(height: 16),
-                // Provider pill
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 1.5,
-                          color: NivioTheme.accentColorOf(
-                            context,
-                          ).withValues(alpha: 0.7),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          _loadingMessage ?? 'Loading...',
-                          style: TextStyle(
-                            color: Colors.white60,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (_retryCount > 0) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    'Retry $_retryCount/$_maxRetries',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.orange.withValues(alpha: 0.8),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
+      message: _retryCount > 0
+          ? '$message · Retry $_retryCount/$_maxRetries'
+          : message,
+      details: showTorrentStats
+          ? TorrentStatsOverlay(
+              key: ValueKey(torrent.activeTorrentId),
+              service: torrent,
+            )
+          : null,
     );
   }
 
@@ -8161,7 +8341,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               toneMappingMode: ref.watch(toneMappingProvider),
               onClose: () => setState(() => _showStatsOverlay = false),
             ),
-          CustomPlayerControls(
+          if (!_showPlaybackLoading) CustomPlayerControls(
             key: AppPlatform.isTv ? _controlsKey : null,
             controller: _player,
             title: title,
@@ -8272,7 +8452,10 @@ class _EpisodePickerSheetState extends ConsumerState<_EpisodePickerSheet> {
 
         return Container(
           decoration: BoxDecoration(
-            color: Color(0xFF141414),
+            color: NivioTheme.sheetColorOf(
+              context,
+              fallback: const Color(0xFF141414),
+            ),
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: seasonDataAsync.when(
@@ -9221,15 +9404,19 @@ class _SkipIntroButtonState extends State<SkipIntroButton> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.skip_next_rounded, 
-                color: _isHovered ? Colors.white : Colors.black87, 
+                Icons.skip_next_rounded,
+                color: _isHovered
+                    ? Theme.of(context).colorScheme.onPrimary
+                    : Colors.black87,
                 size: 22,
               ),
               const SizedBox(width: 8),
               AnimatedDefaultTextStyle(
                 duration: const Duration(milliseconds: 300),
                 style: TextStyle(
-                  color: _isHovered ? Colors.white : Colors.black87,
+                  color: _isHovered
+                      ? Theme.of(context).colorScheme.onPrimary
+                      : Colors.black87,
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
                   letterSpacing: _isHovered ? 1.0 : 0.5,

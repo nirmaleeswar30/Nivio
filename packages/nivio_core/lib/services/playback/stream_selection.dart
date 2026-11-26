@@ -386,6 +386,25 @@ class StreamSelection {
     return indexed.map((entry) => entry.$2).toList();
   }
 
+  /// Whether Autoplay can stop waiting for [choice]: it matches the audio,
+  /// subtitle, binge group and top resolution preferences, so only a stream
+  /// from a higher-priority source could rank above it. Release-format boosts
+  /// and Data Saver's size order are tie-breaks and aren't waited for. A
+  /// custom regex always waits, since it can match any later result.
+  bool settlesAutoplay(StreamChoice choice, {String? bingeGroup}) {
+    if (settings.mode != StreamSelectionMode.match ||
+        settings.regex.isNotEmpty ||
+        !eligible(choice)) {
+      return false;
+    }
+    if (settings.matchAudio && _audioMatch(choice) != 2) return false;
+    if (_wantedSubtitles.isNotEmpty && !hasPreferredSubtitles(choice)) {
+      return false;
+    }
+    if (bingeGroup != null && choice.bingeGroup != bingeGroup) return false;
+    return resolutionRank(choice) == 0;
+  }
+
   int resolutionRank(StreamChoice choice, {List<int>? priority}) {
     final resolutions = priority ?? settings.resolutions;
     final heights = choice.knownResolutions;

@@ -23,6 +23,7 @@ import 'package:nivio/services/local_stream_server.dart';
 import 'package:nivio/main.dart';
 import 'package:rqbit_ffi/rqbit_ffi.dart';
 import 'package:nivio/services/torrent/resolver.dart';
+import 'package:nivio/services/scrapers/cine_tv_source.dart';
 
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse response) async {
@@ -458,7 +459,9 @@ class DownloadService {
       }
 
       // No need to change the extension to mkv, FFmpeg can mux HLS directly into mp4
-      if (streamUrl.contains('.m3u8') || streamUrl.contains('/proxy?url=')) {
+      if (streamUrl.contains('.m3u8') ||
+          streamUrl.contains('/proxy?url=') ||
+          await _sniff(item, streamUrl) == _Body.playlist) {
         appDebugLog('🎬 Downloading via FFmpeg (HLS)');
         await _downloadM3u8(
           item,
@@ -489,6 +492,57 @@ class DownloadService {
       }
       await _releaseWakelock();
     }
+  }
+
+  /// Reads the start of [url] to tell an HLS playlist from a video file
+  /// when the URL doesn't say, and refuses web pages: some file hosts answer
+  /// with an HTML landing page, which would otherwise be saved as the video.
+  static Future<_Body> _sniff(DownloadItem item, String url) async {
+    Response<ResponseBody>? response;
+    try {
+      response = await _dio.get<ResponseBody>(
+        CineTvSource.freshDownloadUrl(url),
+        options: Options(
+          responseType: ResponseType.stream,
+          headers: {...?item.headers, 'Range': 'bytes=0-1023'},
+          receiveTimeout: const Duration(seconds: 30),
+          validateStatus: (_) => true,
+        ),
+      );
+    } catch (e) {
+      // Unreachable now; let the download itself retry and report.
+      appDebugLog('🎬 Couldn\'t inspect download URL: $e');
+      return _Body.unknown;
+    }
+    final status = response.statusCode ?? 0;
+    final type = response.headers.value(Headers.contentTypeHeader) ?? '';
+    final head = <int>[];
+    try {
+      await for (final chunk in response.data!.stream) {
+        head.addAll(chunk);
+        if (head.length >= 512) break;
+      }
+    } catch (_) {}
+    final text = utf8.decode(head.take(512).toList(), allowMalformed: true)
+        .trimLeft();
+    if (text.startsWith('#EXTM3U') || type.contains('mpegurl')) {
+      return _Body.playlist;
+    }
+    if (status >= 400) {
+      throw HttpException('The server refused the download ($status)');
+    }
+    final lower = text.toLowerCase();
+    if (type.contains('text/html') ||
+        lower.startsWith('<!doctype html') ||
+        lower.startsWith('<html')) {
+      throw const HttpException(
+        'This link opens a web page, not a video file. Pick another stream.',
+      );
+    }
+    if (type.contains('application/json') && lower.startsWith('{')) {
+      throw const HttpException('The server sent an error instead of the file');
+    }
+    return _Body.file;
   }
 
   static Future<void> _downloadTorrent(
@@ -701,21 +755,42 @@ class DownloadService {
     final concurrency = prefs.getInt('download_concurrency') ?? 6;
 
     try {
-      // 1. Probe file size
-      final probeResponse = await _dio.head(
-        urlToDownload,
-        options: Options(headers: item.headers),
-      );
-
-      final contentLengthHeader = probeResponse.headers.value(
-        Headers.contentLengthHeader,
-      );
-      final acceptsRanges =
-          probeResponse.headers.value('accept-ranges') == 'bytes';
-
+      // 1. Probe file size. Some hosts reject HEAD; ask for one byte instead.
       int? totalBytes;
-      if (contentLengthHeader != null) {
-        totalBytes = int.tryParse(contentLengthHeader);
+      var acceptsRanges = false;
+      try {
+        final probeResponse = await _dio.head(
+          CineTvSource.freshDownloadUrl(urlToDownload),
+          options: Options(headers: item.headers),
+        );
+        totalBytes = int.tryParse(
+          probeResponse.headers.value(Headers.contentLengthHeader) ?? '',
+        );
+        acceptsRanges = probeResponse.headers.value('accept-ranges') == 'bytes';
+      } catch (e) {
+        if (cancelToken.isCancelled) rethrow;
+        appDebugLog('🎬 Direct: HEAD failed ($e), probing with a range request');
+      }
+      if (totalBytes == null || totalBytes <= 0 || !acceptsRanges) {
+        try {
+          final probe = await _dio.get<ResponseBody>(
+            CineTvSource.freshDownloadUrl(urlToDownload),
+            options: Options(
+              responseType: ResponseType.stream,
+              headers: {...?item.headers, 'Range': 'bytes=0-0'},
+            ),
+          );
+          // e.g. "bytes 0-0/1174018826"
+          final range = probe.headers.value('content-range');
+          final total = int.tryParse(range?.split('/').last ?? '');
+          if (probe.statusCode == 206 && total != null && total > 0) {
+            totalBytes = total;
+            acceptsRanges = true;
+          }
+          unawaited(probe.data?.stream.drain<void>().catchError((_) {}));
+        } catch (_) {
+          if (cancelToken.isCancelled) rethrow;
+        }
       }
 
       // If server doesn't support ranges or we don't know the size, fallback to standard download
@@ -798,7 +873,7 @@ class DownloadService {
             IOSink? sink;
             try {
               final response = await _dio.get<ResponseBody>(
-                urlToDownload,
+                CineTvSource.freshDownloadUrl(urlToDownload),
                 cancelToken: chunkCancelToken,
                 options: Options(
                   responseType: ResponseType.stream,
@@ -910,7 +985,7 @@ class DownloadService {
   ) async {
     int lastProgressUpdate = 0;
     await _dio.download(
-      url,
+      CineTvSource.freshDownloadUrl(url),
       filePath,
       cancelToken: cancelToken,
       options: Options(
@@ -1970,3 +2045,5 @@ class DownloadService {
     startDownload(item);
   }
 }
+
+enum _Body { playlist, file, unknown }

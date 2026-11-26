@@ -269,6 +269,17 @@ class NivioTheme {
     return Theme.of(context).scaffoldBackgroundColor;
   }
 
+  /// The AMOLED Black theme is active (pure black background).
+  static bool isAmoled(BuildContext context) =>
+      Theme.of(context).scaffoldBackgroundColor.toARGB32() == 0xFF000000;
+
+  /// Background for bottom sheets and dialogs: true black in AMOLED mode,
+  /// otherwise [fallback] (the dark grey sheets have always used).
+  static Color sheetColorOf(
+    BuildContext context, {
+    Color fallback = netflixDarkGrey,
+  }) => isAmoled(context) ? Colors.black : fallback;
+
   static Color surfaceColorOf(BuildContext context) {
     return Theme.of(context).colorScheme.surface;
   }
@@ -339,7 +350,7 @@ class NivioTheme {
       scaffoldBackgroundColor: appTheme.scaffoldBackgroundColor,
       primaryColor: appTheme.primary,
       cardColor: appTheme.surface,
-      dialogBackgroundColor: appTheme.surface,
+      dialogBackgroundColor: amoled ? Colors.black : appTheme.surface,
       canvasColor: appTheme.scaffoldBackgroundColor,
       dividerColor: appTheme.border,
       extensions: [themeColors],
@@ -355,6 +366,26 @@ class NivioTheme {
         surface: appTheme.surface,
         surfaceContainer: appTheme.surfaceContainer,
       ),
+      // AMOLED: sheets, dialogs and menus stay true black too.
+      bottomSheetTheme: amoled
+          ? const BottomSheetThemeData(
+              backgroundColor: Colors.black,
+              modalBackgroundColor: Colors.black,
+              surfaceTintColor: Colors.transparent,
+            )
+          : null,
+      dialogTheme: amoled
+          ? const DialogThemeData(
+              backgroundColor: Colors.black,
+              surfaceTintColor: Colors.transparent,
+            )
+          : null,
+      popupMenuTheme: amoled
+          ? const PopupMenuThemeData(
+              color: Colors.black,
+              surfaceTintColor: Colors.transparent,
+            )
+          : null,
       appBarTheme: AppBarTheme(
         backgroundColor: amoled ? Colors.black : Colors.transparent,
         surfaceTintColor: amoled ? Colors.transparent : null,

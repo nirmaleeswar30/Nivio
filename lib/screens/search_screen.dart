@@ -273,7 +273,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              backgroundColor: NivioTheme.netflixDarkGrey,
+              backgroundColor: NivioTheme.sheetColorOf(context),
               title: const Text(
                 'Filter & Sort',
                 style: TextStyle(color: Colors.white),

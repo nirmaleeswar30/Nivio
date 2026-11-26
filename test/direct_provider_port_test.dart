@@ -234,6 +234,7 @@ void main() {
       switch (request.uri.path) {
         case '/mobile/pv/search.php':
           expect(request.uri.queryParameters['s'], 'Example Show');
+          expect(request.headers['Cookie'], contains('t_hash_t=verified'));
           return _raw(request, {
             'searchResult': [
               {'id': 'series', 't': 'Example Show', 'y': '2021'},
@@ -273,7 +274,10 @@ void main() {
       }
     });
     addTearDown(() => client.close(force: true));
-    final result = await NetMirrorSource(client: client).resolve(
+    final result = await NetMirrorSource(
+      client: client,
+      verifiedCookie: () async => 'verified',
+    ).resolve(
       'PrimeVideoM',
       const SearchResult(
         id: 123,
