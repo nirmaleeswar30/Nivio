@@ -37,6 +37,8 @@ dist/
 coverage/
 research/
 android/
+# Vendored plugins' Android code (patched build files) must be committed.
+!packages/vendor/*/android/
 test/
 installer/
 

@@ -712,7 +712,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     // Pre-cache providers to prevent using ref after widget disposal in dispose() or in microtasks
     _cachedHistoryService = ref.read(watchHistoryServiceProvider);
-    _cachedMedia = ref.read(selectedMediaProvider);
+    // Trailers and live channels play outside the title's watch history.
+    _cachedMedia = _isDirectStream ? null : ref.read(selectedMediaProvider);
     _cachedPlayerActiveNotifier = ref.read(isPlayerActiveProvider.notifier);
     _cachedTorrentService = ref.read(torrentStreamServiceProvider);
     final cachedActiveNotifier = _cachedPlayerActiveNotifier;
@@ -896,6 +897,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Future<void> _trackInitialPlay() async {
+    if (_isDirectStream) return;
     final media = ref.read(selectedMediaProvider);
     if (media == null) return;
     
@@ -1866,6 +1868,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               if (trailer.userAgent != null) 'User-Agent': trailer.userAgent!,
             },
             isM3U8: video.toLowerCase().contains('m3u8'),
+            subtitles: [
+              for (final caption in trailer.subtitles)
+                StreamSubtitleTrack(lang: caption.label, url: caption.url),
+            ],
           );
         } on TrailerUnavailableException catch (e) {
           if (!mounted) return;
@@ -2365,7 +2371,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       });
 
       // Load custom remote subtitle if saved
-      try {
+      if (!_isDirectStream) try {
         final prefs = await SharedPreferences.getInstance();
         final customSubKey = 'custom_sub_${widget.mediaId}_${widget.season}_$_currentEpisode';
         final customSubJson = prefs.getString(customSubKey);
@@ -2619,6 +2625,39 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return index == 0 ? 'Default $kind' : '$kind ${index + 1}';
   }
 
+  /// Trailers always start with captions: the preferred subtitle language
+  /// when the trailer has it, else English (written before auto-generated),
+  /// else the first track. A track already loaded is reselected rather than
+  /// added again.
+  void _applyTrailerSubtitle(
+    String preferredSubtitle,
+    List<SubtitleTrack> loaded,
+  ) {
+    // Once per trailer, so a track picked from the menu stays picked.
+    if (_trailerSubtitleApplied) return;
+    final captions = _streamResult?.subtitles ?? const <StreamSubtitleTrack>[];
+    if (captions.isEmpty) return;
+    _trailerSubtitleApplied = true;
+    final wanted = preferredSubtitle.isNotEmpty &&
+            preferredSubtitle != 'Auto' &&
+            preferredSubtitle != 'Off'
+        ? preferredSubtitle
+        : null;
+    final target = (wanted == null
+            ? null
+            : captions.where((c) => _isLanguageMatch(c.lang, wanted)).firstOrNull) ??
+        captions.where((c) => _isLanguageMatch(c.lang, 'English')).firstOrNull ??
+        captions.first;
+
+    final already = loaded.where((t) => (t.title ?? '').trim() == target.lang).firstOrNull;
+    if (already != null) {
+      _player.setSubtitleTrack(already);
+      return;
+    }
+    _player.setSubtitleTrack(SubtitleTrack.uri(target.url, title: target.lang));
+  }
+
+  bool _trailerSubtitleApplied = false;
   bool _hasAppliedGlobalTracks = false;
   int _lastAudioTrackCount = 0;
   int _lastSubtitleTrackCount = 0;
@@ -2677,7 +2716,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final selectableSubs =
         subtitleTracks.where((t) => t.id != 'auto' && t.id != 'no').toList();
 
-    if (preferredSubtitle == 'Off') {
+    if (widget.trailerKey != null) {
+      _applyTrailerSubtitle(preferredSubtitle, selectableSubs);
+    } else if (preferredSubtitle == 'Off') {
       _player.setSubtitleTrack(SubtitleTrack.no());
     } else {
       SubtitleTrack? chosen;
@@ -2743,6 +2784,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     String? subtitleTrack,
     int? providerIndex,
   }) async {
+    if (_isDirectStream) return;
     final service = ref.read(watchHistoryServiceProvider);
     await service.saveTrackPreferences(
       widget.mediaId,
@@ -3819,6 +3861,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Future<void> _markAsCompleted() async {
+    if (_isDirectStream) return;
     final media = ref.read(selectedMediaProvider);
     if (media == null) return;
     
@@ -5238,6 +5281,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Future<void> _saveProgress() async {
+    if (_isDirectStream) return;
     if (_player.state.duration == Duration.zero) return;
     final position = _player.state.position;
     var duration = _player.state.duration;

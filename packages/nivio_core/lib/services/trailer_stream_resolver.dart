@@ -1,17 +1,44 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:nivio/core/debug_log.dart';
+import 'package:path_provider/path_provider.dart';
 
 /// What mpv opens for a trailer: a video URL, plus a separate audio URL when
 /// the site serves them apart (YouTube above 360p), and the User-Agent the
 /// URLs were issued for.
 class TrailerStream {
-  const TrailerStream({required this.video, this.audio, this.userAgent});
+  const TrailerStream({
+    required this.video,
+    this.audio,
+    this.userAgent,
+    this.subtitles = const [],
+  });
 
   final Uri video;
   final Uri? audio;
   final String? userAgent;
+
+  /// Captions the site offers, written ones first.
+  final List<TrailerSubtitle> subtitles;
+
+  TrailerStream withSubtitles(List<TrailerSubtitle> subtitles) => TrailerStream(
+        video: video,
+        audio: audio,
+        userAgent: userAgent,
+        subtitles: subtitles,
+      );
+}
+
+/// A caption track mpv can load: a WebVTT URL or a local SRT file path.
+class TrailerSubtitle {
+  const TrailerSubtitle({required this.label, required this.url});
+
+  /// What the subtitle menu shows, e.g. "English" or
+  /// "English (auto-generated)".
+  final String label;
+  final String url;
 }
 
 class TrailerUnavailableException implements Exception {
@@ -74,7 +101,19 @@ class TrailerStreamResolver {
         headers: {'Referer': 'https://player.vimeo.com/video/$id'},
       );
       final data = jsonDecode(reply.body) as Map<String, dynamic>;
-      final files = (data['request'] as Map<String, dynamic>?)?['files'] as Map<String, dynamic>?;
+      final request = data['request'] as Map<String, dynamic>?;
+      final files = request?['files'] as Map<String, dynamic>?;
+      final subtitles = [
+        for (final track in (request?['text_tracks'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>())
+          if (track['url'] is String)
+            TrailerSubtitle(
+              label: (track['label'] ?? track['lang'] ?? 'Subtitles').toString(),
+              url: Uri.parse('https://player.vimeo.com/')
+                  .resolve(track['url'] as String)
+                  .toString(),
+            ),
+      ];
 
       // A progressive MP4 when there is one, otherwise HLS.
       final progressive = (files?['progressive'] as List<dynamic>? ?? const [])
@@ -82,13 +121,13 @@ class TrailerStreamResolver {
           .toList()
         ..sort((a, b) => ((b['height'] as num?) ?? 0).compareTo((a['height'] as num?) ?? 0));
       final file = progressive.firstOrNull?['url'] as String?;
-      if (file != null) return TrailerStream(video: Uri.parse(file));
+      if (file != null) return TrailerStream(video: Uri.parse(file), subtitles: subtitles);
 
       final hls = files?['hls'] as Map<String, dynamic>?;
       final cdns = hls?['cdns'] as Map<String, dynamic>?;
       final cdn = (cdns?[hls?['default_cdn']] ?? cdns?.values.firstOrNull) as Map<String, dynamic>?;
       final url = (cdn?['avc_url'] ?? cdn?['url']) as String?;
-      if (url != null) return TrailerStream(video: Uri.parse(url));
+      if (url != null) return TrailerStream(video: Uri.parse(url), subtitles: subtitles);
     } catch (e) {
       appDebugLog('🎬 Vimeo trailer $id failed: $e');
     }
@@ -104,7 +143,16 @@ class TrailerStreamResolver {
       final qualities = data['qualities'] as Map<String, dynamic>?;
       final auto = (qualities?['auto'] as List<dynamic>?)?.firstOrNull as Map<String, dynamic>?;
       final url = auto?['url'] as String?;
-      if (url != null) return TrailerStream(video: Uri.parse(url));
+      final tracks = (data['subtitles'] as Map<String, dynamic>?)?['data'] as Map<String, dynamic>?;
+      final subtitles = <TrailerSubtitle>[];
+      for (final entry in (tracks ?? const <String, dynamic>{}).entries) {
+        final track = entry.value;
+        if (track is! Map<String, dynamic>) continue;
+        final first = (track['urls'] as List<dynamic>?)?.firstOrNull;
+        if (first is! String) continue;
+        subtitles.add(TrailerSubtitle(label: (track['label'] ?? entry.key).toString(), url: first));
+      }
+      if (url != null) return TrailerStream(video: Uri.parse(url), subtitles: subtitles);
     } catch (e) {
       appDebugLog('🎬 Dailymotion trailer $id failed: $e');
     }
@@ -207,10 +255,11 @@ class _YouTube {
         }
         final data = response['streamingData'] as Map<String, dynamic>?;
         if (data == null) continue;
+        final captions = _captions(client, videoId, response);
         final stream = await _pick(client, yt, data, maxHeight);
         if (stream != null) {
           appDebugLog('🎬 YouTube trailer $videoId via ${yt.name}');
-          return stream;
+          return stream.withSubtitles(await captions);
         }
       } catch (e) {
         appDebugLog('🎬 YouTube trailer $videoId via ${yt.name} failed: $e');
@@ -307,6 +356,77 @@ class _YouTube {
     return null;
   }
 
+  /// The video's caption tracks: written ones as WebVTT straight from
+  /// YouTube, auto-generated ones converted to SRT (YouTube's own VTT for
+  /// those repeats every line word by word, karaoke style).
+  static Future<List<TrailerSubtitle>> _captions(
+    http.Client client,
+    String videoId,
+    Map<String, dynamic> response,
+  ) async {
+    try {
+      final renderer = (response['captions'] as Map<String, dynamic>?)?['playerCaptionsTracklistRenderer']
+          as Map<String, dynamic>?;
+      final tracks = (renderer?['captionTracks'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .where((t) => t['baseUrl'] is String)
+          .toList();
+      if (tracks.isEmpty) return const [];
+
+      String label(Map<String, dynamic> track) {
+        final name = track['name'] as Map<String, dynamic>?;
+        final runs = name?['runs'] as List<dynamic>?;
+        final text = name?['simpleText'] ??
+            runs?.whereType<Map<String, dynamic>>().map((r) => r['text'] ?? '').join();
+        final value = text?.toString().trim() ?? '';
+        return value.isNotEmpty ? value : (track['languageCode']?.toString() ?? 'Subtitles');
+      }
+
+      Uri withFormat(Map<String, dynamic> track, String format) {
+        final uri = Uri.parse(track['baseUrl'] as String);
+        return uri.replace(queryParameters: {...uri.queryParameters, 'fmt': format});
+      }
+
+      final written = [
+        for (final track in tracks.where((t) => t['kind'] != 'asr'))
+          TrailerSubtitle(label: label(track), url: withFormat(track, 'vtt').toString()),
+      ];
+      final generated = await Future.wait([
+        for (final track in tracks.where((t) => t['kind'] == 'asr'))
+          _generatedCaptions(client, videoId, track, withFormat(track, 'json3'), label(track)),
+      ]);
+      return [...written, ...generated.whereType<TrailerSubtitle>()];
+    } catch (e) {
+      appDebugLog('🎬 YouTube captions for $videoId failed: $e');
+      return const [];
+    }
+  }
+
+  static Future<TrailerSubtitle?> _generatedCaptions(
+    http.Client client,
+    String videoId,
+    Map<String, dynamic> track,
+    Uri url,
+    String label,
+  ) async {
+    try {
+      final reply = await client.get(url).timeout(const Duration(seconds: 8));
+      if (reply.statusCode != 200) return null;
+      final srt = captionsJsonToSrt(jsonDecode(utf8.decode(reply.bodyBytes)) as Map<String, dynamic>);
+      if (srt.isEmpty) return null;
+      final dir = Directory('${(await getTemporaryDirectory()).path}/trailer_captions');
+      await dir.create(recursive: true);
+      final language = (track['languageCode'] ?? 'und').toString().replaceAll(RegExp(r'[^A-Za-z0-9-]'), '');
+      final safeId = videoId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '');
+      final file = File('${dir.path}/${safeId}_${language}_auto.srt');
+      await file.writeAsString(srt);
+      return TrailerSubtitle(label: label, url: file.path);
+    } catch (e) {
+      appDebugLog('🎬 YouTube auto captions for $videoId failed: $e');
+      return null;
+    }
+  }
+
   /// Whether YouTube serves the end of [format]: without a PO token some
   /// clients' URLs are refused (403) past about the first minute.
   static Future<bool> _playsToTheEnd(
@@ -400,4 +520,48 @@ class _YouTube {
     }
     return _visitorData;
   }
+}
+
+/// YouTube's json3 captions as SRT. Each cue ends when the next begins, so
+/// auto-generated lines (which overlap) show one at a time.
+String captionsJsonToSrt(Map<String, dynamic> data) {
+  final cues = <({int start, int end, String text})>[];
+  for (final event in (data['events'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>()) {
+    final segs = event['segs'] as List<dynamic>?;
+    if (segs == null) continue;
+    final text = segs
+        .whereType<Map<String, dynamic>>()
+        .map((seg) => seg['utf8']?.toString() ?? '')
+        .join()
+        .trim();
+    if (text.isEmpty) continue;
+    final start = (event['tStartMs'] as num?)?.toInt() ?? 0;
+    final end = start + ((event['dDurationMs'] as num?)?.toInt() ?? 0);
+    cues.add((start: start, end: end, text: text));
+  }
+  cues.sort((a, b) => a.start.compareTo(b.start));
+
+  String time(int ms) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    final h = ms ~/ 3600000;
+    final m = ms ~/ 60000 % 60;
+    final sec = ms ~/ 1000 % 60;
+    return '${two(h)}:${two(m)}:${two(sec)},${(ms % 1000).toString().padLeft(3, '0')}';
+  }
+
+  final out = StringBuffer();
+  var index = 0;
+  for (var i = 0; i < cues.length; i++) {
+    final cue = cues[i];
+    var end = cue.end;
+    if (i + 1 < cues.length && cues[i + 1].start < end) end = cues[i + 1].start;
+    if (end <= cue.start) continue;
+    index++;
+    out
+      ..writeln(index)
+      ..writeln('${time(cue.start)} --> ${time(end)}')
+      ..writeln(cue.text)
+      ..writeln();
+  }
+  return out.toString();
 }

@@ -6,7 +6,7 @@
 // Runs as an ImageFilter.shader inside a BackdropFilter, after the colour
 // matrix and blur, exactly where the Kotlin version runs it in its
 // RenderEffect chain. Pixels deeper inside the shape than the refraction
-// band take the early return, so the cost is one texture read for all of
+// band take the first branch, so the cost is one texture read for all of
 // the interior and the extra work only happens along the rim.
 
 #version 460 core
@@ -73,37 +73,9 @@ vec2 safeNormalize(vec2 v) {
     return l > 1e-4 ? v / l : vec2(0.0);
 }
 
-void main() {
-    vec2 coord = FlutterFragCoord().xy;
-    vec2 halfSize = uRect.zw * 0.5;
-    vec2 centered = coord - uRect.xy - halfSize;
-    float radius = radiusAt(centered, uRadii);
-
-    float sd = sdRoundedRect(centered, halfSize, radius);
-    if (uRefractionHeight <= 0.0 || -sd >= uRefractionHeight) {
-        fragColor = sampleAt(coord);
-        return;
-    }
-    sd = min(sd, 0.0);
-
-    // The upstream shader is handed -refractionAmount, so it pulls samples
-    // inward from the rim; the sign is folded in here instead.
-    float d = -circleMap(1.0 - -sd / uRefractionHeight) * uRefractionAmount;
-    float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
-    vec2 grad = safeNormalize(
-        gradSdRoundedRect(centered, halfSize, gradRadius) +
-        uDepthEffect * safeNormalize(centered)
-    );
-
-    vec2 refracted = coord + d * grad;
-    if (uChromatic < 0.5) {
-        fragColor = sampleAt(refracted);
-        return;
-    }
-
-    float dispersionIntensity = (centered.x * centered.y) / (halfSize.x * halfSize.y);
-    vec2 dispersed = d * grad * dispersionIntensity;
-
+// The rim's colour split: seven samples spread along the refraction,
+// weighted into red, green and blue.
+vec4 dispersedColor(vec2 refracted, vec2 dispersed) {
     vec4 color = vec4(0.0);
 
     vec4 red = sampleAt(refracted + dispersed);
@@ -138,5 +110,38 @@ void main() {
     color.b += purple.b / 3.0;
     color.a += purple.a / 7.0;
 
-    fragColor = color;
+    return color;
+}
+
+// One exit only: on Windows, shaders that sample textures and return from
+// main() more than once can fail to compile (flutter/flutter#190809).
+void main() {
+    vec2 coord = FlutterFragCoord().xy;
+    vec2 halfSize = uRect.zw * 0.5;
+    vec2 centered = coord - uRect.xy - halfSize;
+    float radius = radiusAt(centered, uRadii);
+
+    float sd = sdRoundedRect(centered, halfSize, radius);
+    if (uRefractionHeight <= 0.0 || -sd >= uRefractionHeight) {
+        fragColor = sampleAt(coord);
+    } else {
+        sd = min(sd, 0.0);
+
+        // The upstream shader is handed -refractionAmount, so it pulls samples
+        // inward from the rim; the sign is folded in here instead.
+        float d = -circleMap(1.0 - -sd / uRefractionHeight) * uRefractionAmount;
+        float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
+        vec2 grad = safeNormalize(
+            gradSdRoundedRect(centered, halfSize, gradRadius) +
+            uDepthEffect * safeNormalize(centered)
+        );
+
+        vec2 refracted = coord + d * grad;
+        if (uChromatic < 0.5) {
+            fragColor = sampleAt(refracted);
+        } else {
+            float dispersionIntensity = (centered.x * centered.y) / (halfSize.x * halfSize.y);
+            fragColor = dispersedColor(refracted, d * grad * dispersionIntensity);
+        }
+    }
 }

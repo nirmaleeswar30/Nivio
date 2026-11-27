@@ -31,6 +31,21 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.2
 
+dependency_overrides:
+  # Copies whose Android build files don't apply the Kotlin Gradle Plugin,
+  # which Flutter warns about (and plans to fail on) with AGP 9's built-in
+  # Kotlin. See packages/vendor/README.md.
+  device_screen_brightness:
+    path: ../vendor/device_screen_brightness
+  flutter_volume_controller:
+    path: ../vendor/flutter_volume_controller
+  workmanager_android:
+    path: ../vendor/workmanager_android
+  # Desktop-only; the real package compiles nativeapi's C++ library for
+  # every Android ABI on every build. Nivio calls it only on desktop.
+  window_manager:
+    path: ../stubs/window_manager
+
 flutter:
   uses-material-design: true
 

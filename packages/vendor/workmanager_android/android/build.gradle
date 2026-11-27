@@ -1,0 +1,89 @@
+group 'dev.fluttercommunity.workmanager'
+version '1.0-SNAPSHOT'
+
+rootProject.allprojects {
+    repositories {
+        mavenCentral()
+        google()
+    }
+}
+
+apply plugin: 'com.android.library'
+
+// Nivio: patched copy of workmanager_android 0.10.9 without its conditional
+// `apply plugin: 'kotlin-android'`. Flutter flags any plugin whose build file
+// contains that line (it scans the text) and plans to fail such builds. With
+// built-in Kotlin off, Flutter's Gradle plugin applies KGP itself.
+def agpMajor = com.android.Version.ANDROID_GRADLE_PLUGIN_VERSION.tokenize('.')[0] as int
+
+android {
+    // Conditional for compatibility with AGP <4.2.
+    if (project.android.hasProperty("namespace")) {
+        namespace 'dev.fluttercommunity.workmanager'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+        test.java.srcDirs += 'src/test/kotlin'
+        // FOREGROUND_SERVICE_DATA_SYNC is a Play Console "special type" that
+        // requires a declaration + demonstration video even when unused, so it
+        // is opt-in (see AndroidManifest.xml). Apps that run long-running
+        // workers with the `dataSync` foreground service type must set
+        // `workmanager.enableDataSyncForegroundService=true` in their
+        // gradle.properties (or via -P). See #725.
+        def wmDataSyncEnabled =
+            project.findProperty('workmanager.enableDataSyncForegroundService')
+                ?.toString() == 'true'
+        if (wmDataSyncEnabled) {
+            // Swap in the opt-in manifest (adds the DATA_SYNC permission and
+            // the `dataSync` service type). See #725.
+            main.manifest.srcFile 'src/main/AndroidManifest.dataSync.xml'
+        }
+    }
+    defaultConfig {
+        compileSdk 35
+        minSdkVersion 23
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+    lintOptions {
+        disable 'InvalidPackage'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    if (agpMajor < 9) {
+        kotlinOptions {
+            tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+                kotlinOptions.jvmTarget = "1.8"
+            }
+        }
+    }
+}
+
+// AGP 9: `kotlinOptions` inside `android {}` was removed. Configure the Kotlin
+// compiler via the `kotlin` extension (provided by built-in Kotlin, or by KGP
+// 2.0+ on the legacy path). Kept in sync with compileOptions above.
+if (agpMajor >= 9) {
+    kotlin {
+        compilerOptions {
+            jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8
+        }
+    }
+}
+
+dependencies {
+    def work_version = "2.11.2"
+    implementation "androidx.work:work-runtime:$work_version"
+    implementation "androidx.concurrent:concurrent-futures:1.1.0"
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation "org.jetbrains.kotlin:kotlin-test"
+    testImplementation "org.mockito:mockito-core:4.11.0"
+    testImplementation "org.mockito.kotlin:mockito-kotlin:4.1.0"
+    // Real org.json implementation for JVM unit tests (android.jar only stubs it).
+    testImplementation 'org.json:json:20240303'
+    // Real Android framework implementations (Build, Uri, ...) for JVM unit tests.
+    testImplementation 'org.robolectric:robolectric:4.16.1'
+}

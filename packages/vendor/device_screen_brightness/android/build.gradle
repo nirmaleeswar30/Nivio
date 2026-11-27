@@ -1,0 +1,53 @@
+// Nivio: patched copy of device_screen_brightness 2.0.0. Upstream applies the
+// Kotlin Gradle Plugin unconditionally and pins AGP 8.11 in a buildscript
+// block. With AGP 9's built-in Kotlin a plugin must not apply KGP (Flutter
+// applies it itself when built-in Kotlin is off), and the AGP version comes
+// from the host app.
+group = "com.example.device_screen_brightness"
+version = "2.0.0"
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: "com.android.library"
+
+def agpMajor = com.android.Version.ANDROID_GRADLE_PLUGIN_VERSION.tokenize('.')[0] as int
+
+android {
+    namespace = "com.example.device_screen_brightness"
+
+    // Bumping the plugin compileSdk version requires all clients of this plugin
+    // to bump the version in their app.
+    compileSdk = 36
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        main.java.srcDirs += "src/main/kotlin"
+    }
+
+    if (agpMajor < 9) {
+        kotlinOptions {
+            jvmTarget = "17"
+        }
+    }
+
+    defaultConfig {
+        minSdk = 24
+    }
+}
+
+if (agpMajor >= 9) {
+    kotlin {
+        compilerOptions {
+            jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+        }
+    }
+}

@@ -185,14 +185,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "5.9.0"
-  cnativeapi:
-    dependency: transitive
-    description:
-      name: cnativeapi
-      sha256: "49662734cdf3dd1707b1ee35102ac1754e0ab3d450a2d30b066730f219dacc86"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.6.2"
   code_assets:
     dependency: transitive
     description:
@@ -292,10 +284,9 @@ packages:
   device_screen_brightness:
     dependency: "direct main"
     description:
-      name: device_screen_brightness
-      sha256: beb370714dc12c9ab8afa3ae32055a12c491c3a7f0c1350db54ffb89a6f8019c
-      url: "https://pub.dev"
-    source: hosted
+      path: "../vendor/device_screen_brightness"
+      relative: true
+    source: path
     version: "2.0.0"
   dio:
     dependency: transitive
@@ -643,10 +634,9 @@ packages:
   flutter_volume_controller:
     dependency: "direct main"
     description:
-      name: flutter_volume_controller
-      sha256: f9ba12aa17880c1ee3e1668f14eefbc6704e2fed90ed0b2ca97b7dee71133240
-      url: "https://pub.dev"
-    source: hosted
+      path: "../vendor/flutter_volume_controller"
+      relative: true
+    source: path
     version: "2.0.2"
   flutter_web_plugins:
     dependency: transitive
@@ -1029,22 +1019,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.19.6"
-  nativeapi:
-    dependency: transitive
-    description:
-      name: nativeapi
-      sha256: "339b7a91a27ce5c33659cab92cf8e76736142985433652f91a63cc5348135bfb"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.6.2"
-  nativeapi_flutter:
-    dependency: transitive
-    description:
-      name: nativeapi_flutter
-      sha256: b0507253748ba9690a295bc162208a91d348809185409e5aee7b09e77ab5d8a3
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.6.2"
   nivio:
     dependency: "direct main"
     description:
@@ -1745,12 +1719,11 @@ packages:
     source: hosted
     version: "6.4.0"
   window_manager:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: window_manager
-      sha256: "9504ae37e618d31524e337ad3cf9600d252acf11fffa3ddb9b0b5ced634542d9"
-      url: "https://pub.dev"
-    source: hosted
+      path: "../stubs/window_manager"
+      relative: true
+    source: path
     version: "0.7.1"
   windows_file_picker:
     dependency: transitive
@@ -1769,12 +1742,11 @@ packages:
     source: hosted
     version: "0.10.10"
   workmanager_android:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: workmanager_android
-      sha256: ffe8aa061885370c9363f7ae2d2196d31855217c58e7b15899d915d36c768c4a
-      url: "https://pub.dev"
-    source: hosted
+      path: "../vendor/workmanager_android"
+      relative: true
+    source: path
     version: "0.10.9"
   workmanager_apple:
     dependency: transitive
