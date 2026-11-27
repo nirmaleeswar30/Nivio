@@ -6,63 +6,9 @@ part of 'watchlist_item.dart';
 // TypeAdapterGenerator
 // **************************************************************************
 
-class WatchStatusAdapter extends TypeAdapter<WatchStatus> {
-  @override
-  final int typeId = 7;
-
-  @override
-  WatchStatus read(BinaryReader reader) {
-    switch (reader.readByte()) {
-      case 0:
-        return WatchStatus.planning;
-      case 1:
-        return WatchStatus.watching;
-      case 2:
-        return WatchStatus.completed;
-      case 3:
-        return WatchStatus.paused;
-      case 4:
-        return WatchStatus.dropped;
-      default:
-        return WatchStatus.planning;
-    }
-  }
-
-  @override
-  void write(BinaryWriter writer, WatchStatus obj) {
-    switch (obj) {
-      case WatchStatus.planning:
-        writer.writeByte(0);
-        break;
-      case WatchStatus.watching:
-        writer.writeByte(1);
-        break;
-      case WatchStatus.completed:
-        writer.writeByte(2);
-        break;
-      case WatchStatus.paused:
-        writer.writeByte(3);
-        break;
-      case WatchStatus.dropped:
-        writer.writeByte(4);
-        break;
-    }
-  }
-
-  @override
-  int get hashCode => typeId.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is WatchStatusAdapter &&
-          runtimeType == other.runtimeType &&
-          typeId == other.typeId;
-}
-
 class WatchlistItemAdapter extends TypeAdapter<WatchlistItem> {
   @override
-  final int typeId = 5;
+  final typeId = 5;
 
   @override
   WatchlistItem read(BinaryReader reader) {
@@ -71,21 +17,21 @@ class WatchlistItemAdapter extends TypeAdapter<WatchlistItem> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return WatchlistItem(
-      id: fields[0] as int,
+      id: (fields[0] as num).toInt(),
       title: fields[1] as String,
       posterPath: fields[2] as String?,
       mediaType: fields[3] as String,
       addedAt: fields[4] as DateTime,
-      voteAverage: fields[5] as double?,
+      voteAverage: (fields[5] as num?)?.toDouble(),
       releaseDate: fields[6] as String?,
       overview: fields[7] as String?,
-      watchStatus: fields[8] is WatchStatus
-          ? fields[8] as WatchStatus
-          : WatchStatus.planning,
-      currentEpisode: fields[9] as int?,
-      totalEpisodes: fields[10] as int?,
-      anilistId: fields[11] as int?,
-      malId: fields[12] as int?,
+      watchStatus: fields[8] == null
+          ? WatchStatus.planning
+          : fields[8] as WatchStatus,
+      currentEpisode: (fields[9] as num?)?.toInt(),
+      totalEpisodes: (fields[10] as num?)?.toInt(),
+      anilistId: (fields[11] as num?)?.toInt(),
+      malId: (fields[12] as num?)?.toInt(),
       updatedAt: fields[13] as DateTime?,
     );
   }
@@ -131,6 +77,55 @@ class WatchlistItemAdapter extends TypeAdapter<WatchlistItem> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is WatchlistItemAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class WatchStatusAdapter extends TypeAdapter<WatchStatus> {
+  @override
+  final typeId = 7;
+
+  @override
+  WatchStatus read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return WatchStatus.planning;
+      case 1:
+        return WatchStatus.watching;
+      case 2:
+        return WatchStatus.completed;
+      case 3:
+        return WatchStatus.paused;
+      case 4:
+        return WatchStatus.dropped;
+      default:
+        return WatchStatus.planning;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, WatchStatus obj) {
+    switch (obj) {
+      case WatchStatus.planning:
+        writer.writeByte(0);
+      case WatchStatus.watching:
+        writer.writeByte(1);
+      case WatchStatus.completed:
+        writer.writeByte(2);
+      case WatchStatus.paused:
+        writer.writeByte(3);
+      case WatchStatus.dropped:
+        writer.writeByte(4);
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is WatchStatusAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

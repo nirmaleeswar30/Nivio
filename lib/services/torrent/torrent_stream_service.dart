@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'dart:io';
 
-import 'package:hive/hive.dart';
+import 'package:hive_ce/hive.dart';
 import 'package:rqbit_ffi/rqbit_ffi.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

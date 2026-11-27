@@ -161,7 +161,7 @@ class StreamingService {
       'builtin:Animex': _dynamicAnimexServers,
       'builtin:AniKoto': const ['AniKoto'],
     };
-    final settings = ref.read(streamSelectionSettingsProvider).valueOrNull;
+    final settings = ref.read(streamSelectionSettingsProvider).value;
     final order = {...?settings?.animeSourceOrder, ...sources.keys};
     return [
       if (isTorrentEnabled(isAnime: true)) 'Nivio Torrents',
@@ -230,7 +230,7 @@ class StreamingService {
       ep,
       onStatusUpdate,
       media: media,
-      maxFileBytes: (ref.read(streamSelectionSettingsProvider).valueOrNull ?? settings).maxFileBytes,
+      maxFileBytes: (ref.read(streamSelectionSettingsProvider).value ?? settings).maxFileBytes,
     );
     if (handle != null && !selection.automatic) {
       await torrentStreamService.rememberReleaseGroup(
@@ -487,6 +487,7 @@ class StreamingService {
           audio: preferredAudio ?? 'Original',
           animeAudio: subDubPreference,
           isAnime: isAnime,
+          originalLanguage: media.originalLanguage,
         );
         final ranked = await selection.ranked(choices);
         final requestedQuality = preferredQuality?.toLowerCase();

@@ -311,11 +311,8 @@ The packaging scripts automatically read the application version from the root `
 The resulting setup wizard executable is saved to:
 `packages/nivio_desktop/dist/windows/Nivio-Setup-<version>.exe`
 
-#### 🌐 Windows WebView2 & Permissions Architecture
-Trailer players and hover card preview players on Windows utilize Microsoft Edge WebView2 via `flutter_inappwebview`:
-* **User Data Isolation:** Nivio configures `WebViewEnvironment` with `userDataFolder` pointing to `%LOCALAPPDATA%\Nivio\webview2_data`.
-* **Standard User Compatibility:** Because Edge WebView2 defaults to writing next to the executable, apps installed in `C:\Program Files` would otherwise trigger permission errors (*"We couldn't create the data directory"* / `E_ACCESSDENIED`). Isolating data in `%LOCALAPPDATA%` guarantees full read/write functionality for standard user accounts without requiring administrative elevation.
-* **Prerequisites:** Windows 10 and 11 come with Edge WebView2 pre-installed. If running on minimal or LTSC Windows editions, ensure the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) is installed.
+#### 🎬 Trailers
+Trailers and hover previews play in mpv, the same engine as the main player, so no platform needs a web view. `TrailerStreamResolver` turns a TMDB/AniList trailer into streams mpv opens directly. YouTube uses the InnerTube `VISIONOS` client (as Inzx does for podcast videos): its stream URLs need no signature deciphering, `n` challenge or PO token and play to the end, unlike the Android clients, which YouTube cuts off after about a minute. Video and audio come as separate streams (audio is added with mpv's `audio-files`). Vimeo and Dailymotion go through their player APIs.
 
 ---
 

@@ -20,18 +20,12 @@ rm -f pubspec.yaml.bak pubspec.lock.bak
 echo "📥 Getting desktop dependencies..."
 flutter pub get
 
-# Apply Linux compatibility patches if target is linux
 TARGET_PLATFORM="${1:-linux}"
 ACTION="${2:-build}"
 if [[ $# -gt 0 ]]; then
   shift 2 2>/dev/null || shift $#
 fi
 EXTRA_ARGS=("$@")
-
-if [ "$TARGET_PLATFORM" = "linux" ]; then
-  echo "🔧 Applying Linux compatibility patches..."
-  dart run tool/patch_linux.dart
-fi
 
 if [ "$ACTION" = "run" ]; then
   echo "🚀 Running application on $TARGET_PLATFORM..."

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
@@ -840,12 +841,11 @@ Future<bool> importCustomSubtitleFont(String sourcePath, String fileName, Widget
 /// Prompts the user to pick a local font file (.ttf / .otf) and applies it.
 Future<bool> pickAndImportCustomFont(BuildContext context, WidgetRef ref) async {
   try {
-    final result = await FilePicker.pickFiles(
+    final file = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: ['ttf', 'otf'],
     );
-    if (result != null && result.files.isNotEmpty && result.files.single.path != null) {
-      final file = result.files.single;
+    if (file != null && file.path != null) {
       final success = await importCustomSubtitleFont(file.path!, file.name, ref);
       if (context.mounted) {
         if (success) {

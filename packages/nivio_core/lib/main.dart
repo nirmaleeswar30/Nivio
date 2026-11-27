@@ -6,7 +6,6 @@ import 'dart:isolate';
 import 'dart:ui';
 import 'dart:io';
 import 'package:app_links/app_links.dart';
-import 'package:flutter/foundation.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -16,7 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart' hide IsolateNameServer;
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/core/liquid_glass/glass_shaders.dart';
 import 'package:nivio/core/mpv_android_setup.dart';
@@ -36,7 +35,6 @@ import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/github_release_update_service.dart';
 import 'package:nivio/services/desktop_self_updater.dart';
 import 'package:nivio/services/shorebird_update_service.dart';
-import 'package:nivio/services/webview_environment_service.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/home_providers.dart' show HomeShelf;
 import 'package:nivio/providers/settings_providers.dart';
@@ -71,8 +69,7 @@ import 'package:nivio/services/mal_auth_service.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:nivio/widgets/title_bar_overlay.dart';
 
-import 'package:flutter_inappwebview_linux/flutter_inappwebview_linux.dart';
-import 'package:window_manager/window_manager.dart';
+import 'package:window_manager/legacy.dart';
 
 const int _desktopIpcPort = 45328;
 
@@ -162,43 +159,6 @@ void main([List<String> args = const []]) async {
       // Keep the disk cache warm while bounding decoded images in memory.
       PaintingBinding.instance.imageCache.maximumSizeBytes = 48 * 1024 * 1024;
     }
-    if (Platform.isLinux) {
-      LinuxInAppWebViewPlatform.registerWith();
-      
-      // Catch non-fatal internal plugin exceptions from flutter_inappwebview_linux
-      final originalOnError = FlutterError.onError;
-      FlutterError.onError = (details) {
-        final stack = details.stack?.toString() ?? '';
-        final exc = details.exception.toString();
-        if (stack.contains('flutter_inappwebview_linux') ||
-            stack.contains('_CustomPlatformViewState') ||
-            exc.contains('InAppWebView')) {
-          debugPrint('🛡️ Handled non-fatal flutter_inappwebview_linux exception: $exc');
-          return;
-        }
-        if (originalOnError != null) {
-          originalOnError(details);
-        } else {
-          FlutterError.presentError(details);
-        }
-      };
-
-      PlatformDispatcher.instance.onError = (error, stack) {
-        final stackStr = stack.toString();
-        final errStr = error.toString();
-        if (stackStr.contains('flutter_inappwebview_linux') ||
-            stackStr.contains('_CustomPlatformViewState') ||
-            errStr.contains('InAppWebView') ||
-            errStr.contains('RenderObject.getTransformTo')) {
-          debugPrint('🛡️ Handled async flutter_inappwebview_linux exception: $errStr');
-          return true;
-        }
-        return false;
-      };
-    }
-    if (Platform.isWindows) {
-      await AppWebViewEnvironment.initialize();
-    }
     initDebugLogFile();
     MediaKit.ensureInitialized(libmpv: _bundledLibmpvPath());
     setUpMpvForAndroid();
@@ -280,6 +240,9 @@ void main([List<String> args = const []]) async {
 
     runApp(
       ProviderScope(
+        // Riverpod 3 retries failing providers automatically; screens here
+        // already offer their own retry, so keep failures as they were.
+        retry: (_, _) => null,
         overrides: [cacheServiceProvider.overrideWithValue(cacheService)],
         child: const NivioApp(),
       ),
@@ -849,6 +812,8 @@ final appRouter = GoRouter(
         final directStreamTitle = state.uri.queryParameters['directStreamTitle'];
         final directStreamReferer = state.uri.queryParameters['directStreamReferer'];
         final isLive = state.uri.queryParameters['isLive'] == 'true';
+        final trailerSite = state.uri.queryParameters['trailerSite'];
+        final trailerKey = state.uri.queryParameters['trailerKey'];
         return PlayerScreen(
           mediaId: int.parse(id),
           season: season,
@@ -863,6 +828,8 @@ final appRouter = GoRouter(
           directStreamTitle: directStreamTitle,
           directStreamReferer: directStreamReferer,
           isLive: isLive,
+          trailerSite: trailerSite,
+          trailerKey: trailerKey,
         );
       },
     ),

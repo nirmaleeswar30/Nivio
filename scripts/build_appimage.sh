@@ -78,30 +78,6 @@ rm -rf "$APPDIR"
 mkdir -p "$APPDIR" "$DIST_DIR"
 cp -a "$BUNDLE_DIR/." "$APPDIR/"
 
-echo "🌐 Step 4: Bundling WPE WebKit helper processes & runtime libraries..."
-# 1. Bundle WPEWebKit auxiliary subprocesses (WPENetworkProcess, WPEWebProcess, etc.)
-WPE_SYSTEM_DIR="/usr/lib/wpe-webkit-2.0"
-if [ -d "$WPE_SYSTEM_DIR" ]; then
-  mkdir -p "$APPDIR/lib/wpe-webkit-2.0"
-  cp -a "$WPE_SYSTEM_DIR/." "$APPDIR/lib/wpe-webkit-2.0/"
-  echo "  ✓ Bundled WPEWebKit subprocesses from $WPE_SYSTEM_DIR"
-fi
-
-# 2. Bundle WPE backend libraries (e.g. libWPEBackend-fdo)
-for fdo_lib in /usr/lib/libWPEBackend-fdo-1.0.so*; do
-  if [ -e "$fdo_lib" ]; then
-    cp -d "$fdo_lib" "$APPDIR/lib/" 2>/dev/null || true
-  fi
-done
-
-# 3. Bundle GStreamer plugins and scanner for HTML5 video/audio playback (YouTube, trailers)
-GST_SYSTEM_DIR="/usr/lib/gstreamer-1.0"
-if [ -d "$GST_SYSTEM_DIR" ]; then
-  mkdir -p "$APPDIR/lib/gstreamer-1.0"
-  cp -a "$GST_SYSTEM_DIR/." "$APPDIR/lib/gstreamer-1.0/"
-  echo "  ✓ Bundled GStreamer 1.0 plugins (appsink, codecs, demuxers) from $GST_SYSTEM_DIR"
-fi
-
 echo "🎬 Bundling libmpv (Nivio must never load the host's mpv)..."
 # Bundle libmpv.so.2 explicitly instead of relying on it being pulled in as a
 # plugin dependency: media_kit dlopen()s "libmpv.so" first, which on many
@@ -151,7 +127,7 @@ echo "  ✓ Bundled $LIBMPV_REAL as lib/$LIBMPV_REAL_NAME (+ libmpv.so.2, libmpv
 # Empty, read-only mpv config dir inside the image (see MPV_HOME in AppRun).
 mkdir -p "$APPDIR/etc/mpv"
 
-# 4. Automatically resolve and bundle all required runtime dependencies (HarfBuzz, ICU, XML, codecs, GStreamer, etc.)
+# Step 4: Automatically resolve and bundle all required runtime dependencies (HarfBuzz, ICU, XML, codecs, etc.)
 python3 - << 'PY'
 import os, subprocess, re, shutil
 
@@ -227,21 +203,8 @@ for soname, realpath in to_copy.items():
     except Exception as e:
         print(f"  ⚠️ Could not copy {soname}: {e}")
 
-print(f"  ✓ Bundled {copied_count} runtime shared libraries (including HarfBuzz-ICU, codecs, GStreamer)")
+print(f"  ✓ Bundled {copied_count} runtime shared libraries (including HarfBuzz-ICU, codecs)")
 PY
-
-# 4. Ensure soname symlinks are present in AppDir/lib
-cd "$APPDIR/lib"
-for soname in libwpe-1.0.so.1 libWPEWebKit-2.0.so.1 libWPEBackend-fdo-1.0.so.1; do
-  if [ ! -e "$soname" ]; then
-    target=$(find . -maxdepth 1 -type f -name "$soname.*" -printf '%f\n' 2>/dev/null | sort -V | tail -n 1)
-    if [ -n "$target" ]; then
-      ln -s "$target" "$soname"
-      echo "  ✓ Linked $soname -> $target"
-    fi
-  fi
-done
-cd "$PROJECT_ROOT"
 
 # Verify the bundled libmpv resolves entirely from the AppDir (plus the
 # host-provided driver/system libs excluded above), so a host mpv/FFmpeg
@@ -260,30 +223,6 @@ for dep in libavcodec libavformat libavutil libswscale libswresample libass; do
   fi
 done
 echo "  ✓ libmpv and its FFmpeg/libass dependencies resolve from the AppDir"
-
-# 5. Patch hardcoded PKGLIBEXECDIR in bundled libWPEWebKit so it redirects subprocess lookup to /tmp/wpe-webkit-2.0
-python3 - << 'PY'
-import glob
-
-old_str1 = b'/usr/lib/wpe-webkit-2.0\x00'
-new_str1 = b'/tmp/wpe-webkit-2.0\x00' + b'\x00' * (len(old_str1) - len(b'/tmp/wpe-webkit-2.0\x00'))
-
-old_str2 = b'/usr/lib/wpe-webkit-2.0/injected-bundle/\x00'
-new_str2 = b'/tmp/wpe-webkit-2.0/injected-bundle/\x00' + b'\x00' * (len(old_str2) - len(b'/tmp/wpe-webkit-2.0/injected-bundle/\x00'))
-
-for so_file in glob.glob("build/appimage/Nivio.AppDir/lib/libWPEWebKit-2.0.so*"):
-    try:
-        with open(so_file, "r+b") as f:
-            content = f.read()
-            if old_str1 in content or old_str2 in content:
-                content = content.replace(old_str1, new_str1).replace(old_str2, new_str2)
-                f.seek(0)
-                f.write(content)
-                f.truncate()
-                print(f"  ✓ Patched subprocess lookup paths in {so_file}")
-    except Exception as e:
-        print(f"  ⚠️ Could not patch {so_file}: {e}")
-PY
 
 echo "🖼️ Step 5: Setting up Icon and Desktop Entry..."
 ICON_SOURCE="$PROJECT_ROOT/packages/nivio_desktop/assets/images/nivio.png"
@@ -311,12 +250,8 @@ cat > "$APPDIR/AppRun" << 'EOF'
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "${0}")")"
 
-export LD_LIBRARY_PATH="$HERE/lib:$HERE/lib/wpe-webkit-2.0:${LD_LIBRARY_PATH:-}"
+export LD_LIBRARY_PATH="$HERE/lib:${LD_LIBRARY_PATH:-}"
 export XDG_DATA_DIRS="$HERE/share:/usr/share:${XDG_DATA_DIRS:-}"
-
-# Configure GStreamer to use bundled plugins (appsink, playbin, ffmpeg/libav, etc.)
-export GST_PLUGIN_SYSTEM_PATH_1_0="$HERE/lib/gstreamer-1.0:${GST_PLUGIN_SYSTEM_PATH_1_0:-}"
-export GST_PLUGIN_SCANNER_1_0="$HERE/lib/gstreamer-1.0/gst-plugin-scanner"
 
 # --- mpv isolation ---
 # Playback must only depend on what ships in this AppImage:
@@ -328,10 +263,6 @@ export GST_PLUGIN_SCANNER_1_0="$HERE/lib/gstreamer-1.0/gst-plugin-scanner"
 export LIBMPV_LIBRARY_PATH="$HERE/lib/libmpv.so.2"
 export MPV_HOME="$HERE/etc/mpv"
 
-# Disable WebKit sandbox inside AppImage container
-export WEBKIT_DISABLE_SANDBOX=1
-export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
-
 # A launch carrying a nivio:// link (OAuth redirect from AniList / MAL / Simkl,
 # shared links) is usually a short-lived second instance that only forwards the
 # link to the running Nivio and exits, so it must not touch shared state or
@@ -342,14 +273,6 @@ for arg in "$@"; do
     nivio://*) URL_LAUNCH=1 ;;
   esac
 done
-
-# Ensure /tmp/wpe-webkit-2.0 points to the bundled helper processes. Skipped for
-# link launches: this mount disappears when the forwarder exits, which would
-# leave the running instance's WebKit helpers pointing at a dead path.
-if [ "$URL_LAUNCH" = "0" ] || [ ! -d /tmp/wpe-webkit-2.0 ]; then
-  rm -f /tmp/wpe-webkit-2.0 2>/dev/null || true
-  ln -sfn "$HERE/lib/wpe-webkit-2.0" /tmp/wpe-webkit-2.0 2>/dev/null || true
-fi
 
 # --- Desktop Integration & CLI Options ---
 XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"

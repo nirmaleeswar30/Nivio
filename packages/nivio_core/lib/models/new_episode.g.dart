@@ -8,7 +8,7 @@ part of 'new_episode.dart';
 
 class NewEpisodeAdapter extends TypeAdapter<NewEpisode> {
   @override
-  final int typeId = 3;
+  final typeId = 3;
 
   @override
   NewEpisode read(BinaryReader reader) {
@@ -17,15 +17,15 @@ class NewEpisodeAdapter extends TypeAdapter<NewEpisode> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return NewEpisode(
-      showId: fields[0] as int,
+      showId: (fields[0] as num).toInt(),
       showName: fields[1] as String,
-      seasonNumber: fields[2] as int,
-      episodeNumber: fields[3] as int,
+      seasonNumber: (fields[2] as num).toInt(),
+      episodeNumber: (fields[3] as num).toInt(),
       episodeName: fields[4] as String,
       posterPath: fields[5] as String?,
       airDate: fields[6] as DateTime,
       detectedAt: fields[7] as DateTime,
-      isRead: fields[8] as bool,
+      isRead: fields[8] == null ? false : fields[8] as bool,
     );
   }
 

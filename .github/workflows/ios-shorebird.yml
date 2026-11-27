@@ -62,7 +62,7 @@ jobs:
 
       - uses: ./.github/actions/prepare-ios
         with:
-          flutter-version: '3.47.7'
+          flutter-version: '3.50.1'
           xcode-version: ${{ env.XCODE_VERSION }}
 
       - uses: shorebirdtech/setup-shorebird@v1

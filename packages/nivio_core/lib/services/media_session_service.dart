@@ -6,7 +6,7 @@ import 'package:dbus/dbus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:window_manager/window_manager.dart';
+import 'package:window_manager/legacy.dart';
 
 /// What the OS media overlay / lock screen / headset UI shows.
 @immutable

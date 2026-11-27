@@ -4,7 +4,7 @@ part 'search_result.freezed.dart';
 part 'search_result.g.dart';
 
 @freezed
-class SearchResult with _$SearchResult {
+abstract class SearchResult with _$SearchResult {
   const factory SearchResult({
     @Default(false) bool adult,
     required int id,
@@ -27,7 +27,7 @@ class SearchResult with _$SearchResult {
 }
 
 @freezed
-class SearchResults with _$SearchResults {
+abstract class SearchResults with _$SearchResults {
   const factory SearchResults({
     required int page,
     required List<SearchResult> results,

@@ -6,15 +6,15 @@ part of 'api_source.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
-_$SubtitleTrackImpl _$$SubtitleTrackImplFromJson(Map<String, dynamic> json) =>
-    _$SubtitleTrackImpl(
+_SubtitleTrack _$SubtitleTrackFromJson(Map<String, dynamic> json) =>
+    _SubtitleTrack(
       url: json['url'] as String?,
       file: json['file'] as String?,
       lang: json['lang'] as String?,
       language: json['language'] as String?,
     );
 
-Map<String, dynamic> _$$SubtitleTrackImplToJson(_$SubtitleTrackImpl instance) =>
+Map<String, dynamic> _$SubtitleTrackToJson(_SubtitleTrack instance) =>
     <String, dynamic>{
       'url': instance.url,
       'file': instance.file,
@@ -22,21 +22,14 @@ Map<String, dynamic> _$$SubtitleTrackImplToJson(_$SubtitleTrackImpl instance) =>
       'language': instance.language,
     };
 
-_$APISourceImpl _$$APISourceImplFromJson(Map<String, dynamic> json) =>
-    _$APISourceImpl(
-      url: json['url'] as String,
-      quality: json['quality'] as String,
-    );
+_APISource _$APISourceFromJson(Map<String, dynamic> json) =>
+    _APISource(url: json['url'] as String, quality: json['quality'] as String);
 
-Map<String, dynamic> _$$APISourceImplToJson(_$APISourceImpl instance) =>
-    <String, dynamic>{
-      'url': instance.url,
-      'quality': instance.quality,
-    };
+Map<String, dynamic> _$APISourceToJson(_APISource instance) =>
+    <String, dynamic>{'url': instance.url, 'quality': instance.quality};
 
-_$APISourceResultsImpl _$$APISourceResultsImplFromJson(
-        Map<String, dynamic> json) =>
-    _$APISourceResultsImpl(
+_APISourceResults _$APISourceResultsFromJson(Map<String, dynamic> json) =>
+    _APISourceResults(
       sources: (json['sources'] as List<dynamic>?)
           ?.map((e) => APISource.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -45,8 +38,7 @@ _$APISourceResultsImpl _$$APISourceResultsImplFromJson(
           .toList(),
     );
 
-Map<String, dynamic> _$$APISourceResultsImplToJson(
-        _$APISourceResultsImpl instance) =>
+Map<String, dynamic> _$APISourceResultsToJson(_APISourceResults instance) =>
     <String, dynamic>{
       'sources': instance.sources,
       'subtitles': instance.subtitles,

@@ -116,6 +116,54 @@ class TmdbService {
     }
   }
 
+  /// TMDB movies and shows matching [query], anime included. The regular
+  /// [search] hides Japanese animated series (the app lists anime from
+  /// AniList), so lookups that map an AniList title to TMDB use this.
+  Future<List<SearchResult>> searchTitlesIncludingAnime(String query) async {
+    final normalizedQuery = _normalizeSearchText(query);
+    if (normalizedQuery.isEmpty) return const [];
+    final cacheKey = 'search_with_anime_v1_$normalizedQuery';
+    final cached = (await _cache.getRaw(cacheKey))?['results'];
+    if (cached is List) {
+      return [
+        for (final item in cached)
+          if (item is Map) SearchResult.fromJson(Map<String, dynamic>.from(item)),
+      ];
+    }
+    final queryParams = <String, dynamic>{
+      'query': normalizedQuery,
+      'include_adult': false,
+    };
+    final responses = await Future.wait([
+      _dio.get('/3/search/tv', queryParameters: queryParams),
+      _dio.get('/3/search/movie', queryParameters: queryParams),
+    ]);
+    final maps = <Map<String, dynamic>>[];
+    for (final (index, response) in responses.indexed) {
+      final results = (response.data as Map?)?['results'];
+      if (results is! List) continue;
+      for (final item in results) {
+        if (item is! Map) continue;
+        maps.add({
+          ...item.map((key, value) => MapEntry(key.toString(), value)),
+          'media_type': index == 0 ? 'tv' : 'movie',
+        });
+      }
+    }
+    final parsed = <SearchResult>[];
+    for (final map in maps) {
+      try {
+        parsed.add(SearchResult.fromJson(map));
+      } catch (_) {}
+    }
+    await _cache.set(
+      cacheKey,
+      {'results': [for (final result in parsed) result.toJson()]},
+      ttl: CacheService.mediumCache,
+    );
+    return parsed;
+  }
+
   List<Map<String, dynamic>> _parseTypedSearchResultMaps(
     dynamic rawResults, {
     required String mediaType,

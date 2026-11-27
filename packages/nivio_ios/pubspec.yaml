@@ -4,7 +4,7 @@ publish_to: 'none'
 version: 2.2.8
 
 environment:
-  sdk: ^3.10.0
+  sdk: ^3.14.0
 
 dependencies:
   flutter:
@@ -24,7 +24,7 @@ dependencies:
     path: third_party/nivio_curl
   cupertino_http: ^3.1.1  # NSURLSession client, fallback (see lib/main.dart)
   http: ^1.6.0
-  device_screen_brightness: ^0.2.1
+  device_screen_brightness: ^2.0.0
   flutter_volume_controller: ^2.0.1
   flutter_native_splash: ^2.4.2
 
@@ -96,7 +96,6 @@ flutter_native_splash:
   web: false
 
 dependency_overrides:
-  freezed_annotation: ^3.1.0
   # libmpv from edde746/mpv-build instead of media_kit's: it has the
   # AVFoundation video output (AVSampleBufferDisplayLayer), which gives HDR /
   # Dolby Vision passthrough and picture-in-picture without OpenGL.

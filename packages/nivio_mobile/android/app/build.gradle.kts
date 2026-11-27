@@ -20,7 +20,8 @@ val mpvTestAar = providers.gradleProperty("nivioAndroidMpvAar").map { file(it) }
 
 android {
     namespace = "com.nirmal.nivio"
-    compileSdk = flutter.compileSdkVersion
+    // flutter_local_notifications 23 and permission_handler 13 need 37 (Flutter defaults to 36).
+    compileSdk = maxOf(flutter.compileSdkVersion, 37)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

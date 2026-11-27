@@ -5,7 +5,6 @@ import 'package:animations/animations.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -129,10 +128,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     super.dispose();
   }
 
+  /// Whether every word of the search query appears in [title] or
+  /// [subtitle], in any order and as part of a word ("sub font" finds
+  /// "subtitle font").
   bool _matches(String title, [String subtitle = '']) {
     if (_query.isEmpty) return true;
     final source = '$title $subtitle'.toLowerCase();
-    return source.contains(_query.toLowerCase());
+    return _query
+        .toLowerCase()
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .every(source.contains);
   }
 
   @override
@@ -651,7 +657,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (_matches('content warnings parental guide playback')) {
       results.add(_contentWarningsTile());
     }
-    if (_matches('picture in picture pip lost visibility background')) {
+    if (_matches('picture in picture pip lost visibility background on')) {
       results.add(
         _buildSwitchTile(
           icon: Icons.picture_in_picture_alt_rounded,
@@ -723,7 +729,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
       );
     }
-    if (_matches('video quality resolution')) {
+    if (_matches('video quality resolution preferred')) {
       results.add(
         _buildActionTile(
           icon: Icons.high_quality_rounded,
@@ -753,7 +759,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
       );
     }
-    if (_matches('video deband filter quality')) {
+    if (_matches('video deband filter quality debanding')) {
       results.add(
         _buildSwitchTile(
           icon: Icons.blur_linear_rounded,
@@ -776,10 +782,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
       );
     }
-    if (_matches('torrent sources p2p enable torrent streaming nyaa torrentio piratebay files')) {
+    if (_matches('torrent torrents sources p2p enable streaming playback autoplay auto play indexers nyaa torrentio piratebay pirate bay persist files cache')) {
       results.add(const TorrentSourceSettingsLink());
     }
-    if (_matches('anime language audio sub dub subbed dubbed')) {
+    if (_matches('anime language audio sub dub subbed dubbed preferred')) {
       results.add(
         _buildActionTile(
           icon: Icons.record_voice_over_rounded,
@@ -902,7 +908,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
       );
     }
-    if (_matches('alerts notifications')) {
+    if (_matches('alerts notifications new episode')) {
       results.add(
         _buildSwitchTile(
           icon: Icons.notifications_active_outlined,
@@ -926,7 +932,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
       );
     }
-    if (_matches('new episodes inbox')) {
+    if (_matches('new episodes inbox open')) {
       results.add(
         _buildActionTile(
           icon: Icons.notifications_none_rounded,
@@ -1001,7 +1007,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
       );
     }
-    if (_matches('clear history data')) {
+    if (_matches('clear history data watch')) {
       results.add(
         _buildActionTile(
           icon: Icons.delete_sweep_outlined,
@@ -1033,6 +1039,96 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       );
     }
 
+    if (_matches('subtitle subtitles font family typeface custom appearance')) {
+      final family = ref.watch(subtitleFontFamilyProvider);
+      final customName = ref.watch(customSubtitleFontNameProvider);
+      results.add(
+        _buildActionTile(
+          icon: Icons.font_download_rounded,
+          title: 'Subtitle Font',
+          subtitle: family == 'Custom' && customName != null ? 'Custom ($customName)' : family,
+          onTap: _showSubtitleFontDialog,
+        ),
+      );
+    }
+    if (_matches('subtitle subtitles font size text bigger smaller appearance')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.format_size_rounded,
+          title: 'Subtitle Font Size',
+          subtitle: subtitleFontSizeLabel(ref.watch(subtitleFontSizeProvider)),
+          onTap: _showSubtitleFontSizeDialog,
+        ),
+      );
+    }
+    if (_matches('subtitle subtitles background box shadow opacity appearance')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.picture_in_picture_alt_rounded,
+          title: 'Subtitle Background',
+          subtitle: ref.watch(subtitleBackgroundProvider),
+          onTap: _showSubtitleBackgroundDialog,
+        ),
+      );
+    }
+    if (_matches('subtitle subtitles text style outline border drop shadow appearance')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.text_fields_rounded,
+          title: 'Subtitle Text Style',
+          subtitle: ref.watch(subtitleOutlineProvider),
+          onTap: _showSubtitleOutlineDialog,
+        ),
+      );
+    }
+    for (final entry in _streamSelectionSearchEntries) {
+      if (_matches(entry.keywords, entry.title)) {
+        results.add(
+          _buildActionTile(
+            icon: entry.icon,
+            title: entry.title,
+            subtitle: entry.subtitle,
+            onTap: () => showStreamPickerSettings(context),
+          ),
+        );
+      }
+    }
+    if (_matches("what's new whats new changelog changes release notes version")) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.new_releases_outlined,
+          title: "What's New",
+          subtitle: 'See the changes in this version',
+          onTap: () => _showChangelog(context, ref),
+        ),
+      );
+    }
+    if (_matches('sponsor nivio support donate github')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.favorite_rounded,
+          title: 'Sponsor Nivio',
+          subtitle: 'Support the development on GitHub',
+          titleColor: Colors.pinkAccent,
+          onTap: () {
+            final sponsorUrl = dotenv.env['GITHUB_SPONSOR_URL'] ??
+                'https://github.com/sponsors/nirmaleeswar30';
+            launchUrl(Uri.parse(sponsorUrl), mode: LaunchMode.externalApplication);
+          },
+        ),
+      );
+    }
+    if (_matches('preview onboarding setup welcome screens')) {
+      results.add(
+        _buildActionTile(
+          icon: Icons.play_circle_outline,
+          title: 'Preview onboarding',
+          subtitle: 'Open the setup screens for testing.',
+          onTap: () => context.push('/onboarding?preview=1&next=/profile'),
+        ),
+      );
+    }
+
     if (results.isEmpty) {
       results.add(
         const Padding(
@@ -1058,6 +1154,94 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     value: ref.watch(parentalGuideEnabledProvider),
     onChanged: ref.read(parentalGuideEnabledProvider.notifier).setEnabled,
   );
+
+  /// Settings that live in the Stream Selection screen, listed so settings
+  /// search finds them; each result opens that screen.
+  static const _streamSelectionSearchEntries = <({
+    String title,
+    String subtitle,
+    String keywords,
+    IconData icon,
+  })>[
+    (
+      title: 'Stream Selection',
+      subtitle: 'Autoplay, quality presets, and source priority',
+      keywords: 'stream selection picker autoplay auto play fastest first manual mode choose stream sources',
+      icon: Icons.filter_list,
+    ),
+    (
+      title: 'Quality Preset',
+      subtitle: 'Stream Selection · Data Saver, Balanced and more',
+      keywords: 'quality preset data saver balanced best 4k 1080p 720p hevc mobile data',
+      icon: Icons.high_quality_rounded,
+    ),
+    (
+      title: 'Resolution Priority',
+      subtitle: 'Stream Selection · Customise',
+      keywords: 'resolution priority order quality 2160p 4k 1080p 720p 480p',
+      icon: Icons.sort_rounded,
+    ),
+    (
+      title: 'Block Releases',
+      subtitle: 'Stream Selection · Customise',
+      keywords: 'block releases exclude hide filter cam ts telesync hdcam screener',
+      icon: Icons.block_rounded,
+    ),
+    (
+      title: 'Prefer These Formats',
+      subtitle: 'Stream Selection · Customise',
+      keywords: 'prefer these formats hevc x265 h265 av1 hdr dolby vision remux bluray web dl atmos',
+      icon: Icons.star_outline_rounded,
+    ),
+    (
+      title: 'Maximum File Size',
+      subtitle: 'Stream Selection · Customise',
+      keywords: 'maximum max file size limit gb big large data',
+      icon: Icons.data_usage_rounded,
+    ),
+    (
+      title: 'Match Saved Audio Preference',
+      subtitle: 'Stream Selection · Autoplay',
+      keywords: 'match saved audio preference language dub sub autoplay',
+      icon: Icons.record_voice_over_rounded,
+    ),
+    (
+      title: 'Reuse Binge Group',
+      subtitle: 'Stream Selection · Autoplay',
+      keywords: 'reuse binge group same release next episode autoplay',
+      icon: Icons.playlist_play_rounded,
+    ),
+    (
+      title: 'Stream Selection Timeout',
+      subtitle: 'Stream Selection · how long Autoplay waits for sources',
+      keywords: 'stream selection timeout wait seconds autoplay search time',
+      icon: Icons.timer_outlined,
+    ),
+    (
+      title: 'Group Results by Source',
+      subtitle: 'Stream Selection · provider sections in All',
+      keywords: 'group results by source provider sections list',
+      icon: Icons.view_agenda_outlined,
+    ),
+    (
+      title: 'Custom Regex Override',
+      subtitle: 'Stream Selection · Advanced',
+      keywords: 'custom regex override advanced pattern filter',
+      icon: Icons.code_rounded,
+    ),
+    (
+      title: 'Source Priority',
+      subtitle: 'Stream Selection · reorder movie and TV sources',
+      keywords: 'source priority order reorder providers movie tv servers',
+      icon: Icons.reorder_rounded,
+    ),
+    (
+      title: 'Anime Source Priority',
+      subtitle: 'Stream Selection · reorder anime sources',
+      keywords: 'anime source priority order reorder providers servers',
+      icon: Icons.reorder_rounded,
+    ),
+  ];
 
   Widget _streamSelectionTile() => _buildActionTile(
     icon: Icons.filter_list,
@@ -2746,12 +2930,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     PaintingBinding.instance.imageCache.clearLiveImages();
     await DefaultCacheManager().emptyCache();
     
-    // Clear WebView cache (used by scrapers)
-    try {
-      await InAppWebViewController.clearAllCache();
-    } catch (e) {
-      debugPrint('Error clearing WebView cache: $e');
-    }
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(

@@ -8,7 +8,7 @@ import 'package:intl/intl.dart';
 import '../widgets/download_prompt.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/season_info.dart';
@@ -98,14 +98,14 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
   @override
   Widget build(BuildContext context) {
     final isDesktop = AppPlatform.useDesktopLayout;
-    final allHistory = ref.watch(watchHistoryProvider).valueOrNull ?? [];
+    final allHistory = ref.watch(watchHistoryProvider).value ?? [];
     final mediaHistory = allHistory.cast<WatchHistory?>().firstWhere(
       (h) => h?.tmdbId == widget.media.id,
       orElse: () => null,
     );
 
     final fillerData = widget.media.mediaType == 'anime'
-        ? (ref.watch(animeFillerDataProvider(widget.media)).valueOrNull ??
+        ? (ref.watch(animeFillerDataProvider(widget.media)).value ??
             const AnimeFillerData())
         : const AnimeFillerData();
 

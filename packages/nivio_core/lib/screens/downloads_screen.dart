@@ -3,7 +3,7 @@ import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:nivio/core/app_platform.dart';
 import 'package:flutter/material.dart';
 import 'package:nivio/core/tmdb_artwork.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/download_item.dart';

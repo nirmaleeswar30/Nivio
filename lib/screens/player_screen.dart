@@ -19,6 +19,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/core/app_platform.dart';
@@ -81,6 +82,7 @@ import 'package:nivio/models/watchlist_item.dart';
 import 'package:nivio/widgets/anime_brand_logos.dart';
 import 'dart:math' as math;
 import 'package:nivio/services/media_session_service.dart';
+import 'package:nivio/services/trailer_stream_resolver.dart';
 
 class PlayerScreen extends ConsumerStatefulWidget {
   final int mediaId;
@@ -99,6 +101,10 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final bool isLive;
   // Optional Referer for gated direct streams (e.g. live sports CDNs).
   final String? directStreamReferer;
+  // A trailer (TMDB site + key, e.g. YouTube + video id), resolved by
+  // TrailerStreamResolver. Plays like a direct stream: nothing is saved.
+  final String? trailerSite;
+  final String? trailerKey;
 
   const PlayerScreen({
     super.key,
@@ -115,6 +121,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.directStreamTitle,
     this.isLive = false,
     this.directStreamReferer,
+    this.trailerSite,
+    this.trailerKey,
   });
 
   @override
@@ -293,8 +301,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String _autoplayPickerLabel = 'Choose stream';
   bool _serverOverlayOpen = false;
 
+  /// IPTV, sports and trailers: a fixed stream with no media behind it, so no
+  /// history, picker, episodes or tracking.
+  bool get _isDirectStream =>
+      widget.directStreamUrl != null || widget.trailerKey != null;
+
+  /// A trailer's separate audio stream (YouTube serves sound apart from
+  /// picture above 360p) and the User-Agent its URLs were issued for.
+  String? _trailerAudioUrl;
+  String? _trailerUserAgent;
+
+  /// The detail page's selected media, put back when a trailer closes (it's
+  /// cleared while the trailer plays so nothing is recorded against it).
+  (StateController<SearchResult?>, SearchResult?)? _restoreSelectedMedia;
+
   bool get _usesStreamPicker {
-    if (widget.directStreamUrl != null ||
+    if (_isDirectStream ||
         widget.localPath != null ||
         widget.downloadStreamId != null) {
       return false;
@@ -498,10 +520,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (_sawFirstFrame) return;
       _stuckReported = true;
       snapshot('STUCK at 0:00 after 8s');
-      if (onAutomaticFailure != null && _currentProvider != 'Nivio Torrents') {
-        onAutomaticFailure();
-        return;
-      }
+      // Autoplay used to drop its pick here, so slow starters (a 29 GB REMUX
+      // still reading its index, an HLS master opening its renditions) were
+      // thrown away while the same stream picked by hand played. It now gets
+      // the patience of a hand-picked stream (see below).
 
       // If a torrent stream is stuck at 0:00, rqbit may have finished hash-checking/connecting.
       // Re-trigger open() so mpv re-connects to the localhost stream endpoint.
@@ -521,7 +543,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         } else {
           snapshot('STILL STUCK at 0:00 after 15s (server likely dead — user must switch)');
           if (onAutomaticFailure != null) {
-            onAutomaticFailure();
+            // Nothing recognised yet (no audio or video track): the server
+            // isn't answering, so Autoplay tries its next pick.
+            if (_playbackStartup?.stage != PlaybackStartupStage.buffering) {
+              onAutomaticFailure();
+              return;
+            }
+            // Connected and buffering, just slow: give it until 40 s.
+            _stuckWatchdog = Timer(const Duration(seconds: 25), () {
+              if (!mounted || _isDeactivated || _openStartedAt != startedAt) return;
+              if (_sawFirstFrame) return;
+              snapshot('Autoplay pick still buffering after 40s — trying the next one');
+              onAutomaticFailure();
+            });
             return;
           }
           if (_currentProvider == 'Nivio Torrents' && _streamResult != null) {
@@ -1568,12 +1602,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           media.id == widget.mediaId &&
           (widget.mediaType == null || media.mediaType == widget.mediaType);
 
-      if (widget.directStreamUrl != null) {
+      if (_isDirectStream) {
         media = null;
+        final selected = ref.read(selectedMediaProvider.notifier);
+        if (widget.trailerKey != null) {
+          _restoreSelectedMedia = (selected, selected.state);
+        }
         Future.microtask(() {
-          if (mounted) {
-            ref.read(selectedMediaProvider.notifier).state = null;
-          }
+          if (mounted) selected.state = null;
         });
       } else if (!hasMatchingSelectedMedia) {
         setState(() => _currentProvider = 'Loading media details...');
@@ -1752,7 +1788,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       bool isExplicitDownload = effectiveDownloadStreamId != null;
       if (effectiveDownloadStreamId == null &&
           _effectiveLocalPath == null &&
-          (isInitialEpisode ? widget.directStreamUrl == null : true) &&
+          (isInitialEpisode ? !_isDirectStream : true) &&
           downloadItem == null) {
         final inProgress = DownloadService.findInProgressDownload(
           mediaId: widget.mediaId,
@@ -1812,6 +1848,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       if (result != null) {
         // Already resolved above (play-while-downloading).
+      } else if (isInitialEpisode && widget.trailerKey != null) {
+        setState(() => _currentProvider = 'Loading trailer…');
+        try {
+          final trailer = await TrailerStreamResolver.resolve(
+            widget.trailerSite ?? 'YouTube',
+            widget.trailerKey!,
+          );
+          _trailerAudioUrl = trailer.audio?.toString();
+          _trailerUserAgent = trailer.userAgent;
+          final video = trailer.video.toString();
+          result = StreamResult(
+            url: video,
+            quality: 'Trailer',
+            provider: 'Trailer',
+            headers: {
+              if (trailer.userAgent != null) 'User-Agent': trailer.userAgent!,
+            },
+            isM3U8: video.toLowerCase().contains('m3u8'),
+          );
+        } on TrailerUnavailableException catch (e) {
+          if (!mounted) return;
+          setState(() {
+            _isLoading = false;
+            _error = e.message;
+          });
+          return;
+        }
       } else if (isInitialEpisode && widget.directStreamUrl != null) {
         final lowerUrl = widget.directStreamUrl!.toLowerCase();
         final isHls = lowerUrl.contains('.m3u8') || lowerUrl.contains('.m3u') || widget.isLive;
@@ -2170,6 +2233,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         // by Nivio itself. (Android's mpv has the Lua hook too and would try
         // to spawn it after every failed open.)
         await np.setProperty('ytdl', 'no');
+        // Open on the preferred audio track. Switching after playback starts
+        // makes mpv seek again, which on a big remote file (a 29 GB REMUX)
+        // costs seconds before the first frame.
+        await np.setProperty(
+          'alang',
+          StreamSelection.mpvLanguageTags(_preferredAudioTrackLanguage()),
+        );
+        final trailerAudio = _trailerAudioUrl;
+        if (trailerAudio != null) {
+          // YouTube serves picture and sound separately above 360p.
+          await np.command(['change-list', 'audio-files', 'append', trailerAudio]);
+        }
+        final trailerUserAgent = _trailerUserAgent;
+        if (trailerUserAgent != null) {
+          // YouTube refuses URLs fetched with another client's User-Agent.
+          await np.setProperty('user-agent', trailerUserAgent);
+        }
         // Android's mpv checks HTTPS certificates and needs a CA bundle file.
         final caBundle = mpvCaBundlePath;
         if (caBundle != null) {
@@ -2543,6 +2623,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   int _lastAudioTrackCount = 0;
   int _lastSubtitleTrackCount = 0;
 
+  /// The audio language to select: this title's saved track, else the
+  /// Playback setting. "Original" means the title's own language, so a
+  /// Hindi/English release of an English film starts in English rather than
+  /// on whichever track comes first.
+  String _preferredAudioTrackLanguage() {
+    final String preferred = _currentHistory?.preferredAudioTrack ??
+        ref.read(preferredAudioLanguageProvider);
+    if (!StreamSelection.isOriginalAudio(preferred)) return preferred;
+    final media = ref.read(selectedMediaProvider);
+    final original = media?.originalLanguage;
+    if (original != null && original.isNotEmpty && !_isAnimeMedia(media)) {
+      return original;
+    }
+    return preferred;
+  }
+
   void _applyTrackPreferences() {
     final audioTracks = _player.state.tracks.audio;
     final subtitleTracks = _player.state.tracks.subtitle;
@@ -2559,7 +2655,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _lastSubtitleTrackCount = subtitleTracks.length;
 
     // Determine Preferences
-    String preferredAudio = _currentHistory?.preferredAudioTrack ?? ref.read(preferredAudioLanguageProvider);
+    String preferredAudio = _preferredAudioTrackLanguage();
     String preferredSubtitle = _currentHistory?.preferredSubtitleTrack ?? ref.read(preferredSubtitleLanguageProvider);
 
     // Apply Audio Track
@@ -2667,7 +2763,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           final mpv = _player.platform;
           if (mpv is! NativePlayer) return;
           final activeRoute = _activeDolbyRoutes[mpv];
-          if (activeRoute != null && activeRoute != next.valueOrNull) {
+          if (activeRoute != null && activeRoute != next.value) {
             unawaited(_usePcmAudio(mpv));
           }
         });
@@ -2813,6 +2909,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           return;
         }
 
+        if (widget.trailerKey != null) {
+          // A finished trailer goes back to the detail page.
+          _handleBackNavigation();
+          return;
+        }
         _markAsCompleted();
         if (_hasNextEpisode()) {
           _showNextEpisodePopup();
@@ -3873,7 +3974,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// A series/anime episode from a provider (not a live or IPTV direct stream),
   /// so previous/next episode make sense.
   bool _isEpisodic(SearchResult? media) {
-    if (widget.directStreamUrl != null || widget.isLive) return false;
+    if (_isDirectStream || widget.isLive) return false;
     final type = media?.mediaType ?? widget.mediaType;
     return type == 'tv' || type == 'anime';
   }
@@ -4110,13 +4211,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   Future<void> _loadSubtitleFromFile(StateSetter setDialogState) async {
     try {
-      final result = await FilePicker.pickFiles(
+      final file = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: ['srt', 'vtt'],
       );
-      if (result != null && result.files.single.path != null) {
-        final filePath = result.files.single.path!;
-        final fileName = result.files.single.name;
+      if (file != null && file.path != null) {
+        final filePath = file.path!;
+        final fileName = file.name;
         final trackName = 'Local: $fileName';
         final newTrack = SubtitleTrack.uri('file://' + filePath, title: trackName);
         await _player.setSubtitleTrack(newTrack);
@@ -5293,6 +5394,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     appDebugLog('🔴 [DISPOSE] Step 0: dispose() CALLED — mounted=$mounted, _transferredToMiniPlayer=$_transferredToMiniPlayer');
     _isDisposing = true;
 
+    final restore = _restoreSelectedMedia;
+    if (restore != null) {
+      // After this frame: providers can't change while the tree is finalized.
+      Future.microtask(() => restore.$1.state = restore.$2);
+    }
+
     // Keep media buttons working while the mini player owns the player.
     if (_transferredToMiniPlayer) {
       MediaSessionService.instance.releaseOwner(this);
@@ -5490,6 +5597,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // share the same VideoController/native texture simultaneously, causing a
     // native DirectX crash on Windows.
     if (isDesktop &&
+        widget.trailerKey == null &&
         !_showPlaybackLoading &&
         !_useNativePlayer &&
         _player.state.duration > Duration.zero) {
@@ -7149,7 +7257,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   Widget _buildParentalGuide(BuildContext context, {required bool isPip}) {
     if (widget.isLive ||
-        widget.directStreamUrl != null ||
+        _isDirectStream ||
         widget.mediaId <= 0 ||
         _reclaimedPlayback ||
         !ref.watch(parentalGuideEnabledProvider)) {
@@ -7173,7 +7281,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               : null,
           animeFormat: type == 'anime' ? media?.animeFormat : null,
         )))
-        .valueOrNull;
+        .value;
     final animate = ref.watch(animationsEnabledProvider) &&
         !MediaQuery.disableAnimationsOf(context);
     final (sidePadding, topPadding) = switch (MediaQuery.sizeOf(context).width) {

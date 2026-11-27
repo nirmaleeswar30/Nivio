@@ -67,6 +67,7 @@ class StreamDiscovery extends ChangeNotifier {
     subtitle: preferredSubtitle,
     animeAudio: subDub,
     isAnime: isAnime,
+    originalLanguage: media.originalLanguage,
   );
 
   List<StreamChoice> get availableChoices =>

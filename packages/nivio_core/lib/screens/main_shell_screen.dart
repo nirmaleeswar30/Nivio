@@ -295,7 +295,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     final location = GoRouterState.of(context).matchedLocation;
 
     final authState = ref.watch(authStateProvider);
-    final user = authState.valueOrNull;
+    final user = authState.value;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
@@ -592,8 +592,6 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
                 ),
               ),
             ),
-            // Background physical WebView for Cloudflare Turnstile bypass (drawn on top when needed)
-            const Positioned.fill(child: SizedBox.shrink()),
             // Floating navigation bar.
             Positioned(
               left: 0,

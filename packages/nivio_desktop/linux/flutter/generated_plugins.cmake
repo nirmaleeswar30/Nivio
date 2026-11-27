@@ -3,20 +3,17 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  flutter_inappwebview_linux
+  app_links_linux
+  device_screen_brightness
+  ffmpeg_kit_flutter_new
   flutter_secure_storage_linux
   flutter_volume_controller
-  gtk
   media_kit_libs_linux
-  media_kit_video
-  screen_retriever
   url_launcher_linux
-  volume_controller
-  window_manager
+  media_kit_video
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
-  device_screen_brightness
   jni
   rhttp
   rqbit_ffi

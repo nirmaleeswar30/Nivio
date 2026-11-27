@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:nivio/widgets/youtube_webview_player.dart';
+import 'package:nivio/widgets/trailer_video_player.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/models/watchlist_item.dart';
@@ -141,7 +141,7 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
 
   bool _playerInitialized = false;
   String? _youtubeVideoId;
-  final GlobalKey<YouTubeWebViewPlayerState> _ytPlayerKey = GlobalKey();
+  final GlobalKey<TrailerVideoPlayerState> _ytPlayerKey = GlobalKey();
 
   bool _isMuted = true;
   bool _isPlaying = true;
@@ -413,7 +413,7 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
             cursor: SystemMouseCursors.click,
             child: GestureDetector(
               onTap: () {
-                // Remove webview from tree to prevent Linux platform view crash during navigation
+                // Stop the trailer preview before navigating away
                 setState(() { _playerInitialized = false; });
                 
                 Future.delayed(const Duration(milliseconds: 50), () {
@@ -482,7 +482,7 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
                                   child: _AnimatedHoverScale(
                                     child: ElevatedButton.icon(
                                       onPressed: () {
-                                        // Remove webview from tree to prevent Linux platform view crash during navigation
+                                        // Stop the trailer preview before navigating away
                                         setState(() { _playerInitialized = false; });
                                         
                                         Future.delayed(const Duration(milliseconds: 50), () {
@@ -593,16 +593,18 @@ class _HoverPreviewCardState extends ConsumerState<HoverPreviewCard>
           GestureDetector(
             onTap: _togglePlayPause,
             behavior: HitTestBehavior.opaque,
-            child: YouTubeWebViewPlayer(
+            child: TrailerVideoPlayer(
               key: _ytPlayerKey,
-              videoId: _youtubeVideoId!,
+              site: 'YouTube',
+              videoKey: _youtubeVideoId!,
               autoPlay: true,
               muted: true,
-              showControls: false,
               loop: true,
-              onStateChanged: (state) {
-                // state 1 = playing
-                if (state == 1 && !_isVideoPlaying && mounted) {
+              fit: BoxFit.cover,
+              // A small card: 720p is plenty and starts faster.
+              maxHeight: 720,
+              onPlaying: () {
+                if (!_isVideoPlaying && mounted) {
                   setState(() => _isVideoPlaying = true);
                 }
               },

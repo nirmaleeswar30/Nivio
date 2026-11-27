@@ -5,27 +5,23 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
   connectivity_plus
+  device_screen_brightness
   ffmpeg_kit_flutter_new
   firebase_core
   cloud_firestore
   firebase_auth
-  flutter_inappwebview_windows
   flutter_secure_storage_windows
   flutter_volume_controller
   media_kit_libs_windows_video
   permission_handler_windows
-  screen_retriever
   url_launcher_windows
   share_plus
-  volume_controller
   media_kit_video
-  window_manager
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
   flutter_local_notifications_windows
   jni
-  device_screen_brightness
   rqbit_ffi
 )
 

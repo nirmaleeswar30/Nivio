@@ -380,7 +380,7 @@ class StreamSelectionSettingsNotifier
   Future<void> change(
     StreamSelectionSettings Function(StreamSelectionSettings) update,
   ) async {
-    final next = update(state.valueOrNull ?? await future);
+    final next = update(state.value ?? await future);
     state = AsyncData(next);
     await next.save(await SharedPreferences.getInstance());
   }

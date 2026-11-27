@@ -1,4 +1,4 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 
 /// Global signal indicating the video player screen is currently active.
 /// When true, background tasks (banner slider, color extraction, etc.)

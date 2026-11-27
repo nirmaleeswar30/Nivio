@@ -42,7 +42,7 @@ Future<StreamSelectionSettings?> editPickerPlaybackSettings(
   if (!context.mounted) return null;
   await showStreamPickerSettings(context, asSheet: asSheet);
   if (!context.mounted) return null;
-  final after = scope.read(streamSelectionSettingsProvider).valueOrNull;
+  final after = scope.read(streamSelectionSettingsProvider).value;
   return before == after ? null : after;
 }
 
@@ -302,7 +302,7 @@ class _SourcePriorityScreenState extends ConsumerState<_SourcePriorityScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final settings = ref.watch(streamSelectionSettingsProvider).valueOrNull;
+    final settings = ref.watch(streamSelectionSettingsProvider).value;
     final streaming = ref.watch(streamingServiceProvider);
     final desktop =
         AppPlatform.useDesktopLayout && MediaQuery.sizeOf(context).width >= 900;

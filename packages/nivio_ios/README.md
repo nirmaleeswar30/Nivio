@@ -130,7 +130,6 @@ Firebase stubs, `cupertino_http`, `nivio_curl` and the replaced
 | flutter_local_notifications | ✅ | Init had no Darwin settings, so nothing ever showed on iOS: fixed. Progress notifications are skipped on iOS (each update would be a new banner). |
 | permission_handler | ✅ | Only `PERMISSION_NOTIFICATIONS=1` is compiled in (Podfile). Storage permissions are Android-only. |
 | app_links / url_launcher | ✅ | `nivio://` and `niviodiscord://` URL types; `FlutterDeepLinkingEnabled=false` like Android. |
-| flutter_inappwebview, webview_flutter (YouTube) | ✅ | ATS allows arbitrary loads in web content. |
 | share_plus | ✅ | iPad needs an anchor rect: `lib/core/share_origin.dart`. |
 | device_screen_brightness | ⚠️ | iOS brightness is system-wide: saved before the first gesture, restored when the player closes and while backgrounded (`NivioPlugin.swift`). |
 | flutter_volume_controller | ✅ | System volume HUD hidden (the player has its own). |
@@ -138,7 +137,7 @@ Firebase stubs, `cupertino_http`, `nivio_curl` and the replaced
 | connectivity_plus, package_info_plus, path_provider, shared_preferences, sqflite, wakelock_plus, file_picker, hive | ✅ | — |
 | cronet_http | ❌ Android-only | Replaced by `nivio_curl` (fallback: cupertino_http). |
 | simple_pip_mode | ❌ Android-only | iOS PiP is `AVPictureInPictureController` on the player's display layer (`NivioVideoPlugin.swift`). |
-| window_manager, discord_rich_presence, dbus, flutter_inappwebview_linux, rhttp | Desktop-only | Calls are guarded. |
+| window_manager, discord_rich_presence, dbus, rhttp | Desktop-only | Calls are guarded. |
 | shorebird_code_push | ✅ | No-op unless the IPA is built with `shorebird release ios`. |
 
 ## Audit: native channels (Android → iOS)

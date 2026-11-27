@@ -117,7 +117,7 @@ class _OpeningOverlayState extends ConsumerState<OpeningOverlay>
           );
 
           Widget centre;
-          final logoUrl = logo.valueOrNull;
+          final logoUrl = logo.value;
           if (logo.isLoading) {
             centre = SizedBox(width: logoWidth, height: logoHeight);
           } else if (logoUrl != null && logoUrl.isNotEmpty && !_logoFailed) {
@@ -261,46 +261,6 @@ class _OpeningOverlayState extends ConsumerState<OpeningOverlay>
                                 child: details,
                               ),
                             ),
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 260),
-                            child: switch (widget.action) {
-                              final action? => Padding(
-                                key: ValueKey(action.label),
-                                padding: const EdgeInsets.only(top: 6),
-                                child: OutlinedButton.icon(
-                                  onPressed: action.onPressed,
-                                  icon: const Icon(
-                                    Icons.format_list_bulleted_rounded,
-                                    size: 16,
-                                  ),
-                                  label: Text(action.label),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.white.withValues(
-                                      alpha: .85,
-                                    ),
-                                    backgroundColor: Colors.black.withValues(
-                                      alpha: .3,
-                                    ),
-                                    side: BorderSide(
-                                      color: Colors.white.withValues(
-                                        alpha: .24,
-                                      ),
-                                    ),
-                                    shape: const StadiumBorder(),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 10,
-                                    ),
-                                    textStyle: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              null => const SizedBox.shrink(),
-                            },
-                          ),
                           if (showBar) ...[
                             const SizedBox(height: 10),
                             ClipRRect(
@@ -328,6 +288,48 @@ class _OpeningOverlayState extends ConsumerState<OpeningOverlay>
                       ),
                     ),
                   ],
+                ),
+              ),
+              // Autoplay's way out to the stream list: a compact pill in the
+              // top-left corner, level with the close button and clear of the
+              // logo and status.
+              Positioned(
+                top: MediaQuery.paddingOf(context).top + 20,
+                left: 20,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 260),
+                    child: switch (widget.action) {
+                      final action? => FilledButton.icon(
+                        key: ValueKey(action.label),
+                        onPressed: action.onPressed,
+                        icon: const Icon(
+                          Icons.format_list_bulleted_rounded,
+                          size: 18,
+                        ),
+                        label: Text(action.label),
+                        style: FilledButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          // Same look as the close button opposite.
+                          backgroundColor: Colors.black.withValues(alpha: .3),
+                          overlayColor: Colors.white,
+                          side: BorderSide(
+                            color: Colors.white.withValues(alpha: .22),
+                          ),
+                          shape: const StadiumBorder(),
+                          minimumSize: const Size(0, 44),
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          textStyle: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      null => const SizedBox.shrink(),
+                    },
+                  ),
                 ),
               ),
               Positioned(

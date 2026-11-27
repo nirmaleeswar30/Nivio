@@ -612,7 +612,7 @@ class _WatchPartyScreenState extends ConsumerState<WatchPartyScreen> {
   @override
   Widget build(BuildContext context) {
     final service = ref.watch(watchPartyServiceProvider);
-    final session = ref.watch(watchPartySessionProvider).valueOrNull;
+    final session = ref.watch(watchPartySessionProvider).value;
     final isDesktop = AppPlatform.useDesktopLayout;
     final content = service == null
         ? Center(

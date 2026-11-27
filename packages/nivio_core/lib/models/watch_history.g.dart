@@ -6,8 +6,8 @@ part of 'watch_history.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
-_$WatchHistoryImpl _$$WatchHistoryImplFromJson(Map<String, dynamic> json) =>
-    _$WatchHistoryImpl(
+_WatchHistory _$WatchHistoryFromJson(Map<String, dynamic> json) =>
+    _WatchHistory(
       id: json['id'] as String,
       tmdbId: (json['tmdbId'] as num).toInt(),
       mediaType: json['mediaType'] as String,
@@ -32,7 +32,7 @@ _$WatchHistoryImpl _$$WatchHistoryImplFromJson(Map<String, dynamic> json) =>
           : _episodesFromJson(json['episodes']),
     );
 
-Map<String, dynamic> _$$WatchHistoryImplToJson(_$WatchHistoryImpl instance) =>
+Map<String, dynamic> _$WatchHistoryToJson(_WatchHistory instance) =>
     <String, dynamic>{
       'id': instance.id,
       'tmdbId': instance.tmdbId,
@@ -56,9 +56,8 @@ Map<String, dynamic> _$$WatchHistoryImplToJson(_$WatchHistoryImpl instance) =>
       'episodes': _episodesToJson(instance.episodes),
     };
 
-_$EpisodeProgressImpl _$$EpisodeProgressImplFromJson(
-        Map<String, dynamic> json) =>
-    _$EpisodeProgressImpl(
+_EpisodeProgress _$EpisodeProgressFromJson(Map<String, dynamic> json) =>
+    _EpisodeProgress(
       season: (json['season'] as num).toInt(),
       episode: (json['episode'] as num).toInt(),
       lastPositionSeconds: (json['lastPositionSeconds'] as num).toInt(),
@@ -71,8 +70,7 @@ _$EpisodeProgressImpl _$$EpisodeProgressImplFromJson(
       preferredProviderIndex: (json['preferredProviderIndex'] as num?)?.toInt(),
     );
 
-Map<String, dynamic> _$$EpisodeProgressImplToJson(
-        _$EpisodeProgressImpl instance) =>
+Map<String, dynamic> _$EpisodeProgressToJson(_EpisodeProgress instance) =>
     <String, dynamic>{
       'season': instance.season,
       'episode': instance.episode,

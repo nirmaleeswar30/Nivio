@@ -30,13 +30,6 @@ static void window_destroy_cb(MyApplication* self) {
 
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
-  // Prevent WPE WebKit auxiliary process (WPEWebProcess) crashes caused by
-  // bubblewrap sandbox restrictions and namespace incompatibilities with GPU drivers.
-  g_setenv("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1", TRUE);
-  if (g_file_test("/dev/dri/card2", G_FILE_TEST_EXISTS)) {
-    g_setenv("WPE_DRM_DEVICE", "/dev/dri/card2", FALSE);
-  }
-  
   MyApplication* self = MY_APPLICATION(application);
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));

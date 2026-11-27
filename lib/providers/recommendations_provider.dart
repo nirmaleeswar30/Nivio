@@ -6,7 +6,7 @@ import 'package:nivio/providers/watch_history_provider.dart';
 typedef HomeRecommendations = ({String basedOn, List<SearchResult> items});
 
 final latestWatchedIdProvider = Provider<String?>((ref) {
-  final history = ref.watch(watchHistoryProvider).valueOrNull;
+  final history = ref.watch(watchHistoryProvider).value;
   if (history == null || history.isEmpty) return null;
   
   final sortedHistory = [...history]
@@ -23,7 +23,7 @@ final homeRecommendationsProvider = FutureProvider<HomeRecommendations?>((ref) a
   if (latestIdsHash == null) return null;
 
   // Read the history once without subscribing to its continuous updates
-  final history = ref.read(watchHistoryProvider).valueOrNull;
+  final history = ref.read(watchHistoryProvider).value;
   if (history == null || history.isEmpty) return null;
 
   final sortedHistory = [...history]

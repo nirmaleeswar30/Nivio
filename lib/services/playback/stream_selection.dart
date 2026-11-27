@@ -51,6 +51,7 @@ class StreamSelection {
     this.subtitle = 'Auto',
     required this.animeAudio,
     required this.isAnime,
+    this.originalLanguage,
   });
 
   final StreamSelectionSettings settings;
@@ -58,7 +59,26 @@ class StreamSelection {
   final String subtitle;
   final String animeAudio;
   final bool isAnime;
-  late final _wantedAudio = _languageCodes(audio);
+
+  /// The title's original language (TMDB `original_language`, e.g. "en").
+  /// With the "Original" audio preference it's the language streams are
+  /// matched against, so a Hindi-only release of an English film ranks below
+  /// one that has English.
+  final String? originalLanguage;
+  late final _wantedAudio = _wantedAudioCodes();
+
+  Set<String> _wantedAudioCodes() {
+    final codes = _languageCodes(audio);
+    if (codes.isNotEmpty || isAnime || !isOriginalAudio(audio)) return codes;
+    final original = originalLanguage == null
+        ? null
+        : _languageCode(originalLanguage!.trim().toLowerCase());
+    return original == null ? codes : {original};
+  }
+
+  /// Whether [preference] means "the title's own language".
+  static bool isOriginalAudio(String preference) =>
+      const {'', 'original'}.contains(preference.trim().toLowerCase());
   late final _wantedSubtitles = _languageCodes(subtitle);
   late final _preferredFormats = [
     for (final feature in settings.features)
@@ -155,6 +175,16 @@ class StreamSelection {
     }
     return preference;
   }
+
+  /// mpv `alang` value for [preference] ("English" → "en,eng,english"), so
+  /// mpv opens a file on that audio track instead of switching (and
+  /// re-seeking) once playback has started. Empty when it names no language.
+  static String mpvLanguageTags(String preference) => [
+    for (final code in _languageCodes(preference)) ...[
+      code,
+      ...?_languages[code],
+    ],
+  ].join(',');
 
   static String? _languageCode(String label) {
     final base = label.split(RegExp('[-_]')).first;

@@ -1521,7 +1521,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
 
   Widget _buildMediaSidebar(BuildContext context) {
     final authState = ref.watch(authStateProvider);
-    final user = authState.valueOrNull;
+    final user = authState.value;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),

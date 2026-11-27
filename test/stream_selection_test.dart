@@ -406,6 +406,33 @@ void main() {
     },
   );
 
+  test("Original audio prefers streams in the title's own language", () async {
+    // Sinister (original_language "en"): a Hindi-only 4K release must not
+    // beat a 1080p Hindi/English one when the preference is Original.
+    final hindiOnly = _choice('hindi', 'Sinister 2160p', '2160p', audio: 'Hindi');
+    final dual = _choice('dual', 'Sinister 1080p', '1080p', audio: 'Hindi / English');
+    final unknown = _choice('unknown', 'Sinister 1080p', '1080p');
+    final policy = StreamSelection(
+      const StreamSelectionSettings(mode: StreamSelectionMode.match),
+      audio: 'Original',
+      animeAudio: 'sub',
+      isAnime: false,
+      originalLanguage: 'en',
+    );
+    expect(await policy.ranked([hindiOnly, unknown, dual]), [dual, unknown, hindiOnly]);
+    expect(policy.meetsAutoplayAudioPreference(dual), isTrue);
+    expect(policy.meetsAutoplayAudioPreference(hindiOnly), isFalse);
+
+    // Without a known original language, Original doesn't filter by audio.
+    final unknownOriginal = StreamSelection(
+      const StreamSelectionSettings(mode: StreamSelectionMode.match),
+      audio: 'Original',
+      animeAudio: 'sub',
+      isAnime: false,
+    );
+    expect(unknownOriginal.meetsAutoplayAudioPreference(hindiOnly), isTrue);
+  });
+
   test('HLS uses the rendition language and falls back to its name', () {
     expect(
       M3u8Parser.audioLanguages('''

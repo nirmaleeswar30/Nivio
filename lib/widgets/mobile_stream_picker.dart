@@ -146,11 +146,18 @@ class _MobileStreamPickerState extends State<MobileStreamPicker> {
     );
   }
 
-  Widget _withMetadata(BuildContext context, {required bool landscape}) {
-    if (context.getInheritedWidgetOfExactType<UncontrolledProviderScope>() ==
-        null) {
-      return _layout(context, landscape);
+  // Tests can build the picker without a ProviderScope.
+  static bool _hasProviderScope(BuildContext context) {
+    try {
+      ProviderScope.containerOf(context, listen: false);
+      return true;
+    } catch (_) {
+      return false;
     }
+  }
+
+  Widget _withMetadata(BuildContext context, {required bool landscape}) {
+    if (!_hasProviderScope(context)) return _layout(context, landscape);
     return Consumer(
       builder: (context, ref, _) {
         final media = widget.media;
@@ -168,15 +175,15 @@ class _MobileStreamPickerState extends State<MobileStreamPicker> {
                       seasonNumber: widget.season ?? 1,
                     )),
                   )
-                  .valueOrNull
+                  .value
                   ?.episodes
                   .where((item) => item.episodeNumber == episode)
                   .firstOrNull;
-        final logo = ref.watch(titleLogoProvider(media)).valueOrNull;
+        final logo = ref.watch(titleLogoProvider(media)).value;
         final useDynamicColors = ref.watch(dynamicArtworkColorsProvider);
         final art = _artwork(landscape, details);
         final palette = useDynamicColors && art.$1 != null
-            ? ref.watch(dynamicColorsProvider(art.$1)).valueOrNull
+            ? ref.watch(dynamicColorsProvider(art.$1)).value
             : null;
         return _layout(
           context,
