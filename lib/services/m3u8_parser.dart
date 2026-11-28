@@ -145,8 +145,18 @@ class M3u8Parser {
     return baseUri.resolve(uri).toString();
   }
 
+  /// Splits an HLS master into what a download needs: the video variant
+  /// (the one matching [preferredQuality], e.g. "1080p", else the first), the
+  /// audio rendition in [audioLang] from that variant's own audio group (many
+  /// masters keep the sound in a separate `#EXT-X-MEDIA` playlist that the
+  /// variant only references), and the subtitles in [subLang].
   static Future<M3u8Streams?> resolveStreams(
-      String masterUrl, Map<String, String>? headers, String? audioLang, String? subLang) async {
+    String masterUrl,
+    Map<String, String>? headers,
+    String? audioLang,
+    String? subLang, {
+    String? preferredQuality,
+  }) async {
     try {
       final response = await _dio.get(
         masterUrl,
@@ -160,71 +170,100 @@ class M3u8Parser {
         return M3u8Streams(videoUrl: masterUrl);
       }
 
-      String? videoUrl;
-      String? audioUrl;
-      String? subUrl;
-      String? firstAudioUrl;
-      String? firstSubUrl;
+      final attribute = RegExp(r'([A-Z0-9-]+)=("([^"]*)"|[^,]*)');
+      Map<String, String> attributes(String body) => {
+        for (final match in attribute.allMatches(body))
+          match.group(1)!: (match.group(3) ?? match.group(2)!).trim(),
+      };
+
+      final audios = <Map<String, String>>[];
+      final subtitles = <Map<String, String>>[];
+      final variants = <({String url, int height, int bandwidth, String? audioGroup})>[];
 
       for (int i = 0; i < lines.length; i++) {
         final line = lines[i].trim();
-
         if (line.startsWith('#EXT-X-MEDIA:')) {
-          final typeMatch = RegExp(r'TYPE=([A-Z]+)').firstMatch(line);
-          final langMatch = RegExp(r'LANGUAGE="([^"]+)"').firstMatch(line);
-          final nameMatch = RegExp(r'NAME="([^"]+)"').firstMatch(line);
-          final uriMatch = RegExp(r'URI="([^"]+)"').firstMatch(line);
-
-          if (typeMatch != null && uriMatch != null) {
-            final type = typeMatch.group(1);
-            final uri = uriMatch.group(1)!;
-            final lang = (langMatch?.group(1) ?? nameMatch?.group(1) ?? '').toLowerCase();
-
-            if (type == 'AUDIO') {
-              if (firstAudioUrl == null) firstAudioUrl = _resolveUrl(masterUrl, uri);
-              
-              if (audioLang != null && audioLang.isNotEmpty) {
-                final targetLang = audioLang.toLowerCase();
-                if (lang.contains(targetLang) || targetLang.contains(lang)) {
-                  audioUrl = _resolveUrl(masterUrl, uri);
-                }
-              }
-            } else if (type == 'SUBTITLES') {
-              if (firstSubUrl == null) firstSubUrl = _resolveUrl(masterUrl, uri);
-              
-              if (subLang != null && subLang.isNotEmpty && subLang != 'Off') {
-                final targetLang = subLang.toLowerCase();
-                if (lang.contains(targetLang) || targetLang.contains(lang)) {
-                  subUrl = _resolveUrl(masterUrl, uri);
-                }
-              }
-            }
+          final media = attributes(line.substring('#EXT-X-MEDIA:'.length));
+          if (media['URI'] == null) continue;
+          if (media['TYPE'] == 'AUDIO') audios.add(media);
+          if (media['TYPE'] == 'SUBTITLES') subtitles.add(media);
+        } else if (line.startsWith('#EXT-X-STREAM-INF:')) {
+          final info = attributes(line.substring('#EXT-X-STREAM-INF:'.length));
+          String? uri;
+          for (int j = i + 1; j < lines.length; j++) {
+            final next = lines[j].trim();
+            if (next.isEmpty || next.startsWith('#')) continue;
+            uri = next;
+            break;
           }
-        }
-
-        if (line.startsWith('#EXT-X-STREAM-INF:')) {
-          if (i + 1 < lines.length) {
-            final uri = lines[i + 1].trim();
-            if (uri.isNotEmpty && !uri.startsWith('#')) {
-              if (videoUrl == null) {
-                videoUrl = _resolveUrl(masterUrl, uri);
-              }
-            }
-          }
+          if (uri == null) continue;
+          final height = int.tryParse(
+                RegExp(r'\d+x(\d+)').firstMatch(info['RESOLUTION'] ?? '')?.group(1) ?? '',
+              ) ??
+              0;
+          variants.add((
+            url: _resolveUrl(masterUrl, uri),
+            height: height,
+            bandwidth: int.tryParse(info['BANDWIDTH'] ?? '') ?? 0,
+            audioGroup: info['AUDIO'],
+          ));
         }
       }
 
-      // Default to first available tracks if a specific language wasn't matched
-      audioUrl ??= firstAudioUrl;
-      if (subLang != null && subLang != 'Off') {
-        subUrl ??= firstSubUrl;
+      if (variants.isEmpty) return M3u8Streams(videoUrl: masterUrl);
+
+      // The variant: the chosen quality (highest bitrate among equals), else
+      // the best one below it, else the smallest above it. No choice keeps
+      // the first, as before.
+      final wanted = int.tryParse(
+        RegExp(r'(\d{3,4})').firstMatch(preferredQuality ?? '')?.group(1) ?? '',
+      );
+      var variant = variants.first;
+      if (wanted != null && variants.any((v) => v.height > 0)) {
+        int byBandwidth(
+          ({String url, int height, int bandwidth, String? audioGroup}) a,
+          ({String url, int height, int bandwidth, String? audioGroup}) b,
+        ) => b.bandwidth.compareTo(a.bandwidth);
+        final exact = variants.where((v) => v.height == wanted).toList()..sort(byBandwidth);
+        final below = variants.where((v) => v.height > 0 && v.height < wanted).toList()
+          ..sort((a, b) => b.height != a.height ? b.height.compareTo(a.height) : byBandwidth(a, b));
+        final above = variants.where((v) => v.height > wanted).toList()
+          ..sort((a, b) => a.height != b.height ? a.height.compareTo(b.height) : byBandwidth(a, b));
+        variant = exact.firstOrNull ?? below.firstOrNull ?? above.firstOrNull ?? variant;
       }
 
-      if (videoUrl == null) {
-        return M3u8Streams(videoUrl: masterUrl);
+      // Either label can carry the language: LANGUAGE="jpn", NAME="Japanese".
+      bool matches(Map<String, String> media, String wanted) {
+        final target = wanted.toLowerCase();
+        return [media['LANGUAGE'], media['NAME']].any((value) {
+          final label = (value ?? '').toLowerCase();
+          return label.isNotEmpty && (label.contains(target) || target.contains(label));
+        });
       }
 
-      return M3u8Streams(videoUrl: videoUrl, audioUrl: audioUrl, subtitleUrl: subUrl);
+      // Audio from the variant's own group when it names one.
+      final group = variant.audioGroup;
+      final audioPool = group != null && audios.any((a) => a['GROUP-ID'] == group)
+          ? audios.where((a) => a['GROUP-ID'] == group).toList()
+          : audios;
+      Map<String, String>? audio;
+      if (audioLang != null && audioLang.isNotEmpty) {
+        audio = audioPool.where((a) => matches(a, audioLang)).firstOrNull;
+      }
+      audio ??= audioPool.where((a) => a['DEFAULT'] == 'YES').firstOrNull;
+      audio ??= audioPool.firstOrNull;
+
+      Map<String, String>? subtitle;
+      if (subLang != null && subLang.isNotEmpty && subLang != 'Off') {
+        subtitle = subtitles.where((t) => matches(t, subLang)).firstOrNull ??
+            subtitles.firstOrNull;
+      }
+
+      return M3u8Streams(
+        videoUrl: variant.url,
+        audioUrl: audio == null ? null : _resolveUrl(masterUrl, audio['URI']!),
+        subtitleUrl: subtitle == null ? null : _resolveUrl(masterUrl, subtitle['URI']!),
+      );
     } catch (e) {
       debugPrint('M3u8Parser Error (resolveStreams): $e');
       return M3u8Streams(videoUrl: masterUrl);

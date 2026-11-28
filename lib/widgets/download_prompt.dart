@@ -297,7 +297,8 @@ class DownloadPrompt {
 
     await _queue(
       mediaId, title, mediaType, season, episode, posterPath,
-      urlToDownload, finalResult.headers, selection.audioLang, selection.subtitleLang, subtitleUrl
+      urlToDownload, finalResult.headers, selection.audioLang, selection.subtitleLang, subtitleUrl,
+      preferredQuality: selection.selectedSource?.quality,
     );
 
     if (context.mounted) {
@@ -307,8 +308,9 @@ class DownloadPrompt {
 
   static Future<void> _queue(
     int mediaId, String title, String mediaType, int? season, int? episode, String? posterPath,
-    String url, Map<String, String>? headers, String? audioLang, String? subLang, String? subtitleUrl
-  ) async {
+    String url, Map<String, String>? headers, String? audioLang, String? subLang, String? subtitleUrl, {
+    String? preferredQuality,
+  }) async {
     await DownloadService.queueDownload(
       mediaId: mediaId,
       title: title,
@@ -321,6 +323,7 @@ class DownloadPrompt {
       selectedAudioLanguage: audioLang,
       selectedSubtitleLanguage: subLang,
       subtitleUrl: subtitleUrl,
+      preferredQuality: preferredQuality,
     );
   }
 
@@ -399,6 +402,8 @@ class DownloadPrompt {
         bool isLoading = true;
         List<M3u8VideoResolution> resolvedResolutions = [];
         M3u8VideoResolution? selectedResolution;
+        // The master playlist the resolutions came from.
+        String? resolutionsMasterUrl;
         StreamSource? selectedSource;
         List<M3u8Track> audioTracks = [];
         List<M3u8Track> subtitleTracks = [];
@@ -439,6 +444,7 @@ class DownloadPrompt {
 
               setState(() {
                 resolvedResolutions = res;
+                resolutionsMasterUrl = res.isEmpty ? null : url;
                 audioTracks = audios;
                 subtitleTracks = subs;
 
@@ -698,8 +704,12 @@ class DownloadPrompt {
                             // Extract selected quality source URL
                             StreamSource? finalSource = selectedSource;
                             if (selectedResolution != null) {
+                              // Download the master, not the variant: a
+                              // variant can be video only, with its audio in
+                              // a separate track the master lists. The
+                              // downloader picks this quality from it.
                               finalSource = StreamSource(
-                                url: selectedResolution!.url,
+                                url: resolutionsMasterUrl ?? selectedResolution!.url,
                                 quality: selectedResolution!.quality,
                                 isM3U8: true,
                               );

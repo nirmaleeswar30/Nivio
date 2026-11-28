@@ -165,10 +165,14 @@ void main([List<String> args = const []]) async {
 
     if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
       await windowManager.ensureInitialized();
-      const windowOptions = WindowOptions(
-        size: Size(1920, 1080),
-        minimumSize: Size(1280, 720),
-        center: true,
+      // On Windows the runner (windows/runner/main.cpp) already opens the
+      // window centred and sized to fit the screen. window_manager 0.7 applies
+      // a 1920x1080 size literally, which is larger than a 1080p screen at
+      // 125% scaling and pushed the window off to the top-left.
+      final windowOptions = WindowOptions(
+        size: Platform.isWindows ? null : const Size(1920, 1080),
+        minimumSize: const Size(1280, 720),
+        center: Platform.isWindows ? null : true,
         backgroundColor: Colors.black,
         skipTaskbar: false,
         titleBarStyle: TitleBarStyle.hidden,
@@ -591,9 +595,6 @@ final appRouter = GoRouter(
       return isOnboardingRoute ? null
           : Uri(path: '/onboarding', queryParameters: {'next': destination}).toString();
     }
-    if (isOnboardingRoute && state.uri.queryParameters['preview'] == '1') {
-      return null;
-    }
     if (isAuthRoute || isOnboardingRoute) return destination;
     return null;
   },
@@ -619,7 +620,6 @@ final appRouter = GoRouter(
           key: ValueKey(userId),
           userId: userId,
           destination: onboardingDestination(state.uri.queryParameters['next']),
-          preview: state.uri.queryParameters['preview'] == '1',
         );
       },
     ),

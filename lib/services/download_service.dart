@@ -1029,6 +1029,7 @@ class DownloadService {
       item.headers,
       item.selectedAudioLanguage,
       item.selectedSubtitleLanguage,
+      preferredQuality: item.preferredQuality,
     );
 
     final resolvedVideoUrl = streams?.videoUrl ?? urlToDownload;
@@ -1342,28 +1343,15 @@ class DownloadService {
 
       ffmpegArgs.add(filePath);
 
-      final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+      // FFmpegKit on every platform: its prebuilt FFmpeg ships with the app on
+      // Windows and Linux too, so downloads don't need an ffmpeg on the PATH.
       bool success = false;
       String errorLogs = '';
-
-      if (isDesktop) {
-        try {
-          final res = await Process.run('ffmpeg', ffmpegArgs);
-          success = res.exitCode == 0;
-          if (!success) {
-            errorLogs = res.stderr.toString();
-          }
-        } catch (e) {
-          appDebugLog('❌ Local mux desktop FFmpeg process run error: $e');
-          errorLogs = e.toString();
-        }
-      } else {
-        final session = await FFmpegKit.executeWithArguments(ffmpegArgs);
-        final returnCode = await session.getReturnCode();
-        success = ReturnCode.isSuccess(returnCode);
-        if (!success) {
-          errorLogs = await session.getLogsAsString();
-        }
+      final session = await FFmpegKit.executeWithArguments(ffmpegArgs);
+      final returnCode = await session.getReturnCode();
+      success = ReturnCode.isSuccess(returnCode);
+      if (!success) {
+        errorLogs = await session.getLogsAsString();
       }
 
       // Segments are about to be muxed/removed — stop serving them.
@@ -1519,64 +1507,9 @@ class DownloadService {
     // Output 1: Video file
     ffmpegArgs.add(filePath);
 
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    // FFmpegKit on every platform (see the local mux above).
     final completer = Completer<void>();
     int lastUpdateMs = 0;
-
-    if (isDesktop) {
-      if (cancelToken.isCancelled) return;
-      Process? process;
-
-      final cleanCancel = () {
-        process?.kill();
-      };
-      cancelToken.whenCancel.then((_) => cleanCancel());
-
-      try {
-        process = await Process.start('ffmpeg', ffmpegArgs);
-
-        process.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen((line) {
-          if (cancelToken.isCancelled) return;
-          
-          final match = RegExp(r'time=(\d+):(\d+):(\d+)\.(\d+)').firstMatch(line);
-          if (match != null && durationMs > 0) {
-            final hours = int.parse(match.group(1)!);
-            final minutes = int.parse(match.group(2)!);
-            final seconds = int.parse(match.group(3)!);
-            final timeMs = ((hours * 3600 + minutes * 60 + seconds) * 1000).toInt();
-            item.progress = (timeMs / durationMs).clamp(0.0, 1.0);
-
-            if (timeMs - lastUpdateMs > 2000) {
-              lastUpdateMs = timeMs;
-              box.put(item.id, item);
-              _showProgressNotification(item);
-            }
-          }
-        });
-
-        final exitCode = await process.exitCode;
-        if (exitCode == 0) {
-          if (item.progress > 0 && item.progress < 0.95) {
-            appDebugLog("Native FFmpeg returned success but progress is incomplete. Treating as FAILED.");
-            completer.completeError(Exception("Download incomplete"));
-          } else {
-            completer.complete();
-          }
-        } else {
-          if (cancelToken.isCancelled) {
-            completer.completeError(Exception("Cancelled"));
-          } else {
-            completer.completeError(Exception("FFmpeg exited with code $exitCode"));
-          }
-        }
-      } catch (e) {
-        completer.completeError(e);
-      }
-
-      await completer.future;
-      _completeDownload(item);
-      return;
-    }
 
     final executeSession = await FFmpegKit.executeWithArgumentsAsync(
       ffmpegArgs,
@@ -1777,11 +1710,32 @@ class DownloadService {
         final subUrl = item.subtitleUrl;
         if (subUrl != null && subUrl.isNotEmpty) {
           appDebugLog('🎬 Downloading external subtitle from $subUrl to $srtFilePath');
-          await FFmpegKit.execute('-y -i "$subUrl" -c:s srt "$srtFilePath"');
+          // Fetched with the stream's headers: CDNs that check the Referer or
+          // User-Agent refuse FFmpeg's own bare request (403). FFmpeg then
+          // only converts the local copy (ASS, VTT, ...) to SRT.
+          final isRemote = subUrl.startsWith('http://') || subUrl.startsWith('https://');
+          final rawPath = isRemote ? '$srtFilePath.part' : subUrl;
+          try {
+            if (isRemote) {
+              await _dio.download(
+                subUrl,
+                rawPath,
+                options: Options(headers: item.headers),
+              );
+            }
+            await FFmpegKit.executeWithArguments(
+              ['-y', '-i', rawPath, '-c:s', 'srt', srtFilePath],
+            );
+          } finally {
+            if (isRemote) {
+              final raw = File(rawPath);
+              if (await raw.exists()) await raw.delete();
+            }
+          }
         } else {
           appDebugLog('🎬 Extracting embedded subtitle from ${item.savePath} to $srtFilePath');
-          await FFmpegKit.execute(
-            '-y -i "${item.savePath}" -map 0:s:0? -c:s srt "$srtFilePath"',
+          await FFmpegKit.executeWithArguments(
+            ['-y', '-i', item.savePath, '-map', '0:s:0?', '-c:s', 'srt', srtFilePath],
           );
         }
       }
@@ -2013,6 +1967,7 @@ class DownloadService {
     String? selectedAudioLanguage,
     String? selectedSubtitleLanguage,
     String? subtitleUrl,
+    String? preferredQuality,
   }) async {
     final id = '${mediaId}_${season ?? 0}_${episode ?? 0}';
 
@@ -2036,6 +1991,7 @@ class DownloadService {
       selectedAudioLanguage: selectedAudioLanguage,
       selectedSubtitleLanguage: selectedSubtitleLanguage,
       subtitleUrl: subtitleUrl,
+      preferredQuality: preferredQuality,
       createdAt: DateTime.now(),
       status: DownloadStatus.pending,
       savePath: '',

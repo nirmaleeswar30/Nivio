@@ -158,6 +158,9 @@ Nivio is free and open source. If it makes your day a little better, consider su
 
 ## 🚀 Features
 
+* **Stream Selection & Autoplay** — Pick streams yourself, play the fastest, or let Autoplay choose the best match for your quality preset, source priority and audio language right from the loading screen
+* **Content Warnings** — The IMDb parental guide when playback starts, for movies, shows and anime
+* **Trailers in the Player** — Same controls as everything else, with subtitles on by default
 * **Two-Way Scrobbling & Tracking** (Simkl, AniList, MyAnimeList)
 * **Cloud Sync & Watch History** (Google Sign-In / Firebase)
 * **Offline Downloads**
@@ -181,15 +184,15 @@ Nivio runs on Android TV and Google TV with a layout made for the big screen: a 
 ## 🛠️ Tech Stack
 
 *   **Architecture**: Modular Monorepo (`nivio_core`, `nivio_desktop`, `nivio_mobile`, `nivio_ios`, `rqbit_ffi`)
-*   **UI & Framework**: Flutter (Dart `^3.10.0`)
+*   **UI & Framework**: Flutter 3.50 (Dart `^3.14.0`)
 *   **Native P2P Engine**: Rust (`rqbit_ffi` / C-FFI bindings)
 *   **Media Playback**: `media_kit` (high-performance playback engine utilizing `libmpv` / MPV for hardware-accelerated rendering and extensive format decoding). On Android, a custom [mpvlibAndroid](https://github.com/nirmaleeswar30/mpvlibAndroid) build (mpv 0.41, libplacebo, Vulkan, Dolby Vision MediaCodec) powers HDR and Dolby Vision. On Windows, the desktop build ships a current libmpv (mpv 0.42, libplacebo, Direct3D 11 `gpu-next`) in place of media_kit's older bundled one. On Linux, HDR video is rendered through libmpv's render API into a 10-bit EGL Wayland subsurface.
-*   **State Management**: Riverpod (`flutter_riverpod ^2.6.1`)
+*   **State Management**: Riverpod (`flutter_riverpod ^3.5.0`)
 *   **Networking**: Dio, Cronet on Android, and libcurl with URLSession fallback on iOS
-*   **Routing & Navigation**: GoRouter (`go_router ^17.3.0`)
+*   **Routing & Navigation**: GoRouter (`go_router ^18.1.4`)
 *   **Backend & Authentication**: Firebase (Firebase Auth, Cloud Firestore)
 *   **Realtime Sockets**: Supabase (WebSockets for synchronized Watch Parties)
-*   **Local Storage**: Hive & SharedPreferences
+*   **Local Storage**: Hive CE & SharedPreferences
 *   **Social & Presence**: Discord Rich Presence (RPC)
 *   **Metadata & Tracking APIs**: TMDB, AniList (GraphQL), Simkl, MyAnimeList
 *   **Background Tasks**: WorkManager & Local Notifications
@@ -202,7 +205,7 @@ Nivio runs on Android TV and Google TV with a layout made for the big screen: a 
 ## ⚙️ Installation & Setup
 
 ### 1. Prerequisites
-*   Flutter SDK (`^3.10.0`)
+*   Flutter SDK 3.50 or newer (Dart `^3.14.0`)
 *   A free [Firebase](https://firebase.google.com/) Project
 *   A free [TMDB](https://www.themoviedb.org/) API Key
 *   *(Optional)* A free [Supabase](https://supabase.com/) Project for Watch Parties
@@ -278,6 +281,8 @@ Use the automated builder scripts to compile either a Shorebird OTA release or a
 # Or with flags: ./build_universal_apk.sh --shorebird | --normal | --skip-build
 ```
 
+The Android app (`packages/nivio_mobile`) builds with Gradle 9.9.2, Android Gradle Plugin 9.5.3 and Kotlin 2.4.21, with AGP's built-in Kotlin turned on (`android.builtInKotlin=true`). Three plugins whose build files still apply the Kotlin Gradle Plugin are replaced by patched copies in [`packages/vendor`](packages/vendor/README.md) until their authors publish fixed versions.
+
 ### iPhone and iPad (IPA)
 
 Both GitHub Actions builds are manual. **iOS build** produces a standard unsigned test IPA. **iOS Shorebird release** builds the sideload IPA that can receive Dart patches and registers it with Shorebird. See the [iOS build and release guide](packages/nivio_ios/README.md).
@@ -311,8 +316,10 @@ The packaging scripts automatically read the application version from the root `
 The resulting setup wizard executable is saved to:
 `packages/nivio_desktop/dist/windows/Nivio-Setup-<version>.exe`
 
-#### 🎬 Trailers
-Trailers and hover previews play in mpv, the same engine as the main player, so no platform needs a web view. `TrailerStreamResolver` turns a TMDB/AniList trailer into streams mpv opens directly. YouTube uses the InnerTube `VISIONOS` client (as Inzx does for podcast videos): its stream URLs need no signature deciphering, `n` challenge or PO token and play to the end, unlike the Android clients, which YouTube cuts off after about a minute. Video and audio come as separate streams (audio is added with mpv's `audio-files`). Vimeo and Dailymotion go through their player APIs.
+### 🎬 Trailers
+Trailers open in the regular player and hover previews play in mpv too, so no platform needs a web view. `TrailerStreamResolver` turns a TMDB/AniList trailer into streams mpv opens directly. YouTube uses the InnerTube `VISIONOS` client (as Inzx does for podcast videos): its stream URLs need no signature deciphering, `n` challenge or PO token and play to the end, unlike the Android clients, which YouTube cuts off after about a minute. Video and audio come as separate streams (audio is added with mpv's `audio-files`). Vimeo and Dailymotion go through their player APIs.
+
+Captions come from the same responses: YouTube's written tracks load as WebVTT, and its auto-generated ones are converted from `json3` to SRT so they show one line at a time. Trailers play outside the watch history, so they never reach Continue Watching.
 
 ---
 

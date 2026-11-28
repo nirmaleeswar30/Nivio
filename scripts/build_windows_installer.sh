@@ -26,7 +26,18 @@ fi
 
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   echo "🏗️  Building Windows release from packages/nivio_desktop ..."
-  ( cd "$DESKTOP_DIR" && flutter build windows --release )
+  # Same steps as scripts/build_windows_release.ps1: patch media_kit_video's
+  # C++ for MSVC (a fresh pub cache has the unpatched sources), then build.
+  # Start from an empty Release folder: Flutter's install step only adds files,
+  # so DLLs of removed plugins or older library versions would otherwise stay
+  # and be packaged into the installer.
+  rm -rf "$DESKTOP_DIR/build/windows/x64/runner/Release"
+  (
+    cd "$DESKTOP_DIR"
+    flutter pub get
+    dart tool/patch_windows_plugins.dart
+    flutter build windows --release
+  )
 fi
 
 RELEASE_DIR="$DESKTOP_DIR/build/windows/x64/runner/Release"

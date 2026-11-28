@@ -127,11 +127,14 @@ echo "  ✓ Bundled $LIBMPV_REAL as lib/$LIBMPV_REAL_NAME (+ libmpv.so.2, libmpv
 # Empty, read-only mpv config dir inside the image (see MPV_HOME in AppRun).
 mkdir -p "$APPDIR/etc/mpv"
 
-# Step 4: Automatically resolve and bundle all required runtime dependencies (HarfBuzz, ICU, XML, codecs, etc.)
-python3 - << 'PY'
+# Step 4: Bundle every shared library the app and libmpv link against (FFmpeg,
+# libass, libplacebo, codecs, ...), except the host system/driver libraries
+# listed below. Only what the binaries actually link is copied, so packages
+# removed from the app (e.g. the old WebKit web view) drop out on their own.
+APPDIR="$APPDIR" python3 - << 'PY'
 import os, subprocess, re, shutil
 
-appdir = os.environ.get("APPDIR", "build/appimage/Nivio.AppDir")
+appdir = os.environ["APPDIR"]
 libdir = os.path.join(appdir, "lib")
 
 # Fundamental host / graphics driver / desktop libraries that MUST come from host OS
@@ -203,7 +206,7 @@ for soname, realpath in to_copy.items():
     except Exception as e:
         print(f"  ⚠️ Could not copy {soname}: {e}")
 
-print(f"  ✓ Bundled {copied_count} runtime shared libraries (including HarfBuzz-ICU, codecs)")
+print(f"  ✓ Bundled {copied_count} runtime shared libraries")
 PY
 
 # Verify the bundled libmpv resolves entirely from the AppDir (plus the

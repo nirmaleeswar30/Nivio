@@ -139,7 +139,11 @@ fi
 echo -e "\033[0;33mChecking AAB file...\033[0m"
 if [ -f "$AAB_PATH" ]; then
     AAB_SIZE=$(du -m "$AAB_PATH" | cut -f1)
-    echo -e "\033[0;32m  Found: $AAB_PATH (${AAB_SIZE}MB)\033[0m"
+    AAB_TIME=$(date -r "$AAB_PATH" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "unknown time")
+    echo -e "\033[0;32m  Found: $AAB_PATH (${AAB_SIZE}MB, built $AAB_TIME)\033[0m"
+    if [ "$SKIP_BUILD" -eq 1 ]; then
+        echo -e "\033[0;33m  --skip-build packages this AAB as it is; rebuild if the code changed since then.\033[0m"
+    fi
 else
     echo -e "\033[0;31m  ERROR: AAB not found at $AAB_PATH\033[0m"
     echo -e "\033[0;31m  Run without --skip-build to compile the AAB first.\033[0m"
@@ -189,7 +193,8 @@ rm -f "$OUTPUT_DIR/universal.apks"
 
 # Locate Android Build Tools & Python
 BUILD_TOOLS_DIR=""
-for candidate in "$ANDROID_HOME/build-tools" "$ANDROID_SDK_ROOT/build-tools" "$HOME/Android/Sdk/build-tools" "$HOME/Library/Android/sdk/build-tools"; do
+# ${VAR:-} so an unset ANDROID_HOME / ANDROID_SDK_ROOT doesn't trip `set -u`.
+for candidate in "${ANDROID_HOME:-}/build-tools" "${ANDROID_SDK_ROOT:-}/build-tools" "$HOME/Android/Sdk/build-tools" "$HOME/Library/Android/sdk/build-tools"; do
     if [ -d "$candidate" ]; then
         latest=$(ls -d "$candidate"/* 2>/dev/null | sort -V | tail -n 1)
         if [ -f "$latest/zipalign" ] && [ -f "$latest/apksigner" ]; then

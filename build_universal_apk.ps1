@@ -258,8 +258,13 @@ if (Test-Path $bundletoolPath) {
 # Check AAB file
 Write-Host "Checking AAB file..." -ForegroundColor Yellow
 if (Test-Path $aabPath) {
-    $aabSize = [math]::Round((Get-Item $aabPath).Length / 1MB, 2)
-    Write-Host "  Found: $aabPath ($aabSize MB)" -ForegroundColor Green
+    $aabItem = Get-Item $aabPath
+    $aabSize = [math]::Round($aabItem.Length / 1MB, 2)
+    $aabTime = $aabItem.LastWriteTime.ToString("yyyy-MM-dd HH:mm")
+    Write-Host "  Found: $aabPath ($aabSize MB, built $aabTime)" -ForegroundColor Green
+    if ($SkipBuild) {
+        Write-Host "  -SkipBuild packages this AAB as it is; rebuild if the code changed since then." -ForegroundColor Yellow
+    }
 } else {
     Write-Host "  ERROR: AAB not found at $aabPath" -ForegroundColor Red
     Write-Host "  Run without -SkipBuild to compile the AAB first." -ForegroundColor Red

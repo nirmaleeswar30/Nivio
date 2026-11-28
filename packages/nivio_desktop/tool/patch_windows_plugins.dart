@@ -1,3 +1,15 @@
+/// Patches plugin C++ sources in the pub cache that MSVC rejects, before a
+/// Windows build. Run from packages/nivio_desktop (scripts/run_windows.ps1
+/// and the release scripts do this).
+///
+/// media_kit_video 2.0.1 passes string literals where libmpv's render API
+/// takes `void*`. That drops `const`, which MSVC rejects, so explicit casts
+/// are added.
+/// (window_manager used to need a patch too; 0.7.x has no C++ sources.)
+///
+/// `--dry-run` reports what would change without writing.
+library;
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -18,40 +30,12 @@ void main(List<String> args) {
   final packageConfig =
       jsonDecode(packageConfigFile.readAsStringSync()) as Map<String, Object?>;
   final packages = packageConfig['packages'] as List<Object?>;
-  
-  final windowManagerRoot = _tryPackageRoot(
-    packageConfigFile,
-    packages,
-    'window_manager',
-  );
-  
+
   final mediaKitVideoRoot = _tryPackageRoot(
     packageConfigFile,
     packages,
     'media_kit_video',
   );
-
-  if (windowManagerRoot != null) {
-    _patchClassDeclarationQualifiers(
-      path:
-          '${windowManagerRoot.path}${Platform.pathSeparator}windows${Platform.pathSeparator}window_manager.cpp',
-      className: 'WindowManager',
-      classMarker: 'class WindowManager',
-      dryRun: dryRun,
-    );
-
-    _patchClassDeclarationQualifiers(
-      path:
-          '${windowManagerRoot.path}${Platform.pathSeparator}windows${Platform.pathSeparator}window_manager_plugin.cpp',
-      className: 'WindowManagerPlugin',
-      classMarker: 'class WindowManagerPlugin',
-      extraReplacements: const {
-        '\nvoid RegisterWithRegistrar(\n    flutter::PluginRegistrarWindows* registrar) {':
-            '\nvoid WindowManagerPlugin::RegisterWithRegistrar(\n    flutter::PluginRegistrarWindows* registrar) {',
-      },
-      dryRun: dryRun,
-    );
-  }
 
   if (mediaKitVideoRoot != null) {
     _patchMediaKitVideo(
@@ -91,61 +75,6 @@ Directory _resolvePackageRoot(File packageConfigFile, String rootUriText) {
   }
 
   return Directory.fromUri(resolvedUri);
-}
-
-void _patchClassDeclarationQualifiers({
-  required String path,
-  required String className,
-  required String classMarker,
-  Map<String, String> extraReplacements = const {},
-  required bool dryRun,
-}) {
-  final file = File(path);
-  if (!file.existsSync()) {
-    stdout.writeln('Source file does not exist: $path');
-    return;
-  }
-
-  final content = file.readAsStringSync();
-  var patchedContent = content;
-  for (final replacement in extraReplacements.entries) {
-    patchedContent = patchedContent.replaceFirst(
-      replacement.key,
-      replacement.value,
-    );
-  }
-
-  final classStart = patchedContent.indexOf(classMarker);
-  if (classStart < 0) {
-    stdout.writeln("Could not find marker '$classMarker' in $path");
-    return;
-  }
-
-  final classEnd = patchedContent.indexOf('\n};', classStart);
-  if (classEnd < 0) {
-    stdout.writeln("Could not find end of '$classMarker' in $path");
-    return;
-  }
-
-  final beforeClass = patchedContent.substring(0, classStart);
-  final classBody = patchedContent.substring(classStart, classEnd);
-  final afterClass = patchedContent.substring(classEnd);
-  final patchedClassBody = classBody.replaceAll('$className::', '');
-
-  patchedContent = beforeClass + patchedClassBody + afterClass;
-
-  if (patchedContent == content) {
-    stdout.writeln('No patch needed for $path');
-    return;
-  }
-
-  if (dryRun) {
-    stdout.writeln('Would patch $path');
-    return;
-  }
-
-  file.writeAsStringSync(patchedContent);
-  stdout.writeln('Patched $path');
 }
 
 void _patchMediaKitVideo({required String path, required bool dryRun}) {

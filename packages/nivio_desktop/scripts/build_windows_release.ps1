@@ -186,8 +186,17 @@ if ($BuildType -eq "shorebird") {
   }
 }
 
+# Start from an empty Release folder. Flutter's install step only adds files,
+# so DLLs of removed plugins (e.g. the old web view) or of older library
+# versions would stay there and be packaged into the installer.
+$ReleaseDir = Join-Path $RootDir "build\windows\x64\runner\Release"
+if (Test-Path $ReleaseDir) {
+  Write-Host "Clearing previous Release output..."
+  Remove-Item -Recurse -Force $ReleaseDir
+}
+
 Write-Host "Running plugin C++ compatibility patch..."
-& $DartCmd run tool/patch_window_manager_windows.dart
+& $DartCmd tool/patch_windows_plugins.dart
 if ($LASTEXITCODE -ne 0) {
   Write-Warning "Plugin patch returned non-zero code ($LASTEXITCODE), continuing..."
 }

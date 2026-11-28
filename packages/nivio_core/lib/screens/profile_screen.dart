@@ -1118,16 +1118,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
       );
     }
-    if (_matches('preview onboarding setup welcome screens')) {
-      results.add(
-        _buildActionTile(
-          icon: Icons.play_circle_outline,
-          title: 'Preview onboarding',
-          subtitle: 'Open the setup screens for testing.',
-          onTap: () => context.push('/onboarding?preview=1&next=/profile'),
-        ),
-      );
-    }
 
     if (results.isEmpty) {
       results.add(
@@ -4332,12 +4322,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       case 8: // App & Updates
         return Column(
           children: [
-            _buildActionTile(
-              icon: Icons.play_circle_outline,
-              title: 'Preview onboarding',
-              subtitle: 'Open the setup screens for testing.',
-              onTap: () => context.push('/onboarding?preview=1&next=/profile'),
-            ),
             FutureBuilder<String>(
               future: _getAppVersionLabel(),
               builder: (context, snapshot) {

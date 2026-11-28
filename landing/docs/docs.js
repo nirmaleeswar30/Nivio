@@ -7,12 +7,12 @@
       { slug: 'install', title: 'Install & update', keys: 'download apk exe appimage windows linux android iphone ipad ios ipa sidestore altstore sideload source shorebird obtainium update upgrade uninstall smartscreen fuse' },
     ] },
     { title: 'Watching', pages: [
-      { slug: 'player', title: 'The player', keys: 'controls gestures keyboard shortcuts lock brightness volume subtitles audio quality server decoder ambient stats pip skip intro next episode' },
+      { slug: 'player', title: 'The player', keys: 'controls gestures keyboard shortcuts lock brightness volume subtitles audio quality server decoder ambient stats pip skip intro next episode stream selection picker autoplay manual fastest first preset source priority original audio content warnings parental guide trailer youtube captions' },
       { slug: 'hdr', title: 'HDR & Dolby Vision', keys: 'hdr10 hlg dolby vision dv tone mapping sdr hdr toys bt2020 surface vulkan mediacodec windows monitor d3d11 linux wayland kde gnome hyprland' },
       { slug: 'downloads', title: 'Downloads', keys: 'offline save download watch while downloading resume connections' },
     ] },
     { title: 'What to watch', pages: [
-      { slug: 'anime', title: 'Anime', keys: 'anime miruro animetsu animex sub dub filler skip intro aniskip source' },
+      { slug: 'anime', title: 'Anime', keys: 'anime miruro animetsu animex anikoto sub dub filler skip intro aniskip source priority' },
       { slug: 'torrents', title: 'Torrent streaming', keys: 'torrent p2p magnet nyaa piratebay yts eztv 1337x rqbit' },
       { slug: 'live-tv', title: 'Live TV & IPTV', keys: 'iptv m3u xtream channels sports live tv playlist movies series' },
     ] },

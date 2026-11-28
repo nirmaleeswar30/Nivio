@@ -83,6 +83,12 @@ class DownloadItem extends HiveObject {
   @HiveField(19)
   int? fileIndex;
 
+  /// The quality picked in the download sheet ("1080p"), for HLS masters:
+  /// the download keeps the master playlist and picks this variant itself,
+  /// so an audio track the master lists separately isn't lost.
+  @HiveField(20)
+  String? preferredQuality;
+
   DownloadItem({
     required this.id,
     required this.mediaId,
@@ -104,6 +110,7 @@ class DownloadItem extends HiveObject {
     this.subtitleUrl,
     this.torrentId,
     this.fileIndex,
+    this.preferredQuality,
   });
 
   /// Returns the clean series or movie title without the internal '|||' delimiter.

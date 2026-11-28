@@ -39,13 +39,14 @@ class DownloadItemAdapter extends TypeAdapter<DownloadItem> {
       subtitleUrl: fields[17] as String?,
       torrentId: (fields[18] as num?)?.toInt(),
       fileIndex: (fields[19] as num?)?.toInt(),
+      preferredQuality: fields[20] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, DownloadItem obj) {
     writer
-      ..writeByte(20)
+      ..writeByte(21)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -85,7 +86,9 @@ class DownloadItemAdapter extends TypeAdapter<DownloadItem> {
       ..writeByte(18)
       ..write(obj.torrentId)
       ..writeByte(19)
-      ..write(obj.fileIndex);
+      ..write(obj.fileIndex)
+      ..writeByte(20)
+      ..write(obj.preferredQuality);
   }
 
   @override

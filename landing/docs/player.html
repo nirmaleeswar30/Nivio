@@ -36,9 +36,24 @@
 <h1>The player</h1>
 <p class="lead">Nivio plays everything with mpv, a fast player that handles nearly any format with hardware decoding. This page covers how to control it on each device and what every setting in the player does.</p>
 
-<h2 id="servers">Servers and sources</h2>
-<p>When you press play, Nivio asks its sources for a stream and starts the first one that works. If a source fails or is too slow, Nivio moves on to the next by itself, trying direct streams before embedded web players.</p>
-<p>To choose a server yourself, tap the circular arrows at the top right of the player. Each server shows as a card. Pick one and playback continues from where you were.</p>
+<h2 id="servers">Picking a stream</h2>
+<p>When you press play, Nivio asks all its sources for streams at once. What happens next depends on the playback mode in <strong>Settings → Playback → Stream Selection</strong>:</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Mode</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td>Manual (default)</td><td>Opens the stream picker, where you choose the stream yourself.</td></tr>
+    <tr><td>Fastest First</td><td>Plays the first stream that loads and fits your preferences.</td></tr>
+    <tr><td>Autoplay</td><td>Picks the best match for your preferences and starts it from the loading screen. If it fails or doesn't start in time, Nivio tries the next best. Tap <strong>Choose stream</strong> at the top left of the loading screen to pick one yourself instead.</td></tr>
+  </tbody>
+</table></div>
+<p>The same screen sets what “best” means:</p>
+<ul>
+  <li><strong>Quality preset</strong>: Data Saver (720p, HEVC, smaller files), Balanced (1080p, clean releases) or Max Quality (4K, HDR, remux). Under <strong>Customise</strong> you can reorder resolutions, block releases such as CAM copies, prefer formats like HEVC or Dolby Vision, and cap the file size.</li>
+  <li><strong>Source priority</strong> and <strong>Anime source priority</strong>: the order sources are tried and listed in.</li>
+  <li><strong>Torrent sources</strong>: turn torrent streams on, and choose whether Autoplay may pick them. See <a href="torrents.html">Torrent streaming</a>.</li>
+</ul>
+<p>Streams in your preferred audio language rank higher. Set it in <strong>Settings → Playback → Preferred Audio Language</strong>. <strong>Original</strong> means the title's own language, so an English film prefers English audio even when a release also has other dubs.</p>
+<p>To switch streams while watching, tap the circular arrows at the top right of the player. Pick another stream and playback continues from where you were.</p>
 
 <h2 id="touch">Touch gestures</h2>
 <div class="platforms"><span class="chip on">Android</span></div>
@@ -78,6 +93,18 @@
   <li><strong>Seek previews</strong>: when a server provides thumbnails, dragging the seek bar shows a preview of that moment.</li>
   <li>Nivio remembers where you stopped and resumes there next time.</li>
 </ul>
+
+<h2 id="content-warnings">Content warnings</h2>
+<p>When a movie, show or anime starts, a short card lists its content warnings from the IMDb parental guide, such as violence or language, with how strong each is. Anime is matched to its IMDb entry automatically, which can fail for less-known titles. Turn the card off in <strong>Settings → Playback → Content Warnings</strong>.</p>
+
+<h2 id="trailers">Trailers</h2>
+<p>Trailers open in the same player as everything else, with the same controls and gestures. They come from YouTube, Vimeo or Dailymotion, as listed on TMDB or AniList.</p>
+<ul>
+  <li><strong>Subtitles are on</strong> when a trailer starts: your preferred subtitle language if the trailer has it, otherwise English, otherwise the first track. YouTube's own captions come first, then its auto-generated ones. Change or turn them off from the Subtitles menu.</li>
+  <li>Trailers don't count as watching: they aren't added to your history or Continue Watching.</li>
+  <li>When the trailer ends, the player closes and you're back on the title's page.</li>
+</ul>
+<p>On Windows and Linux, hovering over a poster plays a short, muted preview.</p>
 
 <h2 id="settings">Player settings</h2>
 <p>Tap the gear in the player to open its settings. Changes apply straight away, and most are remembered for next time.</p>
@@ -122,7 +149,7 @@
 <h2 id="pip">Picture-in-Picture and background</h2>
 <div class="platforms"><span class="chip on">Android</span><span class="chip on">iPhone / iPad</span></div>
 <p>With <strong>PiP on Lost Visibility</strong> turned on, leaving the app shrinks the video into a floating window. <strong>Pause on Lost Visibility</strong> pauses instead. Both are in Settings → Playback. The screen stays awake while a video is playing.</p>
-<p>On iPhone or iPad, enable <strong>Start PiP Automatically</strong> in the system's Picture-in-Picture settings if the player stays in the background. To leave a fullscreen trailer, tap the back arrow in the top-left corner.</p>
+<p>On iPhone or iPad, enable <strong>Start PiP Automatically</strong> in the system's Picture-in-Picture settings if the player stays in the background. To leave a trailer, tap the back arrow in the top-left corner.</p>
 <p>Pressing back in the player can also keep the video going in a mini player while you browse.</p>
     </article>
     <nav class="pager" id="pager" aria-label="Previous and next page"></nav>
