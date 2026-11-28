@@ -4,7 +4,7 @@ part 'watch_history.freezed.dart';
 part 'watch_history.g.dart';
 
 @freezed
-class WatchHistory with _$WatchHistory {
+abstract class WatchHistory with _$WatchHistory {
   const factory WatchHistory({
     required String id,
     required int tmdbId,
@@ -37,7 +37,7 @@ class WatchHistory with _$WatchHistory {
 }
 
 @freezed
-class EpisodeProgress with _$EpisodeProgress {
+abstract class EpisodeProgress with _$EpisodeProgress {
   const factory EpisodeProgress({
     required int season,
     required int episode,

@@ -189,7 +189,7 @@ class ChangelogDialog extends StatelessWidget {
                               backgroundColor: NivioTheme.accentColorOf(
                                 context,
                               ),
-                              foregroundColor: Colors.white,
+                              foregroundColor: Theme.of(context).colorScheme.onPrimary,
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16),
@@ -213,7 +213,7 @@ class ChangelogDialog extends StatelessWidget {
                       },
                       style: FilledButton.styleFrom(
                         backgroundColor: NivioTheme.accentColorOf(context),
-                        foregroundColor: Colors.white,
+                        foregroundColor: Theme.of(context).colorScheme.onPrimary,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),

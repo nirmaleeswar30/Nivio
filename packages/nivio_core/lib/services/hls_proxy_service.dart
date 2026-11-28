@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/services/loopback_server.dart';
@@ -14,6 +16,18 @@ class HlsProxyService {
   HttpServer? _server;
   http.Client? _cronetClient;
   bool _resumeHooked = false;
+  final _redirects = <String, Uri Function()>{};
+  final _random = Random.secure();
+
+  /// Issues a fresh upstream URL on each player request, including seeks.
+  String? registerMediaRedirect(Uri Function() destination) {
+    final server = _server;
+    if (server == null) return null;
+    final id = base64Url.encode(List.generate(18, (_) => _random.nextInt(256)));
+    if (_redirects.length >= 256) _redirects.remove(_redirects.keys.first);
+    _redirects[id] = destination;
+    return 'http://127.0.0.1:${server.port}/media-redirect/$id';
+  }
 
   Future<void> start() async {
     if (_server != null) return;
@@ -68,10 +82,34 @@ class HlsProxyService {
     _server = null;
     _cronetClient?.close();
     _cronetClient = null;
+    _redirects.clear();
     appDebugLog('🛑 HlsProxyService stopped');
   }
 
   int get port => _server?.port ?? 0;
+
+  static bool _startsWithPlaylistTag(List<int> bytes) {
+    var i = 0;
+    // UTF-8 byte order mark and leading whitespace.
+    if (bytes.length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF) i = 3;
+    while (i < bytes.length && (bytes[i] == 0x20 || bytes[i] == 0x0A || bytes[i] == 0x0D || bytes[i] == 0x09)) {
+      i++;
+    }
+    const tag = '#EXTM3U';
+    if (bytes.length - i < tag.length) return false;
+    for (var j = 0; j < tag.length; j++) {
+      if (bytes[i + j] != tag.codeUnitAt(j)) return false;
+    }
+    return true;
+  }
+
+  static Future<List<int>> _collect(Stream<List<int>> stream) async {
+    final builder = BytesBuilder(copy: false);
+    await for (final chunk in stream) {
+      builder.add(chunk);
+    }
+    return builder.takeBytes();
+  }
 
   String getProxyUrl(String targetUrl, String userAgent, Map<String, String> cookies, {String? referer, String? origin, String? extension}) {
     if (_server == null) throw Exception('HlsProxyService is not running');
@@ -90,87 +128,25 @@ class HlsProxyService {
   }
 
   Future<void> _handleRequest(HttpRequest request) async {
-    appDebugLog('📥 Proxy received request: ${request.uri.toString()}');
-
-    if (request.uri.path == '/youtube_trailer') {
-      final videoId = request.uri.queryParameters['v'] ?? '';
-      final autoplay = request.uri.queryParameters['autoplay'] ?? '1';
-      final mute = request.uri.queryParameters['mute'] ?? '0';
-      final controls = request.uri.queryParameters['controls'] ?? '1';
-      final loop = request.uri.queryParameters['loop'] ?? '0';
-      final start = request.uri.queryParameters['start'] ?? '0';
-      final origin = 'http://127.0.0.1:${_server!.port}';
-
-      final html = '''
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="referrer" content="strict-origin-when-cross-origin">
-  <style>
-    * { margin: 0; padding: 0; overflow: hidden; }
-    html, body { width: 100%; height: 100%; background: #000; }
-    #player { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-  </style>
-</head>
-<body>
-  <iframe 
-    id="player"
-    width="100%" 
-    height="100%" 
-    src="https://www.youtube.com/embed/$videoId?enablejsapi=1&autoplay=$autoplay&mute=$mute&controls=$controls&start=$start&playsinline=1&fs=1&iv_load_policy=3&rel=0&modestbranding=1${loop == '1' ? '&loop=1&playlist=$videoId' : ''}&origin=$origin" 
-    frameborder="0" 
-    allow="autoplay; encrypted-media; fullscreen; picture-in-picture; accelerometer; clipboard-write; gyroscope" 
-    referrerpolicy="strict-origin-when-cross-origin"
-    allowfullscreen>
-  </iframe>
-  <script>
-    var tag = document.createElement('script');
-    tag.src = 'https://www.youtube.com/iframe_api';
-    var firstScriptTag = document.getElementsByTagName('script')[0];
-    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-
-    var player;
-    function onYouTubeIframeAPIReady() {
-      player = new YT.Player('player', {
-        events: {
-          onReady: function(e) {
-            if (window.flutter_inappwebview) {
-              window.flutter_inappwebview.callHandler('onReady');
-            }
-          },
-          onStateChange: function(e) {
-            if (e.data === 0 && $loop === 1) {
-              e.target.seekTo(0);
-              e.target.playVideo();
-            } else {
-              if (window.flutter_inappwebview) {
-                window.flutter_inappwebview.callHandler('onStateChange', e.data);
-              }
-            }
-          },
-          onError: function(e) {
-            if (window.flutter_inappwebview) {
-              window.flutter_inappwebview.callHandler('onError', e.data);
-            }
-          }
-        }
-      });
-    }
-  </script>
-</body>
-</html>
-''';
-      request.response
-        ..statusCode = HttpStatus.ok
-        ..headers.contentType = ContentType.html
-        ..headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
-        ..headers.set('Access-Control-Allow-Origin', '*')
-        ..write(html);
-      await request.response.close();
+    if (request.uri.path.startsWith('/media-redirect/')) {
+      final destination = _redirects[request.uri.pathSegments.last];
+      final response = request.response;
+      if (destination == null) {
+        response.statusCode = HttpStatus.notFound;
+        await response.close();
+      } else if (request.method != 'GET' && request.method != 'HEAD') {
+        response.statusCode = HttpStatus.methodNotAllowed;
+        await response.close();
+      } else {
+        response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
+        await response.redirect(
+          destination(),
+          status: HttpStatus.temporaryRedirect,
+        );
+      }
       return;
     }
+    appDebugLog('📥 Proxy received request: ${request.uri.toString()}');
 
     if (!request.uri.path.startsWith('/proxy')) {
       request.response
@@ -232,10 +208,29 @@ class HlsProxyService {
         request.response.headers.set(key, value);
       });
 
-      final isM3u8 = response.headers['content-type']?.toLowerCase().contains('mpegurl') == true || targetUrl.contains('.m3u8');
+      var isM3u8 = response.headers['content-type']?.toLowerCase().contains('mpegurl') == true || targetUrl.contains('.m3u8');
+      // Some hosts serve playlists from extension-less URLs with a generic
+      // MIME type (and a parent playlist then gets them proxied as segments).
+      // Look at the body: one that starts with #EXTM3U is a playlist. Without
+      // this the links inside weren't rewritten and FFmpeg refused the file
+      // ("Not detecting m3u8/hls with non standard extension"), so it
+      // "played" as a broken one-second image.
+      Stream<List<int>> body = response.stream;
+      if (!isM3u8 && response.statusCode >= 200 && response.statusCode < 300) {
+        final iterator = StreamIterator(response.stream);
+        final hasFirst = await iterator.moveNext();
+        final first = hasFirst ? iterator.current : const <int>[];
+        if (_startsWithPlaylistTag(first)) isM3u8 = true;
+        body = () async* {
+          if (hasFirst) yield first;
+          while (await iterator.moveNext()) {
+            yield iterator.current;
+          }
+        }();
+      }
 
       if (response.statusCode == 403) {
-        final bodyBytes = await response.stream.toBytes();
+        final bodyBytes = await _collect(body);
         final bodyString = utf8.decode(bodyBytes, allowMalformed: true);
         appDebugLog('❌ HlsProxyService 403 Response from $targetUrl: \\n$bodyString');
         request.response.statusCode = 403;
@@ -245,7 +240,7 @@ class HlsProxyService {
       }
 
       if (isM3u8) {
-        final bodyBytes = await response.stream.toBytes();
+        final bodyBytes = await _collect(body);
         final bodyString = utf8.decode(bodyBytes);
         final lines = bodyString.split('\n');
         final modifiedLines = <String>[];
@@ -257,21 +252,31 @@ class HlsProxyService {
           String trimBase64(String str) => str.replaceAll('=', '');
           
           if (trimmed.startsWith('#')) {
-            if (trimmed.startsWith('#EXT-X-KEY:')) {
-              // Extract URI="..."
-              final uriMatch = RegExp(r'URI="([^"]+)"').firstMatch(trimmed);
-              if (uriMatch != null) {
-                final originalUri = uriMatch.group(1)!;
-                String absoluteUri = originalUri;
-                if (!originalUri.startsWith('http')) {
-                  absoluteUri = Uri.parse(targetUrl).resolve(originalUri).toString();
-                }
-                final newBase64Url = trimBase64(base64Url.encode(utf8.encode(absoluteUri)));
-                final newUrl = 'http://127.0.0.1:${_server!.port}/proxy?url=$newBase64Url&cookie=${base64Cookie ?? ''}&ua=${base64Ua ?? ''}&ref=${base64Ref ?? ''}&origin=${base64OriginParam ?? ''}&ext=.key';
-                final replacedLine = trimmed.replaceAll('URI="$originalUri"', 'URI="$newUrl"');
-                modifiedLines.add(replacedLine);
-                continue;
+            // Every URI="..." attribute must go through the proxy too: keys,
+            // init segments (EXT-X-MAP) and, in master playlists, the audio
+            // and subtitle renditions (EXT-X-MEDIA). Left relative, mpv
+            // resolved them against the proxy itself (/audio/ja/index.m3u8 →
+            // 404), lost the audio track and fell back to opening every video
+            // variant, which took long enough for Autoplay to give up.
+            final uriMatch = RegExp(r'URI="([^"]+)"').firstMatch(trimmed);
+            if (uriMatch != null) {
+              final originalUri = uriMatch.group(1)!;
+              String absoluteUri = originalUri;
+              if (!originalUri.startsWith('http')) {
+                absoluteUri = Uri.parse(targetUrl).resolve(originalUri).toString();
               }
+              final ext = trimmed.startsWith('#EXT-X-KEY:') ||
+                      trimmed.startsWith('#EXT-X-SESSION-KEY:')
+                  ? '.key'
+                  : trimmed.startsWith('#EXT-X-MEDIA:') ||
+                          trimmed.startsWith('#EXT-X-I-FRAME-STREAM-INF:') ||
+                          absoluteUri.contains('.m3u8')
+                      ? '.m3u8'
+                      : '.ts';
+              final newBase64Url = trimBase64(base64Url.encode(utf8.encode(absoluteUri)));
+              final newUrl = 'http://127.0.0.1:${_server!.port}/proxy?url=$newBase64Url&cookie=${base64Cookie ?? ''}&ua=${base64Ua ?? ''}&ref=${base64Ref ?? ''}&origin=${base64OriginParam ?? ''}&ext=$ext';
+              modifiedLines.add(trimmed.replaceFirst('URI="$originalUri"', 'URI="$newUrl"'));
+              continue;
             }
             modifiedLines.add(trimmed);
           } else {
@@ -293,6 +298,8 @@ class HlsProxyService {
         final modifiedBytes = utf8.encode(modifiedBody);
         
         request.response.headers.set('content-length', modifiedBytes.length.toString());
+        // FFmpeg only accepts an HLS playlist with an .m3u8 URL or this type.
+        request.response.headers.set('content-type', 'application/vnd.apple.mpegurl');
         request.response.add(modifiedBytes);
         await request.response.close();
       } else {
@@ -301,7 +308,7 @@ class HlsProxyService {
         List<int> buffer = [];
         bool headerStripped = false;
         
-        await response.stream.listen((chunk) {
+        await body.listen((chunk) {
           if (headerStripped) {
             request.response.add(chunk);
             return;

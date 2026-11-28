@@ -1,7 +1,5 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
@@ -19,20 +17,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   /// Google Sign-In is supported on Android
   bool get _supportsGoogleSignIn => true;
 
-  @override
-  void initState() {
-    super.initState();
-    _checkAuthState();
-  }
-
-  Future<void> _checkAuthState() async {
-    // Check if user is already signed in
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null && mounted) {
-      context.go('/');
-    }
-  }
-
   Future<void> _signInWithGoogle() async {
     if (!_supportsGoogleSignIn) return;
 
@@ -40,11 +24,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
     try {
       final authService = ref.read(authServiceProvider);
+      final watchlistService = ref.read(watchlistServiceProvider);
       final result = await authService.signInWithGoogle();
 
-      if (result != null && mounted) {
+      if (result != null) {
         // Pull watchlist from cloud first (handles fresh installs / new devices)
-        final watchlistService = ref.read(watchlistServiceProvider);
         await watchlistService.downloadFromCloud();
         // Then push any local-only items to cloud
         await watchlistService.syncAllToCloud();
@@ -56,7 +40,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               duration: Duration(seconds: 2),
             ),
           );
-          context.go('/');
         }
       }
     } catch (e) {
@@ -88,7 +71,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             duration: Duration(seconds: 2),
           ),
         );
-        context.go('/');
       }
     } catch (e) {
       if (mounted) {
@@ -208,7 +190,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         vertical: 16,
                       ),
                       backgroundColor: NivioTheme.accentColorOf(context),
-                      foregroundColor: Colors.white,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
                     ),
                     icon: Icon(Icons.play_arrow, size: 24),
                     label: const Text(

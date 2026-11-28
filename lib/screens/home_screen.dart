@@ -18,7 +18,6 @@ import 'package:nivio/providers/changelog_provider.dart';
 import 'package:nivio/providers/home_providers.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/providers/home_layout_provider.dart';
-import 'package:nivio/providers/recommendations_provider.dart';
 
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
@@ -27,9 +26,12 @@ import 'package:nivio/services/api_status_service.dart';
 import 'package:nivio/widgets/changelog_dialog.dart';
 import 'package:nivio/widgets/content_row.dart';
 import 'package:nivio/widgets/latest_releases_shelf.dart';
+import 'package:nivio/widgets/shelf_more_button.dart';
 import 'package:nivio/widgets/skeleton.dart';
 import 'package:nivio/widgets/continue_watching_row.dart';
 import 'package:nivio/widgets/tab_artwork.dart';
+import 'package:nivio/widgets/hero_artwork_stretch.dart';
+import 'package:nivio/providers/settings_providers.dart' show dynamicArtworkColorsProvider;
 import 'package:nivio/providers/player_active_provider.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
@@ -236,15 +238,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onSeeAll: () => context.push('/latest-releases?category=movie'),
           ));
           break;
-        case 'popular_movies':
-          dynamicSections.add(_buildRowSection('All Time Popular', popularMoviesProvider));
-          break;
-        case 'trending_movies':
-          dynamicSections.add(_buildRowSection('Trending Now', trendingMoviesProvider));
-          break;
-        case 'top_rated_movies':
-          dynamicSections.add(_buildRowSection('Top Rated Movies', topRatedMoviesProvider));
-          break;
         case 'latest_tv_ott':
           dynamicSections.add(_buildLatestShelfSection(
             title: 'Latest TV Releases',
@@ -255,12 +248,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             provider: latestTvOttProvider,
             onSeeAll: () => context.push('/latest-releases?category=tv'),
           ));
-          break;
-        case 'popular_tv':
-          dynamicSections.add(_buildRowSection('Popular TV Shows', popularTVShowsProvider));
-          break;
-        case 'trending_tv':
-          dynamicSections.add(_buildRowSection('Trending TV Shows', trendingTVShowsProvider));
           break;
         case 'latest_anime':
           if (languagePreferences.showAnime) {
@@ -276,27 +263,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ));
           }
           break;
-        case 'popular_anime':
-          if (languagePreferences.showAnime) dynamicSections.add(_buildRowSection('Popular Anime', animeProvider));
-          break;
-        case 'trending_anime':
-          if (languagePreferences.showAnime) dynamicSections.add(_buildRowSection('Trending Anime', trendingAnimeProvider));
-          break;
-        case 'tamil':
-          if (languagePreferences.showTamil) dynamicSections.add(_buildRowSection('Tamil Picks', tamilMoviesProvider));
-          break;
-        case 'telugu':
-          if (languagePreferences.showTelugu) dynamicSections.add(_buildRowSection('Telugu Picks', teluguMoviesProvider));
-          break;
-        case 'hindi':
-          if (languagePreferences.showHindi) dynamicSections.add(_buildRowSection('Hindi Picks', hindiMoviesProvider));
-          break;
-        case 'korean':
-          if (languagePreferences.showKorean) dynamicSections.add(_buildRowSection('Korean Dramas', koreanDramasProvider));
-          break;
-        case 'malayalam':
-          if (languagePreferences.showMalayalam) dynamicSections.add(_buildRowSection('Malayalam Picks', malayalamMoviesProvider));
-          break;
+        default:
+          final shelf = HomeShelf.fromId(sectionId);
+          final enabled = switch (shelf) {
+            HomeShelf.popularAnime || HomeShelf.trendingAnime =>
+              languagePreferences.showAnime,
+            HomeShelf.tamil => languagePreferences.showTamil,
+            HomeShelf.telugu => languagePreferences.showTelugu,
+            HomeShelf.hindi => languagePreferences.showHindi,
+            HomeShelf.korean => languagePreferences.showKorean,
+            HomeShelf.malayalam => languagePreferences.showMalayalam,
+            HomeShelf.recommendations || null => false,
+            _ => true,
+          };
+          if (shelf != null && enabled) {
+            dynamicSections.add(_buildRowSection(shelf));
+          }
       }
     }
 
@@ -389,7 +371,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 duration: const Duration(milliseconds: 800),
                 curve: Curves.easeInOut,
                 decoration: BoxDecoration(
-                  color: Color.lerp(const Color(0xFF0D0F14), _currentAmbientColor, 0.15),
+                  color: _artworkBackground(context),
                 ),
               ),
             ),
@@ -397,6 +379,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           Positioned.fill(
             child: AppCustomScrollView(
               controller: _scrollController,
+              physics: isDesktop ? null : const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
               // TV keeps the next shelf in reach of D-pad focus.
               cacheExtent: AppPlatform.isTv ? 420 : 250,
               scrollSpeed: 2.0,
@@ -420,7 +403,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     _buildWatchlistSection(),
                     _buildProviderSelectionRow(),
                     const SizedBox(height: 40),
-                    _buildRecommendationsSection(),
+                    _buildRowSection(HomeShelf.recommendations),
                     ...dynamicSections,
                     const SizedBox(height: 50),
                   ],
@@ -442,20 +425,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             if (items.isEmpty) return const SizedBox.shrink();
             return Padding(
               padding: EdgeInsets.only(left: isDesktop ? 68 : 16, right: 16),
-              child: const Column(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Continue Watching',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Continue Watching',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      ShelfMoreButton(
+                        onPressed: () => context.push('/continue-watching'),
+                      ),
+                    ],
                   ),
-                  SizedBox(height: 12),
-                  ContinueWatchingRow(),
-                  SizedBox(height: 30),
+                  const ContinueWatchingRow(),
+                  const SizedBox(height: 30),
                 ],
               ),
             );
@@ -504,33 +495,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildRecommendationsSection() {
+  Widget _buildRowSection(HomeShelf shelf) {
     return Consumer(
-      key: const PageStorageKey<String>('home-recommendations'),
-      builder: (context, ref, _) {
-        return ref.watch(homeRecommendationsProvider).when(
-          data: (recs) {
-            if (recs == null || recs.items.isEmpty) return const SizedBox.shrink();
-            final items = recs.items.map((e) => e.toJson()).toList();
-            return ContentRow(title: 'Recommended for You', items: items);
-          },
-          loading: () => const SizedBox.shrink(),
-          error: (_, __) => const SizedBox.shrink(),
-        );
-      },
-    );
-  }
-
-  Widget _buildRowSection(
-    String title,
-    FutureProvider<List<dynamic>> provider,
-  ) {
-    return Consumer(
-      key: PageStorageKey<String>(title),
+      key: PageStorageKey<String>('home-${shelf.id}'),
       builder: (context, ref, child) {
-        return ref.watch(provider).when(
-          data: (items) => ContentRow(title: title, items: items),
-          loading: () => const ContentRowSkeleton(),
+        return ref.watch(homeShelfProvider(shelf)).when(
+          data: (page) => ContentRow(
+            title: shelf.title,
+            items: page.items.take(20).toList(growable: false),
+            onSeeAll: () => context.push('/home/shelf/${shelf.id}'),
+          ),
+          loading: () => shelf == HomeShelf.recommendations
+              ? const SizedBox.shrink()
+              : const ContentRowSkeleton(),
           error: (error, stackTrace) => const SizedBox.shrink(),
         );
       },
@@ -590,18 +567,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                TextButton(
-                  onPressed: () {
-                    context.push('/all-providers');
-                  },
-                  child: const Text(
-                    'View All',
-                    style: TextStyle(
-                      color: Color(0xFF00B4D8),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                ShelfMoreButton(
+                  onPressed: () => context.push('/all-providers'),
                 ),
               ],
             ),
@@ -808,6 +775,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Color _artworkBackground(BuildContext context) {
+    final base = NivioTheme.backgroundColorOf(context);
+    return ref.watch(dynamicArtworkColorsProvider)
+        ? Color.lerp(base, _currentAmbientColor, 0.15)!
+        : base;
+  }
+
   Widget _buildHeroBannerCarousel(BuildContext context, List<Map<String, dynamic>> items) {
     if (items.isEmpty) return const SizedBox(height: 500);
     final isDesktop = AppPlatform.useDesktopLayout;
@@ -818,7 +792,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         .toSet();
     final itemCount = items.length + 1;
 
-    if (retainArtwork && !_ambientColors.containsKey(0)) {
+    final dynamicColors = ref.watch(dynamicArtworkColorsProvider);
+    if (dynamicColors && retainArtwork && !_ambientColors.containsKey(0)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _extractColorForIndex(items, 0);
       });
@@ -881,13 +856,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onFocusChange: (hasFocus) => _heroHasFocus = AppPlatform.isTv && hasFocus,
         child: PageView.builder(
         controller: _pageController,
+        clipBehavior: isDesktop ? Clip.hardEdge : Clip.none,
         itemCount: itemCount,
         physics: isDesktop
             ? const NeverScrollableScrollPhysics()
             : const PageScrollPhysics(),
         onPageChanged: (index) {
           final actualIndex = index % items.length;
-          if (retainArtwork) _extractColorForIndex(items, actualIndex);
+          if (dynamicColors && retainArtwork) _extractColorForIndex(items, actualIndex);
 
           if (index == items.length) {
             setState(() {
@@ -956,8 +932,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               : false;
 
 
-          final activeBgColor = Color.lerp(const Color(0xFF0D0F14), _currentAmbientColor, 0.15)!;
-          final slideColor = _ambientColors[_currentBannerIndex] ?? NivioTheme.accentColorOf(context);
+          final activeBgColor = _artworkBackground(context);
+          final slideColor = (dynamicColors ? _ambientColors[_currentBannerIndex] : null) ?? NivioTheme.accentColorOf(context);
 
           final mobileMeta = <String>[
             if (genres.isNotEmpty) genres.take(3).join(' / '),
@@ -965,13 +941,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             if (year.isNotEmpty) year,
           ];
 
-          // TV: off-screen hero slides stay built in the PageView; keep them out
-          // of D-pad focus so arrows never land on (and scroll to) them.
-          return ExcludeFocus(
-            excluding: AppPlatform.isTv && index != _currentBannerPage,
-            child: Stack(
-            children: [
-              Container(
+          final art = Container(
                 decoration: BoxDecoration(
                   image: backdropPath != null && retainArtwork
                       ? DecorationImage(
@@ -991,6 +961,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ? const Color(0xFF2F2F2F)
                       : null,
                 ),
+              );
+          // TV: off-screen hero slides stay built in the PageView; keep them out
+          // of D-pad focus so arrows never land on (and scroll to) them.
+          return ExcludeFocus(
+            excluding: AppPlatform.isTv && index != _currentBannerPage,
+            child: Stack(
+            children: [
+              if (isDesktop) art else HeroArtworkStretch(
+                controller: _scrollController,
+                height: bannerHeight,
+                child: art,
               ),
               // Vignette overlay
               if (isDesktop && retainArtwork)
@@ -1235,51 +1216,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               runSpacing: 4,
                               children: _buildMetaChips(mobileMeta),
                             ),
-                          const SizedBox(height: 14),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _AnimatedHoverScale(
-                                child: ElevatedButton.icon(
-                                  onPressed: () => context.push('/media/$tmdbId?type=$mediaType$seasonQuery'),
-                                  icon: PhosphorIcon(
-                                    PhosphorIconsFill.play,
-                                    color: slideColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
-                                    size: 16,
-                                  ),
-                                  label: Text(
-                                    'Watch Now',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                      color: slideColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
-                                    ),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: slideColor,
-                                    elevation: 0,
-                                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              _smallSquareButton(
-                                icon: PhosphorIcon(
-                                  isInWatchlist
-                                      ? PhosphorIconsFill.checkCircle
-                                      : PhosphorIconsRegular.plus,
-                                  color: isInWatchlist
-                                      ? slideColor
-                                      : Colors.white,
-                                  size: 18,
-                                ),
-                                onTap: () => _toggleFeaturedWatchlist(content),
-                              ),
-                            ],
-                          ),
                         ],
                       ),
               ),
@@ -1501,20 +1437,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     }
     return widgets;
-  }
-
-  Widget _smallSquareButton({required Widget icon, required VoidCallback onTap}) {
-    return _AnimatedHoverScale(
-      child: Material(
-        color: Colors.white12,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(10),
-          child: SizedBox(width: 38, height: 38, child: Center(child: icon)),
-        ),
-      ),
-    );
   }
 
   Future<void> _toggleFeaturedWatchlist(Map<String, dynamic> content) async {

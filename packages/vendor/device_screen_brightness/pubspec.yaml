@@ -1,0 +1,44 @@
+name: device_screen_brightness
+description: >-
+  Control and observe screen brightness from Flutter through native platform
+  channels on Android, iOS, macOS, Windows, and Linux.
+version: 2.0.0
+homepage: https://github.com/arcas0803/device_screen_brightness
+repository: https://github.com/arcas0803/device_screen_brightness
+issue_tracker: https://github.com/arcas0803/device_screen_brightness/issues
+topics:
+  - brightness
+  - screen
+  - method-channel
+  - platform
+
+environment:
+  sdk: ^3.11.3
+  flutter: ">=3.3.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  plugin_platform_interface: ^2.1.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.example.device_screen_brightness
+        pluginClass: DeviceScreenBrightnessPlugin
+      ios:
+        pluginClass: DeviceScreenBrightnessPlugin
+      macos:
+        pluginClass: DeviceScreenBrightnessPlugin
+      linux:
+        pluginClass: DeviceScreenBrightnessPlugin
+      windows:
+        pluginClass: DeviceScreenBrightnessPluginCApi

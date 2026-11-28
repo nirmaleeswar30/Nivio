@@ -121,7 +121,7 @@ class _SimilarContentScreenState extends ConsumerState<SimilarContentScreen> {
                         label: const Text('Try Again'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: NivioTheme.accentColorOf(context),
-                          foregroundColor: Colors.white,
+                          foregroundColor: Theme.of(context).colorScheme.onPrimary,
                         ),
                       ),
                     ],

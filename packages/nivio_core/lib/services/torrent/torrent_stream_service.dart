@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'dart:io';
 
-import 'package:hive/hive.dart';
+import 'package:hive_ce/hive.dart';
 import 'package:rqbit_ffi/rqbit_ffi.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -21,6 +21,15 @@ import 'sources/piratebay_source.dart';
 import 'sources/torrent_source.dart';
 import 'sources/torrentio_source.dart';
 import 'torrent_models.dart';
+
+class TorrentFileSizeException implements Exception {
+  const TorrentFileSizeException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
 
 /// The result of resolving a torrent stream: a localhost URL ready for the
 /// player, plus the handles needed for stats and teardown.
@@ -617,6 +626,9 @@ class TorrentStreamService {
     void Function(String status)? onStatus, {
     required SearchResult media,
     bool requireEpisodeMatch = false,
+    Duration? metadataTimeout,
+    bool Function()? cancelled,
+    int? maxFileBytes,
   }) async {
     _log('best="${best.title}" src=${best.source} seeders=${best.seeders} '
         'res=${best.parsed.resolution} type=${best.type} link=${best.link.substring(0, best.link.length.clamp(0, 60))}…');
@@ -630,6 +642,7 @@ class TorrentStreamService {
     _log('engine ready at ${RqbitEngine.instance.baseUrl}; adding torrent…');
     _client = client;
 
+    if (cancelled?.call() == true) return null;
     final add = await client.addTorrent(
       best.link,
       isUrl: best.link.startsWith('http') ? true : null,
@@ -639,30 +652,41 @@ class TorrentStreamService {
     _log('torrent added id=$id; waiting for metadata/files…');
 
     // Magnets resolve metadata from peers — wait for the file list.
+    final metadataWait = Stopwatch()..start();
+    final maxWait = metadataTimeout ?? const Duration(seconds: 60);
     var details = await client.getDetails(id);
-    for (var i = 0; details.files.isEmpty && i < 60; i++) {
+    for (var i = 0; details.files.isEmpty && metadataWait.elapsed < maxWait &&
+        cancelled?.call() != true; i++) {
       onStatus?.call('Fetching metadata from peers… (${i}s)');
       await Future.delayed(const Duration(seconds: 1));
       details = await client.getDetails(id);
     }
-    if (details.files.isEmpty) {
-      _log('=> metadata never arrived (no peers?) after 60s for id=$id');
-      onStatus?.call('Could not fetch metadata (no peers?)');
+    if (details.files.isEmpty || cancelled?.call() == true) {
+      _log('=> torrent metadata wait ended after ${metadataWait.elapsed.inSeconds}s for id=$id');
+      if (cancelled?.call() != true) onStatus?.call('Could not fetch metadata (no peers?)');
       if (id != _activeTorrentId) await _releaseTorrent(id);
       return null;
     }
     _log('metadata ready: ${details.files.length} file(s) in torrent');
+    final season = query is MediaTorrentQuery
+        ? query.season
+        : (query is AnimeQuery ? query.season : null);
+    final absoluteEpisode = query is AnimeQuery ? query.absoluteEpisode : null;
     TorrentFileInfo? file;
     if (best.fileIndex != null) {
       file = details.files.where((f) => f.index == best.fileIndex).firstOrNull;
+      if (file != null && requireEpisodeMatch) {
+        file = TorrentFileResolver.resolve(
+          [file], episode: episode, season: season, absoluteEpisode: absoluteEpisode,
+          requireEpisodeMatch: true,
+        );
+      }
     }
     file ??= TorrentFileResolver.resolve(
       details.files,
       episode: episode,
-      absoluteEpisode: query is AnimeQuery ? query.absoluteEpisode : null,
-      season: query is MediaTorrentQuery
-          ? query.season
-          : (query is AnimeQuery ? query.season : null),
+      absoluteEpisode: absoluteEpisode,
+      season: season,
       requireEpisodeMatch: requireEpisodeMatch,
       allowUnnumberedSingle: !best.isBatch,
     );
@@ -671,6 +695,16 @@ class TorrentStreamService {
       onStatus?.call('No playable file in torrent');
       if (id != _activeTorrentId) await _releaseTorrent(id);
       return null;
+    }
+    if (maxFileBytes != null && (file.length <= 0 || file.length > maxFileBytes)) {
+      if (id != _activeTorrentId && id != _prefetch?.torrentId) {
+        await _releaseTorrent(id);
+      }
+      throw TorrentFileSizeException(
+        file.length <= 0
+            ? 'Could not verify the torrent video’s file size.'
+            : 'The torrent video exceeds your maximum file size.',
+      );
     }
     _log('resolved file[${file.index}]="${file.name}" -> streaming');
 

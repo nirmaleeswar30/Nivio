@@ -119,6 +119,7 @@ class _WatchPartyChatOverlayState extends ConsumerState<WatchPartyChatOverlay> {
 
   @override
   Widget build(BuildContext context) {
+    final amoled = NivioTheme.isAmoled(context);
     ref.listen<AsyncValue<WatchPartyChatMessage>>(watchPartyChatProvider,
         (previous, next) {
       if (next.hasValue && next.value != null) {
@@ -249,26 +250,64 @@ class _WatchPartyChatOverlayState extends ConsumerState<WatchPartyChatOverlay> {
                           hintText: 'Say something...',
                           hintStyle: const TextStyle(color: Colors.white54),
                           filled: true,
-                          fillColor: Colors.black45,
+                          // On pure black a dark fill disappears; use a
+                          // light tint and outline instead.
+                          fillColor: amoled
+                              ? Colors.white.withValues(alpha: .08)
+                              : Colors.black45,
                           contentPadding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 10),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(20),
                             borderSide: BorderSide.none,
                           ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(20),
+                            borderSide: amoled
+                                ? BorderSide(
+                                    color: Colors.white.withValues(alpha: .14),
+                                  )
+                                : BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(20),
+                            borderSide: amoled
+                                ? BorderSide(
+                                    color: Colors.white.withValues(alpha: .4),
+                                  )
+                                : BorderSide.none,
+                          ),
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: NivioTheme.accentColorOf(context),
-                        shape: BoxShape.circle,
+                    // AMOLED's accent is near-white: a white disc (and its
+                    // white press highlight) glares on black, so it gets a
+                    // tinted outline button there instead.
+                    IconButton(
+                      tooltip: 'Send',
+                      onPressed: _sendMessage,
+                      style: IconButton.styleFrom(
+                        backgroundColor: amoled
+                            ? Colors.white.withValues(alpha: .12)
+                            : NivioTheme.accentColorOf(context),
+                        foregroundColor: amoled
+                            ? Colors.white
+                            : Theme.of(context).colorScheme.onPrimary,
+                        hoverColor: amoled
+                            ? Colors.white.withValues(alpha: .10)
+                            : null,
+                        highlightColor: amoled
+                            ? Colors.white.withValues(alpha: .18)
+                            : null,
+                        side: amoled
+                            ? BorderSide(
+                                color: Colors.white.withValues(alpha: .22),
+                              )
+                            : null,
+                        shape: const CircleBorder(),
                       ),
-                      child: IconButton(
-                        icon: const Icon(Icons.send, color: Colors.white, size: 18),
-                        onPressed: _sendMessage,
-                      ),
+                      icon: const Icon(Icons.send_rounded, size: 18),
                     ),
                   ],
                 ),

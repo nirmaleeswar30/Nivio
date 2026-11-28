@@ -45,14 +45,6 @@
             android:hardwareAccelerated="true"
             android:supportsPictureInPicture="true"
             android:windowSoftInputMode="adjustResize">
-            <!-- Specifies an Android theme to apply to this Activity as soon as
-                 the Android process has started. This theme is visible to the user
-                 while the Flutter UI initializes. After that, this theme continues
-                 to determine the Window background behind the Flutter UI. -->
-            <meta-data
-              android:name="io.flutter.embedding.android.NormalTheme"
-              android:resource="@style/NormalTheme"
-              />
             <!-- Deep links are routed by app_links in Dart (_handleDeepLink).
                  Flutter's built-in deep linking would also push the URI path
                  (e.g. /simkl?code=...) into go_router, so keep it off. -->

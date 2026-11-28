@@ -9,8 +9,6 @@ import 'package:nivio/services/cache_service.dart';
 import 'package:nivio/services/scrapers/newtv/newtv_scraper.dart';
 import 'package:nivio/services/anilist_service.dart';
 import 'package:nivio/services/scrapers/streamflix/streamflix_scraper.dart';
-import 'package:nivio/services/scrapers/moviebox/moviebox_scraper.dart';
-import 'package:nivio/services/scrapers/castletv/castletv_scraper.dart';
 import 'package:nivio/services/scrapers/vidrock/vidrock_scraper.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
 import 'package:nivio/services/anime_filler_service.dart';
@@ -52,8 +50,6 @@ final streamingServiceProvider = Provider<StreamingService>((ref) => StreamingSe
   miruroScraper: ref.read(miruroScraperProvider),
   animexScraper: ref.read(animexScraperProvider),
   streamFlixScraper: ref.read(streamFlixScraperProvider),
-  movieBoxScraper: ref.read(movieBoxScraperProvider),
-  castleTvScraper: ref.read(castleTvScraperProvider),
   vidRockScraper: ref.read(vidRockScraperProvider),
   torrentStreamService: ref.read(torrentStreamServiceProvider),
   ref: ref,

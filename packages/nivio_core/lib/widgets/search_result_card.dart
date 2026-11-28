@@ -105,7 +105,7 @@ class SearchResultCard extends ConsumerWidget {
                         background: NivioTheme.accentColorOf(
                           context,
                         ).withValues(alpha: 0.92),
-                        foreground: Colors.white,
+                        foreground: Theme.of(context).colorScheme.onPrimary,
                       ),
                     ),
                     if (year != 'N/A')

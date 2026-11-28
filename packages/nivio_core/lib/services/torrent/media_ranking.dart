@@ -6,17 +6,20 @@ class MediaRanking {
   /// Ranks [results] best-to-worst according to [query].
   static List<TorrentResult> rank(
     List<TorrentResult> results,
-    MediaTorrentQuery query,
-  ) {
+    MediaTorrentQuery query, {
+    List<RegExp> preferredFormats = const [],
+  }) {
     if (results.isEmpty) return const [];
 
     final scored = [
-      for (final r in results) (result: r, score: _score(r, query)),
+      for (final (index, r) in results.indexed)
+        (result: r, score: _score(r, query, preferredFormats), index: index),
     ];
 
     scored.sort((a, b) {
       if (a.score != b.score) return b.score.compareTo(a.score);
-      return b.result.seeders.compareTo(a.result.seeders);
+      final bySeeders = b.result.seeders.compareTo(a.result.seeders);
+      return bySeeders == 0 ? a.index.compareTo(b.index) : bySeeders;
     });
 
     return scored.map((s) => s.result).toList();
@@ -31,7 +34,11 @@ class MediaRanking {
     return ranked.isEmpty ? null : ranked.first;
   }
 
-  static double _score(TorrentResult r, MediaTorrentQuery query) {
+  static double _score(
+    TorrentResult r,
+    MediaTorrentQuery query,
+    List<RegExp> preferredFormats,
+  ) {
     double score = 0.0;
     final lowerTitle = r.title.toLowerCase();
 
@@ -82,7 +89,12 @@ class MediaRanking {
       score -= 50.0; // Penalize unseeded torrents
     }
 
-    return score;
+    // Keep formats a preference. Two matches are enough for the full boost.
+    final formatMatches = preferredFormats
+        .where((pattern) => pattern.hasMatch(r.title))
+        .take(2)
+        .length;
+    return score + formatMatches * 25;
   }
 
   /// Scores resolutions that don't exactly match the preferred one, ordered by

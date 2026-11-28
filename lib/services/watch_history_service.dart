@@ -1,8 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:nivio/models/watch_history.dart';
 
 import 'package:nivio/core/debug_log.dart';
@@ -42,6 +43,8 @@ class WatchHistoryService {
     required Duration lastPosition,
     required Duration totalDuration,
   }) async {
+    // Trailers and live channels play under id 0; they aren't watch history.
+    if (tmdbId <= 0) return;
     if (!_initialized) await init();
 
     final id = '${_userId}_$tmdbId';
@@ -141,7 +144,12 @@ class WatchHistoryService {
     if (encoded.isEmpty) return const [];
 
     final decodedSorted = await compute(_decodeAndSortHistoryEntries, encoded);
-    return decodedSorted.map(WatchHistory.fromJson).toList();
+    final all = decodedSorted.map(WatchHistory.fromJson).toList();
+    // Earlier versions saved trailers (id 0) as watch history; drop them.
+    for (final stray in all.where((h) => h.tmdbId <= 0)) {
+      unawaited(deleteHistory(stray.tmdbId).catchError((_) {}));
+    }
+    return all.where((h) => h.tmdbId > 0).toList();
   }
 
   /// Get continue watching (incomplete items, including newly added with 0% progress)
@@ -169,6 +177,7 @@ class WatchHistoryService {
 
   /// Save track preferences (audio, subtitle, resolution) and provider index
   Future<void> saveTrackPreferences(int tmdbId, {String? audioTrack, String? subtitleTrack, String? resolution, int? providerIndex}) async {
+    if (tmdbId <= 0) return;
     if (!_initialized) await init();
     
     final id = '${_userId}_$tmdbId';
@@ -304,6 +313,7 @@ class WatchHistoryService {
 
       for (final doc in snapshot.docs) {
         final cloudHistory = WatchHistory.fromJson(doc.data());
+        if (cloudHistory.tmdbId <= 0) continue;
         final id = '${_userId}_${cloudHistory.tmdbId}';
         final localJson = _historyBox.get(id);
 

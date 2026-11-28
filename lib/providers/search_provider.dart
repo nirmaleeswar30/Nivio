@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/providers/service_providers.dart';
 

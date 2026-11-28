@@ -1,3 +1,5 @@
+import 'package:nivio/models/stream_size.dart';
+
 import 'anitomy.dart';
 
 /// A torrent candidate returned by a source (Nyaa / AnimeTosho / SeaDex),
@@ -47,6 +49,8 @@ class TorrentResult {
 
   bool get isBest => type == 'best';
   bool get isBatch => type == 'batch' || parsed.isBatch;
+  int? get displaySizeBytes =>
+      sizeBytes > 0 ? sizeBytes : StreamSize.fromTitle(title);
 }
 
 /// The search context built from a Nivio media selection.

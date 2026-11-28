@@ -4,7 +4,7 @@ publish_to: 'none'
 version: 2.2.8
 
 environment:
-  sdk: ^3.10.0
+  sdk: ^3.14.0
 
 dependencies:
   flutter:
@@ -19,9 +19,9 @@ dependencies:
 
   # Mobile-specific dependencies
   cronet_http: ^1.9.0
-  workmanager: ^0.9.0
-  simple_pip_mode: ^1.1.0
-  device_screen_brightness: ^0.2.1
+  workmanager: ^0.10.10
+  simple_pip_mode: ^2.0.0
+  device_screen_brightness: ^2.0.0
   flutter_volume_controller: ^2.0.1
   flutter_native_splash: ^2.4.2
 
@@ -31,10 +31,26 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.2
 
+dependency_overrides:
+  # Copies whose Android build files don't apply the Kotlin Gradle Plugin,
+  # which Flutter warns about (and plans to fail on) with AGP 9's built-in
+  # Kotlin. See packages/vendor/README.md.
+  device_screen_brightness:
+    path: ../vendor/device_screen_brightness
+  flutter_volume_controller:
+    path: ../vendor/flutter_volume_controller
+  workmanager_android:
+    path: ../vendor/workmanager_android
+  # Desktop-only; the real package compiles nativeapi's C++ library for
+  # every Android ABI on every build. Nivio calls it only on desktop.
+  window_manager:
+    path: ../stubs/window_manager
+
 flutter:
   uses-material-design: true
 
   assets:
+    - assets/fonts/inter/OFL.txt
     - assets/images/
     - assets/nivio-preload.mpeg
     - shorebird.yaml
@@ -48,6 +64,9 @@ flutter:
     - .env
 
   fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/inter/Inter-Variable.ttf
     - family: Satoshi
       fonts:
         - asset: assets/fonts/satoshi/Satoshi-Light.otf

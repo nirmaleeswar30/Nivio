@@ -89,7 +89,7 @@ class NivioThemeColors extends ThemeExtension<NivioThemeColors> {
       surface: Color.lerp(surface, other.surface, t) ?? surface,
       surfaceContainer:
           Color.lerp(surfaceContainer, other.surfaceContainer, t) ??
-              surfaceContainer,
+          surfaceContainer,
       primary: Color.lerp(primary, other.primary, t) ?? primary,
       secondary: Color.lerp(secondary, other.secondary, t) ?? secondary,
       border: Color.lerp(border, other.border, t) ?? border,
@@ -97,8 +97,12 @@ class NivioThemeColors extends ThemeExtension<NivioThemeColors> {
       textSecondary:
           Color.lerp(textSecondary, other.textSecondary, t) ?? textSecondary,
       backgroundGradient:
-          LinearGradient.lerp(backgroundGradient, other.backgroundGradient, t) ??
-              backgroundGradient,
+          LinearGradient.lerp(
+            backgroundGradient,
+            other.backgroundGradient,
+            t,
+          ) ??
+          backgroundGradient,
     );
   }
 }
@@ -131,17 +135,17 @@ class NivioTheme {
   // 1. Blackout (OLED pure black)
   static const blackoutTheme = NivioAppTheme(
     key: 'blackout',
-    label: 'Blackout',
-    description: 'Pure OLED black with high contrast highlights',
+    label: 'AMOLED Black',
+    description: 'Pure black with neutral accents',
     scaffoldBackgroundColor: Color(0xFF000000),
-    surface: Color(0xFF121212),
-    surfaceContainer: Color(0xFF1E1E1E),
-    primary: Color(0xFFFF1744),
+    surface: Color(0xFF1A1A1A),
+    surfaceContainer: Color(0xFF222222),
+    primary: Color(0xFFF5F5F5),
     secondary: Color(0xFFE0E0E0),
-    border: Color(0xFF262626),
-    textPrimary: Color(0xFFFFFFFF),
-    textSecondary: Color(0xFF9E9E9E),
-    gradientColors: [Color(0xFF141414), Color(0xFF000000)],
+    border: Color(0xFF252A2A),
+    textPrimary: Color(0xFFF5F7F8),
+    textSecondary: Color(0xFF969CA3),
+    gradientColors: [Colors.black, Colors.black],
   );
 
   // 2. Monokai
@@ -265,6 +269,17 @@ class NivioTheme {
     return Theme.of(context).scaffoldBackgroundColor;
   }
 
+  /// The AMOLED Black theme is active (pure black background).
+  static bool isAmoled(BuildContext context) =>
+      Theme.of(context).scaffoldBackgroundColor.toARGB32() == 0xFF000000;
+
+  /// Background for bottom sheets and dialogs: true black in AMOLED mode,
+  /// otherwise [fallback] (the dark grey sheets have always used).
+  static Color sheetColorOf(
+    BuildContext context, {
+    Color fallback = netflixDarkGrey,
+  }) => isAmoled(context) ? Colors.black : fallback;
+
   static Color surfaceColorOf(BuildContext context) {
     return Theme.of(context).colorScheme.surface;
   }
@@ -302,8 +317,15 @@ class NivioTheme {
   static ThemeData buildTheme(
     String themeKey, {
     String fontFamily = 'Satoshi',
+    bool dynamicColors = true,
   }) {
-    final appTheme = getTheme(themeKey);
+    final appTheme = dynamicColors ? getTheme(themeKey) : blackoutTheme;
+    final amoled = appTheme.key == blackoutTheme.key;
+    final onPrimary =
+        ThemeData.estimateBrightnessForColor(appTheme.primary) ==
+            Brightness.light
+        ? const Color(0xFF111111)
+        : Colors.white;
 
     final themeColors = NivioThemeColors(
       background: appTheme.scaffoldBackgroundColor,
@@ -328,7 +350,7 @@ class NivioTheme {
       scaffoldBackgroundColor: appTheme.scaffoldBackgroundColor,
       primaryColor: appTheme.primary,
       cardColor: appTheme.surface,
-      dialogBackgroundColor: appTheme.surface,
+      dialogBackgroundColor: amoled ? Colors.black : appTheme.surface,
       canvasColor: appTheme.scaffoldBackgroundColor,
       dividerColor: appTheme.border,
       extensions: [themeColors],
@@ -336,12 +358,38 @@ class NivioTheme {
         seedColor: appTheme.primary,
         brightness: Brightness.dark,
         primary: appTheme.primary,
+        onPrimary: onPrimary,
         secondary: appTheme.secondary,
+        onSurface: appTheme.textPrimary,
+        onSurfaceVariant: appTheme.textSecondary,
+        outline: appTheme.border,
         surface: appTheme.surface,
         surfaceContainer: appTheme.surfaceContainer,
       ),
+      // AMOLED: sheets, dialogs and menus stay true black too.
+      bottomSheetTheme: amoled
+          ? const BottomSheetThemeData(
+              backgroundColor: Colors.black,
+              modalBackgroundColor: Colors.black,
+              surfaceTintColor: Colors.transparent,
+            )
+          : null,
+      dialogTheme: amoled
+          ? const DialogThemeData(
+              backgroundColor: Colors.black,
+              surfaceTintColor: Colors.transparent,
+            )
+          : null,
+      popupMenuTheme: amoled
+          ? const PopupMenuThemeData(
+              color: Colors.black,
+              surfaceTintColor: Colors.transparent,
+            )
+          : null,
       appBarTheme: AppBarTheme(
-        backgroundColor: Colors.transparent,
+        backgroundColor: amoled ? Colors.black : Colors.transparent,
+        surfaceTintColor: amoled ? Colors.transparent : null,
+        scrolledUnderElevation: amoled ? 0 : null,
         elevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(
@@ -410,7 +458,7 @@ class NivioTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: appTheme.primary,
-          foregroundColor: Colors.white,
+          foregroundColor: onPrimary,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(999),
@@ -444,15 +492,17 @@ class NivioTheme {
           return null;
         }),
       ),
-      progressIndicatorTheme:
-          ProgressIndicatorThemeData(color: appTheme.primary),
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: appTheme.primary,
+      ),
       // TV renders the desktop layout, so match desktop's sizing: Flutter
       // defaults Android to standard density and padded tap targets, which
       // make every button (e.g. the hero's Watch Now) visibly bigger than on
       // desktop. null keeps each platform's default elsewhere.
       visualDensity: AppPlatform.isTv ? VisualDensity.compact : null,
-      materialTapTargetSize:
-          AppPlatform.isTv ? MaterialTapTargetSize.shrinkWrap : null,
+      materialTapTargetSize: AppPlatform.isTv
+          ? MaterialTapTargetSize.shrinkWrap
+          : null,
       // On a TV everything is driven by D-pad focus, and the default focus
       // overlay is too faint to see from the couch.
       focusColor: AppPlatform.isTv ? Colors.white.withOpacity(0.16) : null,

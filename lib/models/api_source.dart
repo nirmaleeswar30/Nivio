@@ -4,7 +4,7 @@ part 'api_source.freezed.dart';
 part 'api_source.g.dart';
 
 @freezed
-class SubtitleTrack with _$SubtitleTrack {
+abstract class SubtitleTrack with _$SubtitleTrack {
   const factory SubtitleTrack({
     String? url,
     String? file,
@@ -17,7 +17,7 @@ class SubtitleTrack with _$SubtitleTrack {
 }
 
 @freezed
-class APISource with _$APISource {
+abstract class APISource with _$APISource {
   const factory APISource({required String url, required String quality}) =
       _APISource;
 
@@ -26,7 +26,7 @@ class APISource with _$APISource {
 }
 
 @freezed
-class APISourceResults with _$APISourceResults {
+abstract class APISourceResults with _$APISourceResults {
   const factory APISourceResults({
     List<APISource>? sources,
     List<SubtitleTrack>? subtitles,

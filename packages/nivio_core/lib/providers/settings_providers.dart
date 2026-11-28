@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
@@ -80,6 +81,31 @@ Color appAccentColorFromKey(String key) {
 }
 
 // App Theme Provider (Classic, Blackout, Monokai, Catppuccin, Dracula, Amber, Lavender)
+final dynamicArtworkColorsProvider =
+    StateNotifierProvider<DynamicArtworkColorsNotifier, bool>((ref) {
+      return DynamicArtworkColorsNotifier();
+    });
+
+class DynamicArtworkColorsNotifier extends StateNotifier<bool> {
+  static const _key = 'dynamic_artwork_colors_enabled';
+
+  DynamicArtworkColorsNotifier()
+    : super(_startupPrefs?.getBool(_key) ?? true) {
+    if (_startupPrefs == null) _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) state = prefs.getBool(_key) ?? true;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, value);
+  }
+}
+
 final appThemeProvider =
     StateNotifierProvider<AppThemeNotifier, String>((ref) {
   return AppThemeNotifier();
@@ -390,7 +416,8 @@ final preferredSubtitleLanguageProvider =
     });
 
 class PreferredSubtitleLanguageNotifier extends StateNotifier<String> {
-  PreferredSubtitleLanguageNotifier() : super('Auto') {
+  PreferredSubtitleLanguageNotifier()
+    : super(_startupPrefs?.getString('preferred_subtitle_language') ?? 'Auto') {
     _loadSetting();
   }
 
@@ -452,7 +479,8 @@ final preferredAudioLanguageProvider =
     });
 
 class PreferredAudioLanguageNotifier extends StateNotifier<String> {
-  PreferredAudioLanguageNotifier() : super('Original') {
+  PreferredAudioLanguageNotifier()
+    : super(_startupPrefs?.getString('preferred_audio_language') ?? 'Original') {
     _loadSetting();
   }
 
@@ -465,52 +493,6 @@ class PreferredAudioLanguageNotifier extends StateNotifier<String> {
     state = language;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('preferred_audio_language', language);
-  }
-}
-
-// Preferred Download Subtitle Language Provider
-final preferredDownloadSubtitleLanguageProvider =
-    StateNotifierProvider<PreferredDownloadSubtitleLanguageNotifier, String>((ref) {
-      return PreferredDownloadSubtitleLanguageNotifier();
-    });
-
-class PreferredDownloadSubtitleLanguageNotifier extends StateNotifier<String> {
-  PreferredDownloadSubtitleLanguageNotifier() : super('English') {
-    _loadSetting();
-  }
-
-  Future<void> _loadSetting() async {
-    final prefs = await SharedPreferences.getInstance();
-    state = prefs.getString('preferred_download_subtitle_language') ?? 'English';
-  }
-
-  Future<void> setLanguage(String language) async {
-    state = language;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('preferred_download_subtitle_language', language);
-  }
-}
-
-// Preferred Download Audio Language Provider
-final preferredDownloadAudioLanguageProvider =
-    StateNotifierProvider<PreferredDownloadAudioLanguageNotifier, String>((ref) {
-      return PreferredDownloadAudioLanguageNotifier();
-    });
-
-class PreferredDownloadAudioLanguageNotifier extends StateNotifier<String> {
-  PreferredDownloadAudioLanguageNotifier() : super('English') {
-    _loadSetting();
-  }
-
-  Future<void> _loadSetting() async {
-    final prefs = await SharedPreferences.getInstance();
-    state = prefs.getString('preferred_download_audio_language') ?? 'English';
-  }
-
-  Future<void> setLanguage(String language) async {
-    state = language;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('preferred_download_audio_language', language);
   }
 }
 
@@ -566,28 +548,6 @@ class AnimeSubDubNotifier extends StateNotifier<String> {
   }
 }
 
-
-// Anime Source Preference Provider
-final preferredAnimeSourceProvider = StateNotifierProvider<PreferredAnimeSourceNotifier, String>((ref) {
-  return PreferredAnimeSourceNotifier();
-});
-
-class PreferredAnimeSourceNotifier extends StateNotifier<String> {
-  PreferredAnimeSourceNotifier() : super('Miruro') {
-    _loadPreference();
-  }
-
-  Future<void> _loadPreference() async {
-    final prefs = await SharedPreferences.getInstance();
-    state = prefs.getString('preferred_anime_source') ?? 'Miruro';
-  }
-
-  Future<void> setPreference(String preference) async {
-    state = preference;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('preferred_anime_source', preference);
-  }
-}
 
 // Enable Torrents Provider
 final enableTorrentsProvider =
@@ -881,12 +841,11 @@ Future<bool> importCustomSubtitleFont(String sourcePath, String fileName, Widget
 /// Prompts the user to pick a local font file (.ttf / .otf) and applies it.
 Future<bool> pickAndImportCustomFont(BuildContext context, WidgetRef ref) async {
   try {
-    final result = await FilePicker.pickFiles(
+    final file = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: ['ttf', 'otf'],
     );
-    if (result != null && result.files.isNotEmpty && result.files.single.path != null) {
-      final file = result.files.single;
+    if (file != null && file.path != null) {
       final success = await importCustomSubtitleFont(file.path!, file.name, ref);
       if (context.mounted) {
         if (success) {
@@ -975,26 +934,31 @@ class TorrentQualityNotifier extends StateNotifier<String> {
   }
 }
 
-// Torrent Auto Select Provider
-final torrentAutoSelectProvider =
-    StateNotifierProvider<TorrentAutoSelectNotifier, bool>((ref) {
-  return TorrentAutoSelectNotifier();
+/// Plays the best-ranked torrent from the loading screen instead of opening
+/// the torrent picker. Separate from the direct-stream playback mode, and off
+/// by default.
+final torrentAutoplayProvider =
+    StateNotifierProvider<TorrentAutoplayNotifier, bool>((ref) {
+  return TorrentAutoplayNotifier();
 });
 
-class TorrentAutoSelectNotifier extends StateNotifier<bool> {
-  TorrentAutoSelectNotifier() : super(true) {
+class TorrentAutoplayNotifier extends StateNotifier<bool> {
+  TorrentAutoplayNotifier() : super(false) {
     _loadPreference();
   }
 
+  static const _key = 'torrent_autoplay';
+
   Future<void> _loadPreference() async {
     final prefs = await SharedPreferences.getInstance();
-    state = prefs.getBool('torrent_auto_select') ?? true;
+    final saved = prefs.getBool(_key);
+    if (saved != null && mounted) state = saved;
   }
 
   Future<void> setEnabled(bool value) async {
     state = value;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('torrent_auto_select', value);
+    await prefs.setBool(_key, value);
   }
 }
 
@@ -1108,6 +1072,51 @@ class AutoPlayNextEpisodeNotifier extends StateNotifier<bool> {
     state = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('auto_play_next_episode', value);
+  }
+}
+
+/// Watch party: participants play the source the host picked (on by
+/// default); when off, they choose their own stream in the picker.
+final watchPartyFollowHostSourceProvider =
+    StateNotifierProvider<WatchPartyFollowHostSourceNotifier, bool>((ref) {
+      return WatchPartyFollowHostSourceNotifier();
+    });
+
+class WatchPartyFollowHostSourceNotifier extends StateNotifier<bool> {
+  static const _key = 'watch_party_follow_host_source';
+
+  WatchPartyFollowHostSourceNotifier()
+    : super(_startupPrefs?.getBool(_key) ?? true) {
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool(_key) ?? true;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, value);
+  }
+}
+
+final parentalGuideEnabledProvider =
+    StateNotifierProvider<ParentalGuideEnabledNotifier, bool>((ref) {
+      return ParentalGuideEnabledNotifier();
+    });
+
+class ParentalGuideEnabledNotifier extends StateNotifier<bool> {
+  ParentalGuideEnabledNotifier()
+    : super(_startupPrefs?.getBool(_key) ?? true);
+
+  static const _key = 'show_parental_guide';
+
+  Future<void> setEnabled(bool enabled) async {
+    state = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, enabled);
   }
 }
 

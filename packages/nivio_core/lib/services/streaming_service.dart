@@ -1,23 +1,28 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:nivio/widgets/torrent_picker_sheet.dart';
 import 'package:nivio/models/search_result.dart';
 import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/core/debug_log.dart';
+import 'package:nivio/services/scrapers/anikoto_source.dart';
 import 'package:nivio/services/scrapers/animetsu/animetsu_scraper.dart';
 import 'package:nivio/services/scrapers/newtv/newtv_scraper.dart';
 
 import 'package:nivio/services/scrapers/streamflix/streamflix_scraper.dart';
-import 'package:nivio/services/scrapers/moviebox/moviebox_scraper.dart';
-import 'package:nivio/services/scrapers/castletv/castletv_scraper.dart';
 import 'package:nivio/services/scrapers/vidrock/vidrock_scraper.dart';
 import 'package:nivio/services/tmdb_service.dart';
 import 'package:nivio/services/scrapers/miruro/miruro_scraper.dart';
 import 'package:nivio/services/scrapers/animex/animex_scraper.dart';
+import 'package:nivio/services/playback/built_in_direct_sources.dart';
+import 'package:nivio/services/playback/stream_selection.dart';
+import 'package:nivio/services/playback/stream_selection_settings.dart';
 import 'package:nivio/services/torrent/torrent_stream_service.dart';
 import 'package:nivio/services/torrent/torrent_models.dart';
 import 'package:nivio/services/torrent/media_torrent_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/providers/settings_providers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class StreamingService {
   final TmdbService tmdbService;
@@ -26,8 +31,6 @@ class StreamingService {
   final MiruroScraperService miruroScraper;
   final AnimexScraperService animexScraper;
   final StreamFlixScraperService streamFlixScraper;
-  final MovieBoxScraperService movieBoxScraper;
-  final CastleTvScraperService castleTvScraper;
   final VidRockScraperService vidRockScraper;
   final TorrentStreamService torrentStreamService;
   final Ref ref;
@@ -39,8 +42,6 @@ class StreamingService {
     required this.miruroScraper,
     required this.animexScraper,
     required this.streamFlixScraper,
-    required this.movieBoxScraper,
-    required this.castleTvScraper,
     required this.vidRockScraper,
     required this.torrentStreamService,
     required this.ref,
@@ -52,13 +53,23 @@ class StreamingService {
     'MovieBox',
     'CastleTV',
     'VidRock',
-    'VidUp (FAST)',
-    'VidLink',
-    'VidCore (ACTIVE)',
-    'VidPlus',
   ];
 
   static const List<String> _standardProviders = [];
+
+  Iterable<String> streamSelectionBuiltIns({required bool isAnime}) =>
+      isAnime
+      ? [
+          'Miruro',
+          'Animetsu',
+          'Animex',
+          'AniKoto',
+        ]
+      : [
+          for (var i = 0; i < totalProvidersFor(isAnime: false); i++)
+            if (getProviderName(i, isAnime: false) != 'Nivio Torrents')
+              getProviderName(i, isAnime: false),
+        ];
 
   List<String> _dynamicAnimexServers = ['Animex (Auto)'];
   List<String> _dynamicMiruroServers = ['Miruro (Auto)'];
@@ -130,44 +141,43 @@ class StreamingService {
     }
     final ordered = _animeProviders;
     appDebugLog(
-      '🔧 [FLOW] prepareProviders END — pref=${ref.read(preferredAnimeSourceProvider)} '
+      '🔧 [FLOW] prepareProviders END — '
       'total providers: ${ordered.length} → '
       '${[for (var i = 0; i < ordered.length; i++) '$i:${ordered[i]}'].join(', ')}',
     );
   }
 
-  // Dynamic getter for anime providers based on user preference
   List<String> get _animeProviders {
-    final pref = ref.read(preferredAnimeSourceProvider);
-    
-    final miruroServers = _dynamicMiruroServers; 
-    final animexServers = _dynamicAnimexServers;
-    final animetsuServers = [
-      'Animetsu (Auto)',
-      'Animetsu (Bee)',
-      'Animetsu (Koto)',
-      'Animetsu (Wave)',
-      'Animetsu (GG)',
-      'Animetsu (Mega)',
+    final sources = <String, List<String>>{
+      'builtin:Miruro': _dynamicMiruroServers,
+      'builtin:Animetsu': const [
+        'Animetsu (Auto)',
+        'Animetsu (Bee)',
+        'Animetsu (Koto)',
+        'Animetsu (Wave)',
+        'Animetsu (GG)',
+        'Animetsu (Mega)',
+      ],
+      'builtin:Animex': _dynamicAnimexServers,
+      'builtin:AniKoto': const ['AniKoto'],
+    };
+    final settings = ref.read(streamSelectionSettingsProvider).value;
+    final order = {...?settings?.animeSourceOrder, ...sources.keys};
+    return [
+      if (isTorrentEnabled(isAnime: true)) 'Nivio Torrents',
+      for (final id in order) ...?sources[id],
     ];
-
-    // P2P torrent streaming is offered first for anime — it
-    // yields the highest-quality releases when peers are available.
-    final torrent = isTorrentEnabled(isAnime: true) ? ['Nivio Torrents'] : <String>[];
-
-    // Animetsu before Animex in fallback: Animex's CDNs start noticeably slower.
-    if (pref == 'Miruro') {
-      return [...torrent, ...miruroServers, ...animetsuServers, ...animexServers];
-    } else if (pref == 'Animex') {
-      return [...torrent, ...animexServers, ...animetsuServers, ...miruroServers];
-    } else { // Animetsu
-      return [...torrent, ...animetsuServers, ...miruroServers, ...animexServers];
-    }
   }
 
   List<String> get _allProviders {
     final torrent = isTorrentEnabled(isAnime: false) ? ['Nivio Torrents'] : <String>[];
-    return [...torrent, ..._premiumProviders, ..._standardProviders];
+    return [
+      ...torrent,
+      ..._premiumProviders,
+      ..._standardProviders,
+      for (final name in BuiltInDirectSources.names)
+        if (!_premiumProviders.contains(name)) name,
+    ];
   }
 
   /// Shows the torrent picker, starts the chosen release, and remembers its
@@ -180,8 +190,15 @@ class StreamingService {
     int? absoluteEpisode,
     String resolution,
     void Function(String)? onStatusUpdate,
-    BuildContext context,
-  ) async {
+    BuildContext context, {
+    bool? autoSelect,
+    bool Function()? onManualSwitch,
+    VoidCallback? onPickerDismissed,
+    List<DeviceOrientation> restoreOrientations = const [],
+  }) async {
+    final settings = await ref.read(streamSelectionSettingsProvider.future);
+    if (!context.mounted) return null;
+    final maxFileBytes = settings.maxFileBytes;
     final selection = await TorrentPickerSheet.show(
       context,
       media: media,
@@ -191,8 +208,19 @@ class StreamingService {
       initialResolution: resolution,
       torrentStreamService: torrentStreamService,
       onStatusUpdate: onStatusUpdate,
+      autoSelect: onManualSwitch == null ? autoSelect : false,
+      groupBySource: settings.groupBySource,
+      maxFileBytes: maxFileBytes,
+      preferredFormats: settings.torrentFormatPreferences,
+      restoreOrientations: restoreOrientations,
     );
-    if (selection == null) return null;
+    if (selection == null) {
+      onPickerDismissed?.call();
+      return null;
+    }
+    if (!context.mounted || onManualSwitch?.call() == false) {
+      return null;
+    }
     final ep = selection.$2 is AnimeQuery
         ? (selection.$2 as AnimeQuery).episode
         : (selection.$2 as MediaTorrentQuery).episode ?? 1;
@@ -202,6 +230,7 @@ class StreamingService {
       ep,
       onStatusUpdate,
       media: media,
+      maxFileBytes: (ref.read(streamSelectionSettingsProvider).value ?? settings).maxFileBytes,
     );
     if (handle != null && !selection.automatic) {
       await torrentStreamService.rememberReleaseGroup(
@@ -211,6 +240,195 @@ class StreamingService {
       );
     }
     return handle;
+  }
+
+  /// Searches like the torrent picker and starts its best-ranked result,
+  /// without showing the picker. Null when nothing fits, the torrent can't
+  /// start, or [interrupted] completes before a result is chosen.
+  Future<TorrentStreamHandle?> _autoplayTorrent(
+    SearchResult media,
+    int episode,
+    int season,
+    int? absoluteEpisode,
+    String resolution,
+    void Function(String)? onStatusUpdate, {
+    Future<void>? interrupted,
+    VoidCallback? onChosen,
+  }) async {
+    var stopped = false;
+    final stop = interrupted?.then((_) => stopped = true);
+    try {
+      final settings = await ref.read(streamSelectionSettingsProvider.future);
+      final saved = (await SharedPreferences.getInstance()).getString(
+        'nivio_torrent_resolution',
+      );
+      if (stopped) return null;
+      onStatusUpdate?.call('Searching torrents…');
+      final searching = searchTorrentsForTitle(
+        service: torrentStreamService,
+        media: media,
+        season: season,
+        episode: episode,
+        absoluteEpisode: absoluteEpisode,
+        resolution: saved ?? resolution,
+        preferredFormats: settings.torrentFormatPreferences,
+        onStatus: (status) {
+          if (!stopped) onStatusUpdate?.call(status);
+        },
+      );
+      final search = stop == null
+          ? await searching
+          : await Future.any<({List<TorrentResult> results, Object query})?>([
+              searching,
+              stop.then((_) => null),
+            ]);
+      if (search == null || stopped) return null;
+      final best = bestTorrentFor(search.results, settings.maxFileBytes);
+      if (best == null) return null;
+      onChosen?.call();
+      final query = search.query;
+      final ep = query is AnimeQuery
+          ? query.episode
+          : (query as MediaTorrentQuery).episode ?? 1;
+      return await torrentStreamService.startTorrent(
+        best,
+        query,
+        ep,
+        onStatusUpdate,
+        media: media,
+        maxFileBytes: settings.maxFileBytes,
+      );
+    } catch (error) {
+      appDebugLog('Torrent autoplay failed, opening the picker: $error');
+      return null;
+    }
+  }
+
+  Future<StreamResult?> fetchTorrentStream({
+    required SearchResult media,
+    required int season,
+    required int episode,
+    int? absoluteEpisode,
+    String? preferredQuality,
+    void Function(String)? onStatusUpdate,
+    BuildContext? context,
+    bool binge = false,
+    bool? autoSelect,
+    bool autoplay = false,
+    Future<void>? autoplayInterrupted,
+    /// Called once autoplay can no longer be interrupted: a torrent was
+    /// chosen, or the picker is about to open instead.
+    VoidCallback? onAutoplayCommitted,
+    bool Function()? onManualSwitch,
+    VoidCallback? onPickerDismissed,
+    List<DeviceOrientation> restoreOrientations = const [],
+  }) async {
+    final resMatch =
+        preferredQuality == null ? null : RegExp(r'\d{3,4}').firstMatch(preferredQuality);
+    final resolution = resMatch?.group(0) ?? '1080';
+
+    // Autoplay tries the best torrent first and falls back to the picker.
+    Future<TorrentStreamHandle?> pick(BuildContext context) async {
+      if (autoplay && onManualSwitch == null) {
+        final TorrentStreamHandle? started;
+        try {
+          started = await _autoplayTorrent(
+            media, episode, season, absoluteEpisode, resolution, onStatusUpdate,
+            interrupted: autoplayInterrupted,
+            onChosen: onAutoplayCommitted,
+          );
+        } finally {
+          onAutoplayCommitted?.call();
+        }
+        if (started != null || !context.mounted) return started;
+      }
+      return _pickTorrentInteractively(
+        media, episode, season, absoluteEpisode, resolution, onStatusUpdate, context,
+        autoSelect: autoSelect,
+        onManualSwitch: onManualSwitch,
+        onPickerDismissed: onPickerDismissed,
+        restoreOrientations: restoreOrientations,
+      );
+    }
+
+    TorrentStreamHandle? handle;
+    if (binge) {
+      // Binge mode: never show the picker. Use the prefetched next episode
+      // if it's ready, else the season-pack fast path (next episode already
+      // inside the streaming torrent), then a silent same-release-group
+      // resolve; fall back to the picker only if all fail and we have a context.
+      final group = await torrentStreamService.recallReleaseGroup(media);
+      handle = await torrentStreamService.consumePrefetch(
+        media: media,
+        episode: episode,
+        season: season,
+        preferredGroup: group,
+      );
+      final prefetched = handle != null;
+      handle ??= await torrentStreamService.nextEpisodeInActiveTorrent(
+        media: media,
+        episode: episode,
+        season: season,
+        absoluteEpisode: absoluteEpisode,
+        preferredGroup: group,
+      );
+      if (handle == null) {
+        handle = await torrentStreamService.resolveStream(
+          media: media,
+          episode: episode,
+          season: season,
+          resolution: resolution,
+          absoluteEpisode: absoluteEpisode,
+          preferredGroup: group,
+          binge: true,
+          onStatus: onStatusUpdate,
+        );
+      }
+      final usePicker = handle == null && context != null && context.mounted;
+      if (usePicker) handle = await pick(context);
+      if (handle != null) {
+        final title = handle.title.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
+        final fileName = handle.fileName.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
+        final releaseGroup = handle.releaseGroup;
+        final String reason;
+        if (usePicker) {
+          reason = 'picker fallback';
+        } else if (handle.fromPack) {
+          reason = 'reused current torrent';
+        } else if (group != null && releaseGroup?.trim().toLowerCase() == group.toLowerCase()) {
+          reason = 'matched release group';
+        } else {
+          reason = group == null ? 'best-ranked torrent' : 'fallback ranking';
+        }
+        debugPrint(
+          '[Binge Mode] Season $season episode $episode | $reason'
+          '${prefetched ? ' (prefetched)' : ''} | torrent: "$title"'
+          ' | file: "$fileName" | group: ${releaseGroup ?? "unknown"}'
+          ' | preferred: ${group ?? "none"}',
+        );
+      }
+    } else if (context != null) {
+      handle = await pick(context);
+      if (handle == null) return null;
+    } else {
+      // Silent / background mode
+      handle = await torrentStreamService.resolveStream(
+        media: media,
+        episode: episode,
+        season: season,
+        resolution: resolution,
+        absoluteEpisode: absoluteEpisode,
+        onStatus: onStatusUpdate,
+      );
+    }
+
+    if (handle == null) return null;
+    return StreamResult(
+      url: handle.url,
+      quality: handle.resolution != null ? '${handle.resolution}p' : 'Auto',
+      provider: 'Nivio Torrents',
+      headers: const {},
+    );
   }
 
   Future<StreamResult?> fetchStreamUrl({
@@ -243,95 +461,61 @@ class StreamingService {
       final providerName = providersList[providerIndex];
       appDebugLog('fetchStreamUrl: providerIdx=$providerIndex → "$providerName"');
 
-      // Handle Nivio Torrents (embedded rqbit P2P streaming)
       if (providerName == 'Nivio Torrents') {
-        final resMatch =
-            preferredQuality == null ? null : RegExp(r'\d{3,4}').firstMatch(preferredQuality);
-        final resolution = resMatch?.group(0) ?? '1080';
+        return await fetchTorrentStream(
+          media: media,
+          season: season,
+          episode: episode,
+          absoluteEpisode: absoluteEpisode,
+          preferredQuality: preferredQuality,
+          onStatusUpdate: onStatusUpdate,
+          context: context,
+          binge: binge,
+        );
+      }
 
-        TorrentStreamHandle? handle;
-        if (binge) {
-          // Binge mode: never show the picker. Use the prefetched next episode
-          // if it's ready, else the season-pack fast path (next episode already
-          // inside the streaming torrent), then a silent same-release-group
-          // resolve; fall back to the picker only if all fail and we have a context.
-          final group = await torrentStreamService.recallReleaseGroup(media);
-          handle = await torrentStreamService.consumePrefetch(
-            media: media,
-            episode: episode,
-            season: season,
-            preferredGroup: group,
-          );
-          final prefetched = handle != null;
-          handle ??= await torrentStreamService.nextEpisodeInActiveTorrent(
-            media: media,
-            episode: episode,
-            season: season,
-            absoluteEpisode: absoluteEpisode,
-            preferredGroup: group,
-          );
-          if (handle == null) {
-            handle = await torrentStreamService.resolveStream(
-              media: media,
-              episode: episode,
-              season: season,
-              resolution: resolution,
-              absoluteEpisode: absoluteEpisode,
-              preferredGroup: group,
-              binge: true,
-              onStatus: onStatusUpdate,
-            );
-          }
-          final usePicker = handle == null && context != null;
-          if (usePicker) {
-            handle = await _pickTorrentInteractively(
-              media, episode, season, absoluteEpisode, resolution, onStatusUpdate, context,
-            );
-          }
-          if (handle != null) {
-            final title = handle.title.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
-            final fileName = handle.fileName.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
-            final releaseGroup = handle.releaseGroup;
-            final String reason;
-            if (usePicker) {
-              reason = 'picker fallback';
-            } else if (handle.fromPack) {
-              reason = 'reused current torrent';
-            } else if (group != null && releaseGroup?.trim().toLowerCase() == group.toLowerCase()) {
-              reason = 'matched release group';
-            } else {
-              reason = group == null ? 'best-ranked torrent' : 'fallback ranking';
-            }
-            debugPrint(
-              '[Binge Mode] Season $season episode $episode | $reason'
-              '${prefetched ? ' (prefetched)' : ''} | torrent: "$title"'
-              ' | file: "$fileName" | group: ${releaseGroup ?? "unknown"}'
-              ' | preferred: ${group ?? "none"}',
-            );
-          }
-        } else if (context != null) {
-          handle = await _pickTorrentInteractively(
-            media, episode, season, absoluteEpisode, resolution, onStatusUpdate, context,
-          );
-          if (handle == null) return null; // user cancelled
-        } else {
-          // Silent / background mode
-          handle = await torrentStreamService.resolveStream(
-            media: media,
-            episode: episode,
-            season: season,
-            resolution: resolution,
-            absoluteEpisode: absoluteEpisode,
-            onStatus: onStatusUpdate,
-          );
-        }
-
-        if (handle == null) return null;
-        return StreamResult(
-          url: handle.url,
-          quality: handle.resolution != null ? '${handle.resolution}p' : 'Auto',
-          provider: 'Nivio Torrents',
-          headers: const {},
+      if (!isAnime && BuiltInDirectSources.names.contains(providerName)) {
+        final choices = await BuiltInDirectSources.resolve(
+          providerName,
+          media,
+          tmdb: tmdbService,
+          season: season,
+          episode: episode,
+        );
+        final selection = StreamSelection(
+          await ref.read(streamSelectionSettingsProvider.future),
+          audio: preferredAudio ?? 'Original',
+          animeAudio: subDubPreference,
+          isAnime: isAnime,
+          originalLanguage: media.originalLanguage,
+        );
+        final ranked = await selection.ranked(choices);
+        final requestedQuality = preferredQuality?.toLowerCase();
+        final best =
+            ranked
+                .where((choice) => choice.quality.toLowerCase() == requestedQuality)
+                .firstOrNull ??
+            ranked.firstOrNull;
+        final result = best?.direct;
+        if (result == null) return null;
+        final seen = {result.url};
+        final alternatives = [
+          for (final choice in ranked)
+            if (mapEquals(choice.direct.headers, result.headers) &&
+                seen.add(choice.direct.url))
+              StreamSource(
+                url: choice.direct.url,
+                quality: choice.quality,
+                isM3U8: choice.direct.isM3U8,
+                isDub: choice.audioType == 'Dub',
+              ),
+        ];
+        return result.copyWith(
+          sources: alternatives,
+          availableQualities: {
+            result.quality,
+            ...alternatives.map((stream) => stream.quality),
+          }.toList(),
         );
       }
 
@@ -370,6 +554,20 @@ class StreamingService {
         return streamResult;
       }
 
+
+      if (providerName == 'AniKoto') {
+        final scraper = AnikotoSource();
+        final audio = (preferredAudio ?? subDubPreference).toLowerCase();
+        try {
+          return await scraper.resolve(
+            media,
+            episode: episode,
+            dub: audio == 'dub' || audio.startsWith('english'),
+          ).timeout(const Duration(seconds: 18), onTimeout: () => null);
+        } finally {
+          scraper.close();
+        }
+      }
 
       // Handle Animetsu
       if (providerName.startsWith('Animetsu')) {
@@ -454,44 +652,6 @@ class StreamingService {
         ).timeout(const Duration(seconds: 6), onTimeout: () => null);
       }
 
-      // Handle MovieBox
-      if (providerName == 'MovieBox') {
-        final tmdbId = media.id.toString();
-        final title = media.title ?? media.name ?? '';
-        final type = isAnimeMedia(media) ? 'tv' : media.mediaType;
-        if (type == 'tv') {
-          appDebugLog('MovieBox does not support TV shows.');
-          return null;
-        }
-        final year = media.releaseDate?.split('-').firstOrNull ?? media.firstAirDate?.split('-').firstOrNull;
-        return await movieBoxScraper.fetchStreamUrl(
-          tmdbId: tmdbId,
-          title: title,
-          mediaType: type,
-          year: year,
-          season: season,
-          episode: episode,
-          preferredAudio: preferredAudio,
-        ).timeout(const Duration(seconds: 6), onTimeout: () => null);
-      }
-
-      // Handle CastleTV
-      if (providerName == 'CastleTV') {
-        final tmdbId = media.id.toString();
-        final title = media.title ?? media.name ?? '';
-        final type = isAnimeMedia(media) ? 'tv' : media.mediaType;
-        final year = media.releaseDate?.split('-').firstOrNull ?? media.firstAirDate?.split('-').firstOrNull;
-        return await castleTvScraper.fetchStreamUrl(
-          tmdbId: tmdbId,
-          title: title,
-          mediaType: type,
-          year: year,
-          season: season,
-          episode: episode,
-          preferredAudio: preferredAudio,
-        ).timeout(const Duration(seconds: 6), onTimeout: () => null);
-      }
-
       // Handle VidRock (direct HLS/MP4 via AES-GCM decrypted sources)
       if (providerName == 'VidRock') {
         final tmdbId = media.id.toString();
@@ -509,67 +669,7 @@ class StreamingService {
         ).timeout(const Duration(seconds: 6), onTimeout: () => null);
       }
 
-      // Handle standard 7reels providers
-      final isTv = media.mediaType.toLowerCase() == 'tv' || 
-                   media.firstAirDate != null || 
-                   (media.name != null && media.name!.isNotEmpty && (media.title == null || media.title!.isEmpty));
-      final id = media.id.toString();
-
-      String url = '';
-
-      switch (providerName) {
-        case 'VidUp (FAST)':
-          url = isTv ? 'https://vidup.to/tv/$id/$season/$episode' : 'https://vidup.to/movie/$id';
-          break;
-        case 'VidCore (ACTIVE)':
-          url = isTv ? 'https://vidcore.net/tv/$id/$season/$episode' : 'https://vidcore.net/movie/$id';
-          break;
-        case 'VidEasy (HD)':
-          url = isTv ? 'https://videasy.net/tv/$id/$season/$episode' : 'https://videasy.net/movie/$id';
-          break;
-        case 'VidPlus':
-          url = isTv ? 'https://player.vidplus.to/embed/tv/$id/$season/$episode' : 'https://player.vidplus.to/embed/movie/$id';
-          break;
-        case 'VidsrcO':
-          url = isTv ? 'https://vidsrco.net/embed/tv?tmdb=$id&season=$season&episode=$episode' : 'https://vidsrco.net/embed/movie?tmdb=$id';
-          break;
-        case 'AdRock':
-          url = isTv ? 'https://vidrock.net/embed/tv/$id/$season/$episode' : 'https://vidrock.net/embed/movie/$id';
-          break;
-        case 'VidNest':
-          url = isTv ? 'https://vidnest.fun/embed/tv/$id/$season/$episode' : 'https://vidnest.fun/embed/movie/$id';
-          break;
-        case 'VidLink':
-          url = isTv ? 'https://vidlink.pro/tv/$id/$season/$episode' : 'https://vidlink.pro/movie/$id';
-          break;
-        case 'Vidify':
-          url = isTv ? 'https://vidify.top/embed/tv/$id/$season/$episode' : 'https://vidify.top/embed/movie/$id';
-          break;
-        case 'Vidzee':
-          url = isTv ? 'https://player.vidzee.net/embed/tv/$id/$season/$episode' : 'https://player.vidzee.net/embed/movie/$id';
-          break;
-        case 'MoviesClub':
-          url = isTv ? 'https://moviesapi.club/tv/$id-$season-$episode' : 'https://moviesapi.club/movie/$id';
-          break;
-        case '2Embed':
-          url = isTv ? 'https://www.2embed.cc/embedtv/$id&s=$season&e=$episode' : 'https://www.2embed.cc/embed/$id';
-          break;
-        case 'MultiEmbed':
-          url = isTv ? 'https://multiembed.mo/embed/tv/$id/$season/$episode' : 'https://multiembed.mo/embed/movie/$id';
-          break;
-        default:
-          return null;
-      }
-
-      appDebugLog('Generated Iframe URL: $url');
-
-      return StreamResult(
-        url: url,
-        quality: 'Auto',
-        provider: providerName,
-        headers: {},
-      );
-
+      return null;
     } catch (e) {
       appDebugLog('Error in fetchStreamUrl: $e');
       return null;
@@ -593,10 +693,6 @@ class StreamingService {
     }
   }
 
-  bool isTorrentEnabledForMedia(SearchResult media) {
-    return isTorrentEnabled(isAnime: isAnimeMedia(media));
-  }
-
   int totalProvidersFor({required bool isAnime}) {
     return isAnime ? _animeProviders.length : _allProviders.length;
   }
@@ -609,21 +705,48 @@ class StreamingService {
     return 'Unknown';
   }
 
-  bool isDirectStream(int providerIndex, {required bool isAnime}) {
-    final providerName = getProviderName(providerIndex, isAnime: isAnime);
-    if (providerName == 'Nivio Torrents') return true; // localhost HLS-like stream
-    if (['Nivio', 'StreamFlix', 'MovieBox', 'CastleTV', 'VidRock'].contains(providerName)) return true;
-    if (providerName.startsWith('Animetsu') || providerName.startsWith('Miruro') || providerName.startsWith('Animex')) return true;
-    return false; // All other providers use WebView fallback
+  /// The index of the provider called [name], or null.
+  int? providerIndexOf(String name, {required bool isAnime}) {
+    for (var i = 0; i < totalProvidersFor(isAnime: isAnime); i++) {
+      if (getProviderName(i, isAnime: isAnime) == name) return i;
+    }
+    return null;
+  }
+
+  /// Downloadable providers in source priority order (the order the direct
+  /// picker and Autoplay use), starting with [first] when given.
+  Future<List<int>> downloadProviderOrder({
+    required bool isAnime,
+    int? first,
+  }) async {
+    final settings = await ref.read(streamSelectionSettingsProvider.future);
+    int rank(int index) => settings.sourceRank(
+      streamSelectionSourceId(
+        'builtin:${getProviderName(index, isAnime: isAnime)}',
+      ),
+      isAnime: isAnime,
+    );
+    final order = [
+      for (var i = 0; i < totalProvidersFor(isAnime: isAnime); i++)
+        if (isDownloadable(i, isAnime: isAnime)) i,
+    ];
+    order.sort((a, b) {
+      if (a == first) return -1;
+      if (b == first) return 1;
+      final byRank = rank(a).compareTo(rank(b));
+      return byRank != 0 ? byRank : a.compareTo(b);
+    });
+    return order;
   }
 
   bool isDownloadable(int providerIndex, {required bool isAnime}) {
     final providerName = getProviderName(providerIndex, isAnime: isAnime);
+    if (!isAnime && BuiltInDirectSources.names.contains(providerName)) return true;
+    if (providerName == 'AniKoto') return true;
     // These providers yield raw direct streams which our custom downloader can parse and concatenate
-    if (['Nivio', 'StreamFlix', 'MovieBox', 'CastleTV', 'VidRock'].contains(providerName)) return true;
+    if (['Nivio', 'StreamFlix', 'VidRock'].contains(providerName)) return true;
     if (providerName.startsWith('Animetsu') || providerName.startsWith('Miruro') || providerName.startsWith('Animex')) return true;
-    
-    // Iframe providers cannot be natively downloaded because we don't have the raw stream URL
+    // Torrents go through their own download flow.
     return false;
   }
 }

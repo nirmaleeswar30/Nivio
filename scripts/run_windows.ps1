@@ -71,9 +71,12 @@ if (-not (Get-Command dart -ErrorAction SilentlyContinue)) {
   }
 }
 
+# media_kit_video's Windows C++ needs casts MSVC accepts. Plain `dart`, not
+# `dart run`: `dart run` first builds the packages' native code (nativeapi),
+# which the patch doesn't need and which prints MSVC compiler banners.
 Write-Host "Applying C++ compatibility patches..." -ForegroundColor Cyan
 Set-Location $DesktopDir
-& $DartCmd run tool/patch_window_manager_windows.dart
+& $DartCmd tool/patch_windows_plugins.dart
 
 Write-Host "Running Nivio Desktop on Windows (live debug mode with console logs)..." -ForegroundColor Green
 & $FlutterCmd run -d windows @args

@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:hive/hive.dart';
+import 'package:hive_ce/hive.dart';
 
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/models/download_item.dart';

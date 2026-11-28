@@ -7,7 +7,7 @@ platforms:
   android:
 
 environment:
-  sdk: ^3.10.0
+  sdk: ^3.14.0
 
 dependencies:
   ffi: ^2.2.0
@@ -16,45 +16,41 @@ dependencies:
     sdk: flutter
 
   # State Management
-  flutter_riverpod: ^2.6.1
+  flutter_riverpod: ^3.5.0
 
   # Networking
   dio: ^5.7.0
 
   # Local Storage
-  hive: ^2.2.3
-  hive_flutter: ^1.1.0
+  hive_ce: ^2.24.0
+  hive_ce_flutter: ^2.6.0
   shared_preferences: ^2.3.3
 
   # Firebase
-  firebase_core: ^4.11.0
-  firebase_auth: ^6.5.4
-  cloud_firestore: ^6.6.0
+  firebase_core: ^5.2.0
+  firebase_auth: ^7.1.0
+  cloud_firestore: ^7.2.0
   google_sign_in: ^7.2.0
 
-  # Video Player
-  youtube_player_flutter: ^10.0.1
-  flutter_inappwebview: 6.2.0-beta.3  # aligned with desktop (windows/linux) impls on platform_interface 1.4.0-beta
-
   # UI & Images
-  cached_network_image: ^3.4.1
+  cached_network_image: ^4.0.7
   # Navigation
-  go_router: ^17.3.0
+  go_router: ^18.1.4
 
   # Utilities
   intl: ^0.20.2
-  freezed_annotation: ^2.4.4
+  freezed_annotation: ^3.1.0
   url_launcher: ^6.3.1
   package_info_plus: ^10.2.0
   flutter_native_splash: ^2.4.2
-  window_manager: ^0.3.8
+  window_manager: ^0.7.1
 
   # Background Tasks & Notifications
-  workmanager: ^0.9.0
-  flutter_local_notifications: ^22.0.1
+  workmanager: ^0.10.10
+  flutter_local_notifications: ^23.0.4
   connectivity_plus: ^7.2.0
   media_kit: ^1.1.10
-  media_kit_video: ^1.2.4
+  media_kit_video: ^2.0.1
   media_kit_libs_video: ^1.0.7
 
   # Embedded rqbit BitTorrent streaming engine (P2P anime streaming)
@@ -65,27 +61,27 @@ dependencies:
   supabase_flutter: ^2.8.0
   flutter_dotenv: ^6.0.0
   phosphoricons_flutter: ^1.0.0
-  device_screen_brightness: ^0.2.1
+  device_screen_brightness: ^2.0.0
   flutter_volume_controller: ^2.0.1
-  permission_handler: ^12.0.3
+  permission_handler: ^13.0.2
   path_provider: ^2.1.5
-  ffmpeg_kit_flutter_new: ^4.2.1
+  ffmpeg_kit_flutter_new: ^5.0.0
   wakelock_plus: ^1.2.8
   flutter_markdown_plus: ^1.0.11
   flutter_cache_manager: any
   http: ^1.6.0
-  simple_pip_mode: ^1.1.0
+  html: ^0.15.6
+  simple_pip_mode: ^2.0.0
   share_plus: ^13.2.0
   cronet_http: ^1.9.0
-  file_picker: 12.0.0-beta.7  # pinned: app code targets this API (pickFiles -> FilePickerResult)
+  file_picker: ^13.4.1  # pinned: app code targets this API (pickFiles -> FilePickerResult)
   silky_scroll: ^2.6.4
-  animations: ^2.2.0
+  animations: ^3.0.0
   image: any
   material_color_utilities: any
   app_links: any
   # MPRIS (Linux media keys / Bluetooth headset controls)
-  dbus: ^0.7.11
-  flutter_inappwebview_linux: any
+  dbus: ^0.8.1
   pointycastle: ^4.0.0
   crypto: any
   discord_rich_presence: ^1.1.1  # Discord Rich Presence (desktop only)
@@ -97,10 +93,10 @@ dev_dependencies:
   flutter_lints: ^6.0.0
 
   # Code Generation
-  build_runner: ^2.4.13
-  freezed: ^2.5.2
-  json_serializable: ^6.8.0
-  hive_generator: ^2.0.1
+  build_runner: ^2.17.0
+  freezed: ^4.0.0
+  json_serializable: ^6.15.0
+  hive_ce_generator: ^1.12.1
 
   # Splash Screen & App Icon
   flutter_launcher_icons: ^0.14.2
@@ -109,6 +105,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/fonts/inter/OFL.txt
     - assets/images/
     - assets/nivio-preload.mpeg
     - shorebird.yaml
@@ -116,6 +113,9 @@ flutter:
     - .env
 
   fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/inter/Inter-Variable.ttf
     - family: Satoshi
       fonts:
         - asset: assets/fonts/satoshi/Satoshi-Light.otf
@@ -169,6 +169,3 @@ flutter_native_splash:
   android_12:
     color: "#05070B"
 
-
-dependency_overrides:
-  freezed_annotation: ^3.1.0

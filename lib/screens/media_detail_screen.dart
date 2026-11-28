@@ -5,18 +5,16 @@ import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/widgets/dpad_focusable.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:flutter/material.dart';
 import '../widgets/download_prompt.dart';
+import 'package:nivio/widgets/app_toast.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:nivio/widgets/youtube_webview_player.dart';
-import 'package:nivio/services/webview_environment_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
+import 'package:nivio/widgets/artwork_icon_button.dart';
+import 'package:nivio/widgets/hero_artwork_stretch.dart';
 import 'package:nivio/widgets/skeleton.dart';
 import 'package:go_router/go_router.dart';
-import 'package:nivio/core/screen_wake_lock.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
@@ -33,16 +31,14 @@ import 'package:nivio/providers/watch_party_provider.dart';
 import 'package:nivio/providers/watchlist_provider.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
 import 'package:nivio/providers/settings_providers.dart';
-import 'package:nivio/widgets/torrent_picker_sheet.dart';
 import 'package:nivio/models/watch_history.dart';
 import 'package:nivio/providers/auth_provider.dart';
 import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/widgets/episode_list.dart';
 import 'package:nivio/services/download_service.dart';
 import 'package:nivio/services/streaming_service.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:nivio/core/share_origin.dart';
 
 class _TrailerSource {
@@ -57,32 +53,6 @@ class _TrailerSource {
   final String key;
   final String? type;
   final bool official;
-
-  String? get embedUrl {
-    switch (site.toLowerCase()) {
-      case 'youtube':
-        return 'https://www.youtube.com/embed/$key?autoplay=1&playsinline=1&rel=0&modestbranding=1&enablejsapi=1&origin=https://www.youtube.com';
-      case 'vimeo':
-        return 'https://player.vimeo.com/video/$key?autoplay=1';
-      case 'dailymotion':
-        return 'https://www.dailymotion.com/embed/video/$key?autoplay=1';
-      default:
-        return watchUrl;
-    }
-  }
-
-  String? get watchUrl {
-    switch (site.toLowerCase()) {
-      case 'youtube':
-        return 'https://www.youtube.com/watch?v=$key';
-      case 'vimeo':
-        return 'https://vimeo.com/$key';
-      case 'dailymotion':
-        return 'https://www.dailymotion.com/video/$key';
-      default:
-        return null;
-    }
-  }
 }
 
 class MediaDetailScreen extends ConsumerStatefulWidget {
@@ -115,6 +85,11 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     debugLabel: 'Season picker',
     canRequestFocus: AppPlatform.isTv,
   );
+  // Desktop share copies the link; the button shows a check meanwhile.
+  bool _shareCopied = false;
+  Timer? _shareCopiedTimer;
+  // Set while the download button is finding a stream.
+  bool _preparingDownload = false;
 
   @override
   void initState() {
@@ -133,6 +108,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 
   @override
   void dispose() {
+    _shareCopiedTimer?.cancel();
     _seasonFocus.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -222,7 +198,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           if (tmdbInfo != null) {
             mediaDetails = mediaDetails.copyWith(
               backdropPath: tmdbInfo['backdrop_path'] ?? mediaDetails.backdropPath,
-              posterPath: tmdbInfo['poster_path'] ?? mediaDetails.posterPath,
+              posterPath: mediaDetails.posterPath ?? tmdbInfo['poster_path'],
             );
           }
         } catch (_) {}
@@ -336,13 +312,20 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     }
   }
 
-  void _showTrailerPlayer(BuildContext context) async {
-    if (_trailerSource == null) return;
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => TrailerFullscreenScreen(source: _trailerSource!),
-      ),
+  /// Trailers play in the regular player (same controls, mpv).
+  void _showTrailerPlayer(BuildContext context) {
+    final source = _trailerSource;
+    if (source == null) return;
+    final name = _media?.title ?? _media?.name;
+    context.push(
+      Uri(
+        path: '/player/0',
+        queryParameters: {
+          'trailerSite': source.site,
+          'trailerKey': source.key,
+          'directStreamTitle': name == null || name.isEmpty ? 'Trailer' : '$name · Trailer',
+        },
+      ).toString(),
     );
   }
 
@@ -479,12 +462,23 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     final isInWatchlist = ref.watch(isInWatchlistProvider(media.id));
     final isTv = media.mediaType == 'tv' || media.mediaType == 'anime';
     final seriesInfoAsync = isTv ? ref.watch(seriesInfoProvider(media.id)) : null;
-    final seriesInfo = seriesInfoAsync?.valueOrNull;
-    final colorsAsync = ref.watch(dynamicColorsProvider(posterUrl));
-    final colors = colorsAsync.valueOrNull ?? DynamicColors.fallback;
+    final seriesInfo = seriesInfoAsync?.value;
+    final dynamicColors = ref.watch(dynamicArtworkColorsProvider);
+    final palette = NivioTheme.themeColorsOf(context);
+    final themeColors = DynamicColors(
+      dominant: palette.primary,
+      darkMuted: palette.background,
+      darkVibrant: palette.surface,
+      lightVibrant: palette.primary,
+      lightMuted: palette.surfaceContainer,
+      onSurface: palette.textPrimary,
+    );
+    final colors = dynamicColors
+        ? ref.watch(dynamicColorsProvider(posterUrl)).value ?? themeColors
+        : themeColors;
     final accentColor = colors.lightVibrant;
 
-    final allHistory = ref.watch(watchHistoryProvider).valueOrNull ?? [];
+    final allHistory = ref.watch(watchHistoryProvider).value ?? [];
     final mediaHistory = allHistory.cast<WatchHistory?>().firstWhere(
           (h) => h?.tmdbId == media.id,
           orElse: () => null,
@@ -514,6 +508,17 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         : 'Unknown';
     final mediaName = media.title ?? media.name ?? 'Unknown';
 
+    final artwork = backdropUrl.isEmpty
+        ? ColoredBox(color: colors.darkMuted)
+        : ArtworkImage(
+            imageUrl: backdropUrl,
+            kind: useBackdrop ? ArtworkKind.backdrop : ArtworkKind.poster,
+            fit: BoxFit.cover,
+            fadeInDuration: Duration.zero,
+            fadeOutDuration: Duration.zero,
+            errorWidget: (_, __, ___) => ColoredBox(color: colors.darkMuted),
+          );
+
     return _withBackGuard(
       Scaffold(
         backgroundColor: colors.darkMuted,
@@ -521,6 +526,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           children: [
             AppCustomScrollView(
           controller: _scrollController,
+          physics: isDesktop ? null : const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
           cacheExtent: 250,
           scrollSpeed: 2.0,
           silkyScrollDuration: const Duration(milliseconds: 500),
@@ -534,23 +540,17 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      if (backdropUrl.isNotEmpty)
-                        ArtworkImage(
-                          imageUrl: backdropUrl,
-                          kind: useBackdrop ? ArtworkKind.backdrop : ArtworkKind.poster,
-                          fit: BoxFit.cover,
-                          fadeInDuration: Duration.zero,
-                          fadeOutDuration: Duration.zero,
-                          errorWidget: (_, __, ___) => Container(color: colors.darkMuted),
-                        )
-                      else
-                        Container(color: colors.darkMuted),
+                      if (isDesktop) artwork else HeroArtworkStretch(
+                        controller: _scrollController,
+                        height: heroHeight,
+                        child: artwork,
+                      ),
                       // Bottom fade to darkMuted (matching HomeScreen banner)
                       Positioned(
                         left: 0,
                         right: 0,
                         bottom: 0,
-                        height: heroHeight * 0.50,
+                        height: heroHeight * (isDesktop ? 0.50 : 0.34),
                         child: DecoratedBox(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
@@ -558,7 +558,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                               end: Alignment.bottomCenter,
                               colors: [
                                 Colors.transparent,
-                                colors.darkMuted.withOpacity(0.8),
+                                colors.darkMuted.withValues(alpha: isDesktop ? 0.8 : 0.52),
                                 colors.darkMuted,
                               ],
                               stops: const [0.0, 0.7, 1.0],
@@ -575,7 +575,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                           mainAxisAlignment:
                               MainAxisAlignment.spaceBetween,
                           children: [
-                            _glassIconButton(
+                            ArtworkIconButton(
                               icon: const PhosphorIcon(
                                 PhosphorIconsRegular.caretLeft,
                                 color: NivioTheme.netflixWhite,
@@ -586,7 +586,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                             if (!isDesktop)
                               Row(
                                 children: [
-                                  _glassIconButton(
+                                  ArtworkIconButton(
                                     icon: const PhosphorIcon(
                                       PhosphorIconsRegular.users,
                                       color: NivioTheme.netflixWhite,
@@ -812,10 +812,13 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                                       ),
                                       const SizedBox(width: 12),
                                       _plainIconButton(
-                                        icon: const Icon(
-                                          Icons.share_rounded,
-                                          color: NivioTheme.netflixWhite,
-                                          size: 24,
+                                        icon: ConfirmIconSwap(
+                                          done: _shareCopied,
+                                          icon: const Icon(
+                                            Icons.share_rounded,
+                                            color: NivioTheme.netflixWhite,
+                                            size: 24,
+                                          ),
                                         ),
                                         iconColor: NivioTheme.netflixWhite,
                                         onTap: () => _shareMedia(media),
@@ -1080,10 +1083,13 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                               ),
                               const SizedBox(width: 6),
                               _plainIconButton(
-                                icon: const Icon(
-                                  Icons.share_rounded,
-                                  color: NivioTheme.netflixWhite,
-                                  size: 24,
+                                icon: ConfirmIconSwap(
+                                  done: _shareCopied,
+                                  icon: const Icon(
+                                    Icons.share_rounded,
+                                    color: NivioTheme.netflixWhite,
+                                    size: 24,
+                                  ),
                                 ),
                                 iconColor: NivioTheme.netflixWhite,
                                 onTap: () => _shareMedia(media),
@@ -1191,14 +1197,6 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         ),
       ),
     );
-  }
-
-  Widget _glassIconButton({
-    required Widget icon,
-    required VoidCallback onTap,
-    double size = 44,
-  }) {
-    return _HoverGlassButton(icon: icon, onTap: onTap, size: size);
   }
 
   Widget _glassTag(String label) {
@@ -1438,14 +1436,12 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     // No share sheet on desktop OSes; copy the link instead.
     if (AppPlatform.isDesktopOS) {
       Clipboard.setData(ClipboardData(text: shareText));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Share link copied to clipboard!'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
+      showAppToast(context, 'Share link copied to clipboard', icon: Icons.link_rounded);
+      _shareCopiedTimer?.cancel();
+      setState(() => _shareCopied = true);
+      _shareCopiedTimer = Timer(const Duration(milliseconds: 1800), () {
+        if (mounted) setState(() => _shareCopied = false);
+      });
       return;
     }
 
@@ -1457,84 +1453,26 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   }
 
   Future<void> _handleDownload(SearchResult media) async {
-    final streamingService = ref.read(streamingServiceProvider);
-    final isAnime = StreamingService.isAnimeMedia(media);
-
-    if (isAnime) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Preparing servers...')));
-      }
-      final subDubPref = ref
-          .read(languagePreferencesProvider)
-          .animePreferredAudio;
-      await streamingService.prepareProviders(
-        media: media,
-        season: 1,
-        episode: 1,
-        subDubPreference: subDubPref,
-      );
-    }
-
-    final maxProviders = streamingService.totalProvidersFor(isAnime: isAnime);
-
-    if (media.mediaType == 'movie') {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Preparing movie download...')),
-        );
-      }
-
-      StreamResult? result;
-      int? usedProviderIndex;
-
-      for (int providerIndex = 0; providerIndex < maxProviders; providerIndex++) {
-        if (!streamingService.isDownloadable(providerIndex, isAnime: isAnime)) {
-          continue;
-        }
-
-        try {
-          result = await streamingService.fetchStreamUrl(
-            media: media,
-            providerIndex: providerIndex,
-          );
-        } catch (e) {
-          debugPrint(
-            'Movie download probe failed for provider $providerIndex: $e',
-          );
-        }
-
-        if (result != null && result.url.isNotEmpty) {
-          usedProviderIndex = providerIndex;
-          break;
-        }
-      }
-
-      if (result != null && result.url.isNotEmpty) {
-        await DownloadPrompt.showAndQueue(
-          context: context,
-          ref: ref,
-          streamResult: result,
-          mediaId: media.id,
-          title: media.title ?? media.name ?? 'Movie',
-          mediaType: isAnime ? 'anime' : media.mediaType,
-          posterPath: media.posterPath,
-          media: media,
-          providerIndex: usedProviderIndex,
-        );
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to find downloadable stream on any server.'),
-            ),
-          );
-        }
-      }
-    } else {
+    if (_preparingDownload) return;
+    if (media.mediaType != 'movie') {
       // Show dialog for Download All vs Season
       _showDownloadDialog(media);
+      return;
+    }
+    setState(() => _preparingDownload = true);
+    try {
+      await DownloadPrompt.downloadTitle(
+        context: context,
+        ref: ref,
+        media: media,
+        title: media.title ?? media.name ?? 'Movie',
+        mediaType: StreamingService.isAnimeMedia(media)
+            ? 'anime'
+            : media.mediaType,
+        posterPath: media.posterPath,
+      );
+    } finally {
+      if (mounted) setState(() => _preparingDownload = false);
     }
   }
 
@@ -1544,7 +1482,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       configuration: const FadeScaleTransitionConfiguration(),
       builder: (context) {
         return AlertDialog(
-          backgroundColor: NivioTheme.netflixDarkGrey,
+          backgroundColor: NivioTheme.sheetColorOf(context),
           title: const Text(
             'Download Episodes',
             style: TextStyle(color: Colors.white),
@@ -1635,19 +1573,12 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     }
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Probing first episode for language options...'),
-      ),
-    );
-
-    // Probe the first episode to discover available audio/subtitle tracks
-    final seriesInfoAsync = ref.read(seriesInfoProvider(media.id));
-    final seriesInfo = seriesInfoAsync.valueOrNull;
+    final seriesInfo = ref.read(seriesInfoProvider(media.id)).value;
     if (seriesInfo == null) return;
 
-    // Find the first valid episode to probe
-    int probeSeason =
+    // The first aired episode stands in for the batch: its source (picked
+    // like Play picks one) and language choices apply to every episode.
+    final probeSeason =
         singleSeason ??
         seriesInfo.seasons
             .firstWhere(
@@ -1662,101 +1593,47 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       (ep) => _isEpisodeAired(ep),
       orElse: () => probeSeasonData.episodes.first,
     );
+    if (!mounted) return;
 
-    final maxProviders = streamingService.totalProvidersFor(isAnime: isAnime);
-    StreamResult? probeResult;
-    int? usedProviderIndex;
+    final source = await DownloadPrompt.pickSource(
+      context: context,
+      ref: ref,
+      media: media,
+      season: probeSeason,
+      episode: probeEpisode.episodeNumber,
+    );
+    if (source == null || !mounted) return;
 
-    for (int providerIndex = 0; providerIndex < maxProviders; providerIndex++) {
-      if (!streamingService.isDownloadable(providerIndex, isAnime: isAnime)) {
-        continue;
-      }
-
-      try {
-        probeResult = await streamingService.fetchStreamUrl(
-          media: media,
-          season: probeSeason,
-          episode: probeEpisode.episodeNumber,
-          providerIndex: providerIndex,
-        );
-      } catch (e) {
-        debugPrint(
-          'Batch probe failed for provider $providerIndex: $e',
-        );
-      }
-
-      if (probeResult != null && probeResult.url.isNotEmpty) {
-        usedProviderIndex = providerIndex;
-        break;
-      }
-    }
-
-    if (probeResult == null || probeResult.url.isEmpty) {
+    if (source.torrent case final torrent?) {
+      // A torrent pick is one item: the whole release it points at.
+      await DownloadService.queueDownload(
+        mediaId: media.id,
+        title: '${media.title ?? media.name ?? 'Series'}|||Season Batch',
+        mediaType: media.mediaType,
+        season: probeSeason,
+        episode: 1, // Store as episode 1 but it's a batch
+        posterPath: media.posterPath,
+        streamUrl: 'torrent|||${torrent.link}',
+      );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Failed to find downloadable stream on any server.',
-            ),
-          ),
-        );
+        showAppToast(context, 'Torrent batch queued', icon: Icons.download_rounded);
       }
       return;
     }
 
-    if (!mounted) return;
-
-    // Show language picker (returns null if user cancels)
+    final usedProviderIndex = source.providerIndex;
     final langChoice = await DownloadPrompt.pickLanguages(
       context: context,
       ref: ref,
-      streamResult: probeResult,
+      streamResult: source.direct!,
       media: media,
-      season: singleSeason ?? 1,
-      episode: 1,
-      providerIndex: usedProviderIndex ?? 0,
+      season: probeSeason,
+      episode: probeEpisode.episodeNumber,
+      providerIndex: usedProviderIndex,
       isAnime: media.mediaType == 'anime',
-      showTorrentOption: true,
     );
 
     if (langChoice == null) return; // User cancelled
-
-    if (langChoice.isTorrent) {
-      final torrentService = ref.read(torrentStreamServiceProvider);
-      final settingsResolution = ref.read(torrentQualityProvider);
-      
-      final torrentResult = await TorrentPickerSheet.show(
-        context,
-        media: media,
-        initialEpisode: 1,
-        initialSeason: singleSeason ?? 1,
-        initialAbsoluteEpisode: null,
-        initialResolution: settingsResolution,
-        torrentStreamService: torrentService,
-      );
-
-      if (torrentResult != null) {
-        final torrentUrl = 'torrent|||${torrentResult.$1.link}';
-        
-        // If it's a batch download, should we just queue one download item for the whole season?
-        // Or queue individual items? The user chose a specific torrent which might be a batch or single episode.
-        // For simplicity right now, if the user picks a torrent here, we just add ONE download item for the season.
-        // It will download the entire torrent. 
-        await DownloadService.queueDownload(
-          mediaId: media.id,
-          title: '${media.title ?? media.name ?? 'Series'}|||Season Batch',
-          mediaType: media.mediaType,
-          season: singleSeason ?? 1,
-          episode: 1, // Store as episode 1 but it's a batch
-          posterPath: media.posterPath,
-          streamUrl: torrentUrl,
-        );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Torrent Batch queued!')));
-        }
-      }
-      return;
-    }
 
     final preferredQuality = langChoice.selectedSource?.quality;
     String? subDubPreference = langChoice.selectedSource != null
@@ -1768,7 +1645,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           : 'sub';
     }
 
-    final finalProviderIndex = langChoice.finalProviderIndex ?? usedProviderIndex ?? 0;
+    final finalProviderIndex = langChoice.finalProviderIndex ??
+        usedProviderIndex ??
+        (await streamingService.downloadProviderOrder(isAnime: isAnime)).first;
 
     // Now queue the actual downloads
     if (singleSeason != null) {
@@ -1923,16 +1802,14 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     String? subDubPreference,
   }) async {
     final isAnime = StreamingService.isAnimeMedia(media);
-    final maxProviders = streamingService.totalProvidersFor(isAnime: isAnime);
 
     StreamResult? result;
-    final orderedIndices = <int>[
-      initialProviderIndex,
-      ...List.generate(maxProviders, (i) => i).where((i) => i != initialProviderIndex),
-    ];
+    // The chosen source first, then the rest in source priority order.
+    final orderedIndices = await streamingService.downloadProviderOrder(
+      isAnime: isAnime,
+      first: initialProviderIndex,
+    );
     for (final providerIndex in orderedIndices) {
-      if (!streamingService.isDownloadable(providerIndex, isAnime: isAnime))
-        continue;
 
       try {
         result = await streamingService.fetchStreamUrl(
@@ -2320,7 +2197,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 
   Widget _buildMediaSidebar(BuildContext context) {
     final authState = ref.watch(authStateProvider);
-    final user = authState.valueOrNull;
+    final user = authState.value;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
@@ -2429,505 +2306,6 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class TrailerFullscreenScreen extends StatefulWidget {
-  const TrailerFullscreenScreen({super.key, required this.source});
-
-  final _TrailerSource source;
-
-  @override
-  State<TrailerFullscreenScreen> createState() =>
-      _TrailerFullscreenScreenState();
-}
-
-class _TrailerFullscreenScreenState extends State<TrailerFullscreenScreen> {
-  static const Map<String, String> _youtubeQualityLabels = {
-    'auto': 'Auto',
-    'hd1080': '1080p',
-    'hd720': '720p',
-    'large': '480p',
-  };
-
-  bool _isLoading = true;
-  bool _hasError = false;
-  String? _errorMessage;
-  YoutubePlayerController? _youtubeController;
-  StreamSubscription<YoutubePlayerValue>? _youtubeSubscription;
-  String _selectedYoutubeQuality = 'auto';
-
-  @override
-  void initState() {
-    super.initState();
-    ScreenWakeLock.acquire(this);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
-    _initPlayer();
-    // After this route is in the overlay, so the entry goes above it.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _showBackButtonAboveVideo());
-  }
-
-  void _initPlayer() {
-    // The native YouTube player plugin is Android/iOS only (TV included).
-    final isDesktop = AppPlatform.isDesktopOS;
-    if (widget.source.site.toLowerCase() == 'youtube' && !isDesktop) {
-      _initYoutubePlayer();
-    } else {
-      // For desktop YouTube or non-YouTube sources, mark as loaded (WebView will handle)
-      setState(() => _isLoading = false);
-    }
-  }
-
-  void _initYoutubePlayer() {
-    try {
-      final videoId = widget.source.key;
-
-      final controller = YoutubePlayerController.fromVideoId(
-        videoId: videoId,
-        autoPlay: true,
-        params: const YoutubePlayerParams(
-          mute: false,
-          enableCaption: false,
-          showControls: true,
-          showFullscreenButton: false,
-          color: 'red',
-        ),
-      );
-      _youtubeController = controller;
-
-      _youtubeSubscription = controller.stream.listen((value) {
-        if (!mounted) return;
-        if (value.playerState != PlayerState.unknown && _isLoading) {
-          setState(() => _isLoading = false);
-          unawaited(_applyYoutubeQuality(_selectedYoutubeQuality));
-        }
-        if (value.hasError && !_hasError) {
-          setState(() {
-            _hasError = true;
-            _errorMessage = 'Failed to load YouTube video';
-          });
-        }
-      });
-
-      setState(() {});
-    } catch (e) {
-      debugPrint('YouTube player error: $e');
-      setState(() {
-        _isLoading = false;
-        _hasError = true;
-        _errorMessage = 'Failed to load YouTube video';
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _removeBackButtonEntry();
-    ScreenWakeLock.release(this);
-    _youtubeSubscription?.cancel();
-    final youtubeController = _youtubeController;
-    if (youtubeController != null) {
-      unawaited(youtubeController.close());
-    }
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
-    super.dispose();
-  }
-
-  Future<void> _openExternally() async {
-    final isYoutube = widget.source.site.toLowerCase() == 'youtube';
-    final url = widget.source.watchUrl ??
-        widget.source.embedUrl ??
-        (isYoutube ? 'https://www.youtube.com/watch?v=${widget.source.key}' : null);
-    if (url == null) return;
-
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
-
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!mounted) return;
-    if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to open trailer externally')),
-      );
-    }
-  }
-
-  Future<void> _applyYoutubeQuality(String quality) async {
-    if (widget.source.site.toLowerCase() != 'youtube') return;
-
-    final controller = _youtubeController;
-    if (controller == null ||
-        controller.value.playerState == PlayerState.unknown) {
-      return;
-    }
-
-    final target = quality == 'auto' ? 'default' : quality;
-    await controller.webViewController.runJavaScript('''
-      (function() {
-        try {
-          if (typeof player === 'undefined' || !player) return;
-          if (player.setPlaybackQualityRange) {
-            player.setPlaybackQualityRange('$target');
-          }
-          if (player.setPlaybackQuality) {
-            player.setPlaybackQuality('$target');
-          }
-        } catch (_) {}
-      })();
-      ''');
-  }
-
-  // ignore: unused_element
-  Future<void> _showTrailerQualityDialog() async {
-    if (widget.source.site.toLowerCase() != 'youtube') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Quality control is available for YouTube trailers only',
-          ),
-        ),
-      );
-      return;
-    }
-
-    final current = _selectedYoutubeQuality;
-    final selected = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: NivioTheme.netflixDarkGrey,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              const ListTile(
-                title: Text(
-                  'Trailer Quality',
-                  style: TextStyle(
-                    color: NivioTheme.netflixWhite,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              ..._youtubeQualityLabels.entries.map((entry) {
-                final key = entry.key;
-                final label = entry.value;
-                final isSelected = key == current;
-                return ListTile(
-                  leading: Icon(
-                    isSelected
-                        ? Icons.check_circle_rounded
-                        : Icons.radio_button_unchecked_rounded,
-                    color: isSelected
-                        ? NivioTheme.accentColorOf(context)
-                        : NivioTheme.netflixGrey,
-                  ),
-                  title: Text(
-                    label,
-                    style: const TextStyle(color: NivioTheme.netflixWhite),
-                  ),
-                  onTap: () => Navigator.pop(sheetContext, key),
-                );
-              }),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (selected == null || selected == _selectedYoutubeQuality) return;
-    setState(() {
-      _selectedYoutubeQuality = selected;
-    });
-    await _applyYoutubeQuality(selected);
-  }
-
-  Widget _buildYoutubePlayer() {
-    final isDesktop = AppPlatform.isDesktopOS;
-    if (isDesktop) {
-      return YouTubeWebViewPlayer(
-        key: ValueKey('yt_${widget.source.key}'),
-        videoId: widget.source.key,
-        autoPlay: true,
-        muted: false,
-        showControls: true,
-        onReady: () {
-          if (mounted) setState(() => _isLoading = false);
-        },
-        onStateChanged: (state) {
-          // state 0 = ended
-          if (state == 0 && mounted) {
-            _closeTrailer();
-          }
-        },
-        onError: (code) {
-          if (mounted) {
-            setState(() {
-              _hasError = true;
-              if (code == 153 || code == 150 || code == 101) {
-                _errorMessage =
-                    'This trailer has embedding restrictions from YouTube.';
-              } else {
-                _errorMessage = 'YouTube player error (code: $code)';
-              }
-            });
-          }
-        },
-      );
-    }
-    if (_youtubeController == null || _hasError) {
-      // On error the player is removed so the message and "Open Externally"
-      // below aren't covered by it (see _youtubeDrawsInOverlay).
-      return const SizedBox.shrink();
-    }
-    return YoutubePlayer(
-      controller: _youtubeController!,
-      backgroundColor: Colors.black,
-      // This screen is already fullscreen and landscape-locked; the player's
-      // own fullscreen mode (on rotation / vertical drag) only gets in the way.
-      autoFullScreen: false,
-      enableFullScreenOnVerticalDrag: false,
-    );
-  }
-
-  /// On phones, the YouTube player (youtube_player_iframe underneath) draws
-  /// the video through an OverlayPortal, on top of this whole route, so
-  /// widgets in this screen's Stack end up underneath it: the back button
-  /// never showed. It goes in an OverlayEntry above the route instead
-  /// (_backButtonEntry).
-  bool get _youtubeDrawsInOverlay =>
-      widget.source.site.toLowerCase() == 'youtube' && !AppPlatform.isDesktopOS;
-
-  OverlayEntry? _backButtonEntry;
-
-  void _showBackButtonAboveVideo() {
-    if (!mounted || _backButtonEntry != null || !_youtubeDrawsInOverlay) return;
-    final entry = OverlayEntry(
-      builder: (_) => SafeArea(
-        child: Align(
-          alignment: Alignment.topLeft,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: _buildBackButton(),
-          ),
-        ),
-      ),
-    );
-    _backButtonEntry = entry;
-    Overlay.of(context).insert(entry);
-  }
-
-  void _removeBackButtonEntry() {
-    _backButtonEntry?.remove();
-    _backButtonEntry = null;
-  }
-
-  Widget _buildBackButton() {
-    return Semantics(
-      button: true,
-      label: 'Back',
-      child: GestureDetector(
-        onTap: _closeTrailer,
-        child: Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.4),
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(
-            Icons.arrow_back_rounded,
-            color: Colors.white,
-            size: 24,
-          ),
-        ),
-      ),
-    );
-  }
-
-
-
-  Widget _buildWebViewPlayer() {
-    final trailerUrl = widget.source.embedUrl;
-    if (trailerUrl == null) {
-      return Center(
-        child: Text(
-          'Unsupported trailer source: ${widget.source.site}',
-          style: const TextStyle(color: Colors.white70),
-          textAlign: TextAlign.center,
-        ),
-      );
-    }
-
-    bool isPlatformAvailable = false;
-    try {
-      isPlatformAvailable = InAppWebViewPlatform.instance != null;
-    } catch (_) {}
-
-    if (!isPlatformAvailable) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.web_asset_off_rounded, size: 48, color: Colors.white54),
-              const SizedBox(height: 16),
-              const Text(
-                'In-App Webview is unavailable on this system.',
-                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'You can open the trailer externally in your browser instead.',
-                style: TextStyle(color: Colors.white54, fontSize: 13),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  final watchUrl = widget.source.watchUrl;
-                  if (watchUrl != null) {
-                    final uri = Uri.parse(watchUrl);
-                    if (await canLaunchUrl(uri)) {
-                      await launchUrl(uri, mode: LaunchMode.externalApplication);
-                    }
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: NivioTheme.accentColorOf(context),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                ),
-                icon: const Icon(Icons.open_in_new_rounded),
-                label: const Text('Open Externally'),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return InAppWebView(
-      key: ValueKey('wv_${widget.source.embedUrl}'),
-      webViewEnvironment: AppWebViewEnvironment.instance,
-      initialUrlRequest: URLRequest(url: WebUri(trailerUrl)),
-      initialSettings: InAppWebViewSettings(
-        mediaPlaybackRequiresUserGesture: false,
-        allowsInlineMediaPlayback: true,
-        transparentBackground: true,
-        javaScriptEnabled: true,
-      ),
-      onLoadStop: (controller, url) {
-        if (!mounted) return;
-        setState(() {
-          _isLoading = false;
-          _hasError = false;
-        });
-      },
-      onReceivedError: (controller, request, error) {
-        if (!mounted) return;
-        setState(() {
-          _isLoading = false;
-          _hasError = true;
-        });
-      },
-    );
-  }
-
-  bool _isClosing = false;
-
-  void _closeTrailer() {
-    if (_isClosing) return;
-    _isClosing = true;
-    _removeBackButtonEntry();
-
-    // Cancel the stream subscription immediately to prevent state updates
-    _youtubeSubscription?.cancel();
-    _youtubeSubscription = null;
-
-    // Close the YouTube controller before popping to prevent
-    // the WebView from intercepting further back events during teardown
-    final controller = _youtubeController;
-    if (controller != null) {
-      _youtubeController = null;
-      unawaited(controller.close());
-    }
-
-    Navigator.of(context).pop();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isYoutube = widget.source.site.toLowerCase() == 'youtube';
-
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-        _closeTrailer();
-      },
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: SafeArea(
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: isYoutube ? _buildYoutubePlayer() : _buildWebViewPlayer(),
-              ),
-              // Floating back button. On phones it is drawn above the
-              // YouTube player instead (see _showBackButtonAboveVideo).
-              if (!_youtubeDrawsInOverlay)
-                Positioned(
-                  top: 16,
-                  left: 16,
-                  child: _buildBackButton(),
-                ),
-                  if (_hasError)
-                    Positioned.fill(
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _errorMessage ??
-                                  'Unable to play trailer from ${widget.source.site}',
-                              style: const TextStyle(color: Colors.white70),
-                              textAlign: TextAlign.center,
-                            ),
-                            if (widget.source.watchUrl != null || isYoutube) ...[
-                              const SizedBox(height: 10),
-                              FilledButton(
-                                onPressed: _openExternally,
-                                child: const Text('Open Externally'),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  if (_isLoading && !_hasError)
-                    Positioned.fill(
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          color: NivioTheme.accentColorOf(context),
-                          strokeWidth: 3,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-        ),
     );
   }
 }
@@ -3088,62 +2466,18 @@ class _HoverSlideIconButtonState extends State<_HoverSlideIconButton> {
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutBack,
-          transform: Matrix4.translationValues(0, _isHovered ? -4 : 0, 0),
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: _isHovered ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
-          ),
-          child: widget.icon,
-        ),
-      ),
-    ),
-    );
-  }
-}
-
-class _HoverGlassButton extends StatefulWidget {
-  final Widget icon;
-  final VoidCallback onTap;
-  final double size;
-
-  const _HoverGlassButton({required this.icon, required this.onTap, this.size = 44});
-
-  @override
-  State<_HoverGlassButton> createState() => _HoverGlassButtonState();
-}
-
-class _HoverGlassButtonState extends State<_HoverGlassButton> {
-  bool _isHovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return DpadFocusable(
-      borderRadius: BorderRadius.circular(999),
-      onActivate: widget.onTap,
-      child: MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-          width: widget.size,
-          height: widget.size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: _isHovered ? const Color(0x4DFFFFFF) : const Color(0x26FFFFFF),
-            border: Border.all(
-              color: _isHovered ? const Color(0x66FFFFFF) : const Color(0x33FFFFFF), 
-              width: 1
+        child: PressBounce(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutBack,
+            transform: Matrix4.translationValues(0, _isHovered ? -4 : 0, 0),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _isHovered ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
             ),
+            child: widget.icon,
           ),
-          child: Center(child: widget.icon),
         ),
       ),
     ),

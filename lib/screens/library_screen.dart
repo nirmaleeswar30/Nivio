@@ -107,7 +107,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                           borderRadius: BorderRadius.circular(999),
                         ),
                         dividerColor: Colors.transparent,
-                        labelColor: Colors.white,
+                        labelColor: Theme.of(context).colorScheme.onPrimary,
                         unselectedLabelColor: Colors.white70,
                         labelStyle: const TextStyle(
                           fontWeight: FontWeight.w700,

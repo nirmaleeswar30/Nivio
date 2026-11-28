@@ -1,0 +1,12 @@
+name: window_manager
+description: >-
+  Android stand-in for window_manager. The real package pulls in nativeapi,
+  whose build hook compiles a desktop C++ library for every Android ABI on
+  every build (minutes, single-threaded) although a phone never uses it.
+version: 0.7.1
+publish_to: none
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+dependencies:
+  flutter:
+    sdk: flutter

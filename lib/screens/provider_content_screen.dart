@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:nivio/core/tmdb_artwork.dart';
 import 'package:nivio/widgets/tab_artwork.dart';
 import 'package:nivio/providers/home_providers.dart';
+import 'package:nivio/providers/settings_providers.dart' show dynamicArtworkColorsProvider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nivio/widgets/app_scroll_view.dart';
 import 'package:go_router/go_router.dart';
@@ -243,6 +244,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
   }
 
   Future<void> _extractColorForIndex(int index) async {
+    if (!ref.read(dynamicArtworkColorsProvider)) return;
     if (_trending.isEmpty || index >= _trending.length) return;
     final item = _trending[index];
     final posterPath = item['poster_path'] as String?;
@@ -268,6 +270,10 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
       }
     } catch (_) {}
   }
+
+  Color get _artworkTint => ref.watch(dynamicArtworkColorsProvider)
+      ? _currentAmbientColor
+      : NivioTheme.backgroundColorOf(context);
 
   String? _getProviderLogo() {
     for (var provider in allProviders) {
@@ -460,8 +466,8 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          _currentAmbientColor.withOpacity(0.6),
-                          _currentAmbientColor.withOpacity(0.15),
+                          _artworkTint.withValues(alpha: 0.6),
+                          _artworkTint.withValues(alpha: 0.15),
                         ],
                         stops: const [0.0, 1.0],
                       ),
@@ -806,7 +812,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                                     context.push('/player/$tmdbId?type=$_mediaType');
                                   },
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: _currentAmbientColor,
+                                    backgroundColor: ref.watch(dynamicArtworkColorsProvider) ? _currentAmbientColor : Theme.of(context).colorScheme.surfaceContainer,
                                     foregroundColor: Colors.white,
                                     padding: const EdgeInsets.symmetric(vertical: 14),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -842,7 +848,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
                                         ref.read(watchlistRefreshProvider.notifier).refresh();
                                       },
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: _currentAmbientColor.withOpacity(0.35),
+                                        backgroundColor: ref.watch(dynamicArtworkColorsProvider) ? _currentAmbientColor.withValues(alpha: 0.35) : Theme.of(context).colorScheme.surfaceContainer,
                                         foregroundColor: Colors.white,
                                         elevation: 0,
                                         padding: const EdgeInsets.symmetric(vertical: 14),
@@ -893,7 +899,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
   Widget _buildDesktopLayout(BuildContext context) {
     final logoPath = _getProviderLogo();
     final isDesktop = AppPlatform.useDesktopLayout;
-    final activeBgColor = Color.lerp(const Color(0xFF0D0F14), _currentAmbientColor, 0.15)!;
+    final activeBgColor = Color.lerp(NivioTheme.backgroundColorOf(context), _artworkTint, 0.15)!;
 
     return PopScope(
       canPop: !_isSearching,
@@ -1143,8 +1149,8 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
     final bannerHeight = isDesktop ? MediaQuery.sizeOf(context).height * 0.8 : 600.0;
     final watchlistIds = ref.watch(watchlistProvider).map((item) => item.id).toSet();
 
-    final activeBgColor = Color.lerp(const Color(0xFF0D0F14), _currentAmbientColor, 0.15)!;
-    final slideColor = _ambientColors[_currentBannerPage] ?? NivioTheme.accentColorOf(context);
+    final activeBgColor = Color.lerp(NivioTheme.backgroundColorOf(context), _artworkTint, 0.15)!;
+    final slideColor = (ref.watch(dynamicArtworkColorsProvider) ? _ambientColors[_currentBannerPage] : null) ?? NivioTheme.accentColorOf(context);
 
     return SizedBox(
       height: bannerHeight,
@@ -1515,7 +1521,7 @@ class _ProviderContentScreenState extends ConsumerState<ProviderContentScreen> {
 
   Widget _buildMediaSidebar(BuildContext context) {
     final authState = ref.watch(authStateProvider);
-    final user = authState.valueOrNull;
+    final user = authState.value;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),

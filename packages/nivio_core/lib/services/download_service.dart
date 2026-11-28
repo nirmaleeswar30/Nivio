@@ -7,7 +7,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'windows_notifications.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart' hide IsolateNameServer;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -23,6 +23,7 @@ import 'package:nivio/services/local_stream_server.dart';
 import 'package:nivio/main.dart';
 import 'package:rqbit_ffi/rqbit_ffi.dart';
 import 'package:nivio/services/torrent/resolver.dart';
+import 'package:nivio/services/scrapers/cine_tv_source.dart';
 
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse response) async {
@@ -458,7 +459,9 @@ class DownloadService {
       }
 
       // No need to change the extension to mkv, FFmpeg can mux HLS directly into mp4
-      if (streamUrl.contains('.m3u8') || streamUrl.contains('/proxy?url=')) {
+      if (streamUrl.contains('.m3u8') ||
+          streamUrl.contains('/proxy?url=') ||
+          await _sniff(item, streamUrl) == _Body.playlist) {
         appDebugLog('🎬 Downloading via FFmpeg (HLS)');
         await _downloadM3u8(
           item,
@@ -489,6 +492,57 @@ class DownloadService {
       }
       await _releaseWakelock();
     }
+  }
+
+  /// Reads the start of [url] to tell an HLS playlist from a video file
+  /// when the URL doesn't say, and refuses web pages: some file hosts answer
+  /// with an HTML landing page, which would otherwise be saved as the video.
+  static Future<_Body> _sniff(DownloadItem item, String url) async {
+    Response<ResponseBody>? response;
+    try {
+      response = await _dio.get<ResponseBody>(
+        CineTvSource.freshDownloadUrl(url),
+        options: Options(
+          responseType: ResponseType.stream,
+          headers: {...?item.headers, 'Range': 'bytes=0-1023'},
+          receiveTimeout: const Duration(seconds: 30),
+          validateStatus: (_) => true,
+        ),
+      );
+    } catch (e) {
+      // Unreachable now; let the download itself retry and report.
+      appDebugLog('🎬 Couldn\'t inspect download URL: $e');
+      return _Body.unknown;
+    }
+    final status = response.statusCode ?? 0;
+    final type = response.headers.value(Headers.contentTypeHeader) ?? '';
+    final head = <int>[];
+    try {
+      await for (final chunk in response.data!.stream) {
+        head.addAll(chunk);
+        if (head.length >= 512) break;
+      }
+    } catch (_) {}
+    final text = utf8.decode(head.take(512).toList(), allowMalformed: true)
+        .trimLeft();
+    if (text.startsWith('#EXTM3U') || type.contains('mpegurl')) {
+      return _Body.playlist;
+    }
+    if (status >= 400) {
+      throw HttpException('The server refused the download ($status)');
+    }
+    final lower = text.toLowerCase();
+    if (type.contains('text/html') ||
+        lower.startsWith('<!doctype html') ||
+        lower.startsWith('<html')) {
+      throw const HttpException(
+        'This link opens a web page, not a video file. Pick another stream.',
+      );
+    }
+    if (type.contains('application/json') && lower.startsWith('{')) {
+      throw const HttpException('The server sent an error instead of the file');
+    }
+    return _Body.file;
   }
 
   static Future<void> _downloadTorrent(
@@ -701,21 +755,42 @@ class DownloadService {
     final concurrency = prefs.getInt('download_concurrency') ?? 6;
 
     try {
-      // 1. Probe file size
-      final probeResponse = await _dio.head(
-        urlToDownload,
-        options: Options(headers: item.headers),
-      );
-
-      final contentLengthHeader = probeResponse.headers.value(
-        Headers.contentLengthHeader,
-      );
-      final acceptsRanges =
-          probeResponse.headers.value('accept-ranges') == 'bytes';
-
+      // 1. Probe file size. Some hosts reject HEAD; ask for one byte instead.
       int? totalBytes;
-      if (contentLengthHeader != null) {
-        totalBytes = int.tryParse(contentLengthHeader);
+      var acceptsRanges = false;
+      try {
+        final probeResponse = await _dio.head(
+          CineTvSource.freshDownloadUrl(urlToDownload),
+          options: Options(headers: item.headers),
+        );
+        totalBytes = int.tryParse(
+          probeResponse.headers.value(Headers.contentLengthHeader) ?? '',
+        );
+        acceptsRanges = probeResponse.headers.value('accept-ranges') == 'bytes';
+      } catch (e) {
+        if (cancelToken.isCancelled) rethrow;
+        appDebugLog('🎬 Direct: HEAD failed ($e), probing with a range request');
+      }
+      if (totalBytes == null || totalBytes <= 0 || !acceptsRanges) {
+        try {
+          final probe = await _dio.get<ResponseBody>(
+            CineTvSource.freshDownloadUrl(urlToDownload),
+            options: Options(
+              responseType: ResponseType.stream,
+              headers: {...?item.headers, 'Range': 'bytes=0-0'},
+            ),
+          );
+          // e.g. "bytes 0-0/1174018826"
+          final range = probe.headers.value('content-range');
+          final total = int.tryParse(range?.split('/').last ?? '');
+          if (probe.statusCode == 206 && total != null && total > 0) {
+            totalBytes = total;
+            acceptsRanges = true;
+          }
+          unawaited(probe.data?.stream.drain<void>().catchError((_) {}));
+        } catch (_) {
+          if (cancelToken.isCancelled) rethrow;
+        }
       }
 
       // If server doesn't support ranges or we don't know the size, fallback to standard download
@@ -798,7 +873,7 @@ class DownloadService {
             IOSink? sink;
             try {
               final response = await _dio.get<ResponseBody>(
-                urlToDownload,
+                CineTvSource.freshDownloadUrl(urlToDownload),
                 cancelToken: chunkCancelToken,
                 options: Options(
                   responseType: ResponseType.stream,
@@ -910,7 +985,7 @@ class DownloadService {
   ) async {
     int lastProgressUpdate = 0;
     await _dio.download(
-      url,
+      CineTvSource.freshDownloadUrl(url),
       filePath,
       cancelToken: cancelToken,
       options: Options(
@@ -954,6 +1029,7 @@ class DownloadService {
       item.headers,
       item.selectedAudioLanguage,
       item.selectedSubtitleLanguage,
+      preferredQuality: item.preferredQuality,
     );
 
     final resolvedVideoUrl = streams?.videoUrl ?? urlToDownload;
@@ -1267,28 +1343,15 @@ class DownloadService {
 
       ffmpegArgs.add(filePath);
 
-      final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+      // FFmpegKit on every platform: its prebuilt FFmpeg ships with the app on
+      // Windows and Linux too, so downloads don't need an ffmpeg on the PATH.
       bool success = false;
       String errorLogs = '';
-
-      if (isDesktop) {
-        try {
-          final res = await Process.run('ffmpeg', ffmpegArgs);
-          success = res.exitCode == 0;
-          if (!success) {
-            errorLogs = res.stderr.toString();
-          }
-        } catch (e) {
-          appDebugLog('❌ Local mux desktop FFmpeg process run error: $e');
-          errorLogs = e.toString();
-        }
-      } else {
-        final session = await FFmpegKit.executeWithArguments(ffmpegArgs);
-        final returnCode = await session.getReturnCode();
-        success = ReturnCode.isSuccess(returnCode);
-        if (!success) {
-          errorLogs = await session.getLogsAsString();
-        }
+      final session = await FFmpegKit.executeWithArguments(ffmpegArgs);
+      final returnCode = await session.getReturnCode();
+      success = ReturnCode.isSuccess(returnCode);
+      if (!success) {
+        errorLogs = await session.getLogsAsString();
       }
 
       // Segments are about to be muxed/removed — stop serving them.
@@ -1444,64 +1507,9 @@ class DownloadService {
     // Output 1: Video file
     ffmpegArgs.add(filePath);
 
-    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    // FFmpegKit on every platform (see the local mux above).
     final completer = Completer<void>();
     int lastUpdateMs = 0;
-
-    if (isDesktop) {
-      if (cancelToken.isCancelled) return;
-      Process? process;
-
-      final cleanCancel = () {
-        process?.kill();
-      };
-      cancelToken.whenCancel.then((_) => cleanCancel());
-
-      try {
-        process = await Process.start('ffmpeg', ffmpegArgs);
-
-        process.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen((line) {
-          if (cancelToken.isCancelled) return;
-          
-          final match = RegExp(r'time=(\d+):(\d+):(\d+)\.(\d+)').firstMatch(line);
-          if (match != null && durationMs > 0) {
-            final hours = int.parse(match.group(1)!);
-            final minutes = int.parse(match.group(2)!);
-            final seconds = int.parse(match.group(3)!);
-            final timeMs = ((hours * 3600 + minutes * 60 + seconds) * 1000).toInt();
-            item.progress = (timeMs / durationMs).clamp(0.0, 1.0);
-
-            if (timeMs - lastUpdateMs > 2000) {
-              lastUpdateMs = timeMs;
-              box.put(item.id, item);
-              _showProgressNotification(item);
-            }
-          }
-        });
-
-        final exitCode = await process.exitCode;
-        if (exitCode == 0) {
-          if (item.progress > 0 && item.progress < 0.95) {
-            appDebugLog("Native FFmpeg returned success but progress is incomplete. Treating as FAILED.");
-            completer.completeError(Exception("Download incomplete"));
-          } else {
-            completer.complete();
-          }
-        } else {
-          if (cancelToken.isCancelled) {
-            completer.completeError(Exception("Cancelled"));
-          } else {
-            completer.completeError(Exception("FFmpeg exited with code $exitCode"));
-          }
-        }
-      } catch (e) {
-        completer.completeError(e);
-      }
-
-      await completer.future;
-      _completeDownload(item);
-      return;
-    }
 
     final executeSession = await FFmpegKit.executeWithArgumentsAsync(
       ffmpegArgs,
@@ -1702,11 +1710,32 @@ class DownloadService {
         final subUrl = item.subtitleUrl;
         if (subUrl != null && subUrl.isNotEmpty) {
           appDebugLog('🎬 Downloading external subtitle from $subUrl to $srtFilePath');
-          await FFmpegKit.execute('-y -i "$subUrl" -c:s srt "$srtFilePath"');
+          // Fetched with the stream's headers: CDNs that check the Referer or
+          // User-Agent refuse FFmpeg's own bare request (403). FFmpeg then
+          // only converts the local copy (ASS, VTT, ...) to SRT.
+          final isRemote = subUrl.startsWith('http://') || subUrl.startsWith('https://');
+          final rawPath = isRemote ? '$srtFilePath.part' : subUrl;
+          try {
+            if (isRemote) {
+              await _dio.download(
+                subUrl,
+                rawPath,
+                options: Options(headers: item.headers),
+              );
+            }
+            await FFmpegKit.executeWithArguments(
+              ['-y', '-i', rawPath, '-c:s', 'srt', srtFilePath],
+            );
+          } finally {
+            if (isRemote) {
+              final raw = File(rawPath);
+              if (await raw.exists()) await raw.delete();
+            }
+          }
         } else {
           appDebugLog('🎬 Extracting embedded subtitle from ${item.savePath} to $srtFilePath');
-          await FFmpegKit.execute(
-            '-y -i "${item.savePath}" -map 0:s:0? -c:s srt "$srtFilePath"',
+          await FFmpegKit.executeWithArguments(
+            ['-y', '-i', item.savePath, '-map', '0:s:0?', '-c:s', 'srt', srtFilePath],
           );
         }
       }
@@ -1938,6 +1967,7 @@ class DownloadService {
     String? selectedAudioLanguage,
     String? selectedSubtitleLanguage,
     String? subtitleUrl,
+    String? preferredQuality,
   }) async {
     final id = '${mediaId}_${season ?? 0}_${episode ?? 0}';
 
@@ -1961,6 +1991,7 @@ class DownloadService {
       selectedAudioLanguage: selectedAudioLanguage,
       selectedSubtitleLanguage: selectedSubtitleLanguage,
       subtitleUrl: subtitleUrl,
+      preferredQuality: preferredQuality,
       createdAt: DateTime.now(),
       status: DownloadStatus.pending,
       savePath: '',
@@ -1970,3 +2001,5 @@ class DownloadService {
     startDownload(item);
   }
 }
+
+enum _Body { playlist, file, unknown }

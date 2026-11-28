@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:window_manager/window_manager.dart';
+import 'package:window_manager/legacy.dart';
 
 class CustomTitleBar extends StatelessWidget implements PreferredSizeWidget {
   const CustomTitleBar({super.key});

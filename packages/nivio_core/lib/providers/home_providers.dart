@@ -1,4 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
+import 'package:nivio/models/search_result.dart';
+import 'package:nivio/providers/recommendations_provider.dart';
 import 'package:nivio/providers/service_providers.dart';
 import 'dart:ui';
 
@@ -179,66 +182,86 @@ final featuredContentProvider = FutureProvider<List<Map<String, dynamic>>>((ref)
   return enhancedItems;
 });
 
-// Trending Movies Provider
-final trendingMoviesProvider = FutureProvider<List<dynamic>>((ref) async {
-  final tmdbService = ref.watch(tmdbServiceProvider);
-  return await tmdbService.getTrending('movie', 'day');
-});
+enum HomeShelf {
+  popularMovies('popular_movies', 'All Time Popular'),
+  trendingMovies('trending_movies', 'Trending Now'),
+  topRatedMovies('top_rated_movies', 'Top Rated Movies'),
+  popularTv('popular_tv', 'Popular TV Shows'),
+  trendingTv('trending_tv', 'Trending TV Shows'),
+  popularAnime('popular_anime', 'Popular Anime'),
+  trendingAnime('trending_anime', 'Trending Anime'),
+  tamil('tamil', 'Tamil Picks'),
+  telugu('telugu', 'Telugu Picks'),
+  hindi('hindi', 'Hindi Picks'),
+  korean('korean', 'Korean Dramas'),
+  malayalam('malayalam', 'Malayalam Picks'),
+  recommendations('recommendations', 'Recommended for You');
 
-// Trending TV Shows Provider
-final trendingTVShowsProvider = FutureProvider<List<dynamic>>((ref) async {
-  final tmdbService = ref.watch(tmdbServiceProvider);
-  return await tmdbService.getTrending('tv', 'day');
-});
+  const HomeShelf(this.id, this.title);
 
-// Popular Movies Provider
-final popularMoviesProvider = FutureProvider<List<dynamic>>((ref) async {
-  final tmdbService = ref.watch(tmdbServiceProvider);
-  return await tmdbService.getPopular('movie');
-});
+  final String id;
+  final String title;
 
-// Popular TV Shows Provider
-final popularTVShowsProvider = FutureProvider<List<dynamic>>((ref) async {
-  final tmdbService = ref.watch(tmdbServiceProvider);
-  return await tmdbService.getPopular('tv');
-});
+  static HomeShelf? fromId(String? id) =>
+      values.where((shelf) => shelf.id == id).firstOrNull;
+}
 
-// Top Rated Movies Provider
-final topRatedMoviesProvider = FutureProvider<List<dynamic>>((ref) async {
-  final tmdbService = ref.watch(tmdbServiceProvider);
-  return await tmdbService.getTopRated('movie');
-});
+typedef HomeShelfPage = ({List<SearchResult> items, bool hasMore});
 
-// Anime Provider (Popular Japanese Animation)
-final animeProvider = FutureProvider<List<dynamic>>((ref) async {
-  final anilist = ref.watch(aniListServiceProvider);
-  final res = await anilist.getPopularAnime();
-  return res.results;
-});
+const _tmdbMaxPage = 500;
 
-// Trending Anime Provider
-final trendingAnimeProvider = FutureProvider<List<dynamic>>((ref) async {
-  final anilist = ref.watch(aniListServiceProvider);
-  final res = await anilist.getTrendingAnime();
-  return res.results;
-});
+final homeShelfLoaderProvider =
+    Provider.family<Future<HomeShelfPage> Function(int), HomeShelf>((ref, shelf) {
+      if (shelf == HomeShelf.recommendations) {
+        final recommendations = ref.watch(homeRecommendationsProvider.future);
+        return (_) async =>
+            (items: (await recommendations)?.items ?? [], hasMore: false);
+      }
 
-// Latest Tamil OTT Releases Provider
-final tamilMoviesProvider = FutureProvider<List<dynamic>>((ref) async {
-  final tmdbService = ref.watch(tmdbServiceProvider);
-  return await tmdbService.getLatestTamilOTT();
-});
+      if (shelf == HomeShelf.popularAnime || shelf == HomeShelf.trendingAnime) {
+        final anilist = ref.watch(aniListServiceProvider);
+        return (page) async {
+          final results = shelf == HomeShelf.popularAnime
+              ? await anilist.getPopularAnime(page: page)
+              : await anilist.getTrendingAnime(page: page);
+          if (page > 1 && results.page != page) {
+            throw StateError('Could not load anime page $page');
+          }
+          return (items: results.results, hasMore: page < results.totalPages);
+        };
+      }
+
+      final tmdb = ref.watch(tmdbServiceProvider);
+      return (page) async {
+        final results = await switch (shelf) {
+          HomeShelf.popularMovies => tmdb.getPopular('movie', page: page),
+          HomeShelf.trendingMovies =>
+            tmdb.getTrending('movie', 'day', page: page),
+          HomeShelf.topRatedMovies => tmdb.getTopRated('movie', page: page),
+          HomeShelf.popularTv => tmdb.getPopular('tv', page: page),
+          HomeShelf.trendingTv => tmdb.getTrending('tv', 'day', page: page),
+          HomeShelf.tamil => tmdb.getLatestTamilOTT(page: page),
+          HomeShelf.telugu => tmdb.getByLanguage('movie', 'te', page: page),
+          HomeShelf.hindi => tmdb.getByLanguage('movie', 'hi', page: page),
+          HomeShelf.korean => tmdb.getByLanguage('tv', 'ko', page: page),
+          HomeShelf.malayalam => tmdb.getByLanguage('movie', 'ml', page: page),
+          _ => throw StateError('No TMDB catalog for ${shelf.id}'),
+        };
+        final items = results
+            .map((item) => SearchResult.fromJson(Map<String, dynamic>.from(item)))
+            .toList(growable: false);
+        return (items: items, hasMore: items.isNotEmpty && page < _tmdbMaxPage);
+      };
+    });
+
+final homeShelfProvider = FutureProvider.family<HomeShelfPage, HomeShelf>(
+  (ref, shelf) => ref.watch(homeShelfLoaderProvider(shelf))(1),
+);
 
 // Trending Tamil Movies Provider
 final trendingTamilMoviesProvider = FutureProvider<List<dynamic>>((ref) async {
   final tmdbService = ref.watch(tmdbServiceProvider);
   return await tmdbService.getTrendingByLanguage('movie', 'ta');
-});
-
-// Popular Telugu Movies Provider
-final teluguMoviesProvider = FutureProvider<List<dynamic>>((ref) async {
-  final tmdbService = ref.watch(tmdbServiceProvider);
-  return await tmdbService.getByLanguage('movie', 'te');
 });
 
 // Trending Telugu Movies Provider
@@ -247,34 +270,16 @@ final trendingTeluguMoviesProvider = FutureProvider<List<dynamic>>((ref) async {
   return await tmdbService.getTrendingByLanguage('movie', 'te');
 });
 
-// Popular Hindi Movies Provider
-final hindiMoviesProvider = FutureProvider<List<dynamic>>((ref) async {
-  final tmdbService = ref.watch(tmdbServiceProvider);
-  return await tmdbService.getByLanguage('movie', 'hi');
-});
-
 // Trending Hindi Movies Provider
 final trendingHindiMoviesProvider = FutureProvider<List<dynamic>>((ref) async {
   final tmdbService = ref.watch(tmdbServiceProvider);
   return await tmdbService.getTrendingByLanguage('movie', 'hi');
 });
 
-// Popular Korean Dramas Provider
-final koreanDramasProvider = FutureProvider<List<dynamic>>((ref) async {
-  final tmdbService = ref.watch(tmdbServiceProvider);
-  return await tmdbService.getByLanguage('tv', 'ko');
-});
-
 // Trending Korean Dramas Provider
 final trendingKoreanDramasProvider = FutureProvider<List<dynamic>>((ref) async {
   final tmdbService = ref.watch(tmdbServiceProvider);
   return await tmdbService.getTrendingByLanguage('tv', 'ko');
-});
-
-// Popular Malayalam Movies Provider
-final malayalamMoviesProvider = FutureProvider<List<dynamic>>((ref) async {
-  final tmdbService = ref.watch(tmdbServiceProvider);
-  return await tmdbService.getByLanguage('movie', 'ml');
 });
 
 // Trending Malayalam Movies Provider

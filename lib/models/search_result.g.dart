@@ -6,8 +6,8 @@ part of 'search_result.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
-_$SearchResultImpl _$$SearchResultImplFromJson(Map<String, dynamic> json) =>
-    _$SearchResultImpl(
+_SearchResult _$SearchResultFromJson(Map<String, dynamic> json) =>
+    _SearchResult(
       adult: json['adult'] as bool? ?? false,
       id: (json['id'] as num).toInt(),
       name: json['name'] as String?,
@@ -21,9 +21,10 @@ _$SearchResultImpl _$$SearchResultImplFromJson(Map<String, dynamic> json) =>
       overview: json['overview'] as String?,
       voteAverage: (json['vote_average'] as num?)?.toDouble(),
       malId: (json['mal_id'] as num?)?.toInt(),
+      animeFormat: json['anime_format'] as String?,
     );
 
-Map<String, dynamic> _$$SearchResultImplToJson(_$SearchResultImpl instance) =>
+Map<String, dynamic> _$SearchResultToJson(_SearchResult instance) =>
     <String, dynamic>{
       'adult': instance.adult,
       'id': instance.id,
@@ -38,10 +39,11 @@ Map<String, dynamic> _$$SearchResultImplToJson(_$SearchResultImpl instance) =>
       'overview': instance.overview,
       'vote_average': instance.voteAverage,
       'mal_id': instance.malId,
+      'anime_format': instance.animeFormat,
     };
 
-_$SearchResultsImpl _$$SearchResultsImplFromJson(Map<String, dynamic> json) =>
-    _$SearchResultsImpl(
+_SearchResults _$SearchResultsFromJson(Map<String, dynamic> json) =>
+    _SearchResults(
       page: (json['page'] as num).toInt(),
       results: (json['results'] as List<dynamic>)
           .map((e) => SearchResult.fromJson(e as Map<String, dynamic>))
@@ -50,7 +52,7 @@ _$SearchResultsImpl _$$SearchResultsImplFromJson(Map<String, dynamic> json) =>
       totalResults: (json['total_results'] as num).toInt(),
     );
 
-Map<String, dynamic> _$$SearchResultsImplToJson(_$SearchResultsImpl instance) =>
+Map<String, dynamic> _$SearchResultsToJson(_SearchResults instance) =>
     <String, dynamic>{
       'page': instance.page,
       'results': instance.results,

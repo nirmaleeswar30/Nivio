@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -18,18 +19,7 @@ class LiquidGlassNavItem {
   final String label;
 }
 
-/// The phone floating bottom nav (MainShellScreen) — same size, margins and
-/// items as the frosted one — as shader liquid glass, shared with Inzx, with
-/// the selection pill of the
-/// flutter-glass / BitChord tab bar, built the same way:
-///
-///  - the tabs sit in a [kPillInset] inset inside the bar's glass;
-///  - at rest the pill is a flat white fill exactly one tab wide;
-///  - switching tabs (or dragging across the bar) lifts it into a clear lens
-///    drawn *over* the bar — a sibling of the bar's glass, not inside it, so
-///    it can stand taller than the bar — that refracts the bar and the tabs
-///    while it travels with squash-and-stretch, then lands back flat
-///    ([GlassPillMotion]).
+/// Floating bottom navigation with the same pill motion for both glass styles.
 class LiquidGlassNav extends StatefulWidget {
   const LiquidGlassNav({
     super.key,
@@ -38,6 +28,8 @@ class LiquidGlassNav extends StatefulWidget {
     required this.onTap,
     required this.isDark,
     required this.accentColor,
+    this.labelFraction = 1,
+    this.frosted = false,
   });
 
   final List<LiquidGlassNavItem> items;
@@ -47,6 +39,8 @@ class LiquidGlassNav extends StatefulWidget {
 
   /// Selected icon / label colour (already readable on dark glass).
   final Color accentColor;
+  final double labelFraction;
+  final bool frosted;
 
   @override
   State<LiquidGlassNav> createState() => _LiquidGlassNavState();
@@ -55,7 +49,6 @@ class LiquidGlassNav extends StatefulWidget {
 class _LiquidGlassNavState extends State<LiquidGlassNav>
     with TickerProviderStateMixin {
   // Same size and corner as the standard nav.
-  static const double _barHeight = 64;
   static const double _radius = 32;
 
   late final GlassPillMotion _pill = GlassPillMotion(
@@ -74,9 +67,14 @@ class _LiquidGlassNavState extends State<LiquidGlassNav>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _pill.reduceMotion = MediaQuery.disableAnimationsOf(context);
+  }
+
+  @override
   void didUpdateWidget(covariant LiquidGlassNav old) {
     super.didUpdateWidget(old);
-    _pill.reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     if (widget.currentIndex != old.currentIndex) {
       _pill.animateTo(widget.currentIndex);
       _lastHapticTab = widget.currentIndex;
@@ -105,20 +103,26 @@ class _LiquidGlassNavState extends State<LiquidGlassNav>
   @override
   Widget build(BuildContext context) {
     final bottomPadding = MediaQuery.of(context).padding.bottom;
-    final bottomMargin = (bottomPadding > 0 ? bottomPadding : 10.0) + 14.0;
+    final bottomMargin = bottomPadding + 10;
+    final inset = (58 - 30 * widget.labelFraction)
+        .clamp(
+          8.0,
+          ((MediaQuery.sizeOf(context).width - 192) / 2).clamp(8.0, 58.0),
+        )
+        .toDouble();
     final n = widget.items.length;
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(10, 0, 10, bottomMargin),
+      padding: EdgeInsets.fromLTRB(inset, 0, inset, bottomMargin),
       // Its own repaint boundary: the pill repaints the bar, never the page.
       child: RepaintBoundary(
         child: SizedBox(
-          height: _barHeight,
+          height: 50 + 14 * widget.labelFraction,
           child: LayoutBuilder(
             builder: (context, constraints) {
               final rowWidth = constraints.maxWidth - kPillInset * 2;
               final tabWidth = rowWidth / n;
-              final tabStep = rowWidth / n;
+              final tabStep = tabWidth;
               _pill.stepDp = tabStep;
 
               final row = Row(
@@ -129,11 +133,54 @@ class _LiquidGlassNavState extends State<LiquidGlassNav>
                         item: widget.items[i],
                         selected: i == widget.currentIndex,
                         accent: widget.accentColor,
-                        content: glassContentColor(true),
+                        content: widget.frosted
+                            ? const Color(0xFF969CA3)
+                            : glassContentColor(true).withValues(alpha: .7),
+                        labelFraction: widget.labelFraction,
+                        frosted: widget.frosted,
                         onTap: () => _select(i),
                       ),
                     ),
                 ],
+              );
+
+              final tabs = GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onHorizontalDragStart: (_) {
+                  _dragTotal = 0;
+                  _dragStartIndex = widget.currentIndex;
+                  _lastHapticTab = _dragStartIndex;
+                  _pill.startDrag();
+                },
+                onHorizontalDragUpdate: (d) {
+                  _dragTotal += d.delta.dx;
+                  final pos = (_dragStartIndex + _dragTotal / tabStep).clamp(
+                    0.0,
+                    (n - 1).toDouble(),
+                  );
+                  _pill.dragTo(pos);
+                  final approx = pos.round();
+                  if (approx != _lastHapticTab) {
+                    HapticFeedback.selectionClick();
+                    _lastHapticTab = approx;
+                  }
+                },
+                onHorizontalDragEnd: (_) => _endDrag(tabStep, n),
+                onHorizontalDragCancel: () =>
+                    _pill.release(widget.currentIndex),
+                child: Padding(
+                  padding: const EdgeInsets.all(kPillInset),
+                  child: CustomPaint(
+                    painter: _FlatPillPainter(
+                      motion: _pill,
+                      tabWidth: tabWidth,
+                      tabStep: tabStep,
+                      fill: glassIndicatorColor(true),
+                      frostTint: widget.frosted ? widget.accentColor : null,
+                    ),
+                    child: row,
+                  ),
+                ),
               );
 
               return BackdropGroup(
@@ -143,49 +190,18 @@ class _LiquidGlassNavState extends State<LiquidGlassNav>
                     // The bar: dark glass in both themes, like the standard
                     // nav, so its white labels read.
                     Positioned.fill(
-                      child: LiquidGlass(
-                        style: GlassStyle.bitChord(
-                          dark: true,
-                          surfaceTint: Colors.black.withValues(
-                            alpha: widget.isDark ? 0.22 : 0.72,
-                          ),
-                        ),
-                        borderRadius: BorderRadius.circular(_radius),
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          onHorizontalDragStart: (_) {
-                            _dragTotal = 0;
-                            _dragStartIndex = widget.currentIndex;
-                            _pill.startDrag();
-                          },
-                          onHorizontalDragUpdate: (d) {
-                            _dragTotal += d.delta.dx;
-                            final pos = (_dragStartIndex + _dragTotal / tabStep)
-                                .clamp(0.0, (n - 1).toDouble());
-                            _pill.dragTo(pos);
-                            final approx = pos.round();
-                            if (approx != _lastHapticTab) {
-                              HapticFeedback.selectionClick();
-                              _lastHapticTab = approx;
-                            }
-                          },
-                          onHorizontalDragEnd: (_) => _endDrag(tabStep, n),
-                          onHorizontalDragCancel: () =>
-                              _pill.release(widget.currentIndex),
-                          child: Padding(
-                            padding: const EdgeInsets.all(kPillInset),
-                            child: CustomPaint(
-                              painter: _FlatPillPainter(
-                                motion: _pill,
-                                tabWidth: tabWidth,
-                                tabStep: tabStep,
-                                fill: glassIndicatorColor(true),
+                      child: widget.frosted
+                          ? _FrostedBar(child: tabs)
+                          : LiquidGlass(
+                              style: GlassStyle.bitChord(
+                                dark: true,
+                                surfaceTint: Colors.black.withValues(
+                                  alpha: widget.isDark ? 0.22 : 0.72,
+                                ),
                               ),
-                              child: row,
+                              borderRadius: BorderRadius.circular(_radius),
+                              child: tabs,
                             ),
-                          ),
-                        ),
-                      ),
                     ),
                     // The lifted lens, over the bar's glass.
                     Positioned.fill(
@@ -198,6 +214,9 @@ class _LiquidGlassNavState extends State<LiquidGlassNav>
                                   motion: _pill,
                                   tabWidth: tabWidth,
                                   tabStep: tabStep,
+                                  frostTint: widget.frosted
+                                      ? widget.accentColor
+                                      : null,
                                 ),
                         ),
                       ),
@@ -211,6 +230,36 @@ class _LiquidGlassNavState extends State<LiquidGlassNav>
       ),
     );
   }
+}
+
+class _FrostedBar extends StatelessWidget {
+  const _FrostedBar({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ClipPath.shape(
+    shape: const StadiumBorder(),
+    child: BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+      child: DecoratedBox(
+        decoration: ShapeDecoration(
+          shape: const StadiumBorder(
+            side: BorderSide(color: Color(0x24FFFFFF)),
+          ),
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color.alphaBlend(Colors.white12, const Color(0x901C1C1E)),
+              const Color(0x9E151518),
+            ],
+          ),
+        ),
+        child: child,
+      ),
+    ),
+  );
 }
 
 /// Where the pill sits for the current motion frame, in the tab row's
@@ -243,25 +292,40 @@ class _FlatPillPainter extends CustomPainter {
     required this.tabWidth,
     required this.tabStep,
     required this.fill,
+    this.frostTint,
   }) : super(repaint: motion);
 
   final GlassPillMotion motion;
   final double tabWidth;
   final double tabStep;
   final Color fill;
+  final Color? frostTint;
   final Paint _paint = Paint();
 
   @override
   void paint(Canvas canvas, Size size) {
-    final alpha = fill.a * (1 - motion.material);
-    if (alpha <= 0) return;
+    final presence = 1 - motion.material;
+    if (presence <= 0) return;
     final (center, s) = _pillGeometry(motion, size, tabWidth, tabStep);
     final rect = Rect.fromCenter(
       center: center,
       width: s.width,
       height: s.height,
     );
-    _paint.color = fill.withValues(alpha: alpha);
+    final tint = frostTint;
+    _paint.color = tint == null
+        ? fill.withValues(alpha: fill.a * presence)
+        : Colors.white;
+    _paint.shader = tint == null
+        ? null
+        : RadialGradient(
+            center: const Alignment(0, -.3),
+            radius: .94,
+            colors: [
+              tint.withValues(alpha: .28 * presence),
+              tint.withValues(alpha: .07 * presence),
+            ],
+          ).createShader(rect);
     canvas.drawRRect(
       RRect.fromRectAndRadius(rect, Radius.circular(rect.shortestSide / 2)),
       _paint,
@@ -273,7 +337,8 @@ class _FlatPillPainter extends CustomPainter {
       old.motion != motion ||
       old.tabWidth != tabWidth ||
       old.tabStep != tabStep ||
-      old.fill != fill;
+      old.fill != fill ||
+      old.frostTint != frostTint;
 }
 
 /// The lifted pill: a clear lens over the bar that refracts the bar's own
@@ -284,11 +349,13 @@ class _LiftedPill extends StatelessWidget {
     required this.motion,
     required this.tabWidth,
     required this.tabStep,
+    this.frostTint,
   });
 
   final GlassPillMotion motion;
   final double tabWidth;
   final double tabStep;
+  final Color? frostTint;
 
   static const double _lensHeight = 12;
   static const double _lensAmount = 14;
@@ -335,7 +402,31 @@ class _LiftedPill extends StatelessWidget {
               width: math.max(size.width, 1),
               height: math.max(size.height, 1),
               // Over the bar's glass, so it must read its own backdrop.
-              child: LiquidGlass(style: style, shareBackdrop: false),
+              child: switch (frostTint) {
+                final Color tint => DecoratedBox(
+                  decoration: ShapeDecoration(
+                    shape: StadiumBorder(
+                      side: BorderSide(
+                        color: Colors.white.withValues(alpha: .32 * rimAlpha),
+                      ),
+                    ),
+                    gradient: RadialGradient(
+                      center: const Alignment(0, -.45),
+                      colors: [
+                        tint.withValues(alpha: .30 * motion.material),
+                        tint.withValues(alpha: .09 * motion.material),
+                      ],
+                    ),
+                    shadows: [
+                      BoxShadow(
+                        color: tint.withValues(alpha: .18 * rimAlpha),
+                        blurRadius: 12,
+                      ),
+                    ],
+                  ),
+                ),
+                null => LiquidGlass(style: style, shareBackdrop: false),
+              },
             ),
           ],
         );
@@ -353,6 +444,8 @@ class _NavItem extends StatefulWidget {
     required this.accent,
     required this.content,
     required this.onTap,
+    required this.labelFraction,
+    required this.frosted,
   });
 
   final LiquidGlassNavItem item;
@@ -362,6 +455,8 @@ class _NavItem extends StatefulWidget {
   /// Glyph / label colour on the glass: white on dark, black on light.
   final Color content;
   final VoidCallback onTap;
+  final double labelFraction;
+  final bool frosted;
 
   @override
   State<_NavItem> createState() => _NavItemState();
@@ -406,42 +501,56 @@ class _NavItemState extends State<_NavItem>
   @override
   Widget build(BuildContext context) {
     final selected = widget.selected;
-    final color = selected
-        ? widget.accent
-        : widget.content.withValues(alpha: 0.7);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: widget.onTap,
-      child: Center(
-        child: TweenAnimationBuilder<Color?>(
-          tween: ColorTween(end: color),
-          duration: const Duration(milliseconds: 200),
-          builder: (context, c, _) => Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              ScaleTransition(
-                scale: _scale,
-                child: Icon(
-                  selected ? widget.item.selectedIcon : widget.item.icon,
-                  size: 23,
-                  color: c,
+    final color = selected ? widget.accent : widget.content;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: Center(
+          child: TweenAnimationBuilder<Color?>(
+            tween: ColorTween(end: color),
+            duration: const Duration(milliseconds: 200),
+            builder: (context, c, _) => Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ScaleTransition(
+                  scale: _scale,
+                  child: Icon(
+                    selected ? widget.item.selectedIcon : widget.item.icon,
+                    size: widget.frosted ? 26 : 23,
+                    color: c,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                widget.item.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  color: c,
-                  letterSpacing: 0.2,
+                ClipRect(
+                  child: Align(
+                    heightFactor: widget.labelFraction,
+                    child: Opacity(
+                      opacity: widget.labelFraction,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          widget.item.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: selected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                            color: c,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

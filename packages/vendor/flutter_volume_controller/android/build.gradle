@@ -1,0 +1,43 @@
+group 'com.yosemiteyss.flutter_volume_controller'
+version '1.0-SNAPSHOT'
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+
+def agpMajor = com.android.Version.ANDROID_GRADLE_PLUGIN_VERSION.tokenize('.')[0] as int
+def builtInKotlinProperty = rootProject.findProperty('android.builtInKotlin')
+def usesBuiltInKotlin = agpMajor >= 9 &&
+        (builtInKotlinProperty == null || builtInKotlinProperty.toString().toBoolean())
+
+// Nivio: patched copy of flutter_volume_controller 2.0.2 without its
+// conditional `apply plugin: 'kotlin-android'`. Flutter flags any plugin whose
+// build file contains that line (it scans the text) and plans to fail such
+// builds. With built-in Kotlin off, Flutter's Gradle plugin applies KGP itself.
+
+android {
+    if (project.android.hasProperty("namespace")) {
+        namespace 'com.yosemiteyss.flutter_volume_controller'
+    }
+    compileSdkVersion 36
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    if (!usesBuiltInKotlin) {
+        kotlinOptions {
+            jvmTarget = '1.8'
+        }
+    }
+
+    defaultConfig {
+        minSdkVersion 16
+    }
+}

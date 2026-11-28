@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:nivio/core/constants.dart';
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/models/watchlist_item.dart';

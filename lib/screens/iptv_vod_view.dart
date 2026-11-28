@@ -184,7 +184,7 @@ class _IptvVodViewState extends ConsumerState<IptvVodView> {
     showModalBottomSheet(
       context: context,
       useRootNavigator: true,
-      backgroundColor: NivioTheme.netflixDarkGrey,
+      backgroundColor: NivioTheme.sheetColorOf(context),
       constraints: BoxConstraints(maxWidth: AppPlatform.useDesktopLayout ? 500 : double.infinity),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (sheetContext) => Column(
@@ -227,7 +227,7 @@ class _IptvVodViewState extends ConsumerState<IptvVodView> {
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,
-      backgroundColor: NivioTheme.netflixDarkGrey,
+      backgroundColor: NivioTheme.sheetColorOf(context),
       constraints: BoxConstraints(maxWidth: AppPlatform.useDesktopLayout ? 620 : double.infinity),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (sheetContext) => FractionallySizedBox(

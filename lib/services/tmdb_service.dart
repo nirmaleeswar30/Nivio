@@ -116,6 +116,54 @@ class TmdbService {
     }
   }
 
+  /// TMDB movies and shows matching [query], anime included. The regular
+  /// [search] hides Japanese animated series (the app lists anime from
+  /// AniList), so lookups that map an AniList title to TMDB use this.
+  Future<List<SearchResult>> searchTitlesIncludingAnime(String query) async {
+    final normalizedQuery = _normalizeSearchText(query);
+    if (normalizedQuery.isEmpty) return const [];
+    final cacheKey = 'search_with_anime_v1_$normalizedQuery';
+    final cached = (await _cache.getRaw(cacheKey))?['results'];
+    if (cached is List) {
+      return [
+        for (final item in cached)
+          if (item is Map) SearchResult.fromJson(Map<String, dynamic>.from(item)),
+      ];
+    }
+    final queryParams = <String, dynamic>{
+      'query': normalizedQuery,
+      'include_adult': false,
+    };
+    final responses = await Future.wait([
+      _dio.get('/3/search/tv', queryParameters: queryParams),
+      _dio.get('/3/search/movie', queryParameters: queryParams),
+    ]);
+    final maps = <Map<String, dynamic>>[];
+    for (final (index, response) in responses.indexed) {
+      final results = (response.data as Map?)?['results'];
+      if (results is! List) continue;
+      for (final item in results) {
+        if (item is! Map) continue;
+        maps.add({
+          ...item.map((key, value) => MapEntry(key.toString(), value)),
+          'media_type': index == 0 ? 'tv' : 'movie',
+        });
+      }
+    }
+    final parsed = <SearchResult>[];
+    for (final map in maps) {
+      try {
+        parsed.add(SearchResult.fromJson(map));
+      } catch (_) {}
+    }
+    await _cache.set(
+      cacheKey,
+      {'results': [for (final result in parsed) result.toJson()]},
+      ttl: CacheService.mediumCache,
+    );
+    return parsed;
+  }
+
   List<Map<String, dynamic>> _parseTypedSearchResultMaps(
     dynamic rawResults, {
     required String mediaType,
@@ -653,8 +701,13 @@ class TmdbService {
     }
   }
 
-  Future<List<dynamic>> getTrending(String mediaType, String timeWindow) async {
-    final cacheKey = 'trending_${mediaType}_$timeWindow';
+  Future<List<dynamic>> getTrending(
+    String mediaType,
+    String timeWindow, {
+    int page = 1,
+  }) async {
+    final cacheKey = _pagedKey('trending_${mediaType}_$timeWindow', page);
+    final query = {'language': 'en', 'page': page};
 
     // Stale-while-revalidate: Get stale cache first
     final staleCache = await _cache.getStaleRaw(cacheKey);
@@ -665,7 +718,7 @@ class TmdbService {
       _cache.updateInBackground(cacheKey, () async {
         final response = await _dio.get(
           '/3/trending/$mediaType/$timeWindow',
-          queryParameters: {'language': 'en'},
+          queryParameters: query,
         );
         return response.data;
       }, CacheService.shortCache);
@@ -680,7 +733,7 @@ class TmdbService {
     try {
       final response = await _dio.get(
         '/3/trending/$mediaType/$timeWindow',
-        queryParameters: {'language': 'en'},
+        queryParameters: query,
       );
       await _cache.set(cacheKey, response.data, ttl: CacheService.shortCache);
       return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: mediaType);
@@ -690,8 +743,8 @@ class TmdbService {
   }
 
   /// Get popular content - with stale-while-revalidate
-  Future<List<dynamic>> getPopular(String mediaType) async {
-    final cacheKey = 'popular_$mediaType';
+  Future<List<dynamic>> getPopular(String mediaType, {int page = 1}) async {
+    final cacheKey = _pagedKey('popular_$mediaType', page);
 
     // Stale-while-revalidate: Get stale cache first
     final staleCache = await _cache.getStaleRaw(cacheKey);
@@ -701,7 +754,7 @@ class TmdbService {
       _cache.updateInBackground(cacheKey, () async {
         final response = await _dio.get(
           '/3/$mediaType/popular',
-          queryParameters: {'language': 'en', 'page': 1},
+          queryParameters: {'language': 'en', 'page': page},
         );
         return response.data;
       }, CacheService.shortCache);
@@ -716,7 +769,7 @@ class TmdbService {
     try {
       final response = await _dio.get(
         '/3/$mediaType/popular',
-        queryParameters: {'language': 'en', 'page': 1},
+        queryParameters: {'language': 'en', 'page': page},
       );
       await _cache.set(cacheKey, response.data, ttl: CacheService.shortCache);
       return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: mediaType);
@@ -726,8 +779,8 @@ class TmdbService {
   }
 
   /// Get top rated content - with stale-while-revalidate
-  Future<List<dynamic>> getTopRated(String mediaType) async {
-    final cacheKey = 'top_rated_$mediaType';
+  Future<List<dynamic>> getTopRated(String mediaType, {int page = 1}) async {
+    final cacheKey = _pagedKey('top_rated_$mediaType', page);
 
     // Stale-while-revalidate: Get stale cache first
     final staleCache = await _cache.getStaleRaw(cacheKey);
@@ -737,7 +790,7 @@ class TmdbService {
       _cache.updateInBackground(cacheKey, () async {
         final response = await _dio.get(
           '/3/$mediaType/top_rated',
-          queryParameters: {'language': 'en', 'page': 1},
+          queryParameters: {'language': 'en', 'page': page},
         );
         return response.data;
       }, CacheService.mediumCache);
@@ -752,7 +805,7 @@ class TmdbService {
     try {
       final response = await _dio.get(
         '/3/$mediaType/top_rated',
-        queryParameters: {'language': 'en', 'page': 1},
+        queryParameters: {'language': 'en', 'page': page},
       );
       await _cache.set(cacheKey, response.data, ttl: CacheService.mediumCache);
       return _filterAndMapResults(response.data['results'] as List<dynamic>?, defaultMediaType: mediaType);
@@ -762,13 +815,16 @@ class TmdbService {
   }
 
   /// Get latest Tamil OTT releases (movies released on streaming platforms in last 6 months)
-  Future<List<dynamic>> getLatestTamilOTT() async {
-    final cacheKey = 'latest_tamil_ott';
+  Future<List<dynamic>> getLatestTamilOTT({int page = 1}) async {
+    final cacheKey = _pagedKey('latest_tamil_ott', page);
 
     // Try to get from cache first
     final cached = await _cache.getRaw(cacheKey);
     if (cached != null) {
-      return (cached['results'] as List<dynamic>?) ?? [];
+      return _filterAndMapResults(
+        cached['results'] as List<dynamic>?,
+        defaultMediaType: 'movie',
+      );
     }
 
     try {
@@ -782,7 +838,7 @@ class TmdbService {
           'with_release_type':
               '4|5|6', // 4=Digital, 5=Physical, 6=TV (includes OTT)
           'vote_count.gte': 5, // At least 5 votes to filter out unreleased
-          'page': 1,
+          'page': page,
         },
       );
 
@@ -994,8 +1050,12 @@ class TmdbService {
   }
 
   /// Get content by language (e.g., 'te' for Telugu, 'hi' for Hindi, 'ko' for Korean)
-  Future<List<dynamic>> getByLanguage(String mediaType, String language) async {
-    final cacheKey = 'by_language_${mediaType}_$language';
+  Future<List<dynamic>> getByLanguage(
+    String mediaType,
+    String language, {
+    int page = 1,
+  }) async {
+    final cacheKey = _pagedKey('by_language_${mediaType}_$language', page);
     if (kDebugMode) {
       debugPrint('🌍 getByLanguage called: mediaType=$mediaType, language=$language, cacheKey=$cacheKey');
     }
@@ -1026,7 +1086,7 @@ class TmdbService {
           'with_original_language': language,
           'sort_by': 'popularity.desc',
           'vote_count.gte': 10, // At least 10 votes
-          'page': 1,
+          'page': page,
         },
       );
 
@@ -1052,6 +1112,8 @@ class TmdbService {
       throw Exception('Failed to get content by language: $e');
     }
   }
+
+  String _pagedKey(String key, int page) => page == 1 ? key : '${key}_$page';
 
   /// Get trending content by language - with stale-while-revalidate
   Future<List<dynamic>> getTrendingByLanguage(

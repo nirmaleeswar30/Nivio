@@ -8,7 +8,7 @@ part of 'cache_entry.dart';
 
 class CacheEntryAdapter extends TypeAdapter<CacheEntry> {
   @override
-  final int typeId = 0;
+  final typeId = 0;
 
   @override
   CacheEntry read(BinaryReader reader) {
@@ -20,7 +20,7 @@ class CacheEntryAdapter extends TypeAdapter<CacheEntry> {
       key: fields[0] as String,
       data: fields[1] as String,
       timestamp: fields[2] as DateTime,
-      ttlMilliseconds: fields[3] as int,
+      ttlMilliseconds: (fields[3] as num).toInt(),
     );
   }
 

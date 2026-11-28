@@ -4,7 +4,7 @@ part 'season_info.freezed.dart';
 part 'season_info.g.dart';
 
 @freezed
-class EpisodeData with _$EpisodeData {
+abstract class EpisodeData with _$EpisodeData {
   const factory EpisodeData({
     @JsonKey(name: 'episode_number') required int episodeNumber,
     @JsonKey(name: 'name') String? episodeName,
@@ -20,7 +20,7 @@ class EpisodeData with _$EpisodeData {
 }
 
 @freezed
-class SeasonData with _$SeasonData {
+abstract class SeasonData with _$SeasonData {
   const factory SeasonData({required List<EpisodeData> episodes}) = _SeasonData;
 
   factory SeasonData.fromJson(Map<String, dynamic> json) =>
@@ -28,7 +28,7 @@ class SeasonData with _$SeasonData {
 }
 
 @freezed
-class SeasonInfo with _$SeasonInfo {
+abstract class SeasonInfo with _$SeasonInfo {
   const factory SeasonInfo({
     @JsonKey(name: 'episode_count') required int episodeCount,
     required int id,
@@ -43,7 +43,7 @@ class SeasonInfo with _$SeasonInfo {
 }
 
 @freezed
-class SeriesInfo with _$SeriesInfo {
+abstract class SeriesInfo with _$SeriesInfo {
   const factory SeriesInfo({
     @JsonKey(name: 'number_of_seasons') required int numberOfSeasons,
     required List<SeasonInfo> seasons,

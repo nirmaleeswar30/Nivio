@@ -11,7 +11,7 @@ class StreamSubtitleTrack {
         ? 'Default Subtitle'
         : rawLang;
     return StreamSubtitleTrack(
-      url: json['url'] ?? '',
+      url: (json['url'] ?? json['file'] ?? '').toString(),
       lang: lang,
     );
   }

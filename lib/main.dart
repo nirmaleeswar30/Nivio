@@ -6,16 +6,16 @@ import 'dart:isolate';
 import 'dart:ui';
 import 'dart:io';
 import 'package:app_links/app_links.dart';
-import 'package:flutter/foundation.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:nivio/services/scrapers/net_mirror_source.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart' hide IsolateNameServer;
 import 'package:nivio/core/app_platform.dart';
 import 'package:nivio/core/liquid_glass/glass_shaders.dart';
 import 'package:nivio/core/mpv_android_setup.dart';
@@ -35,10 +35,11 @@ import 'package:nivio/services/episode_check_service.dart';
 import 'package:nivio/services/github_release_update_service.dart';
 import 'package:nivio/services/desktop_self_updater.dart';
 import 'package:nivio/services/shorebird_update_service.dart';
-import 'package:nivio/services/webview_environment_service.dart';
 import 'package:nivio/providers/service_providers.dart';
+import 'package:nivio/providers/home_providers.dart' show HomeShelf;
 import 'package:nivio/providers/settings_providers.dart';
 import 'package:nivio/screens/home_screen.dart';
+import 'package:nivio/screens/home_shelf_screen.dart';
 import 'package:nivio/screens/search_screen.dart';
 import 'package:nivio/screens/media_detail_screen.dart';
 import 'package:nivio/screens/similar_content_screen.dart';
@@ -46,6 +47,7 @@ import 'package:nivio/screens/all_providers_screen.dart';
 import 'package:nivio/screens/player_screen.dart';
 import 'package:nivio/core/debug_log.dart';
 import 'package:nivio/screens/auth_screen.dart';
+import 'package:nivio/screens/onboarding_screen.dart';
 import 'package:nivio/screens/library_screen.dart';
 import 'package:nivio/screens/profile_screen.dart';
 import 'package:nivio/screens/provider_content_screen.dart';
@@ -67,8 +69,7 @@ import 'package:nivio/services/mal_auth_service.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:nivio/widgets/title_bar_overlay.dart';
 
-import 'package:flutter_inappwebview_linux/flutter_inappwebview_linux.dart';
-import 'package:window_manager/window_manager.dart';
+import 'package:window_manager/legacy.dart';
 
 const int _desktopIpcPort = 45328;
 
@@ -158,53 +159,20 @@ void main([List<String> args = const []]) async {
       // Keep the disk cache warm while bounding decoded images in memory.
       PaintingBinding.instance.imageCache.maximumSizeBytes = 48 * 1024 * 1024;
     }
-    if (Platform.isLinux) {
-      LinuxInAppWebViewPlatform.registerWith();
-      
-      // Catch non-fatal internal plugin exceptions from flutter_inappwebview_linux
-      final originalOnError = FlutterError.onError;
-      FlutterError.onError = (details) {
-        final stack = details.stack?.toString() ?? '';
-        final exc = details.exception.toString();
-        if (stack.contains('flutter_inappwebview_linux') ||
-            stack.contains('_CustomPlatformViewState') ||
-            exc.contains('InAppWebView')) {
-          debugPrint('🛡️ Handled non-fatal flutter_inappwebview_linux exception: $exc');
-          return;
-        }
-        if (originalOnError != null) {
-          originalOnError(details);
-        } else {
-          FlutterError.presentError(details);
-        }
-      };
-
-      PlatformDispatcher.instance.onError = (error, stack) {
-        final stackStr = stack.toString();
-        final errStr = error.toString();
-        if (stackStr.contains('flutter_inappwebview_linux') ||
-            stackStr.contains('_CustomPlatformViewState') ||
-            errStr.contains('InAppWebView') ||
-            errStr.contains('RenderObject.getTransformTo')) {
-          debugPrint('🛡️ Handled async flutter_inappwebview_linux exception: $errStr');
-          return true;
-        }
-        return false;
-      };
-    }
-    if (Platform.isWindows) {
-      await AppWebViewEnvironment.initialize();
-    }
     initDebugLogFile();
     MediaKit.ensureInitialized(libmpv: _bundledLibmpvPath());
     setUpMpvForAndroid();
 
     if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
       await windowManager.ensureInitialized();
-      const windowOptions = WindowOptions(
-        size: Size(1920, 1080),
-        minimumSize: Size(1280, 720),
-        center: true,
+      // On Windows the runner (windows/runner/main.cpp) already opens the
+      // window centred and sized to fit the screen. window_manager 0.7 applies
+      // a 1920x1080 size literally, which is larger than a 1080p screen at
+      // 125% scaling and pushed the window off to the top-left.
+      final windowOptions = WindowOptions(
+        size: Platform.isWindows ? null : const Size(1920, 1080),
+        minimumSize: const Size(1280, 720),
+        center: Platform.isWindows ? null : true,
         backgroundColor: Colors.black,
         skipTaskbar: false,
         titleBarStyle: TitleBarStyle.hidden,
@@ -276,6 +244,9 @@ void main([List<String> args = const []]) async {
 
     runApp(
       ProviderScope(
+        // Riverpod 3 retries failing providers automatically; screens here
+        // already offer their own retry, so keep failures as they were.
+        retry: (_, _) => null,
         overrides: [cacheServiceProvider.overrideWithValue(cacheService)],
         child: const NivioApp(),
       ),
@@ -600,28 +571,31 @@ final appRouter = GoRouter(
   initialLocation: '/splash',
   // Optimize: Use refreshListenable for auth state instead of checking on every navigation
   refreshListenable: _AuthStateNotifier(),
-  redirect: (context, state) {
+  redirect: (context, state) async {
     final user = FirebaseAuth.instance.currentUser;
     final location = state.matchedLocation;
     final isSplashRoute = location == '/splash';
     final isAuthRoute = location == '/auth';
+    final isOnboardingRoute = location == '/onboarding';
 
     // Allow splash/preloader screen to play uninterrupted
     if (isSplashRoute) {
       return null;
     }
 
-    // If not signed in and not on auth route, redirect to auth
-    if (user == null && !isAuthRoute) {
-      return '/auth';
+    final destination = onboardingDestination(
+      isAuthRoute || isOnboardingRoute
+          ? state.uri.queryParameters['next']
+          : state.uri.toString(),
+    );
+    if (user == null) {
+      return isAuthRoute ? null : Uri(path: '/auth', queryParameters: {'next': destination}).toString();
     }
-
-    // If signed in and on auth route, redirect to home
-    if (user != null && isAuthRoute) {
-      return '/home';
+    if (!await hasCompletedOnboarding(user.uid)) {
+      return isOnboardingRoute ? null
+          : Uri(path: '/onboarding', queryParameters: {'next': destination}).toString();
     }
-
-    // Otherwise, no redirect needed
+    if (isAuthRoute || isOnboardingRoute) return destination;
     return null;
   },
   routes: [
@@ -638,6 +612,18 @@ final appRouter = GoRouter(
     ),
     GoRoute(path: '/auth', builder: (context, state) => const AuthScreen()),
     GoRoute(
+      path: '/onboarding',
+      builder: (context, state) {
+        final userId = FirebaseAuth.instance.currentUser?.uid;
+        if (userId == null) return const AuthScreen();
+        return OnboardingScreen(
+          key: ValueKey(userId),
+          userId: userId,
+          destination: onboardingDestination(state.uri.queryParameters['next']),
+        );
+      },
+    ),
+    GoRoute(
       path: '/search',
       pageBuilder: (context, state) => CustomTransitionPage(
         opaque: false,
@@ -649,6 +635,22 @@ final appRouter = GoRouter(
       ),
     ),
     GoRoute(path: '/all-providers', builder: (context, state) => const AllProvidersScreen()),
+    GoRoute(
+      path: '/home/shelf/:id',
+      redirect: (context, state) =>
+          HomeShelf.fromId(state.pathParameters['id']) == null ? '/home' : null,
+      builder: (context, state) {
+        final shelf = HomeShelf.fromId(state.pathParameters['id'])!;
+        return TabArtworkScope(
+          child: HomeShelfScreen(key: ValueKey(shelf), shelf: shelf),
+        );
+      },
+    ),
+    GoRoute(
+      path: '/continue-watching',
+      builder: (context, state) =>
+          const TabArtworkScope(child: ContinueWatchingScreen()),
+    ),
     GoRoute(path: '/', redirect: (context, state) => '/home'),
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) =>
@@ -810,6 +812,8 @@ final appRouter = GoRouter(
         final directStreamTitle = state.uri.queryParameters['directStreamTitle'];
         final directStreamReferer = state.uri.queryParameters['directStreamReferer'];
         final isLive = state.uri.queryParameters['isLive'] == 'true';
+        final trailerSite = state.uri.queryParameters['trailerSite'];
+        final trailerKey = state.uri.queryParameters['trailerKey'];
         return PlayerScreen(
           mediaId: int.parse(id),
           season: season,
@@ -824,6 +828,8 @@ final appRouter = GoRouter(
           directStreamTitle: directStreamTitle,
           directStreamReferer: directStreamReferer,
           isLive: isLive,
+          trailerSite: trailerSite,
+          trailerKey: trailerKey,
         );
       },
     ),
@@ -838,9 +844,24 @@ class NivioApp extends ConsumerStatefulWidget {
 }
 
 class _NivioAppState extends ConsumerState<NivioApp> {
+  // Renews the NetMirror cookie when the app comes back, if it's due.
+  late final _lifecycle = AppLifecycleListener(
+    onResume: () => unawaited(NetMirrorSource.warmUp()),
+  );
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
+    // Get a NetMirror cookie ready (or renew a stale one) in the background,
+    // so catalog searches don't wait for the check.
+    unawaited(NetMirrorSource.warmUp());
+    _lifecycle; // Creating it starts listening.
     // Initialize the background Cloudflare bypass service silently
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -893,13 +914,17 @@ class _NivioAppState extends ConsumerState<NivioApp> {
       showPerformanceOverlay: false,
       scrollBehavior: DesktopScrollBehavior(),
       title: 'Nivio',
-      theme: NivioTheme.buildTheme(themeKey),
+      theme: NivioTheme.buildTheme(
+        themeKey,
+        fontFamily: AppPlatform.useDesktopLayout ? 'Satoshi' : 'Inter',
+        dynamicColors: ref.watch(dynamicArtworkColorsProvider),
+      ),
       routerConfig: appRouter,
       builder: (context, child) {
         final Widget gate = _GitHubReleasePromptGate(
           child: Stack(
             children: [
-              child ?? const SizedBox.shrink(),
+              TitleBarInset(child: child ?? const SizedBox.shrink()),
               const MiniPlayerOverlay(),
               const TitleBarOverlay(),
             ],
@@ -1126,7 +1151,8 @@ class _UiScaleConfirmationOverlay extends ConsumerWidget {
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: accentColor,
-                          foregroundColor: Colors.white,
+                          foregroundColor:
+                              Theme.of(context).colorScheme.onPrimary,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10),

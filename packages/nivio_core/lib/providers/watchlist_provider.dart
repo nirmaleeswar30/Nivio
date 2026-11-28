@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import '../models/watchlist_item.dart';
 import '../services/watchlist_service.dart';
 import 'auth_provider.dart';

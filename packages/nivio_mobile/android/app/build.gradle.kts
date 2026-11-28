@@ -16,11 +16,18 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
 val mpvTestAar = providers.gradleProperty("nivioAndroidMpvAar").map { file(it) }
 
 android {
     namespace = "com.nirmal.nivio"
-    compileSdk = flutter.compileSdkVersion
+    // flutter_local_notifications 23 and permission_handler 13 need 37 (Flutter defaults to 36).
+    compileSdk = maxOf(flutter.compileSdkVersion, 37)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -28,10 +35,6 @@ android {
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
     defaultConfig {
@@ -68,6 +71,10 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    implementation("androidx.appcompat:appcompat:1.7.1")
 }
 
 // ── mpv: mpvlibAndroid instead of media_kit's bundled libmpv ──

@@ -8,10 +8,9 @@ import 'package:intl/intl.dart';
 import '../widgets/download_prompt.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:nivio/core/theme.dart';
 import 'package:nivio/models/search_result.dart';
-import 'package:nivio/models/stream_result.dart';
 import 'package:nivio/models/season_info.dart';
 import 'package:nivio/providers/dynamic_colors_provider.dart';
 import 'package:nivio/widgets/marquee_text.dart';
@@ -22,7 +21,6 @@ import 'package:nivio/services/download_service.dart';
 import 'package:nivio/models/download_item.dart';
 import 'package:nivio/models/watch_history.dart';
 import 'package:nivio/providers/watch_history_provider.dart';
-import 'package:nivio/providers/language_preferences_provider.dart';
 import 'package:nivio/services/anime_filler_service.dart';
 
 class EpisodeList extends ConsumerStatefulWidget {
@@ -100,14 +98,14 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
   @override
   Widget build(BuildContext context) {
     final isDesktop = AppPlatform.useDesktopLayout;
-    final allHistory = ref.watch(watchHistoryProvider).valueOrNull ?? [];
+    final allHistory = ref.watch(watchHistoryProvider).value ?? [];
     final mediaHistory = allHistory.cast<WatchHistory?>().firstWhere(
       (h) => h?.tmdbId == widget.media.id,
       orElse: () => null,
     );
 
     final fillerData = widget.media.mediaType == 'anime'
-        ? (ref.watch(animeFillerDataProvider(widget.media)).valueOrNull ??
+        ? (ref.watch(animeFillerDataProvider(widget.media)).value ??
             const AnimeFillerData())
         : const AnimeFillerData();
 
@@ -630,79 +628,19 @@ class _EpisodeListState extends ConsumerState<EpisodeList> {
   }
 
   Future<void> _downloadEpisode(EpisodeData episode) async {
-    final streamingService = ref.read(streamingServiceProvider);
     final isAnime = StreamingService.isAnimeMedia(widget.media);
-    final int targetMediaId = widget.media.id;
-    final targetMedia = widget.media;
-    
-    if (isAnime) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Preparing servers...')),
-        );
-      }
-      final subDubPref = ref.read(languagePreferencesProvider).animePreferredAudio;
-      await streamingService.prepareProviders(
-        media: targetMedia,
-        season: widget.season,
-        episode: episode.episodeNumber,
-        subDubPreference: subDubPref,
-      );
-    }
-    
-    final maxProviders = streamingService.totalProvidersFor(isAnime: isAnime);
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Preparing download for Episode ${episode.episodeNumber}...')),
-      );
-    }
-
-    StreamResult? result;
-    int? usedProviderIndex;
-    for (int providerIndex = 0; providerIndex < maxProviders; providerIndex++) {
-      if (!streamingService.isDownloadable(providerIndex, isAnime: isAnime)) {
-        continue;
-      }
-      
-      try {
-        result = await streamingService.fetchStreamUrl(
-          media: targetMedia,
-          season: widget.season,
-          episode: episode.episodeNumber,
-          providerIndex: providerIndex,
-        );
-      } catch (e) {
-        debugPrint('Download probe failed for provider $providerIndex: $e');
-      }
-
-      if (result != null && result.url.isNotEmpty) {
-        usedProviderIndex = providerIndex;
-        break;
-      }
-    }
-
-    if (result != null && result.url.isNotEmpty) {
-      await DownloadPrompt.showAndQueue(
-        context: context,
-        ref: ref,
-        streamResult: result,
-        mediaId: targetMediaId,
-        title: '${widget.media.title ?? widget.media.name ?? 'Episode'}|||${episode.episodeName ?? 'Episode ${episode.episodeNumber}'}',
-        mediaType: isAnime ? 'anime' : 'tv',
-        season: widget.season,
-        episode: episode.episodeNumber,
-        posterPath: '${widget.media.posterPath}|||${episode.stillPath ?? widget.media.posterPath}',
-        media: targetMedia,
-        providerIndex: usedProviderIndex,
-      );
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to find downloadable stream on any server.')),
-        );
-      }
-    }
+    await DownloadPrompt.downloadTitle(
+      context: context,
+      ref: ref,
+      media: widget.media,
+      title:
+          '${widget.media.title ?? widget.media.name ?? 'Episode'}|||${episode.episodeName ?? 'Episode ${episode.episodeNumber}'}',
+      mediaType: isAnime ? 'anime' : 'tv',
+      season: widget.season,
+      episode: episode.episodeNumber,
+      posterPath:
+          '${widget.media.posterPath}|||${episode.stillPath ?? widget.media.posterPath}',
+    );
   }
 
   String _relativeDate(String? dateStr) {
